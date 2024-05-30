@@ -1,0 +1,66 @@
+[package]
+name = "tsp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[features]
+cesr-t = [ ]
+default = ["async"]
+strict = [ ]
+fuzzing = ["dep:arbitrary"]
+demo = [ ]
+async = [
+    "resolve",
+    "dep:async-stream",
+    "dep:futures",
+    "dep:tokio",
+    "dep:tokio-tungstenite",
+    "dep:tokio-util",
+    "dep:tracing",
+]
+resolve = [
+    "serialize",
+    "dep:reqwest"
+]
+serialize = [
+    "dep:serde",
+    "dep:serde_json",
+    "dep:bs58"
+]
+
+[dependencies]
+# generic
+base64ct = { workspace = true }
+thiserror = { workspace = true }
+url = { workspace = true }
+tracing = { workspace = true, optional = true }
+# crypto
+ed25519-dalek = { workspace = true }
+hpke = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+# async
+async-stream = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+# transports
+tokio-tungstenite = { workspace = true, optional = true }
+tokio-util = { workspace = true, optional = true }
+# resolve
+reqwest = { workspace = true, optional = true }
+# serialize
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+bs58 ={ workspace = true, optional = true }
+# fuzzing
+arbitrary ={ workspace = true, optional = true }
+
+[dev-dependencies]
+serial_test = { version = "3.0" }

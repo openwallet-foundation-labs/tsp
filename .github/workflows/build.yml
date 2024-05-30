@@ -1,0 +1,70 @@
+name: Build
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: Binaries for ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        name:
+          - linux-x86-64-gnu
+          - linux-armv7-gnu
+          - linux-arm64-gnu
+          - linux-x86-64-musl
+          - linux-arm64-musl
+        include:
+          - name: linux-x86-64-gnu
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            platform: ~
+            cross: false
+
+          - name: linux-armv7-gnu
+            os: ubuntu-22.04
+            target: armv7-unknown-linux-gnueabihf
+            platform: ~
+            cross: true
+
+          - name: linux-arm64-gnu
+            os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            platform: ~
+            cross: true
+
+          - name: linux-x86-64-musl
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-musl
+            platform: amd64
+            cross: true
+
+          - name: linux-arm64-musl
+            os: ubuntu-22.04
+            target: aarch64-unknown-linux-musl
+            platform: arm64
+            cross: true
+
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ matrix.name }}-${{ hashFiles('Cargo.toml') }}
+          restore-keys: ${{ matrix.name }}-
+
+      - run: cargo install cross --git https://github.com/cross-rs/cross || true
+
+      - name: Build
+        if: ${{ !matrix.cross }}
+        run: cargo build --release --target ${{ matrix.target }} --manifest-path Cargo.toml

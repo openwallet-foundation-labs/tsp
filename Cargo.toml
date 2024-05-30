@@ -1,0 +1,47 @@
+[workspace]
+resolver = "2"
+members = [ "tsp", "examples", "fuzz" ]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/wenjing/rust-tsp"
+homepage = "https://github.com/wenjing/rust-tsp"
+readme = "./README.md"
+description = "Rust implementation of the Trust Spanning Protocol"
+publish = false
+rust-version = "1.77"
+
+[workspace.dependencies]
+# generic
+base64ct = { version = "1.6", default-features = false, features = ["alloc", "std"] }
+thiserror = "1.0"
+url = { version = "2.5", features = ["serde"] }
+#crypto
+ed25519-dalek = { version = "2.1.1", default-features = false, features = ["fast", "std", "zeroize", "rand_core"] }
+hpke = { git = "https://github.com/marlonbaeten/rust-hpke", branch = "keys-by-reference", features = ["alloc", "std"] }
+rand = "0.8.5"
+sha2 = { version = "0.10.8" }
+# async
+async-stream = { version = "0.3"}
+futures = { version = "0.3" }
+tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "net", "macros"] }
+# logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3.1", default-features = false, features = ["fmt", "ansi", "env-filter", "tracing-log"] }
+# transport
+tokio-tungstenite = { version = "0.21",  default-features = false, features = ["rustls-tls-native-roots", "stream", "connect"] }
+tokio-util = { version = "0.7",  default-features = false, features = ["codec"] }
+# resolve
+reqwest = { version = "0.12.3", default-features = false, features = ["rustls-tls-native-roots", "json", "stream", "charset", "http2", "macos-system-configuration"] }
+# serialize
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+bs58 = "0.5"
+# fuzzing
+arbitrary = { version = "1.0", features = ["derive"] }
+# cli
+clap = { version = "4.5", features = ["derive"] }
+# demo server
+axum = { version = "0.7", features = ["ws"] }

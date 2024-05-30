@@ -1,0 +1,74 @@
+name: Check
+
+on:
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal
+      - run: rustup component add clippy
+
+      - uses: actions/cache/restore@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: linux-x86-64-gnu-${{ hashFiles('Cargo.toml') }}
+          restore-keys: linux-x86-64-gnu-
+
+      - name: Check, clippy and format
+        run: cargo check && cargo clippy --tests -- --deny "warnings" && cargo fmt --check
+
+      - name: Deny
+        uses: EmbarkStudios/cargo-deny-action@v1
+        with:
+          command: check
+          arguments: --workspace
+
+      - name: Test
+        run: cargo test -- --nocapture
+        shell: bash
+
+  fuzz:
+    name: run cargo-fuzz
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        features:
+          - ""
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal
+      - run: rustup component add clippy
+
+      - uses: actions/cache/restore@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: linux-x86-64-gnu-${{ hashFiles('Cargo.toml') }}
+          restore-keys: linux-x86-64-gnu-
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@be73d7920c329f220ce78e0234b8f96b7ae60248
+        with:
+          toolchain: nightly
+      - name: Install cargo fuzz
+        uses: taiki-e/install-action@8984d603c208823d3c1a1b796f4081736f3ae3f9
+        with:
+          tool: cargo-fuzz
+      - name: Smoke-test fuzz targets
+        run: |
+          cargo fuzz build ${{ matrix.features }}
+          for target in $(cargo fuzz list ${{ matrix.features }}) ; do
+            cargo fuzz run ${{ matrix.features }} $target -- -max_total_time=10
+          done

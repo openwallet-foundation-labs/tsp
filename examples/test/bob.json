@@ -1,0 +1,8 @@
+{
+  "enckey": "Kk-O0T0IoxGgtxyd7JYCv6moGIi83wPRINDsWKgGNVs",
+  "id": "did:web:did.tsp-test.org:user:bob",
+  "publicEnckey": "QFn5SXupDgBTtzkGc2W3MvoSCHjd8uUD0dapfEXqET4",
+  "publicSigkey": "NBcP690uVtoJChxvBCxZyy2inI-R24G3aNBWOKwU5lI",
+  "sigkey": "1i95TnosmKFwmW_pu300ulOaT9m1OV4xIhnFue8Ltek",
+  "transport": "tcp://127.0.0.1:1337"
+}

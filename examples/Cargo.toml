@@ -1,0 +1,35 @@
+[package]
+name = "examples"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "create-did-web"
+path = "src/create-did-web.rs"
+
+[[bin]]
+name = "tsp"
+path = "src/cli.rs"
+
+[[bin]]
+name = "demo-server"
+path = "src/server.rs"
+
+[dependencies]
+tsp = { path = "../tsp" }
+axum = { workspace = true}
+base64ct = { workspace = true }
+clap = { workspace = true}
+reqwest = { workspace = true}
+futures = { workspace = true}
+serde = { workspace = true}
+serde_json = { workspace = true}
+tokio = { workspace = true}
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+url = { workspace = true}

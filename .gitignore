@@ -1,0 +1,6 @@
+/target
+Cargo.lock
+.tgops.toml
+.tgops
+.dockerignore
+docs/book/

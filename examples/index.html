@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>TSP Demo Server</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+      integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN"
+      crossorigin="anonymous"
+    />
+    <style>
+      html,
+      body,
+      body > .container-fluid,
+      body > .container-fluid > .row,
+      body > .container-fluid > .row > div {
+        height: 100%;
+      }
+      .message-part {
+        font-family: monospace;
+        font-size: 14px;
+        word-wrap: break-word;
+        word-break: break-all;
+      }
+      .received-messages {
+        display: flex;
+        flex-direction: column-reverse;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container-fluid">
+      <div class="row">
+        <div class="col p-3 overflow-auto">
+          <h2>Test identities</h2>
+          <form class="mb-4 card p-3 text-bg-light" id="create-identity">
+            <div class="form-group">
+              <label for="name">Create test VID:</label>
+              <input
+                type="text"
+                id="name"
+                name="name"
+                pattern="[a-z]{3,100}"
+                placeholder="username e.g. alice"
+                title="use only lowercase characters, at least 3"
+                class="form-control"
+                required
+              />
+            </div>
+            <div class="form-group mt-2">
+              <input
+                type="submit"
+                value="Create test VID"
+                class="btn btn-primary"
+              />
+            </div>
+          </form>
+          <form class="mb-4 card p-3 text-bg-light" id="resolve-vid">
+            <div class="form-group">
+              <label for="vid">Resolve and verify VID:</label>
+              <input
+                type="text"
+                id="vid"
+                name="vid"
+                placeholder="VID e.g. did:web:tsp-test.org:alice"
+                class="form-control"
+                required
+              />
+            </div>
+            <div class="form-group mt-2">
+              <input
+                type="submit"
+                value="Resolve and verify VID"
+                class="btn btn-primary"
+              />
+            </div>
+          </form>
+          <h3>Identities</h3>
+          <hr />
+          <div class="cards row"></div>
+        </div>
+        <div class="col overflow-auto border-start p-3">
+          <h2>Send message</h2>
+          <form class="mb-4 card p-3 text-bg-light" id="send-message">
+            <div class="form-group">
+              <label for="sender">Sender:</label>
+              <input
+                type="text"
+                id="sender"
+                sender="sender"
+                class="form-control"
+              />
+            </div>
+            <div class="form-group mt-2">
+              <label for="receiver">Receiver:</label>
+              <input
+                type="text"
+                id="receiver"
+                name="receiver"
+                class="form-control"
+              />
+            </div>
+            <div class="form-group mt-2">
+              <label for="nonconfidential">Non-confidential data:</label>
+              <textarea
+                id="nonconfidential"
+                name="nonconfidential"
+                class="form-control"
+                rows="2"
+              ></textarea>
+            </div>
+            <div class="form-group mt-2">
+              <label for="message">Message:</label>
+              <textarea
+                id="message"
+                name="message"
+                class="form-control"
+                rows="4"
+                required
+              ></textarea>
+            </div>
+            <div class="form-group mt-2">
+              <input
+                type="submit"
+                value="Send message"
+                class="btn btn-primary"
+              />
+            </div>
+          </form>
+          <div class="messages row"></div>
+        </div>
+        <div class="col overflow-auto border-start p-3">
+          <h3>Received messages</h3>
+          <hr />
+          <div class="received-messages row"></div>
+        </div>
+      </div>
+    </div>
+    <script src="/script.js" lang="text/javascript"></script>
+  </body>
+</html>
