@@ -462,7 +462,7 @@ async fn attack_failures() {
         if let Ok(msg) = bobs_messages.next().await.unwrap() {
             let crate::ReceivedTspMessage::PendingMessage {
                 unknown_vid,
-                payload,
+                mut payload,
             } = msg
             else {
                 panic!("a corrupted message was decoded correctly!");
@@ -474,7 +474,10 @@ async fn attack_failures() {
             // confirm that opening the pending message also fails
             // (We cannot test this exhaustively -- but because the cryptographic material for this
             // message does not belong to the corrupted vid, it should reliably always fail)
-            assert!(bob_db.verify_and_open(&unknown_vid, payload).await.is_err());
+            assert!(bob_db
+                .verify_and_open(&unknown_vid, &mut payload)
+                .await
+                .is_err());
         };
 
         if stop {

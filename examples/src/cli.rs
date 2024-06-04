@@ -409,8 +409,10 @@ async fn run() -> Result<(), Error> {
                     None
                 };
 
-                if let Some((unknown_vid, payload)) = handle_message(message) {
-                    let message = vid_database.verify_and_open(&unknown_vid, payload).await?;
+                if let Some((unknown_vid, mut payload)) = handle_message(message) {
+                    let message = vid_database
+                        .verify_and_open(&unknown_vid, &mut payload)
+                        .await?;
 
                     write_database(&args.database, &vid_database, aliases.clone()).await?;
 

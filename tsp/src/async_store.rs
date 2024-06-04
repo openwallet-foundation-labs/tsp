@@ -346,7 +346,7 @@ impl AsyncStore {
                         Err(Error::UnverifiedSource(unknown_vid)) => {
                             Ok(ReceivedTspMessage::PendingMessage {
                                 unknown_vid,
-                                payload: m,
+                                payload: m.to_vec(),
                             })
                         }
                         maybe_message => maybe_message,
@@ -379,10 +379,10 @@ impl AsyncStore {
     pub async fn verify_and_open(
         &mut self,
         vid: &str,
-        mut payload: tokio_util::bytes::BytesMut,
+        payload: &mut [u8],
     ) -> Result<ReceivedTspMessage, Error> {
         self.verify_vid(vid).await?;
 
-        self.inner.open_message(&mut payload)
+        self.inner.open_message(payload)
     }
 }

@@ -49,7 +49,7 @@ pub enum ReceivedTspMessage {
     #[cfg(feature = "async")]
     PendingMessage {
         unknown_vid: String,
-        payload: tokio_util::bytes::BytesMut,
+        payload: Vec<u8>,
     },
 }
 
