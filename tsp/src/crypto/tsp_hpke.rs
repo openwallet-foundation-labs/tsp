@@ -61,12 +61,12 @@ where
     crate::cesr::encode_payload(&secret_payload, &mut cesr_message)?;
 
     // HPKE sender mode: "Auth"
-    let sender_decryption_key = Kem::PrivateKey::from_bytes(sender.decryption_key())?;
-    let sender_encryption_key = Kem::PublicKey::from_bytes(sender.encryption_key())?;
+    let sender_decryption_key = Kem::PrivateKey::from_bytes(sender.decryption_key().as_ref())?;
+    let sender_encryption_key = Kem::PublicKey::from_bytes(sender.encryption_key().as_ref())?;
     let mode = OpModeS::Auth((&sender_decryption_key, &sender_encryption_key));
 
     // recipient public key
-    let message_receiver = Kem::PublicKey::from_bytes(receiver.encryption_key())?;
+    let message_receiver = Kem::PublicKey::from_bytes(receiver.encryption_key().as_ref())?;
 
     // this callback allows "observing" the raw bytes of the plaintext before encryption, for hash computations
     if let Some(func) = plaintext_observer {
@@ -139,8 +139,8 @@ where
     let (tag, encapped_key) = footer.split_at(footer.len() - Kem::EncappedKey::size());
 
     // construct correct key types
-    let sender_encryption_key = Kem::PublicKey::from_bytes(sender.encryption_key())?;
-    let receiver_decryption_key = Kem::PrivateKey::from_bytes(receiver.decryption_key())?;
+    let sender_encryption_key = Kem::PublicKey::from_bytes(sender.encryption_key().as_ref())?;
+    let receiver_decryption_key = Kem::PrivateKey::from_bytes(receiver.decryption_key().as_ref())?;
     let encapped_key = Kem::EncappedKey::from_bytes(encapped_key)?;
     let tag = AeadTag::from_bytes(tag)?;
 

@@ -96,13 +96,17 @@ pub mod transport;
 mod async_store;
 
 #[cfg(feature = "async")]
+mod vault;
+
+#[cfg(feature = "async")]
 #[cfg(test)]
 mod test;
 
 #[cfg(feature = "async")]
 pub use async_store::AsyncStore;
 
-pub use definitions::{Payload, PrivateVid, ReceivedTspMessage, VerifiedVid};
+pub use definitions::{Payload, PrivateVid, ReceivedTspMessage, RelationshipStatus, VerifiedVid};
 pub use error::Error;
-pub use store::{ExportVid, Store};
-pub use vid::{OwnedVid, Vid};
+pub use store::Store;
+pub use vault::Vault;
+pub use vid::{ExportVid, OwnedVid, Vid};

@@ -18,6 +18,7 @@ fuzzing = ["dep:arbitrary"]
 demo = [ ]
 async = [
     "resolve",
+    "aries-askar",
     "dep:async-stream",
     "dep:futures",
     "dep:tokio",
@@ -40,6 +41,7 @@ serialize = [
 base64ct = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }
+zeroize = { workspace = true }
 tracing = { workspace = true, optional = true }
 # crypto
 ed25519-dalek = { workspace = true }
@@ -47,6 +49,7 @@ hpke = { workspace = true }
 rand = { workspace = true }
 sha2 = { workspace = true }
 # async
+aries-askar = { workspace = true, optional = true }
 async-stream = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
@@ -64,3 +67,4 @@ arbitrary ={ workspace = true, optional = true }
 
 [dev-dependencies]
 serial_test = { version = "3.0" }
+arbitrary ={ workspace = true }

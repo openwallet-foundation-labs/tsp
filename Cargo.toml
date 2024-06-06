@@ -18,6 +18,7 @@ rust-version = "1.77"
 base64ct = { version = "1.6", default-features = false, features = ["alloc", "std"] }
 thiserror = "1.0"
 url = { version = "2.5", features = ["serde"] }
+zeroize = "1.8.1"
 #crypto
 ed25519-dalek = { version = "2.1.1", default-features = false, features = ["fast", "std", "zeroize", "rand_core"] }
 hpke = { git = "https://github.com/marlonbaeten/rust-hpke", branch = "keys-by-reference", features = ["alloc", "std"] }
@@ -27,6 +28,7 @@ sha2 = { version = "0.10.8" }
 async-stream = { version = "0.3"}
 futures = { version = "0.3" }
 tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "net", "macros"] }
+aries-askar = { git = "https://github.com/marlonbaeten/aries-askar", branch = "ciborium", default-features = false, features = ["sqlite"] }
 # logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.1", default-features = false, features = ["fmt", "ansi", "env-filter", "tracing-log"] }

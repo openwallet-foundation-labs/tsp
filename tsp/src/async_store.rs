@@ -1,8 +1,10 @@
 use crate::{
-    definitions::{Digest, Payload, ReceivedTspMessage, TSPStream, VerifiedVid},
+    definitions::{
+        Digest, Payload, ReceivedTspMessage, RelationshipStatus, TSPStream, VerifiedVid,
+    },
     error::Error,
-    store::{ExportVid, RelationshipStatus, Store},
-    PrivateVid,
+    store::Store,
+    ExportVid, PrivateVid,
 };
 use futures::StreamExt;
 use url::Url;

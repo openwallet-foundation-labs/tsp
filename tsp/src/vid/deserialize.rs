@@ -1,5 +1,3 @@
-use ed25519_dalek::{self as Ed};
-
 #[cfg(feature = "async")]
 use super::{error::VidError, OwnedVid};
 #[cfg(feature = "async")]
@@ -19,20 +17,21 @@ impl OwnedVid {
     }
 }
 
-pub(crate) mod serde_key_data {
-    use crate::definitions::KeyData;
+pub(crate) mod serde_public_key_data {
     use base64ct::{Base64UrlUnpadded, Encoding};
     use serde::{Deserialize, Deserializer, Serializer};
 
-    pub fn serialize<S>(key: &KeyData, serializer: S) -> Result<S::Ok, S::Error>
+    use crate::definitions::PublicKeyData;
+
+    pub fn serialize<S>(key: &PublicKeyData, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let key = Base64UrlUnpadded::encode_string(key);
+        let key = Base64UrlUnpadded::encode_string(key.as_ref());
         serializer.serialize_str(&key)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<KeyData, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<PublicKeyData, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -42,63 +41,72 @@ pub(crate) mod serde_key_data {
             .try_into()
             .map_err(|_| serde::de::Error::custom("key data is not exactly 32 bytes"))?;
 
-        Ok(key)
+        Ok(key.into())
     }
 }
 
-pub(crate) mod serde_sigkey {
-    use super::Ed;
+pub(crate) mod serde_key_data {
     use base64ct::{Base64UrlUnpadded, Encoding};
     use serde::{Deserialize, Deserializer, Serializer};
 
-    pub fn serialize<S>(key: &Ed::SigningKey, serializer: S) -> Result<S::Ok, S::Error>
+    use crate::definitions::PrivateKeyData;
+
+    pub fn serialize<S>(key: &PrivateKeyData, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let key = Base64UrlUnpadded::encode_string(key.as_bytes());
+        let key = Base64UrlUnpadded::encode_string(key.as_ref());
         serializer.serialize_str(&key)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Ed::SigningKey, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<PrivateKeyData, D::Error>
     where
         D: Deserializer<'de>,
     {
         let encoded: &str = Deserialize::deserialize(deserializer)?;
         let key = Base64UrlUnpadded::decode_vec(encoded).map_err(serde::de::Error::custom)?;
-        let key: &[u8; 32] = key
-            .as_slice()
+        let key: [u8; 32] = key
             .try_into()
-            .map_err(serde::de::Error::custom)?;
+            .map_err(|_| serde::de::Error::custom("key data is not exactly 32 bytes"))?;
 
-        Ok(Ed::SigningKey::from_bytes(key))
+        Ok(key.into())
     }
 }
 
-pub(crate) mod serde_public_sigkey {
-    use super::Ed;
+pub(crate) mod serde_key_data_option {
+    use crate::definitions::PrivateKeyData;
     use base64ct::{Base64UrlUnpadded, Encoding};
     use serde::{Deserialize, Deserializer, Serializer};
 
-    pub fn serialize<S>(key: &Ed::VerifyingKey, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(key: &Option<PrivateKeyData>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let key = Base64UrlUnpadded::encode_string(key.as_bytes());
-        serializer.serialize_str(&key)
+        match key {
+            Some(key) => {
+                let key = Base64UrlUnpadded::encode_string(key.as_ref());
+                serializer.serialize_str(&key)
+            }
+            None => serializer.serialize_none(),
+        }
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Ed::VerifyingKey, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<PrivateKeyData>, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let encoded: &str = Deserialize::deserialize(deserializer)?;
-        let key = Base64UrlUnpadded::decode_vec(encoded).map_err(serde::de::Error::custom)?;
-        let key: &[u8; 32] = key
-            .as_slice()
-            .try_into()
-            .map_err(serde::de::Error::custom)?;
+        let encoded: Option<&str> = Deserialize::deserialize(deserializer)?;
 
-        Ed::VerifyingKey::from_bytes(key).map_err(serde::de::Error::custom)
+        if let Some(encoded) = encoded {
+            let key = Base64UrlUnpadded::decode_vec(encoded).map_err(serde::de::Error::custom)?;
+            let key: [u8; 32] = key
+                .try_into()
+                .map_err(|_| serde::de::Error::custom("key data is not exactly 32 bytes"))?;
+
+            Ok(Some(key.into()))
+        } else {
+            Ok(None)
+        }
     }
 }
 

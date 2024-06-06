@@ -17,6 +17,10 @@ pub enum Error {
     #[error("Error: {0}")]
     FromUtf8(#[from] std::string::FromUtf8Error),
     #[error("Error: {0}")]
+    Storage(#[from] aries_askar::Error),
+    #[error("Error decoding persisted state: {0}")]
+    DecodeState(&'static str),
+    #[error("Error: {0}")]
     InvalidRoute(String),
     #[error("Error: {0}")]
     Relationship(String),
