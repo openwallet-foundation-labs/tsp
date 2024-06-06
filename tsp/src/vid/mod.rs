@@ -1,8 +1,9 @@
-use crate::definitions::{KeyData, PrivateVid, VerifiedVid};
-use ed25519_dalek::{self as Ed};
+use crate::{
+    definitions::{PrivateKeyData, PrivateVid, PublicKeyData, VerifiedVid},
+    RelationshipStatus,
+};
 use hpke::{kem::X25519HkdfSha256 as KemType, Kem, Serializable};
 use rand::rngs::OsRng;
-use std::sync::Arc;
 
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
@@ -19,7 +20,7 @@ pub mod error;
 pub mod resolve;
 
 #[cfg(feature = "serialize")]
-use deserialize::{serde_key_data, serde_public_sigkey, serde_sigkey};
+use deserialize::{serde_key_data, serde_key_data_option, serde_public_key_data};
 
 #[cfg(feature = "resolve")]
 pub use did::web::{create_did_web, vid_to_did_document};
@@ -41,10 +42,10 @@ pub use resolve::verify_vid;
 pub struct Vid {
     id: String,
     transport: Url,
-    #[cfg_attr(feature = "serialize", serde(with = "serde_public_sigkey"))]
-    public_sigkey: Ed::VerifyingKey,
-    #[cfg_attr(feature = "serialize", serde(with = "serde_key_data"))]
-    public_enckey: KeyData,
+    #[cfg_attr(feature = "serialize", serde(with = "serde_public_key_data"))]
+    public_sigkey: PublicKeyData,
+    #[cfg_attr(feature = "serialize", serde(with = "serde_public_key_data"))]
+    public_enckey: PublicKeyData,
 }
 
 /// A OwnedVid represents the 'owner' of a particular Vid
@@ -57,10 +58,10 @@ pub struct Vid {
 pub struct OwnedVid {
     #[cfg_attr(feature = "serialize", serde(flatten))]
     vid: Vid,
-    #[cfg_attr(feature = "serialize", serde(with = "serde_sigkey"))]
-    sigkey: Ed::SigningKey,
     #[cfg_attr(feature = "serialize", serde(with = "serde_key_data"))]
-    enckey: KeyData,
+    sigkey: PrivateKeyData,
+    #[cfg_attr(feature = "serialize", serde(with = "serde_key_data"))]
+    enckey: PrivateKeyData,
 }
 
 /// A custom implementation of Debug for PrivateVid to avoid key material from leaking during panics.
@@ -74,32 +75,6 @@ impl std::fmt::Debug for OwnedVid {
     }
 }
 
-impl Vid {
-    pub(crate) fn from_verified_vid(vid: Arc<dyn VerifiedVid>) -> Self {
-        Self {
-            id: vid.identifier().to_string(),
-            transport: vid.endpoint().clone(),
-            public_sigkey: Ed::VerifyingKey::from_bytes(vid.verifying_key()).unwrap(),
-            public_enckey: *vid.encryption_key(),
-        }
-    }
-}
-
-impl OwnedVid {
-    pub(crate) fn from_private_vid(vid: Arc<dyn PrivateVid>) -> Self {
-        Self {
-            vid: Vid {
-                id: vid.identifier().to_string(),
-                transport: vid.endpoint().clone(),
-                public_sigkey: Ed::VerifyingKey::from_bytes(vid.verifying_key()).unwrap(),
-                public_enckey: *vid.encryption_key(),
-            },
-            sigkey: Ed::SigningKey::from_bytes(vid.signing_key()),
-            enckey: *vid.decryption_key(),
-        }
-    }
-}
-
 impl VerifiedVid for Vid {
     fn identifier(&self) -> &str {
         self.id.as_ref()
@@ -109,11 +84,11 @@ impl VerifiedVid for Vid {
         &self.transport
     }
 
-    fn verifying_key(&self) -> &KeyData {
-        self.public_sigkey.as_bytes()
+    fn verifying_key(&self) -> &PublicKeyData {
+        &self.public_sigkey
     }
 
-    fn encryption_key(&self) -> &KeyData {
+    fn encryption_key(&self) -> &PublicKeyData {
         &self.public_enckey
     }
 }
@@ -127,20 +102,21 @@ impl VerifiedVid for OwnedVid {
         self.vid.endpoint()
     }
 
-    fn verifying_key(&self) -> &KeyData {
+    fn verifying_key(&self) -> &PublicKeyData {
         self.vid.verifying_key()
     }
 
-    fn encryption_key(&self) -> &KeyData {
+    fn encryption_key(&self) -> &PublicKeyData {
         self.vid.encryption_key()
     }
 }
 
 impl PrivateVid for OwnedVid {
-    fn signing_key(&self) -> &KeyData {
-        self.sigkey.as_bytes()
+    fn signing_key(&self) -> &PrivateKeyData {
+        &self.sigkey
     }
-    fn decryption_key(&self) -> &KeyData {
+
+    fn decryption_key(&self) -> &PrivateKeyData {
         &self.enckey
     }
 }
@@ -153,39 +129,43 @@ impl AsRef<[u8]> for Vid {
 
 impl OwnedVid {
     pub fn bind(id: impl Into<String>, transport: url::Url) -> Self {
-        let sigkey = Ed::SigningKey::generate(&mut OsRng);
+        let sigkey = ed25519_dalek::SigningKey::generate(&mut OsRng);
         let (enckey, public_enckey) = KemType::gen_keypair(&mut OsRng);
+        let public_enckey: [u8; 32] = public_enckey.to_bytes().into();
+        let enckey: [u8; 32] = enckey.to_bytes().into();
 
         Self {
             vid: Vid {
                 id: id.into(),
                 transport,
-                public_sigkey: sigkey.verifying_key(),
-                public_enckey: public_enckey.to_bytes().into(),
+                public_sigkey: sigkey.verifying_key().to_bytes().into(),
+                public_enckey: public_enckey.into(),
             },
-            sigkey,
-            enckey: enckey.to_bytes().into(),
+            sigkey: sigkey.to_bytes().into(),
+            enckey: enckey.into(),
         }
     }
 
     #[cfg(feature = "resolve")]
     pub fn new_did_peer(transport: Url) -> OwnedVid {
-        let sigkey = Ed::SigningKey::generate(&mut OsRng);
+        let sigkey = ed25519_dalek::SigningKey::generate(&mut OsRng);
         let (enckey, public_enckey) = KemType::gen_keypair(&mut OsRng);
+        let public_enckey: [u8; 32] = public_enckey.to_bytes().into();
+        let enckey: [u8; 32] = enckey.to_bytes().into();
 
         let mut vid = Vid {
             id: Default::default(),
             transport,
-            public_sigkey: sigkey.verifying_key(),
-            public_enckey: public_enckey.to_bytes().into(),
+            public_sigkey: sigkey.verifying_key().to_bytes().into(),
+            public_enckey: public_enckey.into(),
         };
 
         vid.id = crate::vid::did::peer::encode_did_peer(&vid);
 
         Self {
             vid,
-            sigkey,
-            enckey: enckey.to_bytes().into(),
+            sigkey: sigkey.to_bytes().into(),
+            enckey: enckey.into(),
         }
     }
 
@@ -195,5 +175,46 @@ impl OwnedVid {
 
     pub fn into_vid(self) -> Vid {
         self.vid
+    }
+}
+
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone)]
+pub struct ExportVid {
+    pub(crate) id: String,
+    pub(crate) transport: Url,
+    #[cfg_attr(feature = "serialize", serde(with = "serde_public_key_data"))]
+    pub(crate) public_sigkey: PublicKeyData,
+    #[cfg_attr(feature = "serialize", serde(with = "serde_public_key_data"))]
+    pub(crate) public_enckey: PublicKeyData,
+    #[cfg_attr(feature = "serialize", serde(with = "serde_key_data_option"))]
+    pub(crate) sigkey: Option<PrivateKeyData>,
+    #[cfg_attr(feature = "serialize", serde(with = "serde_key_data_option"))]
+    pub(crate) enckey: Option<PrivateKeyData>,
+    pub(crate) relation_status: RelationshipStatus,
+    pub(crate) relation_vid: Option<String>,
+    pub(crate) parent_vid: Option<String>,
+    pub(crate) tunnel: Option<Box<[String]>>,
+}
+
+impl ExportVid {
+    pub(crate) fn verified_vid(&self) -> Vid {
+        Vid {
+            id: self.id.clone(),
+            transport: self.transport.clone(),
+            public_sigkey: self.public_sigkey.clone(),
+            public_enckey: self.public_enckey.clone(),
+        }
+    }
+
+    pub(crate) fn private_vid(&self) -> Option<OwnedVid> {
+        match (&self.sigkey, &self.enckey) {
+            (Some(sigkey), Some(enckey)) => Some(OwnedVid {
+                vid: self.verified_vid(),
+                sigkey: sigkey.clone(),
+                enckey: enckey.clone(),
+            }),
+            _ => None,
+        }
     }
 }

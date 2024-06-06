@@ -18,4 +18,5 @@ license-files = [ { path = "LICENSE", hash = 0xbd0eed23 } ]
 [sources]
 allow-git = [
     "https://github.com/marlonbaeten/rust-hpke",
+    "https://github.com/marlonbaeten/aries-askar",
 ]

@@ -1,40 +1,18 @@
 use crate::{
     cesr::EnvelopeType,
     crypto::CryptoError,
-    definitions::{Digest, MessageType, Payload, PrivateVid, ReceivedTspMessage, VerifiedVid},
+    definitions::{
+        MessageType, Payload, PrivateVid, ReceivedTspMessage, RelationshipStatus, VerifiedVid,
+    },
     error::Error,
     vid::VidError,
-    OwnedVid, Vid,
+    ExportVid,
 };
-#[cfg(feature = "serialize")]
-use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    fmt::Debug,
     sync::{Arc, RwLock},
 };
 use url::Url;
-
-#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug)]
-pub enum RelationshipStatus {
-    _Controlled,
-    Bidirectional(Digest),
-    Unidirectional(Digest),
-    Unrelated,
-}
-
-/// VID and its key material, intended for serialization
-#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
-#[derive(Debug, Clone)]
-pub struct ExportVid {
-    vid: crate::Vid,
-    private: Option<crate::OwnedVid>,
-    relation_status: RelationshipStatus,
-    relation_vid: Option<String>,
-    parent_vid: Option<String>,
-    tunnel: Option<Box<[String]>>,
-}
 
 #[derive(Clone)]
 pub(crate) struct VidContext {
@@ -113,8 +91,12 @@ impl Store {
             .values()
             .map(|context| {
                 Ok(ExportVid {
-                    vid: Vid::from_verified_vid(context.vid.clone()),
-                    private: context.private.clone().map(OwnedVid::from_private_vid),
+                    id: context.vid.identifier().to_string(),
+                    transport: context.vid.endpoint().clone(),
+                    public_sigkey: context.vid.verifying_key().clone(),
+                    public_enckey: context.vid.encryption_key().clone(),
+                    sigkey: context.private.as_ref().map(|x| x.signing_key().clone()),
+                    enckey: context.private.as_ref().map(|x| x.decryption_key().clone()),
                     relation_status: context.relation_status,
                     relation_vid: context.relation_vid.clone(),
                     parent_vid: context.parent_vid.clone(),
@@ -128,10 +110,10 @@ impl Store {
     pub fn import(&self, vids: Vec<ExportVid>) -> Result<(), Error> {
         vids.into_iter().try_for_each(|vid| {
             self.vids.write()?.insert(
-                vid.vid.identifier().to_string(),
+                vid.id.to_string(),
                 VidContext {
-                    vid: Arc::new(vid.vid),
-                    private: match vid.private {
+                    vid: Arc::new(vid.verified_vid()),
+                    private: match vid.private_vid() {
                         Some(private) => Some(Arc::new(private)),
                         None => None,
                     },
