@@ -121,9 +121,9 @@ async fn read_database(
 
             trace!("opened database {database_name}");
 
-            vault.destroy().await?;
+            // vault.destroy().await?;
 
-            let vault = Vault::new_sqlite(database_name, password.as_bytes()).await?;
+            // let vault = Vault::new_sqlite(database_name, password.as_bytes()).await?;
 
             Ok((vault, db, aliases))
         }

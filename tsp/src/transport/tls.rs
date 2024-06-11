@@ -1,15 +1,12 @@
 use async_stream::stream;
 use futures::StreamExt;
 use lazy_static::lazy_static;
-use rustls::{ClientConfig, RootCertStore};
+use rustls::{crypto::CryptoProvider, ClientConfig, RootCertStore};
 use rustls_pki_types::ServerName;
 use std::sync::Arc;
 use tokio::{io::AsyncWriteExt, net::TcpListener, sync::mpsc};
 use tokio_rustls::{TlsAcceptor, TlsConnector};
-use tokio_util::{
-    bytes::BytesMut,
-    codec::{BytesCodec, Framed},
-};
+use tokio_util::codec::{BytesCodec, Framed};
 use url::Url;
 
 use super::TransportError;
@@ -20,7 +17,7 @@ pub(crate) const SCHEME: &str = "tls";
 /// Load a certificate and key from files specified by the environment
 /// variables `TSP_TLS_CERT` and `TSP_TLS_KEY`.
 /// When running tests the test certificate and key will always be used.
-fn load_certificate() -> Result<
+pub(super) fn load_certificate() -> Result<
     (
         Vec<rustls_pki_types::CertificateDer<'static>>,
         rustls_pki_types::PrivateKeyDer<'static>,
@@ -58,7 +55,9 @@ fn load_certificate() -> Result<
 }
 
 lazy_static! {
-    static ref TLS_CONFIG: Arc<ClientConfig> = {
+    pub(super) static ref CRYPTO_PROVIDER: Arc<CryptoProvider> = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+
+    pub(super) static ref TLS_CONFIG: Arc<ClientConfig> = {
         // Load native system certificates
         let mut root_cert_store = RootCertStore::empty();
         for cert in
@@ -85,10 +84,15 @@ lazy_static! {
             }
         }
 
+
+        let client_crypto = rustls::ClientConfig::builder_with_provider(CRYPTO_PROVIDER.clone())
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_root_certificates(root_cert_store)
+            .with_no_client_auth();
+
         Arc::new(
-            rustls::ClientConfig::builder()
-                .with_root_certificates(root_cert_store)
-                .with_no_client_auth(),
+            client_crypto
         )
     };
 }
@@ -146,7 +150,7 @@ pub(crate) async fn send_message(tsp_message: &[u8], url: &Url) -> Result<(), Tr
 /// combines them in a single stream. It uses an internal queue of 16 messages.
 pub(crate) async fn receive_messages(
     address: &Url,
-) -> Result<TSPStream<BytesMut, TransportError>, TransportError> {
+) -> Result<TSPStream<Vec<u8>, TransportError>, TransportError> {
     let addresses = address
         .socket_addrs(|| None)
         .map_err(|_| TransportError::InvalidTransportAddress(address.to_string()))?;
@@ -156,7 +160,9 @@ pub(crate) async fn receive_messages(
     };
 
     let (cert, key) = load_certificate()?;
-    let config = rustls::ServerConfig::builder()
+    let config = rustls::ServerConfig::builder_with_provider(CRYPTO_PROVIDER.clone())
+        .with_safe_default_protocol_versions()
+        .unwrap()
         .with_no_client_auth()
         .with_single_cert(cert, key)?;
 
@@ -165,7 +171,7 @@ pub(crate) async fn receive_messages(
         .await
         .map_err(|e| TransportError::Connection(address.to_string(), e))?;
 
-    let (tx, mut rx) = mpsc::channel::<Result<BytesMut, TransportError>>(16);
+    let (tx, mut rx) = mpsc::channel::<Result<Vec<u8>, TransportError>>(16);
 
     tokio::spawn(async move {
         while let Ok((stream, peer_addr)) = listener.accept().await {
@@ -181,9 +187,12 @@ pub(crate) async fn receive_messages(
                 let mut messages = Framed::new(stream, BytesCodec::new());
 
                 while let Some(m) = messages.next().await {
-                    tx.send(m.map_err(|e| TransportError::Connection(peer_addr.to_string(), e)))
-                        .await
-                        .map_err(|_| TransportError::Internal)?;
+                    tx.send(
+                        m.map(|m| m.to_vec())
+                            .map_err(|e| TransportError::Connection(peer_addr.to_string(), e)),
+                    )
+                    .await
+                    .map_err(|_| TransportError::Internal)?;
                 }
 
                 Ok::<(), TransportError>(())
@@ -214,6 +223,6 @@ mod tests {
 
         let received_message = incoming_stream.next().await.unwrap().unwrap();
 
-        assert_eq!(message, received_message.as_ref());
+        assert_eq!(message, received_message.as_slice());
     }
 }

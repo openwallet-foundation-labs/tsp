@@ -4,6 +4,8 @@ pub enum TransportError {
     Http(String, reqwest::Error),
     #[error("connection to '{0}' failed: {1}")]
     Connection(String, std::io::Error),
+    #[error("connection to '{0}' failed: {1}")]
+    QuicConnection(String, quinn::ConnectError),
     #[error("invalid address '{0}'")]
     InvalidTransportAddress(String),
     #[error("invalid transport scheme '{0}'")]
@@ -22,4 +24,6 @@ pub enum TransportError {
     TLS(#[from] rustls::Error),
     #[error("internel error")]
     Internal,
+    #[error("could not listen on random UDP port")]
+    ListenPort,
 }
