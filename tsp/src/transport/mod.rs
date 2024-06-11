@@ -6,12 +6,14 @@ pub mod error;
 
 mod http;
 pub mod tcp;
+mod tls;
 
 pub use error::TransportError;
 
 pub async fn send_message(transport: &Url, tsp_message: &[u8]) -> Result<(), TransportError> {
     match transport.scheme() {
         tcp::SCHEME => tcp::send_message(tsp_message, transport).await,
+        tls::SCHEME => tls::send_message(tsp_message, transport).await,
         http::SCHEME_HTTP => http::send_message(tsp_message, transport).await,
         http::SCHEME_HTTPS => http::send_message(tsp_message, transport).await,
         _ => Err(TransportError::InvalidTransportScheme(
@@ -25,6 +27,7 @@ pub async fn receive_messages(
 ) -> Result<TSPStream<BytesMut, TransportError>, TransportError> {
     match transport.scheme() {
         tcp::SCHEME => tcp::receive_messages(transport).await,
+        tls::SCHEME => tls::receive_messages(transport).await,
         http::SCHEME_HTTP => http::receive_messages(transport).await,
         http::SCHEME_HTTPS => http::receive_messages(transport).await,
         _ => Err(TransportError::InvalidTransportScheme(

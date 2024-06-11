@@ -13,7 +13,7 @@
   "service": [
     {
       "id": "#tsp-transport",
-      "serviceEndpoint": "tcp://127.0.0.1:1337",
+      "serviceEndpoint": "tcp://127.0.0.1:13371",
       "type": "TSPTransport"
     }
   ],

@@ -7,10 +7,6 @@ use futures::StreamExt;
 #[tokio::test]
 #[serial_test::serial(tcp)]
 async fn test_direct_mode() {
-    crate::transport::tcp::start_broadcast_server("127.0.0.1:1337")
-        .await
-        .unwrap();
-
     // bob database
     let mut bob_db = AsyncStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob.json")
@@ -64,11 +60,66 @@ async fn test_direct_mode() {
 
 #[tokio::test]
 #[serial_test::serial(tcp)]
-async fn test_anycast() {
-    crate::transport::tcp::start_broadcast_server("127.0.0.1:1337")
+async fn test_large_messages() {
+    // bob database
+    let mut bob_db = AsyncStore::new();
+    let bob_vid = OwnedVid::from_file("../examples/test/bob.json")
+        .await
+        .unwrap();
+    bob_db.add_private_vid(bob_vid.clone()).unwrap();
+    bob_db
+        .verify_vid("did:web:did.tsp-test.org:user:alice")
         .await
         .unwrap();
 
+    let mut bobs_messages = bob_db
+        .receive("did:web:did.tsp-test.org:user:bob")
+        .await
+        .unwrap();
+
+    // alice database
+    let mut alice_db = AsyncStore::new();
+    let alice_vid = OwnedVid::from_file("../examples/test/alice.json")
+        .await
+        .unwrap();
+    alice_db.add_private_vid(alice_vid.clone()).unwrap();
+    alice_db
+        .verify_vid("did:web:did.tsp-test.org:user:bob")
+        .await
+        .unwrap();
+
+    for i in 1..10 {
+        let sent_message = "hello world ".repeat(i * 70);
+        // send a message
+        alice_db
+            .send(
+                "did:web:did.tsp-test.org:user:alice",
+                "did:web:did.tsp-test.org:user:bob",
+                None,
+                sent_message.as_bytes(),
+            )
+            .await
+            .unwrap();
+
+        dbg!(sent_message.len());
+
+        // receive a message
+        let crate::definitions::ReceivedTspMessage::GenericMessage {
+            message,
+            message_type: SignedAndEncrypted,
+            ..
+        } = bobs_messages.next().await.unwrap().unwrap()
+        else {
+            panic!("bob did not receive a generic message")
+        };
+
+        assert_eq!(sent_message.as_bytes(), message);
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial(tcp)]
+async fn test_anycast() {
     // bob database
     let mut bob_db = AsyncStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob.json")
@@ -122,10 +173,6 @@ async fn test_anycast() {
 #[tokio::test]
 #[serial_test::serial(tcp)]
 async fn test_nested_mode() {
-    crate::transport::tcp::start_broadcast_server("127.0.0.1:1337")
-        .await
-        .unwrap();
-
     // bob database
     let mut bob_db = AsyncStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob.json")
@@ -209,10 +256,6 @@ async fn test_nested_mode() {
 #[tokio::test]
 #[serial_test::serial(tcp)]
 async fn test_routed_mode() {
-    crate::transport::tcp::start_broadcast_server("127.0.0.1:1337")
-        .await
-        .unwrap();
-
     let mut bob_db = AsyncStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob.json")
         .await
@@ -392,32 +435,8 @@ async fn test_routed_mode() {
     assert_eq!(message, b"hello self (via bob)");
 }
 
-async fn faulty_send(
-    sender: &impl crate::definitions::PrivateVid,
-    receiver: &impl crate::definitions::VerifiedVid,
-    nonconfidential_data: Option<&[u8]>,
-    message: &[u8],
-    corrupt: impl FnOnce(&mut [u8]),
-) -> Result<(), super::Error> {
-    let mut tsp_message = crate::crypto::seal(
-        sender,
-        receiver,
-        nonconfidential_data,
-        super::Payload::Content(message),
-    )?;
-    corrupt(&mut tsp_message);
-    crate::transport::send_message(receiver.endpoint(), &tsp_message).await?;
-
-    Ok(())
-}
-
 #[tokio::test]
-#[serial_test::serial(tcp)]
 async fn attack_failures() {
-    crate::transport::tcp::start_broadcast_server("127.0.0.1:1337")
-        .await
-        .unwrap();
-
     // bob database
     let mut bob_db = AsyncStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob.json")
@@ -427,11 +446,6 @@ async fn attack_failures() {
 
     bob_db
         .verify_vid("did:web:did.tsp-test.org:user:alice")
-        .await
-        .unwrap();
-
-    let mut bobs_messages = bob_db
-        .receive("did:web:did.tsp-test.org:user:bob")
         .await
         .unwrap();
 
@@ -445,27 +459,25 @@ async fn attack_failures() {
 
     let payload = b"hello world";
 
-    let mut stop = false;
     for i in 0.. {
-        faulty_send(&alice, &bob, None, payload, |data| {
-            if i >= data.len() {
-                stop = true
-            } else {
-                data[i] ^= 0x10
-            }
-        })
-        .await
-        .unwrap();
+        let mut faulty_message =
+            crate::crypto::seal(&alice, &bob, None, super::Payload::Content(payload)).unwrap();
+
+        if i >= faulty_message.len() {
+            break;
+        } else {
+            faulty_message[i] ^= 0x10;
+        }
 
         // corrupting a message might only corrupt the envelope, which is something we cannot
         // detect immediately without looking up cryptographic material
-        if let Ok(msg) = bobs_messages.next().await.unwrap() {
+        if let Ok(msg) = bob_db.open_message(&mut faulty_message) {
             let crate::ReceivedTspMessage::PendingMessage {
                 unknown_vid,
                 mut payload,
             } = msg
             else {
-                panic!("a corrupted message was decoded correctly!");
+                panic!("a corrupted message was decoded correctly! corrupt byte: {i}",);
             };
 
             // confirm that the sender vid has been corrupted
@@ -479,20 +491,12 @@ async fn attack_failures() {
                 .await
                 .is_err());
         };
-
-        if stop {
-            break;
-        }
     }
 }
 
 #[tokio::test]
 #[serial_test::serial(tcp)]
 async fn test_relation_forming() {
-    crate::transport::tcp::start_broadcast_server("127.0.0.1:1337")
-        .await
-        .unwrap();
-
     // bob database
     let mut bob_db = AsyncStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob.json")
