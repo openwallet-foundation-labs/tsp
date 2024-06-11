@@ -87,10 +87,13 @@ mod tests {
 
     #[test]
     fn seal_open_message() {
-        let bob = OwnedVid::bind("did:test:bob", Url::parse("tcp:://127.0.0.1:1337").unwrap());
         let alice = OwnedVid::bind(
             "did:test:alice",
-            Url::parse("tcp:://127.0.0.1:1337").unwrap(),
+            Url::parse("tcp:://127.0.0.1:13371").unwrap(),
+        );
+        let bob = OwnedVid::bind(
+            "did:test:bob",
+            Url::parse("tcp:://127.0.0.1:13372").unwrap(),
         );
 
         let secret_message: &[u8] = b"hello world";

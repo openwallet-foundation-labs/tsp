@@ -4,5 +4,5 @@
   "publicEnckey": "y-FbCCEodGckHNDqCVOcIyf9uESpaepAVRewGxmt_QU",
   "publicSigkey": "7dUAj8TdKRfQwSkUqa3dyCMr8AhggYRAv2RuMZ514sE",
   "sigkey": "3J-rg_PjScxUcft6Vsp3pqN6RnlSbVRS32i2cok8JnA",
-  "transport": "tcp://127.0.0.1:1337"
+  "transport": "tcp://127.0.0.1:13371"
 }

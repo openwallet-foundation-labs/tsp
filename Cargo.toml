@@ -18,7 +18,8 @@ rust-version = "1.77"
 base64ct = { version = "1.6", default-features = false, features = ["alloc", "std"] }
 thiserror = "1.0"
 url = { version = "2.5", features = ["serde"] }
-zeroize = "1.8.1"
+zeroize = "1.8"
+lazy_static = "1.4"
 #crypto
 ed25519-dalek = { version = "2.1.1", default-features = false, features = ["fast", "std", "zeroize", "rand_core"] }
 hpke = { git = "https://github.com/marlonbaeten/rust-hpke", branch = "keys-by-reference", features = ["alloc", "std"] }
@@ -35,6 +36,11 @@ tracing-subscriber = { version = "0.3.1", default-features = false, features = [
 # transport
 tokio-tungstenite = { version = "0.21",  default-features = false, features = ["rustls-tls-native-roots", "stream", "connect"] }
 tokio-util = { version = "0.7",  default-features = false, features = ["codec"] }
+rustls = "0.23"
+tokio-rustls = "0.26"
+rustls-pki-types = "1.7"
+rustls-native-certs = "0.7"
+rustls-pemfile = "2.1"
 # resolve
 reqwest = { version = "0.12.3", default-features = false, features = ["rustls-tls-native-roots", "json", "stream", "charset", "http2", "macos-system-configuration"] }
 # serialize
