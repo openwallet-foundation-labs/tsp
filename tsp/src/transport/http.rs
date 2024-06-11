@@ -1,7 +1,6 @@
 use crate::definitions::TSPStream;
 use async_stream::stream;
 use futures::StreamExt;
-use tokio_util::bytes::BytesMut;
 use url::Url;
 
 use super::TransportError;
@@ -28,7 +27,7 @@ pub(crate) async fn send_message(tsp_message: &[u8], url: &Url) -> Result<(), Tr
 
 pub(crate) async fn receive_messages(
     address: &Url,
-) -> Result<TSPStream<BytesMut, TransportError>, TransportError> {
+) -> Result<TSPStream<Vec<u8>, TransportError>, TransportError> {
     let mut ws_address = address.clone();
 
     match address.scheme() {
@@ -49,7 +48,7 @@ pub(crate) async fn receive_messages(
         while let Some(Ok(msg)) = receiver.next().await {
             match msg {
                 tokio_tungstenite::tungstenite::Message::Binary(b) => {
-                    yield Ok(BytesMut::from(&b[..]));
+                    yield Ok(b);
                 }
                 m => {
                     yield Err(TransportError::InvalidMessageReceived(

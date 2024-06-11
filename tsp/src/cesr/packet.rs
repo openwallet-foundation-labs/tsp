@@ -1234,8 +1234,6 @@ mod test {
         let message = Base64UrlUnpadded::decode_vec("-EABXAAA7VIDAAAEZGlkOnRlc3Q6Ym9i8VIDAAAFAGRpZDp0ZXN0OmFsaWNl6BAEAABleHRyYSBkYXRh4CAXScvzIiBCgfOu9jHtGwd1qN-KlMB7uhFbE9YOSyTmnp9yziA1LVPdQmST27yjuDRTlxeRo7H7gfuaGFY4iyf2EsfiqvEg0BBNDbKoW0DDczGxj7rNWKH_suyj18HCUxMZ6-mDymZdNhHZIS8zIstC9Kxv5Q-GxmI-1v4SNbeCemuCMBzMPogK").unwrap();
         let parts = open_message_into_parts(&message).unwrap();
 
-        dbg!(&parts);
-
         assert_eq!(parts.prefix.prefix.len(), 6);
         assert_eq!(parts.sender.data.len(), 12);
         assert_eq!(parts.receiver.unwrap().data.len(), 14);

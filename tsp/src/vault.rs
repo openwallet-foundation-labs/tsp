@@ -1,7 +1,8 @@
 use crate::{Error, ExportVid, RelationshipStatus};
 use aries_askar::{
+    entry::EntryOperation,
     kms::{KeyAlg, LocalKey},
-    StoreKeyMethod,
+    ErrorKind, StoreKeyMethod,
 };
 use serde::{Deserialize, Serialize};
 
@@ -57,49 +58,74 @@ impl Vault {
             if let Some(private) = export.sigkey {
                 let signing_key = LocalKey::from_secret_bytes(KeyAlg::Ed25519, private.as_ref())?;
                 let signing_key_name = format!("{id}#signing-key");
-                conn.insert_key(&signing_key_name, &signing_key, None, None, None, None)
-                    .await?;
+
+                if let Err(e) = conn
+                    .insert_key(&signing_key_name, &signing_key, None, None, None, None)
+                    .await
+                {
+                    if e.kind() != ErrorKind::Duplicate {
+                        Err(Error::from(e))?;
+                    }
+                }
             }
 
             if let Some(private) = export.enckey {
                 let decryption_key = LocalKey::from_secret_bytes(KeyAlg::X25519, private.as_ref())?;
                 let decryption_key_name = format!("{id}#decryption-key");
-                conn.insert_key(
-                    &decryption_key_name,
-                    &decryption_key,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .await?;
+                if let Err(e) = conn
+                    .insert_key(
+                        &decryption_key_name,
+                        &decryption_key,
+                        None,
+                        None,
+                        None,
+                        None,
+                    )
+                    .await
+                {
+                    if e.kind() != ErrorKind::Duplicate {
+                        Err(Error::from(e))?;
+                    }
+                }
             }
 
             let verification_key =
                 LocalKey::from_public_bytes(KeyAlg::Ed25519, export.public_sigkey.as_ref())?;
             let verification_key_name = format!("{id}#verification-key");
-            conn.insert_key(
-                &verification_key_name,
-                &verification_key,
-                None,
-                None,
-                None,
-                None,
-            )
-            .await?;
+            if let Err(e) = conn
+                .insert_key(
+                    &verification_key_name,
+                    &verification_key,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .await
+            {
+                if e.kind() != ErrorKind::Duplicate {
+                    Err(Error::from(e))?;
+                }
+            }
 
             let encryption_key =
                 LocalKey::from_public_bytes(KeyAlg::X25519, export.public_enckey.as_ref())?;
             let encryption_key_name = format!("{id}#encryption-key");
-            conn.insert_key(
-                &encryption_key_name,
-                &encryption_key,
-                None,
-                None,
-                None,
-                None,
-            )
-            .await?;
+            if let Err(e) = conn
+                .insert_key(
+                    &encryption_key_name,
+                    &encryption_key,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .await
+            {
+                if e.kind() != ErrorKind::Duplicate {
+                    Err(Error::from(e))?;
+                }
+            }
 
             if let Ok(data) = serde_json::to_string(&Metadata {
                 id: id.to_string(),
@@ -109,19 +135,49 @@ impl Vault {
                 parent_vid: export.parent_vid,
                 tunnel: export.tunnel,
             }) {
-                conn.insert("vid", &id, data.as_bytes(), None, None).await?;
+                if let Err(e) = conn.insert("vid", &id, data.as_bytes(), None, None).await {
+                    if e.kind() == ErrorKind::Duplicate {
+                        conn.update(
+                            EntryOperation::Replace,
+                            "vid",
+                            &id,
+                            Some(data.as_bytes()),
+                            None,
+                            None,
+                        )
+                        .await?;
+                    } else {
+                        Err(Error::from(e))?;
+                    }
+                }
             }
         }
 
         if let Some(extra_data) = extra_data {
-            conn.insert(
-                "extra_data",
-                "extra_data",
-                extra_data.to_string().as_bytes(),
-                None,
-                None,
-            )
-            .await?;
+            if let Err(e) = conn
+                .insert(
+                    "extra_data",
+                    "extra_data",
+                    extra_data.to_string().as_bytes(),
+                    None,
+                    None,
+                )
+                .await
+            {
+                if e.kind() == ErrorKind::Duplicate {
+                    conn.update(
+                        EntryOperation::Replace,
+                        "extra_data",
+                        "extra_data",
+                        Some(extra_data.to_string().as_bytes()),
+                        None,
+                        None,
+                    )
+                    .await?;
+                } else {
+                    Err(Error::from(e))?;
+                }
+            }
         }
 
         conn.commit().await?;

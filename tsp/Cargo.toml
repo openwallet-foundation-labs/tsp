@@ -29,7 +29,8 @@ async = [
     "dep:tokio-rustls",
     "dep:rustls-pki-types",
     "dep:rustls-native-certs",
-    "dep:rustls-pemfile"
+    "dep:rustls-pemfile",
+    "dep:quinn"
 ]
 resolve = [
     "serialize",
@@ -67,6 +68,7 @@ tokio-rustls = { workspace = true, optional = true }
 rustls-pki-types = { workspace = true, optional = true }
 rustls-native-certs = { workspace = true, optional = true }
 rustls-pemfile = { workspace = true, optional = true }
+quinn = { workspace = true, optional = true }
 # resolve
 reqwest = { workspace = true, optional = true }
 # serialize
@@ -79,4 +81,3 @@ arbitrary ={ workspace = true, optional = true }
 [dev-dependencies]
 serial_test = { version = "3.0" }
 arbitrary ={ workspace = true }
-tracing-subscriber = { workspace = true }

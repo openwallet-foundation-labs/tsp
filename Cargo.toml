@@ -41,6 +41,7 @@ tokio-rustls = "0.26"
 rustls-pki-types = "1.7"
 rustls-native-certs = "0.7"
 rustls-pemfile = "2.1"
+quinn = "0.11"
 # resolve
 reqwest = { version = "0.12.3", default-features = false, features = ["rustls-tls-native-roots", "json", "stream", "charset", "http2", "macos-system-configuration"] }
 # serialize

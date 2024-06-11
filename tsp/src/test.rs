@@ -101,8 +101,6 @@ async fn test_large_messages() {
             .await
             .unwrap();
 
-        dbg!(sent_message.len());
-
         // receive a message
         let crate::definitions::ReceivedTspMessage::GenericMessage {
             message,
