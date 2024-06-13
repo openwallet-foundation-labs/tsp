@@ -13,3 +13,5 @@ crate-type = ["cdylib"]
 pyo3 = { version = "0.21.2", features = ["experimental-async"] }
 tsp.workspace = true
 tokio.workspace = true
+futures.workspace = true
+async-stream.workspace = true 
