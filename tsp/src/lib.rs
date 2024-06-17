@@ -23,7 +23,7 @@
 //!
 //! The following example demonstrates how to send a message from Alice to Bob
 //!
-//! ```no_run
+//! ```rust
 //! use tsp::{AsyncStore, OwnedVid, Error, ReceivedTspMessage};
 //! use futures::StreamExt;
 //!
@@ -39,7 +39,7 @@
 //!
 //!     // alice database
 //!     let mut alice_db = AsyncStore::new();
-//!     let alice_vid = OwnedVid::from_file("../examples/test/bob.json").await?;
+//!     let alice_vid = OwnedVid::from_file("../examples/test/alice.json").await?;
 //!     alice_db.add_private_vid(alice_vid)?;
 //!     alice_db.verify_vid("did:web:did.tsp-test.org:user:bob").await?;
 //!
