@@ -1,5 +1,5 @@
 use async_stream::stream;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use quinn::{
     crypto::rustls::{QuicClientConfig, QuicServerConfig},
     ClientConfig, Endpoint,
@@ -18,17 +18,15 @@ pub(crate) const SCHEME: &str = "quic";
 
 pub const ALPN_QUIC_HTTP: &[&[u8]] = &[b"hq-29"];
 
-lazy_static! {
-    static ref QUIC_CONFIG: ClientConfig = {
-        let mut config = super::tls::TLS_CONFIG.clone().deref().clone();
-        config.alpn_protocols = ALPN_QUIC_HTTP.iter().map(|&x| x.into()).collect();
+static QUIC_CONFIG: Lazy<ClientConfig> = Lazy::new(|| {
+    let mut config = super::tls::create_tls_config();
+    config.alpn_protocols = ALPN_QUIC_HTTP.iter().map(|&x| x.into()).collect();
 
-        quinn::ClientConfig::new(Arc::new(
-            QuicClientConfig::try_from(config)
-                .expect("could not convert TLS config to QUIC config"),
-        ))
-    };
-}
+    quinn::ClientConfig::new(Arc::new(
+        QuicClientConfig::try_from(Arc::new(config))
+            .expect("could not convert TLS config to QUIC config"),
+    ))
+});
 
 /// Send a message over QUIC
 /// Connects to the specified transport address and sends the message.
