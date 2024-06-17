@@ -33,7 +33,7 @@ jobs:
           arguments: --workspace
 
       - name: Test
-        run: cargo test -- --nocapture
+        run: cargo test -- --nocapture && cargo test --doc
         shell: bash
 
   fuzz:

@@ -15,26 +15,24 @@ use url::Url;
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```rust
 /// use tsp::{AsyncStore, OwnedVid, Error, ReceivedTspMessage};
 ///
 /// #[tokio::main]
-/// async fn main() -> Result<(), Error> {
+/// async fn main() {
 ///     // alice database
 ///     let mut db = AsyncStore::new();
-///     let alice_vid = OwnedVid::from_file("../examples/test/bob.json").await?;
-///     db.add_private_vid(alice_vid)?;
-///     db.verify_vid("did:web:did.tsp-test.org:user:bob").await?;
+///     let alice_vid = OwnedVid::from_file("../examples/test/bob.json").await.unwrap();
+///     db.add_private_vid(alice_vid).unwrap();
+///     db.verify_vid("did:web:did.tsp-test.org:user:bob").await.unwrap();
 ///
 ///     // send a message
-///     db.send(
+///     let result = db.send(
 ///         "did:web:did.tsp-test.org:user:alice",
 ///         "did:web:did.tsp-test.org:user:bob",
 ///         Some(b"extra non-confidential data"),
 ///         b"hello world",
-///     ).await?;
-///
-///     Ok(())
+///     ).await;
 /// }
 /// ```
 #[derive(Default)]
@@ -131,7 +129,7 @@ impl AsyncStore {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust
     /// use tsp::{AsyncStore, OwnedVid};
     ///
     /// #[tokio::main]
@@ -175,7 +173,7 @@ impl AsyncStore {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// use tsp::{AsyncStore, OwnedVid};
     ///
     /// #[tokio::main]
