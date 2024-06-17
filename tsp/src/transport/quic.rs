@@ -4,7 +4,10 @@ use quinn::{
     crypto::rustls::{QuicClientConfig, QuicServerConfig},
     ClientConfig, Endpoint,
 };
-use std::sync::Arc;
+use std::{
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr},
+    sync::Arc,
+};
 use tokio::sync::mpsc;
 use url::Url;
 
@@ -47,8 +50,13 @@ pub(crate) async fn send_message(tsp_message: &[u8], url: &Url) -> Result<(), Tr
         .to_owned();
 
     // passing 0 as port number opens a random port
-    let mut endpoint =
-        Endpoint::client(([127, 0, 0, 1], 0).into()).map_err(|_| TransportError::ListenPort)?;
+    let listen_address: SocketAddr = if address.is_ipv6() {
+        (Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1), 0).into()
+    } else {
+        (Ipv4Addr::new(127, 0, 0, 1), 0).into()
+    };
+
+    let mut endpoint = Endpoint::client(listen_address).map_err(|_| TransportError::ListenPort)?;
 
     endpoint.set_default_client_config(QUIC_CONFIG.clone());
 
