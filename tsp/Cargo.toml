@@ -49,7 +49,7 @@ thiserror = { workspace = true }
 url = { workspace = true }
 zeroize = { workspace = true }
 tracing = { workspace = true, optional = true }
-lazy_static = { workspace = true }
+once_cell = { workspace = true }
 # crypto
 ed25519-dalek = { workspace = true }
 hpke = { workspace = true }

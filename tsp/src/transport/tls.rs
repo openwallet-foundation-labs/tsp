@@ -1,6 +1,6 @@
 use async_stream::stream;
 use futures::StreamExt;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use rustls::{crypto::CryptoProvider, ClientConfig, RootCertStore};
 use rustls_pki_types::ServerName;
 use std::sync::Arc;
@@ -54,48 +54,42 @@ pub(super) fn load_certificate() -> Result<
     Ok((certs.unwrap(), key))
 }
 
-lazy_static! {
-    pub(super) static ref CRYPTO_PROVIDER: Arc<CryptoProvider> = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+pub(super) fn create_tls_config() -> ClientConfig {
+    // Load native system certificates
+    let mut root_cert_store = RootCertStore::empty();
+    for cert in
+        rustls_native_certs::load_native_certs().expect("could not load native certificates")
+    {
+        root_cert_store
+            .add(cert)
+            .expect("could not add native certificate");
+    }
 
-    pub(super) static ref TLS_CONFIG: Arc<ClientConfig> = {
-        // Load native system certificates
-        let mut root_cert_store = RootCertStore::empty();
-        for cert in
-            rustls_native_certs::load_native_certs().expect("could not load native certificates")
-        {
+    // Add test CA certificate
+    #[cfg(test)]
+    {
+        let cert_path = "../examples/test/root-ca.pem";
+        let cert_file = std::fs::File::open(cert_path).expect("could not find test CA certificate");
+        let certs: std::io::Result<Vec<rustls_pki_types::CertificateDer<'static>>> =
+            rustls_pemfile::certs(&mut std::io::BufReader::new(cert_file)).collect();
+
+        for cert in certs.expect("could not read test CA certificate") {
             root_cert_store
                 .add(cert)
-                .expect("could not add native certificate");
+                .expect("could not add test CA certificate")
         }
+    }
 
-        // Add test CA certificate
-        #[cfg(test)]
-        {
-            let cert_path = "../examples/test/root-ca.pem";
-            let cert_file =
-                std::fs::File::open(cert_path).expect("could not find test CA certificate");
-            let certs: std::io::Result<Vec<rustls_pki_types::CertificateDer<'static>>> =
-                rustls_pemfile::certs(&mut std::io::BufReader::new(cert_file)).collect();
-
-            for cert in certs.expect("could not read test CA certificate") {
-                root_cert_store
-                    .add(cert)
-                    .expect("could not add test CA certificate")
-            }
-        }
-
-
-        let client_crypto = rustls::ClientConfig::builder_with_provider(CRYPTO_PROVIDER.clone())
-            .with_safe_default_protocol_versions()
-            .unwrap()
-            .with_root_certificates(root_cert_store)
-            .with_no_client_auth();
-
-        Arc::new(
-            client_crypto
-        )
-    };
+    rustls::ClientConfig::builder_with_provider(CRYPTO_PROVIDER.clone())
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_root_certificates(root_cert_store)
+        .with_no_client_auth()
 }
+
+pub(super) static CRYPTO_PROVIDER: Lazy<Arc<CryptoProvider>> =
+    Lazy::new(|| Arc::new(rustls::crypto::aws_lc_rs::default_provider()));
+pub(super) static TLS_CONFIG: Lazy<Arc<ClientConfig>> = Lazy::new(|| Arc::new(create_tls_config()));
 
 /// Send a message over TLS
 /// Connects to the specified transport address and sends the message.
