@@ -12,6 +12,7 @@ const PROTOCOL: &str = "https://";
 const DEFAULT_PATH: &str = ".well-known";
 const DOCUMENT: &str = "did.json";
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DidDocument {
@@ -24,6 +25,7 @@ pub struct DidDocument {
     pub verification_method: Vec<VerificationMethod>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Service {
@@ -33,6 +35,7 @@ pub struct Service {
     pub service_type: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VerificationMethod {
@@ -43,6 +46,7 @@ pub struct VerificationMethod {
     pub method_type: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicKeyJwk {
