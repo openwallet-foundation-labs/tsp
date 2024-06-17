@@ -158,11 +158,7 @@ where
     let secret_payload = match crate::cesr::decode_payload(ciphertext)? {
         crate::cesr::Payload::GenericMessage(data) => Payload::Content(data),
         crate::cesr::Payload::DirectRelationProposal { hops, .. } => Payload::RequestRelationship {
-            route: if hops.is_empty() {
-                None
-            } else {
-                Some(hops.to_vec())
-            },
+            route: if hops.is_empty() { None } else { Some(hops) },
         },
         crate::cesr::Payload::DirectRelationAffirm { reply: &thread_id } => {
             Payload::AcceptRelationship { thread_id }
@@ -173,9 +169,7 @@ where
             reply: &thread_id, ..
         } => Payload::CancelRelationship { thread_id },
         crate::cesr::Payload::NestedMessage(data) => Payload::NestedMessage(data),
-        crate::cesr::Payload::RoutedMessage(hops, data) => {
-            Payload::RoutedMessage(hops.to_vec(), data)
-        }
+        crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data),
     };
 
     Ok((envelope.nonconfidential_data, secret_payload, ciphertext))

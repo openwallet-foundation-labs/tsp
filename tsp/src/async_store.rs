@@ -297,17 +297,9 @@ impl AsyncStore {
         hop_list: &[&str],
         opaque_message: &[u8],
     ) -> Result<(), Error> {
-        let Some(next_hop) = hop_list.first() else {
-            return Err(Error::InvalidRoute(
-                "relationship route must not be empty".into(),
-            ));
-        };
+        let (next_hop, path) = self.inner.resolve_route(hop_list)?;
 
-        let next_hop = self.inner.get_verified_vid(next_hop)?;
-        //TODO: can we avoid the allocation here?
-        let path = hop_list[1..].iter().map(|x| x.as_bytes()).collect();
-
-        self.forward_routed_message(next_hop.identifier(), path, opaque_message)
+        self.forward_routed_message(&next_hop, path, opaque_message)
             .await?;
 
         Ok(())
@@ -352,7 +344,7 @@ impl AsyncStore {
                         Err(Error::UnverifiedSource(unknown_vid)) => {
                             Ok(ReceivedTspMessage::PendingMessage {
                                 unknown_vid,
-                                payload: m.to_vec(),
+                                payload: m,
                             })
                         }
                         maybe_message => maybe_message,

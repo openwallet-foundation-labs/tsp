@@ -397,6 +397,23 @@ impl Store {
         Ok(message)
     }
 
+    /// Resolve a route, extract the next hop and verify the route
+    pub fn resolve_route<'a>(
+        &'a self,
+        hop_list: &'a [&str],
+    ) -> Result<(String, Vec<&'a [u8]>), Error> {
+        let Some(next_hop) = hop_list.first() else {
+            return Err(Error::InvalidRoute(
+                "relationship route must not be empty".into(),
+            ));
+        };
+
+        let next_hop = self.get_verified_vid(next_hop)?.identifier().to_owned();
+        let path = hop_list[1..].iter().map(|x| x.as_bytes()).collect();
+
+        Ok((next_hop, path))
+    }
+
     /// Receive, open and forward a TSP message
     pub fn route_message(
         &self,
@@ -418,7 +435,7 @@ impl Store {
             Payload::RoutedMessage(hops, inner_message) => {
                 let next_hop = std::str::from_utf8(hops[0])?;
 
-                (next_hop, hops[1..].to_vec(), inner_message)
+                (next_hop, hops[1..].into(), inner_message)
             }
             _ => {
                 return Err(Error::InvalidRoute(format!(
@@ -441,16 +458,19 @@ impl Store {
     ) -> Result<(Url, Vec<u8>), Error> {
         if path.is_empty() {
             // we are the final delivery point, we should be the 'next_hop'
-            let sender = self.get_private_vid(next_hop)?;
+            let sender = self.get_vid(next_hop)?;
 
-            //TODO: we cannot user 'sender.relation_vid()', since the relationship status of this cannot be set
-            let recipient = match self.get_vid(sender.identifier())?.get_relation_vid() {
+            let Some(sender_private) = &sender.private else {
+                return Err(Error::MissingPrivateVid(next_hop.to_string()));
+            };
+
+            let recipient = match sender.get_relation_vid() {
                 Some(destination) => self.get_verified_vid(destination)?,
-                None => return Err(Error::MissingDropOff(sender.identifier().to_string())),
+                None => return Err(Error::MissingDropOff(sender.vid.identifier().to_string())),
             };
 
             let tsp_message = crate::crypto::seal(
-                &*sender,
+                &**sender_private,
                 &*recipient,
                 None,
                 Payload::NestedMessage(opaque_message),
@@ -512,7 +532,6 @@ impl Store {
                         message_type: MessageType::SignedAndEncrypted,
                     }),
                     Payload::NestedMessage(message) => {
-                        // TODO: do not allocate
                         let mut inner = message.to_owned();
 
                         let mut received_message = self.open_message(&mut inner)?;

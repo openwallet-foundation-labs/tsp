@@ -68,11 +68,9 @@ async fn new_message(
     Path(name): Path<String>,
     body: Bytes,
 ) -> Response {
-    let message: Vec<u8> = body.to_vec();
-
     tracing::debug!("{} received message inteded for {name}", state.domain);
 
-    let Ok((sender, Some(receiver))) = tsp::cesr::get_sender_receiver(&message) else {
+    let Ok((sender, Some(receiver))) = tsp::cesr::get_sender_receiver(&body) else {
         tracing::error!(
             "{} encountered invalid message, receiver missing",
             state.domain,

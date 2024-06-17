@@ -260,7 +260,7 @@ impl Vault {
                 let decryption_key: [u8; 32] = decryption_key
                     .load_local_key()?
                     .to_secret_bytes()?
-                    .to_vec()
+                    .as_ref()
                     .try_into()
                     .map_err(|_| {
                         Error::DecodeState("could not parse decryption key bytes from storage")
