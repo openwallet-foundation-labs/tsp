@@ -278,8 +278,7 @@ struct SendMessageForm {
 }
 
 async fn route_message(State(state): State<Arc<AppState>>, body: Bytes) -> Response {
-    let message: Vec<u8> = body.to_vec();
-    let Ok((sender, Some(receiver))) = tsp::cesr::get_sender_receiver(&message) else {
+    let Ok((sender, Some(receiver))) = tsp::cesr::get_sender_receiver(&body) else {
         return (StatusCode::BAD_REQUEST, "invalid message").into_response();
     };
 
@@ -289,7 +288,7 @@ async fn route_message(State(state): State<Arc<AppState>>, body: Bytes) -> Respo
     tracing::debug!("forwarded message {sender} {receiver}");
 
     // insert message in queue
-    let _ = state.tx.send((sender, receiver, body.to_vec()));
+    let _ = state.tx.send((sender, receiver, body.into()));
 
     StatusCode::OK.into_response()
 }

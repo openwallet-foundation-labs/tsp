@@ -248,7 +248,7 @@ async fn test_nested_mode() {
         panic!("bob did not receive a generic message inner")
     };
 
-    assert_eq!(message, b"hello nested world".to_vec());
+    assert_eq!(&message, b"hello nested world");
 }
 
 #[tokio::test]
