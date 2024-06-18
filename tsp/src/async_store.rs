@@ -208,12 +208,14 @@ impl AsyncStore {
             Payload::RequestRelationship { route },
         )?;
 
-        if let Some(hop_list) = path {
-            self.resolve_route_and_send(hop_list, &tsp_message).await?;
+        let (transport, tsp_message) = if let Some(hop_list) = path {
             self.set_route_for_vid(receiver.identifier(), hop_list)?;
+            self.resolve_route_and_send(hop_list, &tsp_message)?
         } else {
-            crate::transport::send_message(receiver.endpoint(), &tsp_message).await?;
-        }
+            (receiver.endpoint().clone(), tsp_message)
+        };
+
+        crate::transport::send_message(&transport, &tsp_message).await?;
 
         self.set_relation_status_for_vid(
             receiver.identifier(),
@@ -240,12 +242,14 @@ impl AsyncStore {
             Payload::AcceptRelationship { thread_id },
         )?;
 
-        if let Some(hop_list) = route {
-            self.resolve_route_and_send(hop_list, &tsp_message).await?;
+        let (transport, tsp_message) = if let Some(hop_list) = route {
             self.set_route_for_vid(receiver, hop_list)?;
+            self.resolve_route_and_send(hop_list, &tsp_message)?
         } else {
-            crate::transport::send_message(&transport, &tsp_message).await?;
-        }
+            (transport.to_owned(), tsp_message)
+        };
+
+        crate::transport::send_message(&transport, &tsp_message).await?;
 
         self.set_relation_status_for_vid(
             receiver,
@@ -381,17 +385,15 @@ impl AsyncStore {
     }
 
     /// Send a message given a route, extracting the next hop and verifying it in the process
-    async fn resolve_route_and_send(
+    fn resolve_route_and_send(
         &self,
         hop_list: &[&str],
         opaque_message: &[u8],
-    ) -> Result<(), Error> {
+    ) -> Result<(Url, Vec<u8>), Error> {
         let (next_hop, path) = self.inner.resolve_route(hop_list)?;
 
-        self.forward_routed_message(&next_hop, path, opaque_message)
-            .await?;
-
-        Ok(())
+        self.inner
+            .forward_routed_message(&next_hop, path, opaque_message)
     }
 
     /// Pass along a in-transit routed TSP `opaque_message` that is not meant for us, given earlier resolved VIDs.
