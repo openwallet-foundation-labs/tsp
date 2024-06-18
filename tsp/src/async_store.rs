@@ -49,6 +49,11 @@ impl AsyncStore {
         self.inner.export()
     }
 
+    /// Expose the inner non-async database
+    pub fn as_store(&self) -> &Store {
+	&self.inner
+    }
+
     /// Import the database from serializable default types
     pub fn import(&self, vids: Vec<ExportVid>) -> Result<(), Error> {
         self.inner.import(vids)
@@ -140,7 +145,7 @@ impl AsyncStore {
         receiver: &str,
         nonconfidential_data: Option<&[u8]>,
         message: &[u8],
-    ) -> Result<Vec<u8>, Error> {
+    ) -> Result<(), Error> {
         let (endpoint, message) =
             self.inner
                 .seal_message(sender, receiver, nonconfidential_data, message)?;
@@ -149,7 +154,7 @@ impl AsyncStore {
 
         crate::transport::send_message(&endpoint, &message).await?;
 
-        Ok(message)
+        Ok(())
     }
 
     /// Request a direct relationship with a resolved VID using the TSP
