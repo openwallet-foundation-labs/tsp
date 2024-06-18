@@ -41,6 +41,18 @@ where
         Payload::AcceptRelationship { ref thread_id } => {
             crate::cesr::Payload::DirectRelationAffirm { reply: thread_id }
         }
+        Payload::RequestNestedRelationship { vid } => {
+            crate::cesr::Payload::NestedRelationProposal { new_vid: vid }
+        }
+        Payload::AcceptNestedRelationship {
+            ref thread_id,
+            vid,
+            connect_to_vid,
+        } => crate::cesr::Payload::NestedRelationAffirm {
+            reply: thread_id,
+            new_vid: vid,
+            connect_to_vid,
+        },
         Payload::CancelRelationship { ref thread_id } => crate::cesr::Payload::RelationshipCancel {
             nonce: fresh_nonce(&mut csprng),
             reply: thread_id,
@@ -163,8 +175,18 @@ where
         crate::cesr::Payload::DirectRelationAffirm { reply: &thread_id } => {
             Payload::AcceptRelationship { thread_id }
         }
-        crate::cesr::Payload::NestedRelationProposal { .. } => todo!(),
-        crate::cesr::Payload::NestedRelationAffirm { .. } => todo!(),
+        crate::cesr::Payload::NestedRelationProposal { new_vid } => {
+            Payload::RequestNestedRelationship { vid: new_vid }
+        }
+        crate::cesr::Payload::NestedRelationAffirm {
+            new_vid,
+            connect_to_vid,
+            reply: &thread_id,
+        } => Payload::AcceptNestedRelationship {
+            vid: new_vid,
+            connect_to_vid,
+            thread_id,
+        },
         crate::cesr::Payload::RelationshipCancel {
             reply: &thread_id, ..
         } => Payload::CancelRelationship { thread_id },

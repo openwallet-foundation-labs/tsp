@@ -9,8 +9,6 @@ const ED25519_SIGNATURE: u32 = (b'B' - b'A') as u32;
 #[allow(clippy::eq_op)]
 const TSP_NONCE: u32 = (b'A' - b'A') as u32;
 const TSP_SHA256: u32 = (b'I' - b'A') as u32;
-const ED25519_PUBLICKEY: u32 = (b'D' - b'A') as u32;
-const HPKE_PUBLICKEY: u32 = (b'Q' - b'A') as u32;
 
 /// Constants that determine the specific CESR types for the framing codes
 const TSP_ETS_WRAPPER: u16 = (b'E' - b'A') as u16;
@@ -56,16 +54,6 @@ impl Nonce {
 //TODO: this should probably be in tsp-definitions
 pub type Sha256Digest = [u8; 32];
 
-/// A *public* key pair
-//TODO: this probably belongs in tsp-definitions; but that's not possible right now
-//due to a circular dependency; this can be solved by removing the workspaces
-#[derive(Clone, Copy, Debug)]
-#[cfg_attr(any(test, feature = "fuzzing"), derive(PartialEq, Eq))]
-pub struct PairedKeys<'a> {
-    pub signing: &'a [u8; 32],
-    pub encrypting: &'a [u8; 32],
-}
-
 /// A type to distinguish "normal" TSP messages from "control" messages
 #[repr(u32)]
 #[derive(Debug)]
@@ -83,11 +71,12 @@ pub enum Payload<'a, Bytes: AsRef<[u8]>, Vid> {
     /// A TSP message confiming a relationship
     DirectRelationAffirm { reply: &'a Sha256Digest },
     /// A TSP message requesting a nested relationship
-    NestedRelationProposal { public_keys: PairedKeys<'a> },
+    NestedRelationProposal { new_vid: Vid },
     /// A TSP message confiming a relationship
     NestedRelationAffirm {
+        new_vid: Vid,
+        connect_to_vid: Vid,
         reply: &'a Sha256Digest,
-        public_keys: PairedKeys<'a>,
     },
     /// A TSP cancellation message
     RelationshipCancel {
@@ -104,163 +93,7 @@ impl<'a, Bytes: AsRef<[u8]>, Vid> Payload<'a, Bytes, Vid> {
 
 // helpers for generating and comparing arbitrary `Payload`s
 #[cfg(feature = "fuzzing")]
-pub mod fuzzing {
-    use super::*;
-
-    #[derive(Debug)]
-    pub struct Wrapper(pub Payload<'static, Vec<u8>, Vec<u8>>);
-
-    impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
-        fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-            const DIGEST: [u8; 32] = {
-                let mut buf = [0; 32];
-                let mut i = 0;
-                while i < buf.len() {
-                    buf[i] = i as u8;
-                    i += 1;
-                }
-
-                buf
-            };
-
-            const SIGNING: [u8; 32] = DIGEST;
-
-            const ENCRYPTING: [u8; 32] = {
-                let mut buf = [0; 32];
-                let mut i = 0;
-                while i < buf.len() {
-                    buf[i] = 32 + i as u8;
-                    i += 1;
-                }
-
-                buf
-            };
-
-            const PAIRED_KEYS: PairedKeys<'static> = PairedKeys {
-                signing: &SIGNING,
-                encrypting: &ENCRYPTING,
-            };
-
-            #[derive(arbitrary::Arbitrary)]
-            enum Variants {
-                GenericMessage,
-                NestedMessage,
-                RoutedMessage,
-                DirectRelationProposal,
-                DirectRelationAffirm,
-                NestedRelationProposal,
-                NestedRelationAffirm,
-                RelationshipCancel,
-            }
-
-            #[allow(dead_code)]
-            fn check_exhaustive(payload: Payload<Vec<u8>, Vec<u8>>) -> Variants {
-                match payload {
-                    Payload::GenericMessage(_) => Variants::GenericMessage,
-                    Payload::NestedMessage(_) => Variants::NestedMessage,
-                    Payload::RoutedMessage(_, _) => Variants::RoutedMessage,
-                    Payload::DirectRelationProposal { .. } => Variants::DirectRelationProposal,
-                    Payload::DirectRelationAffirm { .. } => Variants::DirectRelationAffirm,
-                    Payload::NestedRelationProposal { .. } => Variants::NestedRelationProposal,
-                    Payload::NestedRelationAffirm { .. } => Variants::NestedRelationAffirm,
-                    Payload::RelationshipCancel { .. } => Variants::RelationshipCancel,
-                }
-            }
-
-            let variant = Variants::arbitrary(u)?;
-
-            use arbitrary::Arbitrary;
-            let payload = match variant {
-                Variants::GenericMessage => Payload::GenericMessage(Arbitrary::arbitrary(u)?),
-                Variants::NestedMessage => Payload::NestedMessage(Arbitrary::arbitrary(u)?),
-                Variants::RoutedMessage => {
-                    Payload::RoutedMessage(Arbitrary::arbitrary(u)?, Arbitrary::arbitrary(u)?)
-                }
-                Variants::DirectRelationProposal => Payload::DirectRelationProposal {
-                    nonce: Nonce(Arbitrary::arbitrary(u)?),
-                    hops: Arbitrary::arbitrary(u)?,
-                },
-                Variants::DirectRelationAffirm => Payload::DirectRelationAffirm { reply: &DIGEST },
-                Variants::NestedRelationProposal => Payload::NestedRelationProposal {
-                    public_keys: PAIRED_KEYS,
-                },
-                Variants::NestedRelationAffirm => Payload::NestedRelationAffirm {
-                    reply: &DIGEST,
-                    public_keys: PAIRED_KEYS,
-                },
-                Variants::RelationshipCancel => Payload::RelationshipCancel {
-                    nonce: Nonce(Arbitrary::arbitrary(u)?),
-                    reply: &DIGEST,
-                },
-            };
-
-            Ok(Wrapper(payload))
-        }
-    }
-
-    impl<'a> PartialEq<Payload<'a, &'a [u8], &'a [u8]>> for Wrapper {
-        fn eq(&self, other: &Payload<'a, &'a [u8], &'a [u8]>) -> bool {
-            match (&self.0, other) {
-                (Payload::GenericMessage(l0), Payload::GenericMessage(r0)) => l0 == r0,
-                (Payload::NestedMessage(l0), Payload::NestedMessage(r0)) => l0 == r0,
-                (Payload::RoutedMessage(l0, l1), Payload::RoutedMessage(r0, r1)) => {
-                    l0 == r0 && l1 == r1
-                }
-                (
-                    Payload::DirectRelationProposal {
-                        nonce: l_nonce,
-                        hops: l_hops,
-                    },
-                    Payload::DirectRelationProposal {
-                        nonce: r_nonce,
-                        hops: r_hops,
-                    },
-                ) => l_nonce.0 == r_nonce.0 && l_hops == r_hops,
-                (
-                    Payload::DirectRelationAffirm { reply: l_reply },
-                    Payload::DirectRelationAffirm { reply: r_reply },
-                ) => l_reply == r_reply,
-                (
-                    Payload::NestedRelationProposal {
-                        public_keys: l_public_keys,
-                    },
-                    Payload::NestedRelationProposal {
-                        public_keys: r_public_keys,
-                    },
-                ) => {
-                    l_public_keys.signing == r_public_keys.signing
-                        && l_public_keys.encrypting == r_public_keys.encrypting
-                }
-                (
-                    Payload::NestedRelationAffirm {
-                        reply: l_reply,
-                        public_keys: l_public_keys,
-                    },
-                    Payload::NestedRelationAffirm {
-                        reply: r_reply,
-                        public_keys: r_public_keys,
-                    },
-                ) => {
-                    l_reply == r_reply
-                        && (l_public_keys.signing == r_public_keys.signing
-                            && l_public_keys.encrypting == r_public_keys.encrypting)
-                }
-
-                (
-                    Payload::RelationshipCancel {
-                        nonce: l_nonce,
-                        reply: l_reply,
-                    },
-                    Payload::RelationshipCancel {
-                        nonce: r_nonce,
-                        reply: r_reply,
-                    },
-                ) => l_nonce.0 == r_nonce.0 && l_reply == r_reply,
-                _ => false,
-            }
-        }
-    }
-}
+pub mod fuzzing;
 
 /// Type representing a TSP Envelope
 #[derive(Debug, Clone)]
@@ -325,16 +158,19 @@ pub fn encode_payload(
             encode_fixed_data(TSP_TYPECODE, &msgtype::NEW_REL_REPLY, output);
             encode_fixed_data(TSP_SHA256, reply.as_slice(), output);
         }
-        Payload::NestedRelationProposal { public_keys } => {
+        Payload::NestedRelationProposal { new_vid } => {
             encode_fixed_data(TSP_TYPECODE, &msgtype::NEW_NEST_REL, output);
-            encode_fixed_data(ED25519_PUBLICKEY, public_keys.signing, output);
-            encode_fixed_data(HPKE_PUBLICKEY, public_keys.encrypting, output);
+            checked_encode_variable_data(TSP_DEVELOPMENT_VID, new_vid.as_ref(), output)?;
         }
-        Payload::NestedRelationAffirm { reply, public_keys } => {
+        Payload::NestedRelationAffirm {
+            new_vid,
+            connect_to_vid,
+            reply,
+        } => {
             encode_fixed_data(TSP_TYPECODE, &msgtype::NEW_NEST_REL_REPLY, output);
+            checked_encode_variable_data(TSP_DEVELOPMENT_VID, new_vid.as_ref(), output)?;
+            checked_encode_variable_data(TSP_DEVELOPMENT_VID, connect_to_vid.as_ref(), output)?;
             encode_fixed_data(TSP_SHA256, reply.as_slice(), output);
-            encode_fixed_data(ED25519_PUBLICKEY, public_keys.signing, output);
-            encode_fixed_data(HPKE_PUBLICKEY, public_keys.encrypting, output);
         }
         Payload::RelationshipCancel { nonce, reply } => {
             encode_fixed_data(TSP_TYPECODE, &msgtype::REL_CANCEL, output);
@@ -417,27 +253,27 @@ pub fn decode_payload<'a, Vid: TryFrom<&'a [u8]>>(
         msgtype::NEW_REL_REPLY => decode_fixed_data(TSP_SHA256, &mut stream)
             .map(|reply| Payload::DirectRelationAffirm { reply }),
         msgtype::NEW_NEST_REL => {
-            decode_fixed_data(ED25519_PUBLICKEY, &mut stream).and_then(|signing| {
-                decode_fixed_data(HPKE_PUBLICKEY, &mut stream).map(|encrypting| {
-                    let public_keys = PairedKeys {
-                        signing,
-                        encrypting,
-                    };
-                    Payload::NestedRelationProposal { public_keys }
-                })
-            })
+            let new_vid = decode_variable_data(TSP_DEVELOPMENT_VID, &mut stream)
+                .ok_or(DecodeError::UnexpectedData)?
+                .try_into()
+                .map_err(|_| DecodeError::VidError)?;
+
+            Some(Payload::NestedRelationProposal { new_vid })
         }
         msgtype::NEW_NEST_REL_REPLY => {
-            decode_fixed_data(TSP_SHA256, &mut stream).and_then(|reply| {
-                decode_fixed_data(ED25519_PUBLICKEY, &mut stream).and_then(|signing| {
-                    decode_fixed_data(HPKE_PUBLICKEY, &mut stream).map(|encrypting| {
-                        let public_keys = PairedKeys {
-                            signing,
-                            encrypting,
-                        };
-                        Payload::NestedRelationAffirm { reply, public_keys }
-                    })
-                })
+            let new_vid = decode_variable_data(TSP_DEVELOPMENT_VID, &mut stream)
+                .ok_or(DecodeError::UnexpectedData)?
+                .try_into()
+                .map_err(|_| DecodeError::VidError)?;
+            let connect_to_vid = decode_variable_data(TSP_DEVELOPMENT_VID, &mut stream)
+                .ok_or(DecodeError::UnexpectedData)?
+                .try_into()
+                .map_err(|_| DecodeError::VidError)?;
+
+            decode_fixed_data(TSP_SHA256, &mut stream).map(|reply| Payload::NestedRelationAffirm {
+                new_vid,
+                connect_to_vid,
+                reply,
             })
         }
         msgtype::REL_CANCEL => decode_fixed_data(TSP_NONCE, &mut stream).and_then(|nonce| {
@@ -1203,22 +1039,18 @@ mod test {
     #[test]
     fn test_relation_forming() {
         let temp = (1u8..33).collect::<Vec<u8>>();
-        let pk1 = (33u8..65).collect::<Vec<u8>>();
-        let pk2 = (65u8..97).collect::<Vec<u8>>();
         let nonce: &[u8; 32] = temp.as_slice().try_into().unwrap();
         test_turn_around(Payload::DirectRelationProposal {
             nonce: Nonce(*nonce),
             hops: vec![],
         });
         test_turn_around(Payload::DirectRelationAffirm { reply: nonce });
-        let public_keys = PairedKeys {
-            signing: pk1.as_slice().try_into().unwrap(),
-            encrypting: pk2.as_slice().try_into().unwrap(),
-        };
-        test_turn_around(Payload::NestedRelationProposal { public_keys });
+        let new_vid = &[];
+        test_turn_around(Payload::NestedRelationProposal { new_vid });
         test_turn_around(Payload::NestedRelationAffirm {
+            new_vid,
+            connect_to_vid: new_vid,
             reply: nonce,
-            public_keys,
         });
 
         test_turn_around(Payload::RelationshipCancel {
