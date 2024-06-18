@@ -60,11 +60,10 @@ pub struct PublicKeyJwk {
 pub async fn resolve(id: &str, parts: Vec<&str>) -> Result<Vid, VidError> {
     #[cfg(test)]
     {
-        let did_doc = tokio::fs::read_to_string(format!(
+        let did_doc = std::fs::read_to_string(format!(
             "../examples/test/{}-did.json",
             parts.get(4).unwrap_or(&"invalid")
         ))
-        .await
         .map_err(|_| VidError::ResolveVid("JSON not found in test dir"))?;
 
         let did_doc: DidDocument = serde_json::from_str(&did_doc).unwrap();
@@ -276,6 +275,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "wasi"), ignore)]
     fn test_resolve_document() {
         let alice_did_doc = fs::read_to_string("../examples/test/alice-did.json").unwrap();
         let alice_did_doc: DidDocument = serde_json::from_str(&alice_did_doc).unwrap();
