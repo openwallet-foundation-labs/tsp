@@ -1,12 +1,15 @@
-use std::future::Future;
-
-use async_stream::stream;
 use pyo3::{exceptions::PyException, prelude::*};
 
-fn tokio() -> &'static tokio::runtime::Runtime {
-    use std::sync::OnceLock;
-    static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-    RT.get_or_init(|| tokio::runtime::Runtime::new().unwrap())
+#[pymodule]
+fn tsp_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<Store>()?;
+    m.add_class::<OwnedVid>()?;
+
+    m.add_class::<MessageType>()?;
+    m.add_class::<ReceivedTspMessageVariant>()?;
+    m.add_class::<FlatReceivedTspMessage>()?;
+
+    Ok(())
 }
 
 fn py_exception<E: std::fmt::Debug>(e: E) -> PyErr {
@@ -14,44 +17,27 @@ fn py_exception<E: std::fmt::Debug>(e: E) -> PyErr {
 }
 
 #[pyclass]
-struct AsyncStore(tsp::Store);
-
-async fn spawn<F>(fut: F) -> PyResult<F::Output>
-where
-    F: Future + Send + 'static,
-    F::Output: Send + 'static,
-{
-    tokio().spawn(fut).await.map_err(py_exception)
-}
+struct Store(tsp::Store);
 
 #[pymethods]
-impl AsyncStore {
+impl Store {
     #[new]
     fn new() -> Self {
         Self(tsp::Store::default())
     }
 
     fn add_private_vid(&self, vid: OwnedVid) -> PyResult<()> {
-        self.0.add_private_vid(vid.0).unwrap();
-        Ok(())
-    }
-
-    async fn verify_vid(&mut self, vid: String) -> PyResult<()> {
-        let verified_vid = spawn(async move { tsp::vid::verify_vid(&vid).await })
-            .await?
-            .map_err(py_exception)?;
-
-        self.0.add_verified_vid(verified_vid).map_err(py_exception)
+        self.0.add_private_vid(vid.0).map_err(py_exception)
     }
 
     #[pyo3(signature = (sender, receiver, nonconfidential_data, message))]
-    async fn send(
+    fn seal_message(
         &self,
         sender: String,
         receiver: String,
         nonconfidential_data: Option<Vec<u8>>,
         message: Vec<u8>,
-    ) -> PyResult<Vec<u8>> {
+    ) -> PyResult<(String, Vec<u8>)> {
         let (url, bytes) = self
             .0
             .seal_message(
@@ -62,108 +48,19 @@ impl AsyncStore {
             )
             .map_err(py_exception)?;
 
-        let fut = async move {
-            tsp::transport::send_message(&url, &bytes).await?;
-            Ok::<Vec<_>, tsp::transport::TransportError>(bytes)
-        };
-
-        spawn(fut).await?.map_err(py_exception)
+        Ok((url.to_string(), bytes))
     }
 
-    /// Send TSP broadcast message to the specified VIDs
-    pub async fn send_anycast(
-        &self,
-        sender: String,
-        receivers: Vec<String>,
-        nonconfidential_message: Vec<u8>,
-    ) -> PyResult<()> {
-        let message = self
-            .0
-            .sign_anycast(&sender, &nonconfidential_message)
-            .unwrap();
-
-        let inner = self.0.clone();
-
-        let fut = async move {
-            for vid in receivers {
-                let receiver = inner.get_verified_vid(vid.as_ref()).unwrap();
-
-                tsp::transport::send_message(receiver.endpoint(), &message)
-                    .await
-                    .unwrap();
-            }
-        };
-
-        spawn(fut).await
+    fn open_message(&self, mut message: Vec<u8>) -> PyResult<FlatReceivedTspMessage> {
+        self.0
+            .open_message(&mut message)
+            .map(FlatReceivedTspMessage::from)
+            .map_err(py_exception)
     }
-
-    pub async fn receive(&self, vid: String) -> PyResult<ReceivedTspMessageStream> {
-        let receiver = self.0.get_private_vid(&vid).map_err(py_exception)?;
-        let messages =
-            spawn(async move { tsp::transport::receive_messages(receiver.endpoint()).await })
-                .await?
-                .map_err(py_exception)?;
-
-        //        Ok(ReceivedTspMessageStream(Box::pin(stream! {
-        //                    yield Ok(tsp::ReceivedTspMessage::AcceptRelationship {
-        //            sender: String::from("foobarbaz"),
-        //        },
-        //                             );
-        //            })))
-
-        use futures::StreamExt;
-        let db = self.0.clone();
-        Ok(ReceivedTspMessageStream(Box::pin(messages.then(
-            move |message| {
-                let db_inner = db.clone();
-                async move {
-                    match message {
-                        Ok(mut m) => match db_inner.open_message(&mut m) {
-                            Err(tsp::Error::UnverifiedSource(unknown_vid)) => {
-                                Ok(tsp::ReceivedTspMessage::PendingMessage {
-                                    unknown_vid,
-                                    payload: m.to_vec(),
-                                })
-                            }
-                            maybe_message => maybe_message,
-                        },
-                        Err(e) => Err(e.into()),
-                    }
-                }
-            },
-        ))))
-    }
-
-    //    pub async fn receive(&self, vid: &str) -> Result<TSPStream<ReceivedTspMessage, Error>, Error> {
-    //        let receiver = self.inner.get_private_vid(vid)?;
-    //        let messages = crate::transport::receive_messages(receiver.endpoint()).await?;
-    //
-    //        let db = self.inner.clone();
-    //        Ok(Box::pin(messages.then(move |message| {
-    //            let db_inner = db.clone();
-    //            async move {
-    //                match message {
-    //                    Ok(mut m) => match db_inner.open_message(&mut m) {
-    //                        Err(Error::UnverifiedSource(unknown_vid)) => {
-    //                            Ok(ReceivedTspMessage::PendingMessage {
-    //                                unknown_vid,
-    //                                payload: m.to_vec(),
-    //                            })
-    //                        }
-    //                        maybe_message => maybe_message,
-    //                    },
-    //                    Err(e) => Err(e.into()),
-    //                }
-    //            }
-    //        })))
-    //    }
 }
 
 #[pyclass]
-struct ReceivedTspMessageStream(tsp::definitions::TSPStream<tsp::ReceivedTspMessage, tsp::Error>);
-
-#[pyclass]
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 enum ReceivedTspMessageVariant {
     GenericMessage,
     RequestRelationship,
@@ -187,13 +84,14 @@ impl From<&tsp::ReceivedTspMessage> for ReceivedTspMessageVariant {
 }
 
 #[pyclass]
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 enum MessageType {
     Signed,
     SignedAndEncrypted,
 }
 
 #[pyclass]
+#[derive(Debug)]
 struct FlatReceivedTspMessage {
     #[pyo3(get, set)]
     variant: ReceivedTspMessageVariant,
@@ -208,6 +106,8 @@ struct FlatReceivedTspMessage {
     #[pyo3(get, set)]
     route: Option<Option<Vec<Vec<u8>>>>,
     #[pyo3(get, set)]
+    nested_vid: Option<Option<String>>,
+    #[pyo3(get, set)]
     thread_id: Option<[u8; 32]>,
     #[pyo3(get, set)]
     next_hop: Option<String>,
@@ -217,6 +117,13 @@ struct FlatReceivedTspMessage {
     opaque_payload: Option<Vec<u8>>,
     #[pyo3(get, set)]
     unknown_vid: Option<String>,
+}
+
+#[pymethods]
+impl FlatReceivedTspMessage {
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
 }
 
 impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
@@ -230,6 +137,7 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
             message: None,
             message_type: None,
             route: None,
+            nested_vid: None,
             thread_id: None,
             next_hop: None,
             payload: None,
@@ -257,14 +165,17 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
             tsp::ReceivedTspMessage::RequestRelationship {
                 sender,
                 route,
+                nested_vid,
                 thread_id,
             } => {
                 this.sender = Some(sender);
                 this.route = Some(route);
+                this.nested_vid = Some(nested_vid);
                 this.thread_id = Some(thread_id);
             }
-            tsp::ReceivedTspMessage::AcceptRelationship { sender } => {
+            tsp::ReceivedTspMessage::AcceptRelationship { sender, nested_vid } => {
                 this.sender = Some(sender);
+                this.nested_vid = Some(nested_vid);
             }
             tsp::ReceivedTspMessage::CancelRelationship { sender } => {
                 this.sender = Some(sender);
@@ -293,19 +204,6 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
     }
 }
 
-#[pymethods]
-impl ReceivedTspMessageStream {
-    async fn next(&mut self) -> PyResult<Option<FlatReceivedTspMessage>> {
-        use futures::prelude::*;
-
-        match self.0.next().await {
-            None => Ok(None),
-            Some(Ok(value)) => Ok(Some(value.into())),
-            Some(Err(e)) => Err(py_exception(e)),
-        }
-    }
-}
-
 #[pyclass]
 #[derive(Clone)]
 struct OwnedVid(tsp::OwnedVid);
@@ -313,26 +211,12 @@ struct OwnedVid(tsp::OwnedVid);
 #[pymethods]
 impl OwnedVid {
     #[staticmethod]
-    async fn from_file(path: String) -> PyResult<OwnedVid> {
-        let fut = async move {
-            let owned_vid = tsp::OwnedVid::from_file(&path)
-                .await
-                .map_err(py_exception)?;
-            Ok(Self(owned_vid))
-        };
-
-        tokio().spawn(fut).await.unwrap()
+    fn new_did_peer(url: String) -> Self {
+        OwnedVid(tsp::OwnedVid::new_did_peer(url.parse().unwrap()))
     }
-}
 
-/// A Python module implemented in Rust.
-#[pymodule]
-fn tsp_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<AsyncStore>()?;
-    m.add_class::<OwnedVid>()?;
-
-    m.add_class::<ReceivedTspMessageVariant>()?;
-    m.add_class::<FlatReceivedTspMessage>()?;
-
-    Ok(())
+    fn identifier(&self) -> String {
+        use tsp::VerifiedVid;
+        self.0.identifier().to_string()
+    }
 }

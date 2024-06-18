@@ -10,8 +10,6 @@ name = "tsp_python"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.21.2", features = ["experimental-async"] }
+pyo3 = { version = "0.21.2" }
 tsp.workspace = true
 tokio.workspace = true
-futures.workspace = true
-async-stream.workspace = true 
