@@ -2,7 +2,8 @@ use crate::{
     cesr::EnvelopeType,
     crypto::CryptoError,
     definitions::{
-        MessageType, Payload, PrivateVid, ReceivedTspMessage, RelationshipStatus, VerifiedVid,
+        Digest, MessageType, Payload, PrivateVid, ReceivedTspMessage, RelationshipStatus,
+        VerifiedVid,
     },
     error::Error,
     vid::VidError,
@@ -97,7 +98,7 @@ impl Store {
                     public_enckey: context.vid.encryption_key().clone(),
                     sigkey: context.private.as_ref().map(|x| x.signing_key().clone()),
                     enckey: context.private.as_ref().map(|x| x.decryption_key().clone()),
-                    relation_status: context.relation_status,
+                    relation_status: context.relation_status.clone(),
                     relation_vid: context.relation_vid.clone(),
                     parent_vid: context.parent_vid.clone(),
                     tunnel: context.tunnel.clone(),
@@ -560,39 +561,24 @@ impl Store {
                             sender,
                             route: route.map(|vec| vec.iter().map(|vid| vid.to_vec()).collect()),
                             thread_id: crate::crypto::sha256(raw_bytes),
+                            nested_vid: None,
                         })
                     }
                     Payload::AcceptRelationship { thread_id } => {
-                        let mut vids = self.vids.write()?;
-                        let Some(context) = vids.get_mut(&sender) else {
-                            //TODO: should we inform the user of who sent this?
-                            return Err(Error::Relationship(
-                                "received confirmation of a relation with an unknown entity".into(),
-                            ));
-                        };
+                        self.upgrade_relation(&sender, thread_id)?;
 
-                        let RelationshipStatus::Unidirectional(digest) = context.relation_status
-                        else {
-                            return Err(Error::Relationship(
-                                "received confirmation of a relation that we did not want".into(),
-                            ));
-                        };
-
-                        if thread_id != digest {
-                            return Err(Error::Relationship(
-                                "attempt to change the terms of the relationship".into(),
-                            ));
-                        }
-
-                        context.relation_status = RelationshipStatus::Bidirectional(digest);
-
-                        Ok(ReceivedTspMessage::AcceptRelationship { sender })
+                        Ok(ReceivedTspMessage::AcceptRelationship {
+                            sender,
+                            nested_vid: None,
+                        })
                     }
                     Payload::CancelRelationship { thread_id } => {
                         if let Some(context) = self.vids.write()?.get_mut(&sender) {
                             match context.relation_status {
-                                RelationshipStatus::Bidirectional(digest)
-                                | RelationshipStatus::Unidirectional(digest) => {
+                                RelationshipStatus::Bidirectional {
+                                    thread_id: digest, ..
+                                }
+                                | RelationshipStatus::Unidirectional { thread_id: digest } => {
                                     if thread_id != digest {
                                         return Err(Error::Relationship(
                                             "invalid attempt to end the relationship".into(),
@@ -600,11 +586,46 @@ impl Store {
                                     }
                                     context.relation_status = RelationshipStatus::Unrelated;
                                 }
-                                _ => todo!(),
+                                RelationshipStatus::_Controlled => {
+                                    return Err(Error::Relationship(
+                                        "you cannot cancel a relationship with yourself".into(),
+                                    ))
+                                }
+                                RelationshipStatus::Unrelated => {}
                             }
                         }
 
                         Ok(ReceivedTspMessage::CancelRelationship { sender })
+                    }
+                    Payload::RequestNestedRelationship { vid } => {
+                        let vid = std::str::from_utf8(vid)?;
+                        self.add_nested_vid(vid)?;
+                        self.set_parent_for_vid(vid, Some(&sender))?;
+
+                        Ok(ReceivedTspMessage::RequestRelationship {
+                            sender,
+                            route: None,
+                            thread_id: crate::crypto::sha256(raw_bytes),
+                            nested_vid: Some(vid.to_string()),
+                        })
+                    }
+                    Payload::AcceptNestedRelationship {
+                        thread_id,
+                        vid,
+                        connect_to_vid,
+                    } => {
+                        let vid = std::str::from_utf8(vid)?;
+                        let connect_to_vid = std::str::from_utf8(connect_to_vid)?;
+                        self.add_nested_vid(vid)?;
+                        self.set_parent_for_vid(vid, Some(&sender))?;
+                        self.add_nested_relation(&sender, vid, thread_id)?;
+                        self.set_relation_for_vid(connect_to_vid, Some(vid))?;
+                        self.set_relation_for_vid(vid, Some(connect_to_vid))?;
+
+                        Ok(ReceivedTspMessage::AcceptRelationship {
+                            sender,
+                            nested_vid: Some(vid.to_string()),
+                        })
                     }
                 }
             }
@@ -636,6 +657,104 @@ impl Store {
                 })
             }
         }
+    }
+
+    fn add_nested_vid(&self, vid: &str) -> Result<(), Error> {
+        //TODO: a non-async resolve function should probably be added to the `vid` module instead of here
+        use crate::vid::did::{self, peer};
+        let parts = vid.split(':').collect::<Vec<&str>>();
+        let Some([did::SCHEME, did::peer::SCHEME]) = parts.get(0..2) else {
+            return Err(Error::Relationship(
+                "nested relationships must use did:peer".into(),
+            ));
+        };
+        let nested_vid = peer::verify_did_peer(&parts)?;
+
+        self.add_verified_vid(nested_vid)
+    }
+
+    fn upgrade_relation(&self, vid: &str, thread_id: Digest) -> Result<(), Error> {
+        let mut vids = self.vids.write()?;
+        let Some(context) = vids.get_mut(vid) else {
+            return Err(Error::Relationship(vid.into()));
+        };
+
+        let RelationshipStatus::Unidirectional { thread_id: digest } = context.relation_status
+        else {
+            return Err(Error::Relationship(vid.into()));
+        };
+
+        if thread_id != digest {
+            return Err(Error::Relationship(vid.into()));
+        }
+
+        context.relation_status = RelationshipStatus::Bidirectional {
+            thread_id: digest,
+            outstanding_nested_thread_ids: Default::default(),
+        };
+
+        Ok(())
+    }
+
+    //TODO: this should not be `pub` after the refactor that moves logic from async_store
+    //back into the "sync" store
+    pub fn add_nested_thread_id(&self, vid: &str, thread_id: Digest) -> Result<(), Error> {
+        let mut vids = self.vids.write()?;
+        let Some(context) = vids.get_mut(vid) else {
+            return Err(Error::MissingVid(vid.into()));
+        };
+
+        let RelationshipStatus::Bidirectional {
+            ref mut outstanding_nested_thread_ids,
+            ..
+        } = context.relation_status
+        else {
+            return Err(Error::Relationship(vid.into()));
+        };
+
+        outstanding_nested_thread_ids.push(thread_id);
+
+        Ok(())
+    }
+
+    fn add_nested_relation(
+        &self,
+        parent_vid: &str,
+        nested_vid: &str,
+        thread_id: Digest,
+    ) -> Result<(), Error> {
+        let mut vids = self.vids.write()?;
+        let Some(context) = vids.get_mut(parent_vid) else {
+            return Err(Error::Relationship(parent_vid.into()));
+        };
+
+        let RelationshipStatus::Bidirectional {
+            ref mut outstanding_nested_thread_ids,
+            ..
+        } = context.relation_status
+        else {
+            return Err(Error::Relationship(parent_vid.into()));
+        };
+
+        // find the thread_id in the list of outstanding thread id's of the parent and remove it
+        let Some(index) = outstanding_nested_thread_ids
+            .iter()
+            .position(|&x| x == thread_id)
+        else {
+            return Err(Error::Relationship(nested_vid.into()));
+        };
+        outstanding_nested_thread_ids.remove(index);
+
+        let Some(context) = vids.get_mut(nested_vid) else {
+            return Err(Error::Relationship(nested_vid.into()));
+        };
+
+        context.relation_status = RelationshipStatus::Bidirectional {
+            thread_id,
+            outstanding_nested_thread_ids: Default::default(),
+        };
+
+        Ok(())
     }
 }
 
