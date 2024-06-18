@@ -105,8 +105,10 @@ mod test;
 #[cfg(feature = "async")]
 pub use async_store::AsyncStore;
 
+#[cfg(feature = "async")]
+pub use vault::Vault;
+
 pub use definitions::{Payload, PrivateVid, ReceivedTspMessage, RelationshipStatus, VerifiedVid};
 pub use error::Error;
 pub use store::Store;
-pub use vault::Vault;
 pub use vid::{ExportVid, OwnedVid, Vid};
