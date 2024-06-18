@@ -14,6 +14,8 @@ pub enum DecodeError {
     VidError,
     VersionMismatch,
     MissingHops,
+    InvalidCryptoType,
+    InvalidSignatureType,
 }
 
 impl std::fmt::Display for EncodeError {

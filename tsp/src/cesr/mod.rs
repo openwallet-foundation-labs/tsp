@@ -57,7 +57,7 @@ mod selector {
 /// (Temporary) interface to get Sender/Receiver VIDs information from a CESR-encoded message
 pub fn get_sender_receiver(message: &[u8]) -> Result<(&[u8], Option<&[u8]>), error::DecodeError> {
     let mut stream = message;
-    let (sender, receiver, _) = decode_sender_receiver(&mut stream)?;
+    let (sender, receiver, _, _) = decode_sender_receiver(&mut stream)?;
 
     Ok((sender, receiver))
 }
@@ -75,15 +75,14 @@ pub enum EnvelopeType<'a> {
 }
 
 pub fn probe(stream: &mut [u8]) -> Result<EnvelopeType, error::DecodeError> {
-    let (_, has_confidential_part) =
-        detected_tsp_header_size_and_confidentiality(&mut (stream as &[u8]))?;
+    let (_, crypto_type, _) = detected_tsp_header_size_and_confidentiality(&mut (stream as &[u8]))?;
 
     let envelope = decode_envelope_mut(stream)?
         .into_opened()
         .expect("Infallible")
         .envelope;
 
-    Ok(if has_confidential_part {
+    Ok(if crypto_type.is_encrypted() {
         EnvelopeType::EncryptedMessage {
             sender: envelope.sender,
             receiver: envelope.receiver.expect("Infallible"),
@@ -165,9 +164,9 @@ mod test {
 
     #[test]
     fn long_variable_data() {
-        let mut data1 = vec![];
-        let mut data2 = vec![];
-        let mut data3 = vec![];
+        let mut data1: Vec<u8> = vec![];
+        let mut data2: Vec<u8> = vec![];
+        let mut data3: Vec<u8> = vec![];
         encode_variable_data(0, &[0u8; 4095], &mut data1);
         encode_variable_data(0, &[0u8; 4096], &mut data2);
         encode_variable_data(0, &[0u8; 4097], &mut data3);
@@ -178,31 +177,31 @@ mod test {
     #[should_panic]
     #[test]
     fn identifier_failure_1() {
-        encode_fixed_data(64, b"TrustSpanP!", &mut vec![]); // 1 lead byte
+        encode_fixed_data(64, b"TrustSpanP!", &mut Vec::<u8>::new()); // 1 lead byte
     }
 
     #[should_panic]
     #[test]
     fn identifier_failure_2() {
-        encode_fixed_data(64, b"TrustSpanP", &mut vec![]); // 2 lead bytes
+        encode_fixed_data(64, b"TrustSpanP", &mut Vec::<u8>::new()); // 2 lead bytes
     }
 
     #[should_panic]
     #[test]
     fn identifier_failure_3() {
-        encode_fixed_data(4096, b"TrustSpanP", &mut vec![]); // 0 lead bytes
+        encode_fixed_data(4096, b"TrustSpanP", &mut Vec::<u8>::new()); // 0 lead bytes
     }
 
     #[should_panic]
     #[test]
     fn identifier_failure_variable() {
-        encode_variable_data(262144, b"", &mut vec![]);
+        encode_variable_data(262144, b"", &mut Vec::<u8>::new());
     }
 
     #[should_panic]
     #[test]
     fn index_failure() {
-        encode_indexed_data(5, 57, b"hello", &mut vec![]); // 1 lead byte
+        encode_indexed_data(5, 57, b"hello", &mut Vec::<u8>::new()); // 1 lead byte
     }
 
     #[should_panic]
@@ -211,7 +210,7 @@ mod test {
         encode_variable_data(
             0,
             &(0..50331646).map(|_| 0).collect::<Vec<u8>>(),
-            &mut vec![],
+            &mut Vec::<u8>::new(),
         ); // 1 lead byte
     }
 
@@ -225,7 +224,7 @@ mod test {
             assert_eq!(payload, &content);
 
             // test that encoding the given input leads to the given output
-            let mut output = vec![];
+            let mut output: Vec<u8> = vec![];
             encode_fixed_data(ident, &content, &mut output);
             assert_eq!(input, output);
         }
@@ -260,7 +259,7 @@ mod test {
             assert_eq!(payload, content);
 
             // test that encoding the given input leads to the given output
-            let mut output = vec![];
+            let mut output: Vec<u8> = vec![];
             encode_variable_data(ident, content, &mut output);
             assert_eq!(input, output);
         }
@@ -300,7 +299,7 @@ mod test {
     fn dont_gen_overlong_encoding() {
         fn roundtrip(ident: u32, input: &[u8], output: &[u8]) {
             let payload = decode_variable_data(ident, &mut &input[..]).unwrap();
-            let mut generated = vec![];
+            let mut generated: Vec<u8> = vec![];
             encode_variable_data(ident, payload, &mut generated);
             assert_eq!(generated, output);
         }

@@ -2,8 +2,6 @@ use crate::{
     definitions::{PrivateKeyData, PrivateVid, PublicKeyData, VerifiedVid},
     RelationshipStatus,
 };
-use hpke::{kem::X25519HkdfSha256 as KemType, Kem, Serializable};
-use rand::rngs::OsRng;
 
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
@@ -129,43 +127,39 @@ impl AsRef<[u8]> for Vid {
 
 impl OwnedVid {
     pub fn bind(id: impl Into<String>, transport: url::Url) -> Self {
-        let sigkey = ed25519_dalek::SigningKey::generate(&mut OsRng);
-        let (enckey, public_enckey) = KemType::gen_keypair(&mut OsRng);
-        let public_enckey: [u8; 32] = public_enckey.to_bytes().into();
-        let enckey: [u8; 32] = enckey.to_bytes().into();
+        let (sigkey, public_sigkey) = crate::crypto::gen_sign_keypair();
+        let (enckey, public_enckey) = crate::crypto::gen_encrypt_keypair();
 
         Self {
             vid: Vid {
                 id: id.into(),
                 transport,
-                public_sigkey: sigkey.verifying_key().to_bytes().into(),
-                public_enckey: public_enckey.into(),
+                public_sigkey,
+                public_enckey,
             },
-            sigkey: sigkey.to_bytes().into(),
-            enckey: enckey.into(),
+            sigkey,
+            enckey,
         }
     }
 
     #[cfg(feature = "resolve")]
     pub fn new_did_peer(transport: Url) -> OwnedVid {
-        let sigkey = ed25519_dalek::SigningKey::generate(&mut OsRng);
-        let (enckey, public_enckey) = KemType::gen_keypair(&mut OsRng);
-        let public_enckey: [u8; 32] = public_enckey.to_bytes().into();
-        let enckey: [u8; 32] = enckey.to_bytes().into();
+        let (sigkey, public_sigkey) = crate::crypto::gen_sign_keypair();
+        let (enckey, public_enckey) = crate::crypto::gen_encrypt_keypair();
 
         let mut vid = Vid {
             id: Default::default(),
             transport,
-            public_sigkey: sigkey.verifying_key().to_bytes().into(),
-            public_enckey: public_enckey.into(),
+            public_sigkey,
+            public_enckey,
         };
 
         vid.id = crate::vid::did::peer::encode_did_peer(&vid);
 
         Self {
             vid,
-            sigkey: sigkey.to_bytes().into(),
-            enckey: enckey.into(),
+            sigkey,
+            enckey,
         }
     }
 
