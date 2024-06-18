@@ -1,7 +1,5 @@
 use crate::{
-    definitions::{
-        Digest, Payload, ReceivedTspMessage, RelationshipStatus, TSPStream, VerifiedVid,
-    },
+    definitions::{Digest, ReceivedTspMessage, TSPStream, VerifiedVid},
     error::Error,
     store::Store,
     ExportVid, OwnedVid, PrivateVid,
@@ -59,15 +57,6 @@ impl AsyncStore {
     /// Adds a relation to an already existing vid, making it a nested Vid
     pub fn set_relation_for_vid(&self, vid: &str, relation_vid: Option<&str>) -> Result<(), Error> {
         self.inner.set_relation_for_vid(vid, relation_vid)
-    }
-
-    /// Sets the relationship status for a VID
-    pub(super) fn set_relation_status_for_vid(
-        &self,
-        vid: &str,
-        relation_status: RelationshipStatus,
-    ) -> Result<(), Error> {
-        self.inner.set_relation_status_for_vid(vid, relation_status)
     }
 
     /// Adds a route to an already existing vid, making it a nested Vid
@@ -195,32 +184,13 @@ impl AsyncStore {
         receiver: &str,
         route: Option<&[&str]>,
     ) -> Result<(), Error> {
-        let sender = self.inner.get_private_vid(sender)?;
-        let receiver = self.inner.get_verified_vid(receiver)?;
+        let (endpoint, message) = self
+            .inner
+            .make_relationship_request(sender, receiver, route)?;
 
-        let path = route;
-        let route = route.map(|collection| collection.iter().map(|vid| vid.as_ref()).collect());
+        tracing::info!("sending message to {endpoint}");
 
-        let (tsp_message, thread_id) = crate::crypto::seal_and_hash(
-            &*sender,
-            &*receiver,
-            None,
-            Payload::RequestRelationship { route },
-        )?;
-
-        let (transport, tsp_message) = if let Some(hop_list) = path {
-            self.set_route_for_vid(receiver.identifier(), hop_list)?;
-            self.resolve_route_and_send(hop_list, &tsp_message)?
-        } else {
-            (receiver.endpoint().clone(), tsp_message)
-        };
-
-        crate::transport::send_message(&transport, &tsp_message).await?;
-
-        self.set_relation_status_for_vid(
-            receiver.identifier(),
-            RelationshipStatus::Unidirectional { thread_id },
-        )?;
+        crate::transport::send_message(&endpoint, &message).await?;
 
         Ok(())
     }
@@ -235,29 +205,13 @@ impl AsyncStore {
         thread_id: Digest,
         route: Option<&[&str]>,
     ) -> Result<(), Error> {
-        let (transport, tsp_message) = self.inner.seal_message_payload(
-            sender,
-            receiver,
-            None,
-            Payload::AcceptRelationship { thread_id },
-        )?;
+        let (endpoint, message) = self
+            .inner
+            .make_relationship_accept(sender, receiver, thread_id, route)?;
 
-        let (transport, tsp_message) = if let Some(hop_list) = route {
-            self.set_route_for_vid(receiver, hop_list)?;
-            self.resolve_route_and_send(hop_list, &tsp_message)?
-        } else {
-            (transport.to_owned(), tsp_message)
-        };
+        tracing::info!("sending message to {endpoint}");
 
-        crate::transport::send_message(&transport, &tsp_message).await?;
-
-        self.set_relation_status_for_vid(
-            receiver,
-            RelationshipStatus::Bidirectional {
-                thread_id,
-                outstanding_nested_thread_ids: Default::default(),
-            },
-        )?;
+        crate::transport::send_message(&endpoint, &message).await?;
 
         Ok(())
     }
@@ -269,18 +223,11 @@ impl AsyncStore {
         sender: &str,
         receiver: &str,
     ) -> Result<(), Error> {
-        self.set_relation_status_for_vid(receiver, RelationshipStatus::Unrelated)?;
+        let (endpoint, message) = self.inner.make_relationship_cancel(sender, receiver)?;
 
-        let thread_id = Default::default(); // FNORD
+        tracing::info!("sending message to {endpoint}");
 
-        let (transport, message) = self.inner.seal_message_payload(
-            sender,
-            receiver,
-            None,
-            Payload::CancelRelationship { thread_id },
-        )?;
-
-        crate::transport::send_message(&transport, &message).await?;
+        crate::transport::send_message(&endpoint, &message).await?;
 
         Ok(())
     }
@@ -291,26 +238,15 @@ impl AsyncStore {
         parent_sender: &str,
         receiver: &str,
     ) -> Result<OwnedVid, Error> {
-        let sender = self.inner.get_private_vid(parent_sender)?;
-        let receiver = self.inner.get_verified_vid(receiver)?;
+        let ((endpoint, message), vid) = self
+            .inner
+            .make_nested_relationship_request(parent_sender, receiver)?;
 
-        let nested_vid = self.make_propositioning_vid(sender.identifier())?;
+        tracing::info!("sending message to {endpoint}");
 
-        let (tsp_message, thread_id) = crate::crypto::seal_and_hash(
-            &*sender,
-            &*receiver,
-            None,
-            Payload::RequestNestedRelationship {
-                vid: nested_vid.vid().as_ref(),
-            },
-        )?;
+        crate::transport::send_message(&endpoint, &message).await?;
 
-        self.inner
-            .add_nested_thread_id(receiver.identifier(), thread_id)?;
-
-        crate::transport::send_message(receiver.endpoint(), &tsp_message).await?;
-
-        Ok(nested_vid)
+        Ok(vid)
     }
 
     /// Accept a nested relationship with the (nested) VID identified by `nested_receiver`.
@@ -323,47 +259,15 @@ impl AsyncStore {
         nested_receiver: &str,
         thread_id: Digest,
     ) -> Result<OwnedVid, Error> {
-        let nested_vid = self.make_propositioning_vid(parent_sender)?;
-        self.set_relation_for_vid(nested_vid.identifier(), Some(nested_receiver))?;
-        self.set_relation_for_vid(nested_receiver, Some(nested_vid.identifier()))?;
-
-        let receiver_vid = self.inner.get_vid(nested_receiver)?;
-        let parent_receiver = receiver_vid
-            .get_parent_vid()
-            .ok_or(Error::Relationship(format!(
-                "missing parent for {nested_receiver}"
-            )))?;
-
-        let (transport, tsp_message) = self.inner.seal_message_payload(
+        let ((endpoint, message), vid) = self.inner.make_nested_relationship_accept(
             parent_sender,
-            parent_receiver,
-            None,
-            Payload::AcceptNestedRelationship {
-                thread_id,
-                vid: nested_vid.vid().as_ref(),
-                connect_to_vid: nested_receiver.as_ref(),
-            },
-        )?;
-
-        crate::transport::send_message(&transport, &tsp_message).await?;
-
-        self.set_relation_status_for_vid(
             nested_receiver,
-            RelationshipStatus::Bidirectional {
-                thread_id,
-                outstanding_nested_thread_ids: Default::default(),
-            },
+            thread_id,
         )?;
 
-        Ok(nested_vid)
-    }
+        tracing::info!("sending message to {endpoint}");
 
-    fn make_propositioning_vid(&self, parent_vid: &str) -> Result<OwnedVid, Error> {
-        let transport = Url::from_file_path("/dev/null").expect("error generating a URL");
-
-        let vid = OwnedVid::new_did_peer(transport);
-        self.inner.add_private_vid(vid.clone())?;
-        self.set_parent_for_vid(vid.identifier(), Some(parent_vid))?;
+        crate::transport::send_message(&endpoint, &message).await?;
 
         Ok(vid)
     }
@@ -382,18 +286,6 @@ impl AsyncStore {
         crate::transport::send_message(&transport, &message).await?;
 
         Ok(transport)
-    }
-
-    /// Send a message given a route, extracting the next hop and verifying it in the process
-    fn resolve_route_and_send(
-        &self,
-        hop_list: &[&str],
-        opaque_message: &[u8],
-    ) -> Result<(Url, Vec<u8>), Error> {
-        let (next_hop, path) = self.inner.resolve_route(hop_list)?;
-
-        self.inner
-            .forward_routed_message(&next_hop, path, opaque_message)
     }
 
     /// Pass along a in-transit routed TSP `opaque_message` that is not meant for us, given earlier resolved VIDs.
