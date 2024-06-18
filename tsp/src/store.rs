@@ -7,7 +7,7 @@ use crate::{
     },
     error::Error,
     vid::VidError,
-    ExportVid,
+    ExportVid, OwnedVid,
 };
 use std::{
     collections::HashMap,
@@ -657,6 +657,185 @@ impl Store {
                 })
             }
         }
+    }
+
+    pub fn make_relationship_request(
+        &self,
+        sender: &str,
+        receiver: &str,
+        route: Option<&[&str]>,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        let sender = self.get_private_vid(sender)?;
+        let receiver = self.get_verified_vid(receiver)?;
+
+        let path = route;
+        let route = route.map(|collection| collection.iter().map(|vid| vid.as_ref()).collect());
+
+        let (tsp_message, thread_id) = crate::crypto::seal_and_hash(
+            &*sender,
+            &*receiver,
+            None,
+            Payload::RequestRelationship { route },
+        )?;
+
+        let (transport, tsp_message) = if let Some(hop_list) = path {
+            self.set_route_for_vid(receiver.identifier(), hop_list)?;
+            self.resolve_route_and_send(hop_list, &tsp_message)?
+        } else {
+            (receiver.endpoint().clone(), tsp_message)
+        };
+
+        self.set_relation_status_for_vid(
+            receiver.identifier(),
+            RelationshipStatus::Unidirectional { thread_id },
+        )?;
+
+        Ok((transport, tsp_message.to_owned()))
+    }
+
+    /// Accept a direct relationship between the resolved VIDs identifier by `sender` and `receiver`.
+    /// `thread_id` must be the same as the one that was present in the relationship request.
+    /// Encodes the control message, encrypts, signs and sends a TSP message
+    pub fn make_relationship_accept(
+        &self,
+        sender: &str,
+        receiver: &str,
+        thread_id: Digest,
+        route: Option<&[&str]>,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        let (transport, tsp_message) = self.seal_message_payload(
+            sender,
+            receiver,
+            None,
+            Payload::AcceptRelationship { thread_id },
+        )?;
+
+        let (transport, tsp_message) = if let Some(hop_list) = route {
+            self.set_route_for_vid(receiver, hop_list)?;
+            self.resolve_route_and_send(hop_list, &tsp_message)?
+        } else {
+            (transport.to_owned(), tsp_message)
+        };
+
+        self.set_relation_status_for_vid(
+            receiver,
+            RelationshipStatus::Bidirectional {
+                thread_id,
+                outstanding_nested_thread_ids: Default::default(),
+            },
+        )?;
+
+        Ok((transport, tsp_message))
+    }
+
+    /// Cancels a direct relationship between the resolved `sender` and `receiver` VIDs.
+    /// Encodes the control message, encrypts, signs and sends a TSP message
+    pub fn make_relationship_cancel(
+        &self,
+        sender: &str,
+        receiver: &str,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.set_relation_status_for_vid(receiver, RelationshipStatus::Unrelated)?;
+
+        let thread_id = Default::default(); // FNORD
+
+        let (transport, message) = self.seal_message_payload(
+            sender,
+            receiver,
+            None,
+            Payload::CancelRelationship { thread_id },
+        )?;
+
+        Ok((transport, message))
+    }
+
+    /// Send a nested relationship request to `receiver`, creating a new nested vid with `outer_sender` as a parent.
+    pub fn make_nested_relationship_request(
+        &self,
+        parent_sender: &str,
+        receiver: &str,
+    ) -> Result<((Url, Vec<u8>), OwnedVid), Error> {
+        let sender = self.get_private_vid(parent_sender)?;
+        let receiver = self.get_verified_vid(receiver)?;
+
+        let nested_vid = self.make_propositioning_vid(sender.identifier())?;
+
+        let (tsp_message, thread_id) = crate::crypto::seal_and_hash(
+            &*sender,
+            &*receiver,
+            None,
+            Payload::RequestNestedRelationship {
+                vid: nested_vid.vid().as_ref(),
+            },
+        )?;
+
+        self.add_nested_thread_id(receiver.identifier(), thread_id)?;
+
+        Ok(((receiver.endpoint().clone(), tsp_message), nested_vid))
+    }
+
+    /// Accept a nested relationship with the (nested) VID identified by `nested_receiver`.
+    /// Generate a new nested VID that will have `parent_sender` as its parent.
+    /// `thread_id` must be the same as the one that was present in the relationship request.
+    /// Encodes the control message, encrypts, signs and sends a TSP message
+    pub fn make_nested_relationship_accept(
+        &self,
+        parent_sender: &str,
+        nested_receiver: &str,
+        thread_id: Digest,
+    ) -> Result<((Url, Vec<u8>), OwnedVid), Error> {
+        let nested_vid = self.make_propositioning_vid(parent_sender)?;
+        self.set_relation_for_vid(nested_vid.identifier(), Some(nested_receiver))?;
+        self.set_relation_for_vid(nested_receiver, Some(nested_vid.identifier()))?;
+
+        let receiver_vid = self.get_vid(nested_receiver)?;
+        let parent_receiver = receiver_vid
+            .get_parent_vid()
+            .ok_or(Error::Relationship(format!(
+                "missing parent for {nested_receiver}"
+            )))?;
+
+        let (transport, tsp_message) = self.seal_message_payload(
+            parent_sender,
+            parent_receiver,
+            None,
+            Payload::AcceptNestedRelationship {
+                thread_id,
+                vid: nested_vid.vid().as_ref(),
+                connect_to_vid: nested_receiver.as_ref(),
+            },
+        )?;
+
+        self.set_relation_status_for_vid(
+            nested_receiver,
+            RelationshipStatus::Bidirectional {
+                thread_id,
+                outstanding_nested_thread_ids: Default::default(),
+            },
+        )?;
+
+        Ok(((transport, tsp_message), nested_vid))
+    }
+
+    fn make_propositioning_vid(&self, parent_vid: &str) -> Result<OwnedVid, Error> {
+        let transport = Url::from_file_path("/dev/null").expect("error generating a URL");
+
+        let vid = OwnedVid::new_did_peer(transport);
+        self.add_private_vid(vid.clone())?;
+        self.set_parent_for_vid(vid.identifier(), Some(parent_vid))?;
+
+        Ok(vid)
+    }
+
+    /// Send a message given a route, extracting the next hop and verifying it in the process
+    fn resolve_route_and_send(
+        &self,
+        hop_list: &[&str],
+        opaque_message: &[u8],
+    ) -> Result<(Url, Vec<u8>), Error> {
+        let (next_hop, path) = self.resolve_route(hop_list)?;
+
+        self.forward_routed_message(&next_hop, path, opaque_message)
     }
 
     fn add_nested_vid(&self, vid: &str) -> Result<(), Error> {
