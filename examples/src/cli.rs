@@ -330,11 +330,11 @@ async fn run() -> Result<(), Error> {
                 .await
                 .expect("Could not read message from stdin");
 
-            let cesr_message = match vid_database
+            match vid_database
                 .send(sender_vid, receiver_vid, non_confidential_data, &message)
                 .await
             {
-                Ok(m) => m,
+                Ok(()) => {},
                 Err(e) => {
                     tracing::error!(
                         "error sending message from {sender_vid} to {receiver_vid}: {e}"
@@ -345,6 +345,7 @@ async fn run() -> Result<(), Error> {
             };
 
             if args.pretty_print {
+                let cesr_message = vid_database.as_store().seal_message(sender_vid, receiver_vid, non_confidential_data, &message)?.1;
                 print_message(&cesr_message);
             }
 
