@@ -399,10 +399,7 @@ impl Store {
     }
 
     /// Resolve a route, extract the next hop and verify the route
-    pub fn resolve_route<'a>(
-        &'a self,
-        hop_list: &'a [&str],
-    ) -> Result<(String, Vec<&'a [u8]>), Error> {
+    fn resolve_route<'a>(&'a self, hop_list: &'a [&str]) -> Result<(String, Vec<&'a [u8]>), Error> {
         let Some(next_hop) = hop_list.first() else {
             return Err(Error::InvalidRoute(
                 "relationship route must not be empty".into(),
@@ -875,9 +872,7 @@ impl Store {
         Ok(())
     }
 
-    //TODO: this should not be `pub` after the refactor that moves logic from async_store
-    //back into the "sync" store
-    pub fn add_nested_thread_id(&self, vid: &str, thread_id: Digest) -> Result<(), Error> {
+    fn add_nested_thread_id(&self, vid: &str, thread_id: Digest) -> Result<(), Error> {
         let mut vids = self.vids.write()?;
         let Some(context) = vids.get_mut(vid) else {
             return Err(Error::MissingVid(vid.into()));

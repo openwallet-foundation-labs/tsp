@@ -51,7 +51,7 @@ impl AsyncStore {
 
     /// Expose the inner non-async database
     pub fn as_store(&self) -> &Store {
-	&self.inner
+        &self.inner
     }
 
     /// Import the database from serializable default types
