@@ -1,5 +1,5 @@
 use crate::{
-    cesr::{DecodedEnvelope, Envelope},
+    cesr::{CryptoType, DecodedEnvelope, Envelope, SignatureType},
     definitions::{PrivateVid, TSPMessage, VerifiedVid},
 };
 use ed25519_dalek::ed25519::signature::Signer;
@@ -16,6 +16,8 @@ pub fn sign(
 
     crate::cesr::encode_s_envelope(
         crate::cesr::Envelope {
+            crypto_type: CryptoType::Plaintext,
+            signature_type: SignatureType::Ed25519,
             sender: sender.identifier(),
             receiver: receiver.map(|r| r.identifier()),
             nonconfidential_data: Some(payload),
@@ -49,6 +51,8 @@ pub fn verify<'a>(
         raw_header: _,
         envelope:
             Envelope {
+                crypto_type: _,
+                signature_type: _,
                 sender: _,
                 receiver: _,
                 nonconfidential_data: Some(nonconfidential_data),

@@ -143,9 +143,6 @@ pub(crate) fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
 #[cfg(test)]
 mod test {
     use crate::definitions::VerifiedVid;
-    use ed25519_dalek::{self as Ed};
-    use hpke::{kem::X25519HkdfSha256 as KemType, Kem, Serializable};
-    use rand::rngs::OsRng;
     use url::Url;
     use wasm_bindgen_test::wasm_bindgen_test;
 
@@ -156,15 +153,14 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn encode_decode() {
-        let sigkey = Ed::SigningKey::generate(&mut OsRng);
-        let (_enckey, public_enckey) = KemType::gen_keypair(&mut OsRng);
-        let public_enckey: [u8; 32] = public_enckey.to_bytes().into();
+        let (_sigkey, public_sigkey) = crate::crypto::gen_sign_keypair();
+        let (_enckey, public_enckey) = crate::crypto::gen_encrypt_keypair();
 
         let mut vid = Vid {
             id: Default::default(),
             transport: Url::parse("tcp://127.0.0.1:1337").unwrap(),
-            public_sigkey: sigkey.verifying_key().to_bytes().into(),
-            public_enckey: public_enckey.into(),
+            public_sigkey,
+            public_enckey,
         };
 
         vid.id = encode_did_peer(&vid);
