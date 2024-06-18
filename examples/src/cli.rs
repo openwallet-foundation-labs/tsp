@@ -334,7 +334,7 @@ async fn run() -> Result<(), Error> {
                 .send(sender_vid, receiver_vid, non_confidential_data, &message)
                 .await
             {
-                Ok(()) => {},
+                Ok(()) => {}
                 Err(e) => {
                     tracing::error!(
                         "error sending message from {sender_vid} to {receiver_vid}: {e}"
@@ -345,7 +345,10 @@ async fn run() -> Result<(), Error> {
             };
 
             if args.pretty_print {
-                let cesr_message = vid_database.as_store().seal_message(sender_vid, receiver_vid, non_confidential_data, &message)?.1;
+                let cesr_message = vid_database
+                    .as_store()
+                    .seal_message(sender_vid, receiver_vid, non_confidential_data, &message)?
+                    .1;
                 print_message(&cesr_message);
             }
 
