@@ -147,12 +147,14 @@ mod test {
     use hpke::{kem::X25519HkdfSha256 as KemType, Kem, Serializable};
     use rand::rngs::OsRng;
     use url::Url;
+    use wasm_bindgen_test::wasm_bindgen_test;
 
     use crate::Vid;
 
     use super::{encode_did_peer, verify_did_peer};
 
     #[test]
+    #[wasm_bindgen_test]
     fn encode_decode() {
         let sigkey = Ed::SigningKey::generate(&mut OsRng);
         let (_enckey, public_enckey) = KemType::gen_keypair(&mut OsRng);

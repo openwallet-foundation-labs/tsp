@@ -16,6 +16,7 @@ mod test {
     use base64ct::{Base64UrlUnpadded, Encoding};
 
     #[test]
+    #[wasm_bindgen_test]
     fn test_binary() {
         let base64 = *b"-FAB";
         let binary = Base64UrlUnpadded::decode_vec(std::str::from_utf8(&base64).unwrap()).unwrap();

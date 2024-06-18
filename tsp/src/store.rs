@@ -934,6 +934,8 @@ impl Store {
 
 #[cfg(test)]
 mod test {
+    use wasm_bindgen_test::wasm_bindgen_test;
+
     use crate::{definitions::MessageType, OwnedVid, ReceivedTspMessage, Store, VerifiedVid};
 
     fn new_vid() -> OwnedVid {
@@ -941,6 +943,7 @@ mod test {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn test_add_private_vid() {
         let store = Store::new();
         let vid = new_vid();
@@ -951,6 +954,7 @@ mod test {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn test_add_verified_vid() {
         let store = Store::new();
         let owned_vid = new_vid();
@@ -961,6 +965,7 @@ mod test {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn test_remove() {
         let store = Store::new();
         let vid = new_vid();
@@ -975,6 +980,7 @@ mod test {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn test_open_seal() {
         let store = Store::new();
         let alice = new_vid();

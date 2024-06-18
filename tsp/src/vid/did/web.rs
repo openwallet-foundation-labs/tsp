@@ -245,8 +245,8 @@ mod tests {
             error::VidError,
         },
     };
-    use std::fs;
     use url::Url;
+    use wasm_bindgen_test::wasm_bindgen_test;
 
     fn resolve_did_string(did: &str) -> Result<Url, VidError> {
         let parts = did.split(':').collect::<Vec<&str>>();
@@ -275,10 +275,13 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(all(target_arch = "wasm32", target_os = "wasi"), ignore)]
+    #[wasm_bindgen_test]
     fn test_resolve_document() {
-        let alice_did_doc = fs::read_to_string("../examples/test/alice-did.json").unwrap();
-        let alice_did_doc: DidDocument = serde_json::from_str(&alice_did_doc).unwrap();
+        let alice_did_doc = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/test/alice-did.json"
+        ));
+        let alice_did_doc: DidDocument = serde_json::from_str(alice_did_doc).unwrap();
 
         let alice = resolve_document(alice_did_doc, "did:web:did.tsp-test.org:user:alice");
 
@@ -287,8 +290,11 @@ mod tests {
             "did:web:did.tsp-test.org:user:alice"
         );
 
-        let bob_did_doc = fs::read_to_string("../examples/test/bob-did.json").unwrap();
-        let bob_did_doc: DidDocument = serde_json::from_str(&bob_did_doc).unwrap();
+        let bob_did_doc = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/test/bob-did.json"
+        ));
+        let bob_did_doc: DidDocument = serde_json::from_str(bob_did_doc).unwrap();
 
         let bob = resolve_document(bob_did_doc, "did:web:did.tsp-test.org:user:bob");
 
