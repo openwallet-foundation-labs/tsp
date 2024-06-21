@@ -745,9 +745,16 @@ impl Store {
         sender: &str,
         receiver: &str,
     ) -> Result<(Url, Vec<u8>), Error> {
-        self.set_relation_status_for_vid(receiver, RelationshipStatus::Unrelated)?;
+        let old_relationship =
+            self.replace_relation_status_for_vid(receiver, RelationshipStatus::Unrelated)?;
 
-        let thread_id = Default::default(); // FNORD
+        let thread_id = match old_relationship {
+            RelationshipStatus::Bidirectional { thread_id, .. } => thread_id,
+            RelationshipStatus::Unidirectional { thread_id } => thread_id,
+            RelationshipStatus::_Controlled | RelationshipStatus::Unrelated => {
+                return Err(Error::Relationship("no relationship to cancel".into()))
+            }
+        };
 
         let (transport, message) = self.seal_message_payload(
             sender,
