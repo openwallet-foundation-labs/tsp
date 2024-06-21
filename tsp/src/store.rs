@@ -1035,7 +1035,7 @@ mod test {
     }
 
     #[test]
-    // TODO #[wasm_bindgen_test]
+    #[wasm_bindgen_test]
     fn test_make_relationship_request() {
         let store = Store::new();
         let alice = new_vid();
@@ -1060,7 +1060,7 @@ mod test {
     }
 
     #[test]
-    // TODO #[wasm_bindgen_test]
+    #[wasm_bindgen_test]
     fn test_make_relationship_accept() {
         let store = Store::new();
         let alice = new_vid();
@@ -1069,6 +1069,7 @@ mod test {
         store.add_private_vid(alice.clone()).unwrap();
         store.add_private_vid(bob.clone()).unwrap();
 
+        // alice wants to establish a relation
         let (url, sealed) = store
             .make_relationship_request(alice.identifier(), bob.identifier(), None)
             .unwrap();
@@ -1085,6 +1086,7 @@ mod test {
 
         assert_eq!(sender, alice.identifier());
 
+        // bob accepts the relation
         let (url, sealed) = store
             .make_relationship_accept(bob.identifier(), alice.identifier(), thread_id, None)
             .unwrap();
@@ -1093,6 +1095,59 @@ mod test {
         let received = store.open_message(&mut sealed.clone()).unwrap();
 
         let ReceivedTspMessage::AcceptRelationship { sender, .. } = received else {
+            panic!("unexpected message type");
+        };
+        assert_eq!(sender, bob.identifier());
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_make_relationship_cancel() {
+        let store = Store::new();
+        let alice = new_vid();
+        let bob = new_vid();
+
+        store.add_private_vid(alice.clone()).unwrap();
+        store.add_private_vid(bob.clone()).unwrap();
+
+        // alice wants to establish a relation
+        let (url, sealed) = store
+            .make_relationship_request(alice.identifier(), bob.identifier(), None)
+            .unwrap();
+
+        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        let received = store.open_message(&mut sealed.clone()).unwrap();
+
+        let ReceivedTspMessage::RequestRelationship {
+            sender, thread_id, ..
+        } = received
+        else {
+            panic!("unexpected message type");
+        };
+        assert_eq!(sender, alice.identifier());
+
+        // bob accepts the relation
+        let (url, sealed) = store
+            .make_relationship_accept(bob.identifier(), alice.identifier(), thread_id, None)
+            .unwrap();
+
+        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        let received = store.open_message(&mut sealed.clone()).unwrap();
+
+        let ReceivedTspMessage::AcceptRelationship { sender, .. } = received else {
+            panic!("unexpected message type");
+        };
+        assert_eq!(sender, bob.identifier());
+
+        // new bob cancels the relation
+        let (url, sealed) = store
+            .make_relationship_cancel(bob.identifier(), alice.identifier())
+            .unwrap();
+
+        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        let received = store.open_message(&mut sealed.clone()).unwrap();
+
+        let ReceivedTspMessage::CancelRelationship { sender, .. } = received else {
             panic!("unexpected message type");
         };
         assert_eq!(sender, bob.identifier());
