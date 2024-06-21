@@ -37,9 +37,13 @@ impl VidContext {
         self.relation_vid = relation_vid.map(|r| r.to_string());
     }
 
-    /// Set the relation status for this VID.
-    fn set_relation_status(&mut self, relation_status: RelationshipStatus) {
-        self.relation_status = relation_status;
+    /// Replace the relation status for this VID.
+    #[must_use]
+    fn replace_relation_status(
+        &mut self,
+        relation_status: RelationshipStatus,
+    ) -> RelationshipStatus {
+        std::mem::replace(&mut self.relation_status, relation_status)
     }
 
     /// Set the route for this VID. The route will be used to send routed messages to this VID
@@ -201,10 +205,19 @@ impl Store {
         vid: &str,
         relation_status: RelationshipStatus,
     ) -> Result<(), Error> {
-        self.modify_vid(vid, |resolved| {
-            resolved.set_relation_status(relation_status);
+        let _ = self.replace_relation_status_for_vid(vid, relation_status)?;
 
-            Ok(())
+        Ok(())
+    }
+
+    /// Sets the relationship status for a VID
+    pub fn replace_relation_status_for_vid(
+        &self,
+        vid: &str,
+        relation_status: RelationshipStatus,
+    ) -> Result<RelationshipStatus, Error> {
+        self.modify_vid(vid, |resolved| {
+            Ok(resolved.replace_relation_status(relation_status))
         })
     }
 
@@ -224,11 +237,11 @@ impl Store {
     }
 
     /// Modify a verified-vid by applying an operation to it (internal use only)
-    pub(crate) fn modify_vid(
+    pub(crate) fn modify_vid<T>(
         &self,
         vid: &str,
-        change: impl FnOnce(&mut VidContext) -> Result<(), Error>,
-    ) -> Result<(), Error> {
+        change: impl FnOnce(&mut VidContext) -> Result<T, Error>,
+    ) -> Result<T, Error> {
         match self.vids.write()?.get_mut(vid) {
             Some(resolved) => change(resolved),
             None => Err(Error::UnverifiedVid(vid.to_string())),
