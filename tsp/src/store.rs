@@ -1007,4 +1007,29 @@ mod test {
             panic!("unexpected message type");
         }
     }
+
+    #[test]
+    // TODO #[wasm_bindgen_test]
+    fn test_make_relationship_request() {
+        let store = Store::new();
+        let alice = new_vid();
+        let bob = new_vid();
+
+        store.add_private_vid(alice.clone()).unwrap();
+        store.add_private_vid(bob.clone()).unwrap();
+
+        let (url, sealed) = store
+            .make_relationship_request(alice.identifier(), bob.identifier(), None)
+            .unwrap();
+
+        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+
+        let received = store.open_message(&mut sealed.clone()).unwrap();
+
+        if let ReceivedTspMessage::RequestRelationship { sender, .. } = received {
+            assert_eq!(sender, alice.identifier());
+        } else {
+            panic!("unexpected message type");
+        }
+    }
 }

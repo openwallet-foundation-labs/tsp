@@ -1,4 +1,4 @@
-from tsp import OwnedVid, Store, GenericMessage, MessageType
+from tsp import OwnedVid, Store, RequestRelationship, MessageType
 
 def main():
     def new_vid():
@@ -13,18 +13,16 @@ def main():
 
     message = b"hello world"
 
-    (url, sealed) = store.seal_message(alice.identifier(), bob.identifier(), None, message)
+    (url, sealed) = store.make_relationship_request(alice.identifier(), bob.identifier(), None)
 
     assert url == "tcp://127.0.0.1:1337"
 
     received = store.open_message(sealed)
 
     match received:
-        case GenericMessage(sender, _, received_message, message_type):
+        case RequestRelationship(sender, _route, _nested_vid, _thread_id):
             assert sender == alice.identifier()
-            assert received_message == message
-            assert message_type == MessageType.SignedAndEncrypted
-            print("success:", received_message)
+            print("success")
 
         case other:
             print(f"unexpected message type {other}")

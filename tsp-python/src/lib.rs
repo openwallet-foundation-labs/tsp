@@ -51,6 +51,27 @@ impl Store {
         Ok((url.to_string(), bytes))
     }
 
+    #[pyo3(signature = (sender, receiver, route))]
+    fn make_relationship_request(
+        &self,
+        sender: String,
+        receiver: String,
+        route: Option<Vec<String>>,
+    ) -> PyResult<(String, Vec<u8>)> {
+        let route_items: Vec<&str> = route.iter().flatten().map(|s| s.as_str()).collect();
+
+        let (url, bytes) = self
+            .0
+            .make_relationship_request(
+                &sender,
+                &receiver,
+                route.as_ref().map(|_| route_items.as_slice()),
+            )
+            .map_err(py_exception)?;
+
+        Ok((url.to_string(), bytes))
+    }
+
     fn open_message(&self, mut message: Vec<u8>) -> PyResult<FlatReceivedTspMessage> {
         self.0
             .open_message(&mut message)
