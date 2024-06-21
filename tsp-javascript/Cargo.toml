@@ -1,0 +1,21 @@
+[package]
+name = "tsp-javascript"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = ["console"] }
+tsp = { path = "../tsp", default-features = false, features = ["resolve"] }
+serde.workspace = true
+serde-wasm-bindgen = "0.4"
