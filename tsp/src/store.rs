@@ -1032,4 +1032,43 @@ mod test {
             panic!("unexpected message type");
         }
     }
+
+    #[test]
+    // TODO #[wasm_bindgen_test]
+    fn test_make_relationship_accept() {
+        let store = Store::new();
+        let alice = new_vid();
+        let bob = new_vid();
+
+        store.add_private_vid(alice.clone()).unwrap();
+        store.add_private_vid(bob.clone()).unwrap();
+
+        let (url, sealed) = store
+            .make_relationship_request(alice.identifier(), bob.identifier(), None)
+            .unwrap();
+
+        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        let received = store.open_message(&mut sealed.clone()).unwrap();
+
+        let ReceivedTspMessage::RequestRelationship {
+            sender, thread_id, ..
+        } = received
+        else {
+            panic!("unexpected message type");
+        };
+
+        assert_eq!(sender, alice.identifier());
+
+        let (url, sealed) = store
+            .make_relationship_accept(bob.identifier(), alice.identifier(), thread_id, None)
+            .unwrap();
+
+        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        let received = store.open_message(&mut sealed.clone()).unwrap();
+
+        let ReceivedTspMessage::AcceptRelationship { sender, .. } = received else {
+            panic!("unexpected message type");
+        };
+        assert_eq!(sender, bob.identifier());
+    }
 }

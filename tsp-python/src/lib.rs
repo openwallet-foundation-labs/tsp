@@ -72,6 +72,43 @@ impl Store {
         Ok((url.to_string(), bytes))
     }
 
+    #[pyo3(signature = (sender, receiver, thread_id, route))]
+    fn make_relationship_accept(
+        &self,
+        sender: String,
+        receiver: String,
+        thread_id: [u8; 32],
+        route: Option<Vec<String>>,
+    ) -> PyResult<(String, Vec<u8>)> {
+        let route_items: Vec<&str> = route.iter().flatten().map(|s| s.as_str()).collect();
+
+        let (url, bytes) = self
+            .0
+            .make_relationship_accept(
+                &sender,
+                &receiver,
+                thread_id,
+                route.as_ref().map(|_| route_items.as_slice()),
+            )
+            .map_err(py_exception)?;
+
+        Ok((url.to_string(), bytes))
+    }
+
+    #[pyo3(signature = (sender, receiver))]
+    fn make_relationship_cancel(
+        &self,
+        sender: String,
+        receiver: String,
+    ) -> PyResult<(String, Vec<u8>)> {
+        let (url, bytes) = self
+            .0
+            .make_relationship_cancel(&sender, &receiver)
+            .map_err(py_exception)?;
+
+        Ok((url.to_string(), bytes))
+    }
+
     fn open_message(&self, mut message: Vec<u8>) -> PyResult<FlatReceivedTspMessage> {
         self.0
             .open_message(&mut message)

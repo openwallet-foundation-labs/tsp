@@ -21,6 +21,12 @@ class Store:
 
     def make_relationship_request(self, *args, **kwargs):
         return self.inner.make_relationship_request(*args, **kwargs)
+    
+    def make_relationship_accept(self, *args, **kwargs):
+        return self.inner.make_relationship_accept(*args, **kwargs)
+
+    def make_relationship_cancel(self, *args, **kwargs):
+        return self.inner.make_relationship_cancel(*args, **kwargs)
 
 class ReceivedTspMessage:
     @staticmethod
