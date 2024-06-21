@@ -101,6 +101,8 @@ impl From<&tsp::ReceivedTspMessage> for ReceivedTspMessageVariant {
             tsp::ReceivedTspMessage::AcceptRelationship { .. } => Self::AcceptRelationship,
             tsp::ReceivedTspMessage::CancelRelationship { .. } => Self::CancelRelationship,
             tsp::ReceivedTspMessage::ForwardRequest { .. } => Self::ForwardRequest,
+            #[cfg(not(target_arch = "wasm32"))]
+            tsp::ReceivedTspMessage::PendingMessage { .. } => unreachable!(),
         }
     }
 }
@@ -139,17 +141,14 @@ impl FlatReceivedTspMessage {
     #[wasm_bindgen(getter)]
     pub fn nonconfidential_data(&self) -> JsValue {
         match &self.nonconfidential_data {
-            Some(inner) => match inner {
-                Some(data) => serde_wasm_bindgen::to_value(data).unwrap(),
-                None => JsValue::NULL,
-            },
-            None => JsValue::NULL,
+            Some(Some(data)) => serde_wasm_bindgen::to_value(data).unwrap(),
+            _ => JsValue::NULL,
         }
     }
 
     #[wasm_bindgen(getter)]
     pub fn message(&self) -> JsValue {
-        match dbg!(&self.message) {
+        match &self.message {
             Some(data) => serde_wasm_bindgen::to_value(data).unwrap(),
             None => JsValue::NULL,
         }
@@ -158,22 +157,16 @@ impl FlatReceivedTspMessage {
     #[wasm_bindgen(getter)]
     pub fn route(&self) -> JsValue {
         match &self.route {
-            Some(inner) => match inner {
-                Some(routes) => serde_wasm_bindgen::to_value(routes).unwrap(),
-                None => JsValue::NULL,
-            },
-            None => JsValue::NULL,
+            Some(Some(routes)) => serde_wasm_bindgen::to_value(routes).unwrap(),
+            _ => JsValue::NULL,
         }
     }
 
     #[wasm_bindgen(getter)]
     pub fn nested_vid(&self) -> JsValue {
         match &self.nested_vid {
-            Some(inner) => match inner {
-                Some(vid) => JsValue::from_str(vid),
-                None => JsValue::NULL,
-            },
-            None => JsValue::NULL,
+            Some(Some(vid)) => JsValue::from_str(vid),
+            _ => JsValue::NULL,
         }
     }
 
@@ -283,7 +276,7 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
                 this.route = Some(Some(route));
                 this.opaque_payload = Some(opaque_payload);
             }
-            #[cfg(feature = "async")]
+            #[cfg(not(target_arch = "wasm32"))]
             tsp::ReceivedTspMessage::PendingMessage { .. } => {
                 unreachable!()
             }
