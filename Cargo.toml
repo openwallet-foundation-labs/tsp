@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = [ "tsp", "examples", "fuzz" , "tsp-python"]
+members = [ "tsp", "examples", "fuzz" , "tsp-python", "tsp-javascript"]
 
 [workspace.package]
 version = "0.1.0"

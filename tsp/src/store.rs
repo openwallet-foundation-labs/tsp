@@ -815,7 +815,7 @@ impl Store {
     }
 
     fn make_propositioning_vid(&self, parent_vid: &str) -> Result<OwnedVid, Error> {
-        let transport = Url::from_file_path("/dev/null").expect("error generating a URL");
+        let transport = Url::parse("https://example.net").expect("error generating a URL");
 
         let vid = OwnedVid::new_did_peer(transport);
         self.add_private_vid(vid.clone())?;
