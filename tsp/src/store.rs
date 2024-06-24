@@ -37,9 +37,13 @@ impl VidContext {
         self.relation_vid = relation_vid.map(|r| r.to_string());
     }
 
-    /// Set the relation status for this VID.
-    fn set_relation_status(&mut self, relation_status: RelationshipStatus) {
-        self.relation_status = relation_status;
+    /// Replace the relation status for this VID.
+    #[must_use]
+    fn replace_relation_status(
+        &mut self,
+        relation_status: RelationshipStatus,
+    ) -> RelationshipStatus {
+        std::mem::replace(&mut self.relation_status, relation_status)
     }
 
     /// Set the route for this VID. The route will be used to send routed messages to this VID
@@ -201,10 +205,19 @@ impl Store {
         vid: &str,
         relation_status: RelationshipStatus,
     ) -> Result<(), Error> {
-        self.modify_vid(vid, |resolved| {
-            resolved.set_relation_status(relation_status);
+        let _ = self.replace_relation_status_for_vid(vid, relation_status)?;
 
-            Ok(())
+        Ok(())
+    }
+
+    /// Sets the relationship status for a VID
+    pub fn replace_relation_status_for_vid(
+        &self,
+        vid: &str,
+        relation_status: RelationshipStatus,
+    ) -> Result<RelationshipStatus, Error> {
+        self.modify_vid(vid, |resolved| {
+            Ok(resolved.replace_relation_status(relation_status))
         })
     }
 
@@ -224,11 +237,11 @@ impl Store {
     }
 
     /// Modify a verified-vid by applying an operation to it (internal use only)
-    pub(crate) fn modify_vid(
+    pub(crate) fn modify_vid<T>(
         &self,
         vid: &str,
-        change: impl FnOnce(&mut VidContext) -> Result<(), Error>,
-    ) -> Result<(), Error> {
+        change: impl FnOnce(&mut VidContext) -> Result<T, Error>,
+    ) -> Result<T, Error> {
         match self.vids.write()?.get_mut(vid) {
             Some(resolved) => change(resolved),
             None => Err(Error::UnverifiedVid(vid.to_string())),
@@ -732,9 +745,16 @@ impl Store {
         sender: &str,
         receiver: &str,
     ) -> Result<(Url, Vec<u8>), Error> {
-        self.set_relation_status_for_vid(receiver, RelationshipStatus::Unrelated)?;
+        let old_relationship =
+            self.replace_relation_status_for_vid(receiver, RelationshipStatus::Unrelated)?;
 
-        let thread_id = Default::default(); // FNORD
+        let thread_id = match old_relationship {
+            RelationshipStatus::Bidirectional { thread_id, .. } => thread_id,
+            RelationshipStatus::Unidirectional { thread_id } => thread_id,
+            RelationshipStatus::_Controlled | RelationshipStatus::Unrelated => {
+                return Err(Error::Relationship("no relationship to cancel".into()))
+            }
+        };
 
         let (transport, message) = self.seal_message_payload(
             sender,
@@ -1015,7 +1035,7 @@ mod test {
     }
 
     #[test]
-    // TODO #[wasm_bindgen_test]
+    #[wasm_bindgen_test]
     fn test_make_relationship_request() {
         let store = Store::new();
         let alice = new_vid();
@@ -1040,7 +1060,7 @@ mod test {
     }
 
     #[test]
-    // TODO #[wasm_bindgen_test]
+    #[wasm_bindgen_test]
     fn test_make_relationship_accept() {
         let store = Store::new();
         let alice = new_vid();
@@ -1049,6 +1069,7 @@ mod test {
         store.add_private_vid(alice.clone()).unwrap();
         store.add_private_vid(bob.clone()).unwrap();
 
+        // alice wants to establish a relation
         let (url, sealed) = store
             .make_relationship_request(alice.identifier(), bob.identifier(), None)
             .unwrap();
@@ -1065,6 +1086,7 @@ mod test {
 
         assert_eq!(sender, alice.identifier());
 
+        // bob accepts the relation
         let (url, sealed) = store
             .make_relationship_accept(bob.identifier(), alice.identifier(), thread_id, None)
             .unwrap();
@@ -1073,6 +1095,59 @@ mod test {
         let received = store.open_message(&mut sealed.clone()).unwrap();
 
         let ReceivedTspMessage::AcceptRelationship { sender, .. } = received else {
+            panic!("unexpected message type");
+        };
+        assert_eq!(sender, bob.identifier());
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_make_relationship_cancel() {
+        let store = Store::new();
+        let alice = new_vid();
+        let bob = new_vid();
+
+        store.add_private_vid(alice.clone()).unwrap();
+        store.add_private_vid(bob.clone()).unwrap();
+
+        // alice wants to establish a relation
+        let (url, sealed) = store
+            .make_relationship_request(alice.identifier(), bob.identifier(), None)
+            .unwrap();
+
+        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        let received = store.open_message(&mut sealed.clone()).unwrap();
+
+        let ReceivedTspMessage::RequestRelationship {
+            sender, thread_id, ..
+        } = received
+        else {
+            panic!("unexpected message type");
+        };
+        assert_eq!(sender, alice.identifier());
+
+        // bob accepts the relation
+        let (url, sealed) = store
+            .make_relationship_accept(bob.identifier(), alice.identifier(), thread_id, None)
+            .unwrap();
+
+        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        let received = store.open_message(&mut sealed.clone()).unwrap();
+
+        let ReceivedTspMessage::AcceptRelationship { sender, .. } = received else {
+            panic!("unexpected message type");
+        };
+        assert_eq!(sender, bob.identifier());
+
+        // new bob cancels the relation
+        let (url, sealed) = store
+            .make_relationship_cancel(bob.identifier(), alice.identifier())
+            .unwrap();
+
+        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        let received = store.open_message(&mut sealed.clone()).unwrap();
+
+        let ReceivedTspMessage::CancelRelationship { sender, .. } = received else {
             panic!("unexpected message type");
         };
         assert_eq!(sender, bob.identifier());

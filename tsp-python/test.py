@@ -68,7 +68,6 @@ class AliceBob(unittest.TestCase):
             case other:
                 self.fail(f"unexpected message type {other}")
 
-    @unittest.skip
     def test_make_relationship_cancel(self):
         url, sealed = self.store.make_relationship_request(self.alice.identifier(), self.bob.identifier(), None)
         self.assertEqual(url, "tcp://127.0.0.1:1337")
