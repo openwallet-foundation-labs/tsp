@@ -19,6 +19,15 @@ class Store:
         flat_message = self.inner.open_message(*args, **kwargs)
         return ReceivedTspMessage.from_flat(flat_message)
 
+    def make_relationship_request(self, *args, **kwargs):
+        return self.inner.make_relationship_request(*args, **kwargs)
+    
+    def make_relationship_accept(self, *args, **kwargs):
+        return self.inner.make_relationship_accept(*args, **kwargs)
+
+    def make_relationship_cancel(self, *args, **kwargs):
+        return self.inner.make_relationship_cancel(*args, **kwargs)
+
 class ReceivedTspMessage:
     @staticmethod
     def from_flat(msg: FlatReceivedTspMessage):
@@ -27,7 +36,7 @@ class ReceivedTspMessage:
                 return GenericMessage(msg.sender, msg.nonconfidential_data, bytes(msg.message), msg.message_type)
 
             case ReceivedTspMessageVariant.RequestRelationship:
-                raise ValueError("todo!")
+                return RequestRelationship(msg.sender, msg.route, msg.nested_vid, msg.thread_id)
 
             case ReceivedTspMessageVariant.AcceptRelationship:
                 return AcceptRelationship(msg.sender, msg.nested_vid)
@@ -60,35 +69,10 @@ class AcceptRelationship(ReceivedTspMessage):
 class CancelRelationship(ReceivedTspMessage):
     sender: str
 
-def main():
-    def new_vid():
-        return OwnedVid.new_did_peer("tcp://127.0.0.1:1337")
+@dataclass
+class RequestRelationship(ReceivedTspMessage):
+    sender: str
+    route: str
+    nested_vid: str
+    thread_id: str 
 
-    store = Store()
-    alice = new_vid()
-    bob = new_vid()
-
-    store.add_private_vid(alice)
-    store.add_private_vid(bob)
-
-    message = b"hello world"
-
-    (url, sealed) = store.seal_message(alice.identifier(), bob.identifier(), None, message)
-
-    assert url == "tcp://127.0.0.1:1337"
-
-    received = store.open_message(sealed)
-
-    match received:
-        case GenericMessage(sender, _, received_message, message_type):
-            assert sender == alice.identifier()
-            assert received_message == message
-            assert message_type == MessageType.SignedAndEncrypted
-            print("success:", received_message)
-
-        case other:
-            print(f"unexpected message type {other}")
-            assert False
-
-if __name__ == '__main__':
-    main()

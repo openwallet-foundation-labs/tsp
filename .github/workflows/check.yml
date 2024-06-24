@@ -101,3 +101,43 @@ jobs:
           for target in $(cargo fuzz list ${{ matrix.features }}) ; do
             cargo fuzz run ${{ matrix.features }} $target -- -max_total_time=10
           done
+
+  check-python:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal
+      - run: rustup component add clippy
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.10"
+
+      - uses: actions/cache/restore@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: linux-x86-64-gnu-${{ hashFiles('Cargo.toml') }}
+          restore-keys: linux-x86-64-gnu-
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Create and activate virtual environment
+        working-directory: tsp-python
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install maturin
+
+      - name: Build and test
+        working-directory: tsp-python
+        run: |
+          source venv/bin/activate
+          maturin develop
+          python3 test.py
