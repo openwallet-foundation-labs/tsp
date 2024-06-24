@@ -12,12 +12,13 @@ rust-version.workspace = true
 
 [features]
 cesr-t = [ ]
-default = ["async"]
+default = ["async", "pq"]
 essr = [ ]
 strict = [ ]
 fuzzing = ["dep:arbitrary"]
 demo = [ ]
 nacl = ["dep:crypto_box", "essr"]
+pq = ["dep:hpke_pq"]
 async = [
     "resolve",
     "aries-askar",
@@ -41,6 +42,7 @@ resolve = [
 serialize = [
     "dep:serde",
     "dep:serde_json",
+    "dep:serde_with",
     "dep:bs58"
 ]
 
@@ -55,6 +57,7 @@ once_cell = { workspace = true }
 # crypto
 ed25519-dalek = { workspace = true }
 hpke = { workspace = true }
+hpke_pq = { workspace = true, optional = true }
 rand = { workspace = true }
 sha2 = { workspace = true }
 crypto_box = { workspace = true, optional = true }
@@ -77,6 +80,7 @@ reqwest = { workspace = true, optional = true }
 # serialize
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+serde_with = { workspace = true, optional = true }
 bs58 ={ workspace = true, optional = true }
 # fuzzing
 arbitrary ={ workspace = true, optional = true }

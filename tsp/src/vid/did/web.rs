@@ -1,4 +1,4 @@
-use crate::definitions::VerifiedVid;
+use crate::definitions::{VerifiedVid, PUBLIC_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE};
 use base64ct::{Base64UrlUnpadded, Encoding};
 use serde::Deserialize;
 use serde_json::json;
@@ -103,12 +103,12 @@ pub fn resolve_url(parts: &[&str]) -> Result<Url, VidError> {
     .map_err(|_| VidError::InvalidVid(parts.join(":")))
 }
 
-pub fn find_first_key(
+pub fn find_first_key<const N: usize>(
     did_document: &DidDocument,
     method: &[String],
     curve: &str,
     usage: &str,
-) -> Option<[u8; 32]> {
+) -> Option<[u8; N]> {
     method
         .iter()
         .next()
@@ -125,7 +125,7 @@ pub fn find_first_key(
                 None
             }
         })
-        .and_then(|key| <[u8; 32]>::try_from(key).ok())
+        .and_then(|key| <[u8; N]>::try_from(key).ok())
 }
 
 pub fn resolve_document(did_document: DidDocument, target_id: &str) -> Result<Vid, VidError> {
@@ -133,7 +133,7 @@ pub fn resolve_document(did_document: DidDocument, target_id: &str) -> Result<Vi
         return Err(VidError::ResolveVid("Invalid id specified in DID document"));
     }
 
-    let Some(public_sigkey) = find_first_key(
+    let Some(public_sigkey) = find_first_key::<PUBLIC_VERIFICATION_KEY_SIZE>(
         &did_document,
         &did_document.authentication,
         "Ed25519",
@@ -144,9 +144,12 @@ pub fn resolve_document(did_document: DidDocument, target_id: &str) -> Result<Vi
         ));
     };
 
-    let Some(public_enckey) =
-        find_first_key(&did_document, &did_document.key_agreement, "X25519", "enc")
-    else {
+    let Some(public_enckey) = find_first_key::<PUBLIC_KEY_SIZE>(
+        &did_document,
+        &did_document.key_agreement,
+        "X25519",
+        "enc",
+    ) else {
         return Err(VidError::ResolveVid(
             "No valid encryption key found in DID document",
         ));
