@@ -18,7 +18,7 @@ strict = [ ]
 fuzzing = ["dep:arbitrary"]
 demo = [ ]
 nacl = ["dep:crypto_box", "essr"]
-pq = ["dep:hpke_pq"]
+pq = ["dep:hpke_pq", "essr"]
 async = [
     "resolve",
     "aries-askar",

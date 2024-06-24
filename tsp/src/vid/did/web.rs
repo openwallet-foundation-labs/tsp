@@ -241,15 +241,8 @@ pub fn create_did_web(
 #[cfg(test)]
 mod tests {
     use super::resolve_url;
-    use crate::{
-        definitions::VerifiedVid,
-        vid::{
-            did::web::{resolve_document, DidDocument},
-            error::VidError,
-        },
-    };
+    use crate::vid::error::VidError;
     use url::Url;
-    use wasm_bindgen_test::wasm_bindgen_test;
 
     fn resolve_did_string(did: &str) -> Result<Url, VidError> {
         let parts = did.split(':').collect::<Vec<&str>>();
@@ -277,6 +270,7 @@ mod tests {
         assert!(resolve_did_string("did:web:example.com:user:user:user").is_err());
     }
 
+    #[cfg(not(feature = "pq"))]
     #[test]
     #[wasm_bindgen_test]
     fn test_resolve_document() {

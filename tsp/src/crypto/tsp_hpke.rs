@@ -101,10 +101,7 @@ where
     let sender_encryption_key = Kem::PublicKey::from_bytes(sender.encryption_key().as_ref())?;
     #[cfg(all(not(feature = "essr"), not(feature = "pq")))]
     let mode = OpModeS::Auth((&sender_decryption_key, &sender_encryption_key));
-    #[cfg(feature = "pq")]
-    let mode = OpModeS::Auth((sender_decryption_key, sender_encryption_key));
-
-    #[cfg(feature = "essr")]
+    #[cfg(any(feature = "essr", feature = "pq"))]
     let mode = OpModeS::Base;
 
     // recipient public key
@@ -185,7 +182,7 @@ where
     let encapped_key = Kem::EncappedKey::from_bytes(encapped_key)?;
     let tag = aead::AeadTag::from_bytes(tag)?;
 
-    #[cfg(feature = "essr")]
+    #[cfg(any(feature = "essr", feature = "pq"))]
     let mode = OpModeR::Base;
 
     #[cfg(not(feature = "essr"))]
@@ -193,9 +190,6 @@ where
 
     #[cfg(all(not(feature = "essr"), not(feature = "pq")))]
     let mode = OpModeR::Auth(&sender_encryption_key);
-
-    #[cfg(feature = "pq")]
-    let mode = OpModeR::Auth(sender_encryption_key);
 
     // decrypt the ciphertext
     single_shot_open_in_place_detached::<A, Kdf, Kem>(

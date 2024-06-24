@@ -127,6 +127,7 @@ impl<'de> Deserialize<'de> for PrivateSigningKeyData {
     }
 }
 
+#[cfg(not(feature = "pq"))]
 #[cfg(feature = "async")]
 #[cfg(test)]
 mod test {

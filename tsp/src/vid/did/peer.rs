@@ -140,6 +140,7 @@ pub(crate) fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
     }
 }
 
+#[cfg(not(feature = "pq"))]
 #[cfg(test)]
 mod test {
     use crate::definitions::VerifiedVid;

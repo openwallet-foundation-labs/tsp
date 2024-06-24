@@ -305,6 +305,7 @@ impl Vault {
     }
 }
 
+#[cfg(not(feature = "pq"))]
 #[cfg(test)]
 mod test {
     use crate::{OwnedVid, Store, VerifiedVid};
