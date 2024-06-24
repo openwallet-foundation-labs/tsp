@@ -36,6 +36,35 @@ jobs:
         run: cargo test -- --nocapture && cargo test --doc
         shell: bash
 
+  check-wasm32-unknown-unknown:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal
+
+      - uses: actions/cache/restore@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: linux-x86-64-gnu-${{ hashFiles('Cargo.toml') }}
+          restore-keys: linux-x86-64-gnu-
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack
+
+      - name: Run tests with wasm-pack
+        working-directory: tsp
+        run: wasm-pack test --node -- -p tsp --no-default-features --features "resolve"
+
   fuzz:
     name: run cargo-fuzz
     runs-on: ubuntu-22.04

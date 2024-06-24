@@ -766,9 +766,12 @@ pub fn decode_tsp_message<'a, Vid: TryFrom<&'a [u8]>>(
 
 #[cfg(test)]
 mod test {
+    use wasm_bindgen_test::wasm_bindgen_test;
+
     use super::*;
 
     #[test]
+    #[wasm_bindgen_test]
     fn envelope_without_nonconfidential_data() {
         fn dummy_crypt(data: &[u8]) -> &[u8] {
             data
@@ -813,6 +816,7 @@ mod test {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn envelope_with_nonconfidential_data() {
         fn dummy_crypt(data: &[u8]) -> &[u8] {
             data
@@ -857,6 +861,7 @@ mod test {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn envelope_without_confidential_data() {
         let fixed_sig = [1; 64];
 
@@ -888,6 +893,7 @@ mod test {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn s_envelope_with_confidential_data_failure() {
         fn dummy_crypt(data: &[u8]) -> &[u8] {
             data
@@ -911,6 +917,7 @@ mod test {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn envelope_failure() {
         let fixed_sig = [1; 64];
 
@@ -931,6 +938,7 @@ mod test {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn trailing_data() {
         let fixed_sig = [1; 64];
 
@@ -980,16 +988,19 @@ mod test {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn mut_envelope_with_nonconfidential_data() {
         test_turn_around(Payload::GenericMessage(&b"Hello TSP!"[..]));
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn test_nested_msg() {
         test_turn_around(Payload::NestedMessage(&b"Hello TSP!"[..]));
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn test_routed_msg() {
         test_turn_around(Payload::RoutedMessage(
             vec![b"foo", b"bar"],
@@ -1037,6 +1048,7 @@ mod test {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn test_relation_forming() {
         let temp = (1u8..33).collect::<Vec<u8>>();
         let nonce: &[u8; 32] = temp.as_slice().try_into().unwrap();
@@ -1060,6 +1072,7 @@ mod test {
     }
 
     #[test]
+    #[wasm_bindgen_test]
     fn test_message_to_parts() {
         use base64ct::{Base64UrlUnpadded, Encoding};
 

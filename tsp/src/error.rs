@@ -17,6 +17,7 @@ pub enum Error {
     #[error("Error: {0}")]
     FromUtf8(#[from] std::string::FromUtf8Error),
     #[error("Error: {0}")]
+    #[cfg(feature = "async")]
     Storage(#[from] aries_askar::Error),
     #[error("Error decoding persisted state: {0}")]
     DecodeState(&'static str),

@@ -110,6 +110,7 @@ pub(crate) mod serde_key_data_option {
     }
 }
 
+#[cfg(feature = "async")]
 #[cfg(test)]
 mod test {
     use super::OwnedVid;
