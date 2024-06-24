@@ -12,18 +12,18 @@ mod nonconfidential;
 #[cfg(feature = "nacl")]
 mod tsp_nacl;
 
-#[cfg(feature = "hpke")]
+#[cfg(not(feature = "nacl"))]
 mod tsp_hpke;
 
 pub use error::CryptoError;
 
-#[cfg(feature = "hpke")]
+#[cfg(not(feature = "nacl"))]
 pub type Aead = hpke::aead::ChaCha20Poly1305;
 
-#[cfg(feature = "hpke")]
+#[cfg(not(feature = "nacl"))]
 pub type Kdf = hpke::kdf::HkdfSha256;
 
-#[cfg(feature = "hpke")]
+#[cfg(not(feature = "nacl"))]
 pub type Kem = hpke::kem::X25519HkdfSha256;
 
 type ObservingClosure<'a> = &'a mut dyn FnMut(&[u8]);
@@ -35,7 +35,7 @@ pub fn seal(
     nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
 ) -> Result<TSPMessage, CryptoError> {
-    #[cfg(feature = "hpke")]
+    #[cfg(not(feature = "nacl"))]
     return tsp_hpke::seal::<Aead, Kdf, Kem>(sender, receiver, nonconfidential_data, payload, None);
 
     #[cfg(feature = "nacl")]
@@ -51,7 +51,7 @@ pub fn seal_and_hash(
 ) -> Result<(TSPMessage, Digest), CryptoError> {
     let digest = &mut Default::default();
 
-    #[cfg(feature = "hpke")]
+    #[cfg(not(feature = "nacl"))]
     let msg = tsp_hpke::seal::<Aead, Kdf, Kem>(
         sender,
         receiver,
@@ -84,7 +84,7 @@ pub fn open<'a>(
     sender: &dyn VerifiedVid,
     tsp_message: &'a mut [u8],
 ) -> Result<MessageContents<'a>, CryptoError> {
-    #[cfg(feature = "hpke")]
+    #[cfg(not(feature = "nacl"))]
     return tsp_hpke::open::<Aead, Kdf, Kem>(receiver, sender, tsp_message);
 
     #[cfg(feature = "nacl")]
@@ -108,7 +108,7 @@ pub fn verify<'a>(
     nonconfidential::verify(sender, tsp_message)
 }
 
-#[cfg(feature = "hpke")]
+#[cfg(not(feature = "nacl"))]
 /// Generate a new encryption / decryption key pair
 pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
     use hpke::Serializable;
