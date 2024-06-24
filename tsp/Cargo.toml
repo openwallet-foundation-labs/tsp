@@ -12,13 +12,12 @@ rust-version.workspace = true
 
 [features]
 cesr-t = [ ]
-default = ["async", "hpke"]
+default = ["async"]
 essr = [ ]
 strict = [ ]
 fuzzing = ["dep:arbitrary"]
 demo = [ ]
 nacl = ["dep:crypto_box", "essr"]
-hpke = ["dep:hpke"]
 async = [
     "resolve",
     "aries-askar",
@@ -55,7 +54,7 @@ tracing = { workspace = true, optional = true }
 once_cell = { workspace = true }
 # crypto
 ed25519-dalek = { workspace = true }
-hpke = { workspace = true, optional = true }
+hpke = { workspace = true }
 rand = { workspace = true }
 sha2 = { workspace = true }
 crypto_box = { workspace = true, optional = true }
