@@ -243,6 +243,7 @@ mod tests {
     use super::resolve_url;
     use crate::vid::error::VidError;
     use url::Url;
+    use wasm_bindgen_test::wasm_bindgen_test;
 
     fn resolve_did_string(did: &str) -> Result<Url, VidError> {
         let parts = did.split(':').collect::<Vec<&str>>();
@@ -274,6 +275,11 @@ mod tests {
     #[test]
     #[wasm_bindgen_test]
     fn test_resolve_document() {
+        use crate::{
+            vid::did::web::{resolve_document, DidDocument},
+            VerifiedVid,
+        };
+
         let alice_did_doc = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../examples/test/alice-did.json"
