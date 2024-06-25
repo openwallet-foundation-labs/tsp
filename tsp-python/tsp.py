@@ -37,6 +37,12 @@ class Store:
     def make_relationship_cancel(self, *args, **kwargs):
         return self.inner.make_relationship_cancel(*args, **kwargs)
 
+    def make_nested_relationship_request(self, *args, **kwargs):
+        return self.inner.make_nested_relationship_request(*args, **kwargs)
+
+    def make_nested_relationship_accept(self, *args, **kwargs):
+        return self.inner.make_nested_relationship_accept(*args, **kwargs)
+
     def forward_routed_message(self, *args, **kwargs):
         return self.inner.forward_routed_message(*args, **kwargs)
 

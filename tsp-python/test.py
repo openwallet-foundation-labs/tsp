@@ -191,7 +191,76 @@ class AliceBob(unittest.TestCase):
             case other:
                 self.fail(f"unexpected message type {other}")
 
+    def test_nested_automatic(self):
+        a_store = Store()
+        b_store = Store()
 
+        a = new_vid()
+        b = new_vid()
+
+        a_store.add_private_vid(a)
+        b_store.add_private_vid(b)
+
+        a_store.add_verified_vid(b)
+        b_store.add_verified_vid(a)
+
+        url, sealed = a_store.make_relationship_request(a.identifier(), b.identifier(), None)
+        self.assertEqual(url, "tcp://127.0.0.1:1337")
+
+        received = b_store.open_message(sealed)
+        match received:
+            case RequestRelationship(sender, _route, _nested_vid, thread_id):
+                self.assertEqual(sender, a.identifier())
+
+            case other:
+                self.fail(f"unexpected message type {other}")
+
+        url, sealed = b_store.make_relationship_accept(b.identifier(), a.identifier(), thread_id, None)
+        self.assertEqual(url, "tcp://127.0.0.1:1337")
+
+        received = a_store.open_message(sealed)
+        match received:
+            case AcceptRelationship(sender, _nested_vid):
+                self.assertEqual(sender, b.identifier())
+
+            case other:
+                self.fail(f"unexpected message type {other}")
+
+        (_url, sealed), nested_a = a_store.make_nested_relationship_request(a.identifier(), b.identifier())
+
+        match b_store.open_message(sealed):
+            case RequestRelationship(sender, _route, nested_vid_1, thread_id):
+                self.assertEqual(sender, a.identifier())
+
+            case other:
+                self.fail(f"unexpected message type {other}")
+
+        (_url, sealed), nested_b = b_store.make_nested_relationship_accept(b.identifier(), nested_vid_1, thread_id)
+
+        match a_store.open_message(sealed):
+            case AcceptRelationship(sender, nested_vid_2):
+                self.assertEqual(sender, b.identifier())
+
+            case other:
+                self.fail(f"unexpected message type {other}")
+
+        self.assertEqual(nested_a.identifier(), nested_vid_1);
+        self.assertEqual(nested_b.identifier(), nested_vid_2);
+
+        hello_world = b"hello world";
+
+        _url, sealed = a_store.seal_message(nested_a.identifier(), nested_b.identifier(), None, hello_world)
+
+        received = b_store.open_message(sealed)
+
+        match received:
+            case GenericMessage(sender, _, received_message, message_type):
+                self.assertEqual(sender, nested_a.identifier())
+                self.assertEqual(received_message, hello_world)
+                self.assertEqual(message_type, MessageType.SignedAndEncrypted)
+
+            case other:
+                self.fail(f"unexpected message type {other}")
 
 if __name__ == '__main__':
     unittest.main()
