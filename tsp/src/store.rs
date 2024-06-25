@@ -464,10 +464,10 @@ impl Store {
     pub fn forward_routed_message(
         &self,
         next_hop: &str,
-        path: Vec<&[u8]>,
-        opaque_message: &[u8],
+        route: Vec<&[u8]>,
+        opaque_payload: &[u8],
     ) -> Result<(Url, Vec<u8>), Error> {
-        if path.is_empty() {
+        if route.is_empty() {
             // we are the final delivery point, we should be the 'next_hop'
             let sender = self.get_vid(next_hop)?;
 
@@ -484,7 +484,7 @@ impl Store {
                 &**sender_private,
                 &*recipient,
                 None,
-                Payload::NestedMessage(opaque_message),
+                Payload::NestedMessage(opaque_payload),
             )?;
 
             Ok((recipient.endpoint().clone(), tsp_message))
@@ -492,7 +492,7 @@ impl Store {
             // we are an intermediary, continue sending the message
             let next_hop_context = self
                 .get_vid(next_hop)
-                .map_err(|_| Error::InvalidNextHop(next_hop.to_string()))?;
+                .map_err(|_| Error::UnresolvedNextHop(next_hop.to_string()))?;
 
             let sender = match next_hop_context.get_relation_vid() {
                 Some(first_sender) => self.get_private_vid(first_sender)?,
@@ -503,7 +503,7 @@ impl Store {
                 &*sender,
                 &*next_hop_context.vid,
                 None,
-                Payload::RoutedMessage(path, opaque_message),
+                Payload::RoutedMessage(route, opaque_payload),
             )?;
 
             Ok((next_hop_context.vid.endpoint().clone(), tsp_message))
@@ -1151,5 +1151,138 @@ mod test {
             panic!("unexpected message type");
         };
         assert_eq!(sender, bob.identifier());
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_routed() {
+        let a_store = Store::new();
+        let b_store = Store::new();
+        let c_store = Store::new();
+        let d_store = Store::new();
+
+        let nette_a = new_vid();
+        let sneaky_a = new_vid();
+
+        let b = new_vid();
+
+        let mailbox_c = new_vid();
+        let c = new_vid();
+
+        let sneaky_d = new_vid();
+        let nette_d = new_vid();
+
+        a_store.add_private_vid(nette_a.clone()).unwrap();
+        a_store.add_private_vid(sneaky_a.clone()).unwrap();
+        b_store.add_private_vid(b.clone()).unwrap();
+        c_store.add_private_vid(mailbox_c.clone()).unwrap();
+        c_store.add_private_vid(c.clone()).unwrap();
+        d_store.add_private_vid(sneaky_d.clone()).unwrap();
+        d_store.add_private_vid(nette_d.clone()).unwrap();
+
+        a_store.add_verified_vid(b.clone()).unwrap();
+        a_store.add_verified_vid(sneaky_d.clone()).unwrap();
+
+        b_store.add_verified_vid(nette_a.clone()).unwrap();
+        b_store.add_verified_vid(c.clone()).unwrap();
+
+        c_store.add_verified_vid(b.clone()).unwrap();
+        c_store.add_verified_vid(nette_d.clone()).unwrap();
+
+        d_store.add_verified_vid(sneaky_a.clone()).unwrap();
+        d_store.add_verified_vid(mailbox_c.clone()).unwrap();
+
+        a_store
+            .set_relation_for_vid(b.identifier(), Some(nette_a.identifier()))
+            .unwrap();
+
+        a_store
+            .set_relation_for_vid(sneaky_d.identifier(), Some(sneaky_a.identifier()))
+            .unwrap();
+
+        a_store
+            .set_route_for_vid(
+                sneaky_d.identifier(),
+                &[b.identifier(), c.identifier(), mailbox_c.identifier()],
+            )
+            .unwrap();
+
+        b_store
+            .set_relation_for_vid(c.identifier(), Some(b.identifier()))
+            .unwrap();
+
+        c_store
+            .set_relation_for_vid(mailbox_c.identifier(), Some(nette_d.identifier()))
+            .unwrap();
+
+        let hello_world = b"hello world";
+
+        let (_url, sealed) = a_store
+            .seal_message(
+                sneaky_a.identifier(),
+                sneaky_d.identifier(),
+                None,
+                hello_world,
+            )
+            .unwrap();
+
+        let received = b_store.open_message(&mut sealed.clone()).unwrap();
+
+        let ReceivedTspMessage::ForwardRequest {
+            sender,
+            next_hop,
+            route,
+            opaque_payload,
+        } = received
+        else {
+            panic!()
+        };
+        assert_eq!(sender, nette_a.identifier());
+
+        let (_url, sealed) = b_store
+            .forward_routed_message(
+                &next_hop,
+                route.iter().map(|s| s.as_slice()).collect(),
+                &opaque_payload,
+            )
+            .unwrap();
+
+        let received = c_store.open_message(&mut sealed.clone()).unwrap();
+
+        let ReceivedTspMessage::ForwardRequest {
+            sender,
+            next_hop,
+            route,
+            opaque_payload,
+        } = received
+        else {
+            panic!()
+        };
+        assert_eq!(sender, b.identifier());
+
+        let (_url, sealed) = c_store
+            .forward_routed_message(
+                &next_hop,
+                route.iter().map(|s| s.as_slice()).collect(),
+                &opaque_payload,
+            )
+            .unwrap();
+
+        let received = d_store.open_message(&mut sealed.clone()).unwrap();
+
+        let ReceivedTspMessage::GenericMessage {
+            sender,
+            nonconfidential_data,
+            message,
+            message_type,
+        } = received
+        else {
+            panic!()
+        };
+
+        assert_eq!(sender, sneaky_a.identifier());
+        assert!(nonconfidential_data.is_none());
+        assert_eq!(message, hello_world);
+        assert_eq!(message_type, MessageType::SignedAndEncrypted);
     }
 }

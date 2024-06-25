@@ -33,6 +33,8 @@ pub enum Error {
     UnverifiedVid(String),
     #[error("Error: no relation with sender {0}")]
     UnverifiedSource(String),
+    #[error("Error: unresolved next hop {0}")]
+    UnresolvedNextHop(String),
     #[error("Error: no relation with next hop {0}")]
     InvalidNextHop(String),
     #[error("Error: no relation established for {0}")]
