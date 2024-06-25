@@ -16,6 +16,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 wasm-bindgen = "0.2"
 web-sys = { version = "0.3", features = ["console"] }
-tsp = { path = "../tsp", default-features = false, features = ["resolve"] }
+tsp = { path = "../tsp", default-features = false, features = ["resolve", "serialize"] }
+serde_json.workspace = true
 serde.workspace = true
 serde-wasm-bindgen = "0.4"

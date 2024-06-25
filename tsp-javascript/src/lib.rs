@@ -34,6 +34,11 @@ impl Store {
     }
 
     #[wasm_bindgen]
+    pub fn add_verified_vid(&self, vid: Vid) -> Result<(), Error> {
+        self.0.add_verified_vid(vid.0).map_err(Error)
+    }
+
+    #[wasm_bindgen]
     pub fn seal_message(
         &self,
         sender: String,
@@ -63,6 +68,22 @@ impl Store {
             .open_message(&mut message)
             .map(FlatReceivedTspMessage::from)
             .map_err(Error)
+    }
+}
+
+#[wasm_bindgen]
+pub struct Vid(tsp::Vid);
+
+#[wasm_bindgen]
+impl Vid {
+    pub fn from_json(data: String) -> Result<Vid, JsValue> {
+        Ok(Vid(serde_json::from_str(&data).unwrap()))
+    }
+
+    #[wasm_bindgen]
+    pub fn identifier(&self) -> String {
+        use tsp::VerifiedVid;
+        self.0.identifier().to_string()
     }
 }
 
