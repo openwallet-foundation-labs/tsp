@@ -71,7 +71,7 @@ pub enum Payload<'a, Bytes: AsRef<[u8]>, Vid> {
     /// A TSP message confiming a relationship
     DirectRelationAffirm { reply: &'a Sha256Digest },
     /// A TSP message requesting a nested relationship
-    NestedRelationProposal { new_vid: Vid },
+    NestedRelationProposal { nonce: Nonce, new_vid: Vid },
     /// A TSP message confiming a relationship
     NestedRelationAffirm {
         new_vid: Vid,
@@ -79,10 +79,7 @@ pub enum Payload<'a, Bytes: AsRef<[u8]>, Vid> {
         reply: &'a Sha256Digest,
     },
     /// A TSP cancellation message
-    RelationshipCancel {
-        nonce: Nonce,
-        reply: &'a Sha256Digest,
-    },
+    RelationshipCancel { reply: &'a Sha256Digest },
 }
 
 impl<'a, Bytes: AsRef<[u8]>, Vid> Payload<'a, Bytes, Vid> {
@@ -217,9 +214,10 @@ pub fn encode_payload(
             encode_fixed_data(TSP_TYPECODE, &msgtype::NEW_REL_REPLY, output);
             encode_fixed_data(TSP_SHA256, reply.as_slice(), output);
         }
-        Payload::NestedRelationProposal { new_vid } => {
+        Payload::NestedRelationProposal { new_vid, nonce } => {
             encode_fixed_data(TSP_TYPECODE, &msgtype::NEW_NEST_REL, output);
             checked_encode_variable_data(TSP_DEVELOPMENT_VID, new_vid.as_ref(), output)?;
+            encode_fixed_data(TSP_NONCE, &nonce.0, output);
         }
         Payload::NestedRelationAffirm {
             new_vid,
@@ -231,9 +229,8 @@ pub fn encode_payload(
             checked_encode_variable_data(TSP_DEVELOPMENT_VID, connect_to_vid.as_ref(), output)?;
             encode_fixed_data(TSP_SHA256, reply.as_slice(), output);
         }
-        Payload::RelationshipCancel { nonce, reply } => {
+        Payload::RelationshipCancel { reply } => {
             encode_fixed_data(TSP_TYPECODE, &msgtype::REL_CANCEL, output);
-            encode_fixed_data(TSP_NONCE, &nonce.0, output);
             encode_fixed_data(TSP_SHA256, reply.as_slice(), output);
         }
     }
@@ -323,7 +320,10 @@ pub fn decode_payload(mut stream: &[u8]) -> Result<DecodedPayload, DecodeError> 
             let new_vid = decode_variable_data(TSP_DEVELOPMENT_VID, &mut stream)
                 .ok_or(DecodeError::UnexpectedData)?;
 
-            Some(Payload::NestedRelationProposal { new_vid })
+            decode_fixed_data(TSP_NONCE, &mut stream).map(|nonce| Payload::NestedRelationProposal {
+                new_vid,
+                nonce: Nonce(*nonce),
+            })
         }
         msgtype::NEW_NEST_REL_REPLY => {
             let new_vid = decode_variable_data(TSP_DEVELOPMENT_VID, &mut stream)
@@ -337,12 +337,8 @@ pub fn decode_payload(mut stream: &[u8]) -> Result<DecodedPayload, DecodeError> 
                 reply,
             })
         }
-        msgtype::REL_CANCEL => decode_fixed_data(TSP_NONCE, &mut stream).and_then(|nonce| {
-            decode_fixed_data(TSP_SHA256, &mut stream).map(|reply| Payload::RelationshipCancel {
-                nonce: Nonce(*nonce),
-                reply,
-            })
-        }),
+        msgtype::REL_CANCEL => decode_fixed_data(TSP_SHA256, &mut stream)
+            .map(|reply| Payload::RelationshipCancel { reply }),
         _ => return Err(DecodeError::UnexpectedMsgType),
     };
 
@@ -1171,17 +1167,17 @@ mod test {
         });
         test_turn_around(Payload::DirectRelationAffirm { reply: nonce });
         let new_vid = &[];
-        test_turn_around(Payload::NestedRelationProposal { new_vid });
+        test_turn_around(Payload::NestedRelationProposal {
+            new_vid,
+            nonce: Nonce(*nonce),
+        });
         test_turn_around(Payload::NestedRelationAffirm {
             new_vid,
             connect_to_vid: new_vid,
             reply: nonce,
         });
 
-        test_turn_around(Payload::RelationshipCancel {
-            reply: nonce,
-            nonce: Nonce(*nonce),
-        });
+        test_turn_around(Payload::RelationshipCancel { reply: nonce });
     }
 
     #[test]
