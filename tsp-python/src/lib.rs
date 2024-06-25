@@ -30,6 +30,23 @@ impl Store {
         self.0.add_private_vid(vid.0).map_err(py_exception)
     }
 
+    fn add_verified_vid(&self, vid: OwnedVid) -> PyResult<()> {
+        self.0.add_verified_vid(vid.0).map_err(py_exception)
+    }
+
+    fn set_relation_for_vid(&self, vid: String, relation_vid: Option<String>) -> PyResult<()> {
+        self.0
+            .set_relation_for_vid(&vid, relation_vid.as_deref())
+            .map_err(py_exception)
+    }
+
+    fn set_route_for_vid(&self, vid: String, route: Vec<String>) -> PyResult<()> {
+        let borrowed: Vec<_> = route.iter().map(|s| s.as_str()).collect();
+        self.0
+            .set_route_for_vid(&vid, &borrowed)
+            .map_err(py_exception)
+    }
+
     #[pyo3(signature = (sender, receiver, nonconfidential_data, message))]
     fn seal_message(
         &self,
@@ -104,6 +121,21 @@ impl Store {
         let (url, bytes) = self
             .0
             .make_relationship_cancel(&sender, &receiver)
+            .map_err(py_exception)?;
+
+        Ok((url.to_string(), bytes))
+    }
+
+    fn forward_routed_message(
+        &self,
+        next_hop: String,
+        route: Vec<Vec<u8>>,
+        opaque_payload: Vec<u8>,
+    ) -> PyResult<(String, Vec<u8>)> {
+        let borrowed_route: Vec<_> = route.iter().map(|v| v.as_slice()).collect();
+        let (url, bytes) = self
+            .0
+            .forward_routed_message(&next_hop, borrowed_route, &opaque_payload)
             .map_err(py_exception)?;
 
         Ok((url.to_string(), bytes))
