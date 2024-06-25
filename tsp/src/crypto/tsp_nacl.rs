@@ -112,10 +112,10 @@ pub(crate) fn open<'a>(
     let view = crate::cesr::decode_envelope_mut(tsp_message)?;
 
     // verify outer signature
-    let verification_challange = view.as_challenge();
-    let signature = ed25519_dalek::Signature::from(verification_challange.signature);
+    let verification_challenge = view.as_challenge();
+    let signature = ed25519_dalek::Signature::from(verification_challenge.signature);
     let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(sender.verifying_key())?;
-    verifying_key.verify_strict(verification_challange.signed_data, &signature)?;
+    verifying_key.verify_strict(verification_challenge.signed_data, &signature)?;
 
     // decode envelope
     let DecodedEnvelope {
