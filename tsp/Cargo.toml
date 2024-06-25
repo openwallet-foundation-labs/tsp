@@ -12,7 +12,7 @@ rust-version.workspace = true
 
 [features]
 cesr-t = [ ]
-default = ["async", "pq"]
+default = ["async"]
 essr = [ ]
 strict = [ ]
 fuzzing = ["dep:arbitrary"]
