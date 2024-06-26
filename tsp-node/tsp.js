@@ -1,4 +1,5 @@
 const wasm = require('tsp-javascript');
+const { OwnedVid } = wasm;
 
 const MessageType = {
     Signed: 0, 
@@ -29,6 +30,18 @@ class Store {
         return this.inner.seal_message(sender, receiver, nonconfidential_data, byteArray);
     }
 
+    make_relationship_request(...args) {
+        return this.inner.make_relationship_request(...args);
+    }
+
+    make_relationship_accept(...args) {
+        return this.inner.make_relationship_accept(...args);
+    }
+
+    make_relationship_cancel(...args) {
+        return this.inner.make_relationship_cancel(...args);
+    }
+
     open_message(...args) {
         const flatMessage = this.inner.open_message(...args);
         return ReceivedTspMessage.fromFlat(flatMessage);
@@ -47,7 +60,12 @@ class ReceivedTspMessage {
                 );
 
             case 1: 
-                throw new Error("todo!");
+                return new RequestRelationship(
+                    msg.sender,
+                    msg.route,
+                    msg.nested_vid,
+                    msg.thread_id,
+                );
 
             case 2: 
                 return new AcceptRelationship(
@@ -82,6 +100,16 @@ class GenericMessage extends ReceivedTspMessage {
     }
 }
 
+class RequestRelationship extends ReceivedTspMessage {
+    constructor(sender, route, nested_vid, thread_id) {
+        super();
+        this.sender = sender;
+        this.route = route;
+        this.nested_vid = nested_vid;
+        this.thread_id = thread_id;
+    }
+}
+
 class AcceptRelationship extends ReceivedTspMessage {
     constructor(sender, nestedVid) {
         super();
@@ -97,53 +125,14 @@ class CancelRelationship extends ReceivedTspMessage {
     }
 }
 
-function arraysEqual(arr1, arr2) {
-    if (arr1.length !== arr2.length) {
-        return false;
-    }
-    for (let i = 0; i < arr1.length; i++) {
-        if (arr1[i] !== arr2[i]) {
-            return false;
-        }
-    }
-    return true;
-}
+module.exports = {
+    MessageType,
+    Store,
+    OwnedVid,
+    ReceivedTspMessage,
+    GenericMessage,
+    AcceptRelationship,
+    CancelRelationship,
+    RequestRelationship,
+};
 
-function main() {
-    function new_vid() {
-        return wasm.OwnedVid.new_did_peer("tcp://127.0.0.1:1337");
-    }
-
-    let store = new Store();
-
-    let alice = new_vid()
-    let bob = new_vid()
-
-    let alice_identifier = alice.identifier();
-    let bob_identifier = bob.identifier();
-
-    store.add_private_vid(alice)
-    store.add_private_vid(bob)
-
-    let message = "hello world"
-
-    let sealed = store.seal_message(alice_identifier, bob_identifier, null, message);
-
-    console.assert(sealed.url == "tcp://127.0.0.1:1337");
-
-    let received = store.open_message(sealed.bytes);
-
-    if (received instanceof GenericMessage) {
-        const { sender, message: messageBytes, messageType } = received;
-        console.assert(sender === alice_identifier, "Sender does not match Alice's identifier");
-        let receivedMessage = String.fromCharCode.apply(null, messageBytes);
-        console.assert(receivedMessage == message, "Received message does not match");
-        console.assert(messageType === MessageType.SignedAndEncrypted, "Message type does not match SignedAndEncrypted");
-        console.log("success:", receivedMessage);
-    } else {
-        console.log(`unexpected message type`, received);
-        console.assert(false, "Unexpected message type");
-    }
-}
-
-main()

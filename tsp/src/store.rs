@@ -1139,7 +1139,7 @@ mod test {
         };
         assert_eq!(sender, bob.identifier());
 
-        // new bob cancels the relation
+        // now bob cancels the relation
         let (url, sealed) = store
             .make_relationship_cancel(bob.identifier(), alice.identifier())
             .unwrap();
