@@ -22,6 +22,16 @@ pub struct SealedMessage {
 }
 
 #[wasm_bindgen]
+pub struct NestedSealedMessage {
+    #[wasm_bindgen(getter_with_clone)]
+    pub url: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub sealed: Vec<u8>,
+    #[wasm_bindgen(getter_with_clone)]
+    pub nested_vid: OwnedVid,
+}
+
+#[wasm_bindgen]
 impl Store {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
@@ -155,6 +165,43 @@ impl Store {
     }
 
     #[wasm_bindgen]
+    pub fn make_nested_relationship_request(
+        &self,
+        parent_sender: String,
+        receiver: String,
+    ) -> Result<NestedSealedMessage, Error> {
+        let ((url, sealed), vid) = self
+            .0
+            .make_nested_relationship_request(&parent_sender, &receiver)
+            .map_err(Error)?;
+
+        Ok(NestedSealedMessage {
+            url: url.to_string(),
+            sealed,
+            nested_vid: OwnedVid(vid),
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn make_nested_relationship_accept(
+        &self,
+        sender: String,
+        receiver: String,
+        thread_id: Vec<u8>,
+    ) -> Result<NestedSealedMessage, Error> {
+        let ((url, sealed), vid) = self
+            .0
+            .make_nested_relationship_accept(&sender, &receiver, thread_id.try_into().unwrap())
+            .map_err(Error)?;
+
+        Ok(NestedSealedMessage {
+            url: url.to_string(),
+            sealed,
+            nested_vid: OwnedVid(vid),
+        })
+    }
+
+    #[wasm_bindgen]
     pub fn forward_routed_message(
         &self,
         next_hop: String,
@@ -186,6 +233,7 @@ fn convert(value: JsValue) -> Result<Vec<Vec<u8>>, serde_wasm_bindgen::Error> {
 }
 
 #[wasm_bindgen]
+#[derive(Clone)]
 pub struct OwnedVid(tsp::OwnedVid);
 
 #[wasm_bindgen]
