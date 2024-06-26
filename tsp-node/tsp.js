@@ -54,6 +54,14 @@ class Store {
         return this.inner.make_relationship_cancel(...args);
     }
 
+    make_nested_relationship_accept(...args) {
+        return this.inner.make_nested_relationship_accept(...args);
+    }
+
+    make_nested_relationship_request(...args) {
+        return this.inner.make_nested_relationship_request(...args);
+    }
+
     forward_routed_message(...args) {
         return this.inner.forward_routed_message(...args);
     }
@@ -112,12 +120,12 @@ class ReceivedTspMessage {
 }
 
 class GenericMessage extends ReceivedTspMessage {
-    constructor(sender, nonconfidentialData, message, messageType) {
+    constructor(sender, nonconfidential_data, message, message_type) {
         super();
         this.sender = sender;
-        this.nonconfidentialData = nonconfidentialData;
+        this.nonconfidential_data = nonconfidential_data;
         this.message = message;
-        this.messageType = messageType;
+        this.message_type = message_type;
     }
 }
 
@@ -132,10 +140,10 @@ class RequestRelationship extends ReceivedTspMessage {
 }
 
 class AcceptRelationship extends ReceivedTspMessage {
-    constructor(sender, nestedVid) {
+    constructor(sender, nested_vid) {
         super();
         this.sender = sender;
-        this.nestedVid = nestedVid;
+        this.nested_vid = nested_vid;
     }
 }
 

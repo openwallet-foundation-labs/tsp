@@ -29,11 +29,11 @@ describe('tsp node tests', function() {
         let received = store.open_message(sealed);
 
         if (received instanceof GenericMessage) {
-            const { sender, message: messageBytes, messageType } = received;
+            const { sender, message: messageBytes, message_type } = received;
             assert.strictEqual(sender, alice_identifier, "Sender does not match Alice's identifier");
             let receivedMessage = String.fromCharCode.apply(null, messageBytes);
             assert.strictEqual(receivedMessage, message, "Received message does not match");
-            assert.strictEqual(messageType, MessageType.SignedAndEncrypted, "Message type does not match SignedAndEncrypted");
+            assert.strictEqual(message_type, MessageType.SignedAndEncrypted, "Message type does not match SignedAndEncrypted");
         } else {
             assert.fail(`Unexpected message type: ${received}`);
         }
@@ -126,7 +126,7 @@ describe('tsp node tests', function() {
         }
     });
 
-    it("nested", function() {
+    it("routed", function() {
         // Create stores and identities
         let a_store = new Store();
         let b_store = new Store();
@@ -205,11 +205,11 @@ describe('tsp node tests', function() {
 
                 // Check the final received message in d_store
                 if (received instanceof GenericMessage) {
-                    const { sender, nonconfidentialData: _, message: messageBytes, messageType } = received;
+                    const { sender, nonconfidential_data: _, message: messageBytes, message_type } = received;
                     assert.strictEqual(sender, sneaky_a.identifier());
                     message = String.fromCharCode.apply(null, messageBytes);
                     assert.strictEqual(message, hello_world, "Received message does not match");
-                    assert.strictEqual(messageType, MessageType.SignedAndEncrypted, "Message type does not match SignedAndEncrypted");
+                    assert.strictEqual(message_type, MessageType.SignedAndEncrypted, "Message type does not match SignedAndEncrypted");
                 } else {
                     assert.fail(`Unexpected message type in d_store: ${received.type}`);
                 }
@@ -218,6 +218,89 @@ describe('tsp node tests', function() {
             }
         } else {
             assert.fail(`Unexpected message type in b_store: ${received.type}`);
+        }
+    });
+
+    it("nested automatic", function() {
+        // Create stores and VIDs
+        let a_store = new Store();
+        let b_store = new Store();
+
+        let a = new_vid();
+        let b = new_vid();
+
+        // Add private and verified VIDs
+        a_store.add_private_vid(a);
+        b_store.add_private_vid(b);
+
+        a_store.add_verified_vid(b);
+        b_store.add_verified_vid(a);
+
+        // Make relationship request from 'a' to 'b'
+        let {url, sealed} = a_store.make_relationship_request(a.identifier(), b.identifier(), null);
+        let received = b_store.open_message(sealed);
+
+        // Pattern match for RequestRelationship in received message
+        if (received instanceof RequestRelationship) {
+            let { thread_id } = received;
+
+            // Make relationship accept from 'b' to 'a'
+            ({url, sealed} = b_store.make_relationship_accept(b.identifier(), a.identifier(), thread_id, null));
+            received = a_store.open_message(sealed);
+
+            // Pattern match for AcceptRelationship in received message
+            if (received instanceof AcceptRelationship) {
+                // Make nested relationship request from 'a' to 'b'
+                ({url, sealed} = a_store.make_nested_relationship_request(a.identifier(), b.identifier()));
+                let received_1 = b_store.open_message(sealed);
+
+                // Pattern match for RequestRelationship with nested_vid in received message
+                if (received_1 instanceof RequestRelationship) {
+                    let { nested_vid: nested_vid_1, thread_id: thread_id_1 } = received_1;
+
+                    // Make nested relationship accept from 'b' with nested_vid_1 to 'a'
+                    ({url, sealed} = b_store.make_nested_relationship_accept(b.identifier(), nested_vid_1, thread_id_1));
+                    let received_2 = a_store.open_message(sealed);
+
+                    // Pattern match for AcceptRelationship with nested_vid in received message
+                    if (received_2 instanceof AcceptRelationship) {
+                        let { nested_vid: nested_vid_2 } = received_2;
+
+                        // Seal and open a message from 'a' to 'b'
+                        let hello_world = "hello world";
+                        ({ url: _, sealed: sealed_hello_world } = a_store.seal_message(
+                            nested_vid_1,
+                            nested_vid_2,
+                            null,
+                            hello_world,
+                        ));
+
+                        let received_3 = b_store.open_message(sealed_hello_world);
+
+                        // Pattern match for GenericMessage in received message
+                        if (received_3 instanceof GenericMessage) {
+                            let { sender, nonconfidential_data, message: messageBytes, message_type } = received_3;
+
+                            // Assertions for GenericMessage
+                            assert.strictEqual(sender, nested_vid_1);
+                            assert.strictEqual(nonconfidential_data, null);
+                            message = String.fromCharCode.apply(null, messageBytes);
+                            assert.strictEqual(message, hello_world, "Received message does not match");
+                            assert.strictEqual(message_type, MessageType.SignedAndEncrypted);
+                        } else {
+                            throw new Error("Unexpected message type");
+                        }
+                    } else {
+                        throw new Error("Expected AcceptRelationship with nested_vid in received message");
+                    }
+                } else {
+                    throw new Error("Expected RequestRelationship with nested_vid in received message");
+                }
+            } else {
+                throw new Error("Expected AcceptRelationship in received message");
+            }
+        } else {
+            throw new Error("Expected RequestRelationship in received message");
         }
     });
 });
