@@ -224,10 +224,10 @@ impl Store {
 
 fn convert(value: JsValue) -> Result<Vec<Vec<u8>>, serde_wasm_bindgen::Error> {
     match serde_wasm_bindgen::from_value(value.clone()) {
-        Ok(x) => return Ok(x),
+        Ok(x) => Ok(x),
         Err(_) => {
             let x: Vec<String> = serde_wasm_bindgen::from_value(value)?;
-            Ok(x.into_iter().map(|s| Vec::from(s)).collect())
+            Ok(x.into_iter().map(Vec::from).collect())
         }
     }
 }
