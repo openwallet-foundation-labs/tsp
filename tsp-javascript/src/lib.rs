@@ -18,7 +18,7 @@ pub struct SealedMessage {
     #[wasm_bindgen(getter_with_clone)]
     pub url: String,
     #[wasm_bindgen(getter_with_clone)]
-    pub bytes: Vec<u8>,
+    pub sealed: Vec<u8>,
 }
 
 #[wasm_bindgen]
@@ -34,6 +34,28 @@ impl Store {
     }
 
     #[wasm_bindgen]
+    pub fn add_verified_vid(&self, vid: &OwnedVid) -> Result<(), Error> {
+        self.0.add_verified_vid(vid.0.clone()).map_err(Error)
+    }
+
+    #[wasm_bindgen]
+    pub fn set_relation_for_vid(
+        &self,
+        vid: String,
+        relation_vid: Option<String>,
+    ) -> Result<(), Error> {
+        self.0
+            .set_relation_for_vid(&vid, relation_vid.as_deref())
+            .map_err(Error)
+    }
+
+    #[wasm_bindgen]
+    pub fn set_route_for_vid(&self, vid: String, route: Vec<String>) -> Result<(), Error> {
+        let borrowed: Vec<_> = route.iter().map(|s| s.as_str()).collect();
+        self.0.set_route_for_vid(&vid, &borrowed).map_err(Error)
+    }
+
+    #[wasm_bindgen]
     pub fn seal_message(
         &self,
         sender: String,
@@ -41,7 +63,7 @@ impl Store {
         nonconfidential_data: Option<Vec<u8>>,
         message: Vec<u8>,
     ) -> Result<SealedMessage, Error> {
-        let (url, bytes) = self
+        let (url, sealed) = self
             .0
             .seal_message(
                 &sender,
@@ -53,7 +75,7 @@ impl Store {
 
         Ok(SealedMessage {
             url: url.to_string(),
-            bytes,
+            sealed,
         })
     }
 
@@ -74,7 +96,7 @@ impl Store {
     ) -> Result<SealedMessage, Error> {
         let route_items: Vec<&str> = route.iter().flatten().map(|s| s.as_str()).collect();
 
-        let (url, bytes) = self
+        let (url, sealed) = self
             .0
             .make_relationship_request(
                 &sender,
@@ -85,7 +107,7 @@ impl Store {
 
         Ok(SealedMessage {
             url: url.to_string(),
-            bytes,
+            sealed,
         })
     }
 
@@ -99,7 +121,7 @@ impl Store {
     ) -> Result<SealedMessage, Error> {
         let route_items: Vec<&str> = route.iter().flatten().map(|s| s.as_str()).collect();
 
-        let (url, bytes) = self
+        let (url, sealed) = self
             .0
             .make_relationship_accept(
                 &sender,
@@ -111,7 +133,7 @@ impl Store {
 
         Ok(SealedMessage {
             url: url.to_string(),
-            bytes,
+            sealed,
         })
     }
 
@@ -121,15 +143,45 @@ impl Store {
         sender: String,
         receiver: String,
     ) -> Result<SealedMessage, Error> {
-        let (url, bytes) = self
+        let (url, sealed) = self
             .0
             .make_relationship_cancel(&sender, &receiver)
             .map_err(Error)?;
 
         Ok(SealedMessage {
             url: url.to_string(),
-            bytes,
+            sealed,
         })
+    }
+
+    #[wasm_bindgen]
+    pub fn forward_routed_message(
+        &self,
+        next_hop: String,
+        route: JsValue,
+        opaque_payload: Vec<u8>,
+    ) -> Result<SealedMessage, Error> {
+        let route = convert(route).unwrap();
+        let borrowed_route: Vec<_> = route.iter().map(|v| v.as_slice()).collect();
+        let (url, sealed) = self
+            .0
+            .forward_routed_message(&next_hop, borrowed_route, &opaque_payload)
+            .map_err(Error)?;
+
+        Ok(SealedMessage {
+            url: url.to_string(),
+            sealed,
+        })
+    }
+}
+
+fn convert(value: JsValue) -> Result<Vec<Vec<u8>>, serde_wasm_bindgen::Error> {
+    match serde_wasm_bindgen::from_value(value.clone()) {
+        Ok(x) => return Ok(x),
+        Err(_) => {
+            let x: Vec<String> = serde_wasm_bindgen::from_value(value)?;
+            Ok(x.into_iter().map(|s| Vec::from(s)).collect())
+        }
     }
 }
 

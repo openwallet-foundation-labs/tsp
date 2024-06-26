@@ -15,6 +15,18 @@ class Store {
         return this.inner.add_private_vid(...args);
     }
 
+    add_verified_vid(...args) {
+        return this.inner.add_verified_vid(...args);
+    }
+
+    set_relation_for_vid(...args) {
+        return this.inner.set_relation_for_vid(...args);
+    }
+
+    set_route_for_vid(...args) {
+        return this.inner.set_route_for_vid(...args);
+    }
+
     seal_message(sender, receiver, nonconfidential_data, message) {
         let byteArray;
         
@@ -40,6 +52,10 @@ class Store {
 
     make_relationship_cancel(...args) {
         return this.inner.make_relationship_cancel(...args);
+    }
+
+    forward_routed_message(...args) {
+        return this.inner.forward_routed_message(...args);
     }
 
     open_message(...args) {
@@ -79,7 +95,12 @@ class ReceivedTspMessage {
                 );
 
             case 4: 
-                throw new Error("todo!");
+                return new ForwardRequest(
+                    msg.sender,
+                    msg.next_hop,
+                    msg.route,
+                    msg.opaque_payload,
+                );
 
             case 5: 
                 throw new Error("todo!");
@@ -125,6 +146,16 @@ class CancelRelationship extends ReceivedTspMessage {
     }
 }
 
+class ForwardRequest extends ReceivedTspMessage {
+    constructor(sender, next_hop, route, opaque_payload) {
+        super();
+        this.sender = sender;
+        this.next_hop = next_hop;
+        this.route = route;
+        this.opaque_payload = opaque_payload;
+    }
+}
+
 module.exports = {
     MessageType,
     Store,
@@ -134,5 +165,6 @@ module.exports = {
     AcceptRelationship,
     CancelRelationship,
     RequestRelationship,
+    ForwardRequest,
 };
 
