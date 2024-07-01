@@ -15,11 +15,11 @@ export default function useStore() {
 
   useEffect(() => {
     const vid = OwnedVid.new_did_peer("https://demo.tsp-test.org");
-    setId(vid);
+    setId(vid.clone());
     store.add_private_vid(vid);
 
     const bob_vid = Vid.from_json(JSON.stringify(bob));
-    setOther(bob_vid);
+    setOther(bob_vid.clone());
     store.add_verified_vid(bob_vid);
 
   }, [store]);
