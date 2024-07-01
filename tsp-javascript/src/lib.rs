@@ -76,8 +76,14 @@ pub struct Vid(tsp::Vid);
 
 #[wasm_bindgen]
 impl Vid {
+    #[wasm_bindgen]
     pub fn from_json(data: String) -> Result<Vid, JsValue> {
         Ok(Vid(serde_json::from_str(&data).unwrap()))
+    }
+
+    #[wasm_bindgen]
+    pub fn clone(&self) -> Self {
+        Vid(self.0.clone())
     }
 
     #[wasm_bindgen]
@@ -95,6 +101,11 @@ impl OwnedVid {
     #[wasm_bindgen]
     pub fn new_did_peer(url: String) -> Self {
         OwnedVid(tsp::OwnedVid::new_did_peer(url.parse().unwrap()))
+    }
+
+    #[wasm_bindgen]
+    pub fn clone(&self) -> Self {
+        OwnedVid(self.0.clone())
     }
 
     #[wasm_bindgen]
