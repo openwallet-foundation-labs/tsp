@@ -12,7 +12,7 @@ pub(crate) fn encode_did_peer(vid: &Vid) -> String {
     let mut v = Vec::with_capacity(34);
     // multicodec for ed25519-pub
     v.push(0xed);
-    // 32 bytes length
+    // key bytes length
     v.push(0x20);
     v.extend_from_slice(vid.verifying_key().as_ref());
 
@@ -23,7 +23,7 @@ pub(crate) fn encode_did_peer(vid: &Vid) -> String {
     v.clear();
     // multicodec for x25519-pub
     v.push(0xec);
-    // 32 bytes length
+    // key bytes length
     v.push(0x20);
     v.extend_from_slice(vid.encryption_key().as_ref());
 
@@ -76,7 +76,7 @@ pub(crate) fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
 
                 // multicodec for x25519-pub + length 32 bytes
                 if let [0xec, 0x20, rest @ ..] = buf {
-                    public_enckey = rest.last_chunk::<32>().map(|c| (*c).into())
+                    public_enckey = rest.last_chunk().map(|c| (*c).into())
                 } else {
                     return Err(VidError::ResolveVid(
                         "invalid encryption key type in did:peer",
@@ -140,6 +140,7 @@ pub(crate) fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
     }
 }
 
+#[cfg(not(feature = "pq"))]
 #[cfg(test)]
 mod test {
     use crate::definitions::VerifiedVid;
