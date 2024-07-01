@@ -65,7 +65,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: rustup component add clippy
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v2
@@ -89,6 +88,34 @@ jobs:
           maturin develop
           python3 test.py
 
+  check-node:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '20'
+
+      - name: Install wasm-pack
+        run: |
+          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          wasm-pack --version
+
+      - name: Build Wasm extension
+        run: wasm-pack build --target nodejs tsp-javascript/
+
+      - name: Install npm dependencies
+        working-directory: tsp-node/
+        run: npm install
+
+      - name: Run tests with Mocha
+        working-directory: tsp-node/
+        run: npm test
+
   fuzz:
     name: run cargo-fuzz
     runs-on: ubuntu-latest
@@ -103,7 +130,7 @@ jobs:
         with:
           toolchain: nightly
       - uses: Swatinem/rust-cache@v2
-      
+
       - name: Install cargo fuzz
         uses: taiki-e/install-action@8984d603c208823d3c1a1b796f4081736f3ae3f9
         with:
