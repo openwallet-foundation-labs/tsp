@@ -1285,4 +1285,198 @@ mod test {
         assert_eq!(message, hello_world);
         assert_eq!(message_type, MessageType::SignedAndEncrypted);
     }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_nested_manual() {
+        let a_store = Store::new();
+        let b_store = Store::new();
+
+        let a = new_vid();
+        let b = new_vid();
+
+        let nested_a = new_vid();
+        let nested_b = new_vid();
+
+        a_store.add_private_vid(a.clone()).unwrap();
+        a_store.add_private_vid(nested_a.clone()).unwrap();
+
+        b_store.add_private_vid(b.clone()).unwrap();
+        b_store.add_private_vid(nested_b.clone()).unwrap();
+
+        a_store.add_verified_vid(b.clone()).unwrap();
+        a_store.add_verified_vid(nested_b.clone()).unwrap();
+
+        b_store.add_verified_vid(a.clone()).unwrap();
+        b_store.add_verified_vid(nested_a.clone()).unwrap();
+
+        a_store
+            .set_parent_for_vid(nested_b.identifier(), Some(b.identifier()))
+            .unwrap();
+
+        a_store
+            .set_relation_for_vid(nested_b.identifier(), Some(nested_a.identifier()))
+            .unwrap();
+
+        a_store
+            .set_parent_for_vid(nested_a.identifier(), Some(a.identifier()))
+            .unwrap();
+
+        let hello_world = b"hello world";
+
+        let (_url, sealed) = a_store
+            .seal_message(
+                nested_a.identifier(),
+                nested_b.identifier(),
+                None,
+                hello_world,
+            )
+            .unwrap();
+
+        let received = b_store.open_message(&mut sealed.clone()).unwrap();
+
+        let ReceivedTspMessage::GenericMessage {
+            sender,
+            nonconfidential_data,
+            message,
+            message_type,
+        } = received
+        else {
+            panic!()
+        };
+
+        assert_eq!(sender, nested_a.identifier());
+        assert!(nonconfidential_data.is_none());
+        assert_eq!(message, hello_world);
+        assert_eq!(message_type, MessageType::SignedAndEncrypted);
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_nested_automatic_setup() {
+        let a_store = Store::new();
+        let b_store = Store::new();
+
+        let a = new_vid();
+        let b = new_vid();
+
+        a_store.add_private_vid(a.clone()).unwrap();
+        b_store.add_private_vid(b.clone()).unwrap();
+
+        a_store.add_verified_vid(b.clone()).unwrap();
+        b_store.add_verified_vid(a.clone()).unwrap();
+
+        let (_url, mut sealed) = a_store
+            .make_relationship_request(a.identifier(), b.identifier(), None)
+            .unwrap();
+
+        let received = b_store.open_message(&mut sealed).unwrap();
+
+        let ReceivedTspMessage::RequestRelationship {
+            sender: _,
+            route: _,
+            nested_vid: None,
+            thread_id,
+        } = received
+        else {
+            panic!()
+        };
+
+        let (_url, mut sealed) = b_store
+            .make_relationship_accept(b.identifier(), a.identifier(), thread_id, None)
+            .unwrap();
+
+        let received = a_store.open_message(&mut sealed).unwrap();
+
+        let ReceivedTspMessage::AcceptRelationship { .. } = received else {
+            panic!()
+        };
+
+        let ((_url, mut sealed), nested_a) = a_store
+            .make_nested_relationship_request(a.identifier(), b.identifier())
+            .unwrap();
+
+        let received = b_store.open_message(&mut sealed).unwrap();
+
+        let ReceivedTspMessage::RequestRelationship {
+            sender: _,
+            route: _,
+            nested_vid: Some(ref nested_vid_1),
+            thread_id,
+        } = received
+        else {
+            panic!()
+        };
+
+        let ((_url, mut sealed), nested_b) = b_store
+            .make_nested_relationship_accept(b.identifier(), nested_vid_1, thread_id)
+            .unwrap();
+
+        let received = a_store.open_message(&mut sealed).unwrap();
+
+        let ReceivedTspMessage::AcceptRelationship {
+            sender: _,
+            nested_vid: Some(ref nested_vid_2),
+        } = received
+        else {
+            panic!()
+        };
+
+        assert_eq!(nested_a.identifier(), nested_vid_1);
+        assert_eq!(nested_b.identifier(), nested_vid_2);
+
+        assert_eq!(
+            a_store
+                .get_vid(nested_a.identifier())
+                .unwrap()
+                .get_parent_vid(),
+            Some(a.identifier())
+        );
+
+        assert_eq!(
+            b_store
+                .get_vid(nested_b.identifier())
+                .unwrap()
+                .get_parent_vid(),
+            Some(b.identifier())
+        );
+
+        assert_eq!(
+            b_store.get_vid(nested_vid_1).unwrap().get_parent_vid(),
+            Some(a.identifier())
+        );
+
+        assert_eq!(
+            a_store.get_vid(nested_vid_2).unwrap().get_parent_vid(),
+            Some(b.identifier())
+        );
+
+        let hello_world = b"hello world";
+
+        let (_url, sealed) = a_store
+            .seal_message(
+                nested_a.identifier(),
+                nested_b.identifier(),
+                None,
+                hello_world,
+            )
+            .unwrap();
+
+        let received = b_store.open_message(&mut sealed.clone()).unwrap();
+
+        let ReceivedTspMessage::GenericMessage {
+            sender,
+            nonconfidential_data,
+            message,
+            message_type,
+        } = received
+        else {
+            panic!()
+        };
+
+        assert_eq!(sender, nested_a.identifier());
+        assert!(nonconfidential_data.is_none());
+        assert_eq!(message, hello_world);
+        assert_eq!(message_type, MessageType::SignedAndEncrypted);
+    }
 }

@@ -126,6 +126,33 @@ impl Store {
         Ok((url.to_string(), bytes))
     }
 
+    fn make_nested_relationship_request(
+        &self,
+        parent_sender: String,
+        receiver: String,
+    ) -> PyResult<((String, Vec<u8>), OwnedVid)> {
+        let ((url, bytes), vid) = self
+            .0
+            .make_nested_relationship_request(&parent_sender, &receiver)
+            .map_err(py_exception)?;
+
+        Ok(((url.to_string(), bytes), OwnedVid(vid)))
+    }
+
+    fn make_nested_relationship_accept(
+        &self,
+        sender: String,
+        receiver: String,
+        thread_id: [u8; 32],
+    ) -> PyResult<((String, Vec<u8>), OwnedVid)> {
+        let ((url, bytes), vid) = self
+            .0
+            .make_nested_relationship_accept(&sender, &receiver, thread_id)
+            .map_err(py_exception)?;
+
+        Ok(((url.to_string(), bytes), OwnedVid(vid)))
+    }
+
     fn forward_routed_message(
         &self,
         next_hop: String,
