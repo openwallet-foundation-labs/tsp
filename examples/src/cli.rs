@@ -415,6 +415,15 @@ async fn run() -> Result<(), Error> {
                         } => {
                             info!("messaging forwarding request from {sender} to {next_hop}",);
                         }
+                        ReceivedTspMessage::Referral {
+                            sender,
+                            route: _,
+                            referred_vid,
+                        } => {
+                            info!(
+                                "received relationship referral for '{referred_vid}' from {sender}"
+                            );
+                        }
                         ReceivedTspMessage::PendingMessage {
                             unknown_vid,
                             payload,

@@ -63,6 +63,13 @@ where
         }
         Payload::NestedMessage(data) => crate::cesr::Payload::NestedMessage(data),
         Payload::RoutedMessage(hops, data) => crate::cesr::Payload::RoutedMessage(hops, data),
+        Payload::Referral {
+            route,
+            referred_vid,
+        } => crate::cesr::Payload::RelationshipReferral {
+            hops: route.unwrap_or_else(Vec::new),
+            referred_vid,
+        },
     };
 
     // prepare CESR-encoded ciphertext
@@ -234,7 +241,10 @@ where
         } => Payload::CancelRelationship { thread_id },
         crate::cesr::Payload::NestedMessage(data) => Payload::NestedMessage(data),
         crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data),
-        crate::cesr::Payload::RelationshipReferral { .. } => todo!(),
+        crate::cesr::Payload::RelationshipReferral { hops, referred_vid } => Payload::Referral {
+            route: if hops.is_empty() { None } else { Some(hops) },
+            referred_vid,
+        },
     };
 
     Ok((envelope.nonconfidential_data, secret_payload, ciphertext))
