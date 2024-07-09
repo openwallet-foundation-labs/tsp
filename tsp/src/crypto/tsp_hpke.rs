@@ -234,6 +234,7 @@ where
         } => Payload::CancelRelationship { thread_id },
         crate::cesr::Payload::NestedMessage(data) => Payload::NestedMessage(data),
         crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data),
+        crate::cesr::Payload::RelationshipReferral { .. } => todo!(),
     };
 
     Ok((envelope.nonconfidential_data, secret_payload, ciphertext))
