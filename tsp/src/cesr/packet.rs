@@ -20,7 +20,6 @@ const TSP_PAYLOAD: u16 = (b'Z' - b'A') as u16;
 mod msgtype {
     pub(super) const GEN_MSG: [u8; 2] = [0, 0];
     pub(super) const NEST_MSG: [u8; 2] = [0, 1];
-    pub(super) const ROUTE_MSG: [u8; 2] = [0, 2];
     pub(super) const NEW_REL: [u8; 2] = [1, 0];
     pub(super) const NEW_REL_REPLY: [u8; 2] = [1, 1];
     pub(super) const NEW_NEST_REL: [u8; 2] = [1, 2];
@@ -215,7 +214,7 @@ pub fn encode_payload(
             checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
         }
         Payload::RoutedMessage(hops, data) => {
-            encode_fixed_data(TSP_TYPECODE, &msgtype::ROUTE_MSG, output);
+            encode_fixed_data(TSP_TYPECODE, &msgtype::GEN_MSG, output);
             encode_hops(hops, output)?;
             checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
         }
@@ -310,7 +309,13 @@ pub fn decode_payload(mut stream: &[u8]) -> Result<DecodedPayload, DecodeError> 
         .ok_or(DecodeError::UnexpectedData)?
     {
         msgtype::GEN_MSG => {
-            decode_variable_data(TSP_PLAINTEXT, &mut stream).map(Payload::GenericMessage)
+            let hop_list = decode_hops(&mut stream)?;
+            if hop_list.is_empty() {
+                decode_variable_data(TSP_PLAINTEXT, &mut stream).map(Payload::GenericMessage)
+            } else {
+                decode_variable_data(TSP_PLAINTEXT, &mut stream)
+                    .map(|msg| Payload::RoutedMessage(hop_list, msg))
+            }
         }
         msgtype::NEW_REL => {
             let hop_list = decode_hops(&mut stream)?;
@@ -322,15 +327,6 @@ pub fn decode_payload(mut stream: &[u8]) -> Result<DecodedPayload, DecodeError> 
         }
         msgtype::NEST_MSG => {
             decode_variable_data(TSP_PLAINTEXT, &mut stream).map(Payload::NestedMessage)
-        }
-        msgtype::ROUTE_MSG => {
-            let hop_list = decode_hops(&mut stream)?;
-            if hop_list.is_empty() {
-                return Err(DecodeError::MissingHops);
-            }
-
-            decode_variable_data(TSP_PLAINTEXT, &mut stream)
-                .map(|msg| Payload::RoutedMessage(hop_list, msg))
         }
         msgtype::NEW_REL_REPLY => decode_fixed_data(TSP_SHA256, &mut stream)
             .map(|reply| Payload::DirectRelationAffirm { reply }),
