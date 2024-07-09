@@ -2,6 +2,7 @@
 #[derive(Clone, Copy, Debug)]
 pub enum EncodeError {
     PayloadTooLarge,
+    MissingHops,
 }
 
 /// An error type to indicate something went wrong with decoding

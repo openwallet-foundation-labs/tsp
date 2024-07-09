@@ -215,6 +215,9 @@ pub fn encode_payload(
         }
         Payload::RoutedMessage(hops, data) => {
             encode_fixed_data(TSP_TYPECODE, &msgtype::GEN_MSG, output);
+            if hops.is_empty() {
+                return Err(EncodeError::MissingHops);
+            }
             encode_hops(hops, output)?;
             checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
         }
