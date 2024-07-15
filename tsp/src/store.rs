@@ -519,6 +519,7 @@ impl Store {
             EnvelopeType::EncryptedMessage {
                 sender,
                 receiver: intended_receiver,
+                ..
             } => {
                 let intended_receiver = std::str::from_utf8(intended_receiver)?;
 
@@ -649,6 +650,7 @@ impl Store {
             EnvelopeType::SignedMessage {
                 sender,
                 receiver: intended_receiver,
+                ..
             } => {
                 if let Some(intended_receiver) = intended_receiver {
                     let intended_receiver = std::str::from_utf8(intended_receiver)?;

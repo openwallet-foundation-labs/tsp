@@ -99,7 +99,6 @@ impl Store {
             .map_err(Error)
     }
 
-
     #[wasm_bindgen]
     pub fn make_relationship_request(
         &self,

@@ -1213,9 +1213,7 @@ mod test {
             reply: nonce,
         });
 
-        test_turn_around(Payload::RelationshipCancel {
-            reply: nonce,
-        });
+        test_turn_around(Payload::RelationshipCancel { reply: nonce });
     }
 
     #[test]
