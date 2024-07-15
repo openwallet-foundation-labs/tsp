@@ -28,8 +28,8 @@ Overview:
 ## Download key material for `a` and `b`:
 
 ```sh
-curl -s https://raw.githubusercontent.com/wenjing/rust-tsp/main/examples/test/a.json > identity-a.json
-curl -s https://raw.githubusercontent.com/wenjing/rust-tsp/main/examples/test/b.json > identity-b.json
+curl -s https://raw.githubusercontent.com/openwallet-foundation-labs/tsp/main/examples/test/a.json > identity-a.json
+curl -s https://raw.githubusercontent.com/openwallet-foundation-labs/tsp/main/examples/test/b.json > identity-b.json
 ```
 
 ## Configuration
