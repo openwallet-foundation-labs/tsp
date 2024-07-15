@@ -64,6 +64,7 @@ async fn main() {
         .route("/verify-vid", post(verify_vid))
         .route("/add-vid", post(add_vid))
         .route("/user/:name/did.json", get(get_did_doc))
+        .route("/vid/:vid", get(websocket_vid_handler))
         .route("/user/:user", get(websocket_user_handler))
         .route("/user/:user", post(route_message))
         .route("/send-message", post(send_message))
@@ -343,7 +344,30 @@ async fn send_message(
     }
 }
 
-/// Handle incoming websocket connections
+/// Handle incoming websocket connections for vid
+async fn websocket_vid_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<AppState>>,
+    Path(vid): Path<String>,
+) -> impl IntoResponse {
+    let mut messages_rx = state.tx.subscribe();
+
+    tracing::debug!("new websocket connection for {vid}");
+
+    ws.on_upgrade(|socket| {
+        let (mut ws_send, _) = socket.split();
+
+        async move {
+            while let Ok((_, receiver, message)) = messages_rx.recv().await {
+                if receiver == vid {
+                    let _ = ws_send.send(Message::Binary(message)).await;
+                }
+            }
+        }
+    })
+}
+
+/// Handle incoming websocket connections for user
 async fn websocket_user_handler(
     ws: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,

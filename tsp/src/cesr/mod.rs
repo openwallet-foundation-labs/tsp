@@ -67,10 +67,12 @@ pub enum EnvelopeType<'a> {
     EncryptedMessage {
         sender: &'a [u8],
         receiver: &'a [u8],
+        nonconfidential_data: Option<&'a [u8]>,
     },
     SignedMessage {
         sender: &'a [u8],
         receiver: Option<&'a [u8]>,
+        nonconfidential_data: Option<&'a [u8]>,
     },
 }
 
@@ -86,11 +88,13 @@ pub fn probe(stream: &mut [u8]) -> Result<EnvelopeType, error::DecodeError> {
         EnvelopeType::EncryptedMessage {
             sender: envelope.sender,
             receiver: envelope.receiver.expect("Infallible"),
+            nonconfidential_data: envelope.nonconfidential_data,
         }
     } else {
         EnvelopeType::SignedMessage {
             sender: envelope.sender,
             receiver: envelope.receiver,
+            nonconfidential_data: envelope.nonconfidential_data,
         }
     })
 }

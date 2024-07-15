@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [ "tsp", "examples", "fuzz" , "tsp-python", "tsp-javascript"]
+exclude = [ "demo" ]
 
 [workspace.package]
 version = "0.1.0"

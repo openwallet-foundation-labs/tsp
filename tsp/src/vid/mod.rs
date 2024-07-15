@@ -23,6 +23,9 @@ use deserialize::{serde_key_data, serde_key_data_option, serde_public_key_data};
 #[cfg(feature = "resolve")]
 pub use did::web::{create_did_web, vid_to_did_document};
 
+#[cfg(feature = "resolve")]
+pub use did::peer::{encode_did_peer, verify_did_peer};
+
 pub use error::VidError;
 use url::Url;
 

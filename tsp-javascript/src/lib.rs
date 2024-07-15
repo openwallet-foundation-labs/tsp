@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use tsp::cesr::EnvelopeType;
 use wasm_bindgen::prelude::*;
 
 pub struct Error(tsp::Error);
@@ -44,7 +46,7 @@ impl Store {
     }
 
     #[wasm_bindgen]
-    pub fn add_verified_vid(&self, vid: &OwnedVid) -> Result<(), Error> {
+    pub fn add_verified_vid(&self, vid: &Vid) -> Result<(), Error> {
         self.0.add_verified_vid(vid.0.clone()).map_err(Error)
     }
 
@@ -96,6 +98,7 @@ impl Store {
             .map(FlatReceivedTspMessage::from)
             .map_err(Error)
     }
+
 
     #[wasm_bindgen]
     pub fn make_relationship_request(
@@ -251,14 +254,18 @@ fn convert(value: JsValue) -> Result<Vec<Vec<u8>>, serde_wasm_bindgen::Error> {
 }
 
 #[wasm_bindgen]
-#[derive(Clone)]
-pub struct OwnedVid(tsp::OwnedVid);
+pub struct Vid(tsp::Vid);
 
 #[wasm_bindgen]
-impl OwnedVid {
+impl Vid {
     #[wasm_bindgen]
-    pub fn new_did_peer(url: String) -> Self {
-        OwnedVid(tsp::OwnedVid::new_did_peer(url.parse().unwrap()))
+    pub fn from_json(data: String) -> Vid {
+        Vid(serde_json::from_str(&data).unwrap())
+    }
+
+    #[wasm_bindgen]
+    pub fn create_clone(&self) -> Self {
+        Vid(self.0.clone())
     }
 
     #[wasm_bindgen]
@@ -266,6 +273,87 @@ impl OwnedVid {
         use tsp::VerifiedVid;
         self.0.identifier().to_string()
     }
+
+    #[wasm_bindgen]
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(&self.0).unwrap()
+    }
+}
+
+#[wasm_bindgen]
+#[derive(Clone)]
+pub struct OwnedVid(tsp::OwnedVid);
+
+#[wasm_bindgen]
+impl OwnedVid {
+    #[wasm_bindgen]
+    pub fn from_json(data: String) -> OwnedVid {
+        OwnedVid(serde_json::from_str(&data).unwrap())
+    }
+
+    #[wasm_bindgen]
+    pub fn new_did_peer(url: String) -> Self {
+        OwnedVid(tsp::OwnedVid::new_did_peer(url.parse().unwrap()))
+    }
+
+    #[wasm_bindgen]
+    pub fn create_clone(&self) -> Self {
+        OwnedVid(self.0.clone())
+    }
+
+    #[wasm_bindgen]
+    pub fn identifier(&self) -> String {
+        use tsp::VerifiedVid;
+        self.0.identifier().to_string()
+    }
+
+    #[wasm_bindgen]
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(&self.0).unwrap()
+    }
+}
+
+#[wasm_bindgen]
+pub fn verify_did_peer(did: &str) -> Result<Vid, Error> {
+    let parts = did.split(':').collect::<Vec<&str>>();
+
+    tsp::vid::verify_did_peer(&parts)
+        .map(Vid)
+        .map_err(|e| Error(e.into()))
+}
+
+#[wasm_bindgen]
+pub fn probe_message(mut message: Vec<u8>) -> Result<String, Error> {
+    tsp::cesr::probe(&mut message)
+        .map(|e: EnvelopeType| match e {
+            EnvelopeType::EncryptedMessage {
+                sender,
+                receiver,
+                nonconfidential_data,
+            } => serde_json::to_string(&json!({
+                "sender": String::from_utf8_lossy(sender).to_string(),
+                "receiver": String::from_utf8_lossy(receiver).to_string(),
+                "nonconfidential_data": String::from_utf8_lossy(
+                    nonconfidential_data.unwrap_or_default(),
+                )
+                .to_string(),
+            }))
+            .unwrap(),
+            EnvelopeType::SignedMessage {
+                sender,
+                receiver,
+                nonconfidential_data,
+            } => serde_json::to_string(&json!({
+                "sender": String::from_utf8_lossy(sender).to_string(),
+                "receiver": String::from_utf8_lossy(receiver.unwrap_or_default()).to_string(),
+                "nonconfidential_data": String::from_utf8_lossy(
+                    nonconfidential_data.unwrap_or_default(),
+                )
+                .to_string(),
+            }))
+            .unwrap(),
+        })
+        .map_err(|e| Error(e.into()))
 }
 
 #[wasm_bindgen]
