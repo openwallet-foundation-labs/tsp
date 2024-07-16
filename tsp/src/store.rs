@@ -841,6 +841,28 @@ impl Store {
         Ok(((transport, tsp_message), nested_vid))
     }
 
+    pub fn make_relationship_referral(
+        &self,
+        sender: &str,
+        receiver: &str,
+        referred_vid: &str,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        let _sender = self.get_private_vid(sender)?;
+        let _receiver = self.get_verified_vid(receiver)?;
+        let _referred_vid = self.get_vid(referred_vid)?;
+
+        let (transport, tsp_message) = self.seal_message_payload(
+            &*sender,
+            &*receiver,
+            None,
+            Payload::Referral {
+                referred_vid: referred_vid.as_ref(),
+            },
+        )?;
+
+        Ok((transport, tsp_message))
+    }
+
     fn make_propositioning_vid(&self, parent_vid: &str) -> Result<OwnedVid, Error> {
         let transport = Url::parse("https://example.net").expect("error generating a URL");
 
