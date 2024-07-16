@@ -637,6 +637,9 @@ impl Store {
                             nested_vid: Some(vid.to_string()),
                         })
                     }
+                    Payload::NewIdentifier { thread_id, new_vid } => {
+                        todo!()
+                    }
                     Payload::Referral { referred_vid } => {
                         let vid = std::str::from_utf8(referred_vid)?;
                         Ok(ReceivedTspMessage::Referral {
