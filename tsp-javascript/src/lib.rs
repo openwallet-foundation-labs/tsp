@@ -165,6 +165,24 @@ impl Store {
     }
 
     #[wasm_bindgen]
+    pub fn make_new_identifier_notice(
+        &self,
+        sender: String,
+        receiver: String,
+        sender_new_vid: String,
+    ) -> Result<SealedMessage, Error> {
+        let (url, sealed) = self
+            .0
+            .make_new_identifier_notice(&sender, &receiver, &sender_new_vid)
+            .map_err(Error)?;
+
+        Ok(SealedMessage {
+            url: url.to_string(),
+            sealed,
+        })
+    }
+
+    #[wasm_bindgen]
     pub fn make_relationship_referral(
         &self,
         sender: String,

@@ -237,6 +237,24 @@ impl AsyncStore {
         Ok(())
     }
 
+    /// Send a new identifier introduction notice
+    pub async fn send_new_identifier_notice(
+        &self,
+        sender: &str,
+        receiver: &str,
+        sender_new_vid: &str,
+    ) -> Result<(), Error> {
+        let (endpoint, message) =
+            self.inner
+                .make_new_identifier_notice(sender, receiver, sender_new_vid)?;
+
+        tracing::info!("sending message to {endpoint}");
+
+        crate::transport::send_message(&endpoint, &message).await?;
+
+        Ok(())
+    }
+
     /// Send a relationship referral message to `receiver`
     pub async fn send_relationship_referal(
         &self,

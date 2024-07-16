@@ -126,6 +126,21 @@ impl Store {
         Ok((url.to_string(), bytes))
     }
 
+    #[pyo3(signature = (sender, receiver, sender_new_vid))]
+    fn make_new_identifier_notice(
+        &self,
+        sender: String,
+        receiver: String,
+        sender_new_vid: String,
+    ) -> PyResult<(String, Vec<u8>)> {
+        let (url, bytes) = self
+            .0
+            .make_new_identifier_notice(&sender, &receiver, &sender_new_vid)
+            .map_err(py_exception)?;
+
+        Ok((url.to_string(), bytes))
+    }
+
     #[pyo3(signature = (sender, receiver, referred_vid))]
     fn make_relationship_referral(
         &self,
