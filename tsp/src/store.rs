@@ -852,8 +852,8 @@ impl Store {
         let _referred_vid = self.get_vid(referred_vid)?;
 
         let (transport, tsp_message) = self.seal_message_payload(
-            &*sender,
-            &*receiver,
+            sender,
+            receiver,
             None,
             Payload::Referral {
                 referred_vid: referred_vid.as_ref(),
