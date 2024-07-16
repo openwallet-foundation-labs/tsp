@@ -14,7 +14,6 @@ pub enum DecodeError {
     SignatureError,
     VidError,
     VersionMismatch,
-    MissingHops,
     InvalidCryptoType,
     InvalidSignatureType,
 }
