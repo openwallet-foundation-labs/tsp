@@ -70,6 +70,10 @@ pub enum ReceivedTspMessage {
         route: Vec<Vec<u8>>,
         opaque_payload: Vec<u8>,
     },
+    Referral {
+        sender: String,
+        referred_vid: String,
+    },
     #[cfg(feature = "async")]
     PendingMessage {
         unknown_vid: String,
@@ -99,6 +103,9 @@ pub enum Payload<'a, Bytes: AsRef<[u8]>> {
         vid: VidData<'a>,
         connect_to_vid: VidData<'a>,
     },
+    Referral {
+        referred_vid: VidData<'a>,
+    },
 }
 
 impl<'a, Bytes: AsRef<[u8]>> Payload<'a, Bytes> {
@@ -112,6 +119,7 @@ impl<'a, Bytes: AsRef<[u8]>> Payload<'a, Bytes> {
             Payload::AcceptRelationship { .. } => &[],
             Payload::RequestNestedRelationship { .. } => &[],
             Payload::AcceptNestedRelationship { .. } => &[],
+            Payload::Referral { .. } => &[],
         }
     }
 }
@@ -143,6 +151,7 @@ impl<'a, Bytes: AsRef<[u8]>> fmt::Display for Payload<'a, Bytes> {
             Payload::AcceptRelationship { .. } => write!(f, "Accept Relationship"),
             Payload::RequestNestedRelationship { .. } => write!(f, "Request Nested Relationship"),
             Payload::AcceptNestedRelationship { .. } => write!(f, "Accept Nested Relationship"),
+            Payload::Referral { .. } => write!(f, "Relationship Referral"),
         }
     }
 }

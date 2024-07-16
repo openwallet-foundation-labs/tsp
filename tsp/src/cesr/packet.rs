@@ -25,6 +25,7 @@ mod msgtype {
     pub(super) const NEW_REL_REPLY: [u8; 2] = [1, 1];
     pub(super) const NEW_NEST_REL: [u8; 2] = [1, 2];
     pub(super) const NEW_NEST_REL_REPLY: [u8; 2] = [1, 3];
+    pub(super) const THIRDP_REFER_REL: [u8; 2] = [1, 5];
     pub(super) const REL_CANCEL: [u8; 2] = [1, 255];
 }
 
@@ -67,11 +68,19 @@ pub enum Payload<'a, Bytes: AsRef<[u8]>, Vid> {
     /// A routed payload; same as above but with routing information attached
     RoutedMessage(Vec<Vid>, Bytes),
     /// A TSP message requesting a relationship
-    DirectRelationProposal { nonce: Nonce, hops: Vec<Vid> },
+    DirectRelationProposal {
+        nonce: Nonce,
+        hops: Vec<Vid>,
+    },
     /// A TSP message confiming a relationship
-    DirectRelationAffirm { reply: &'a Sha256Digest },
+    DirectRelationAffirm {
+        reply: &'a Sha256Digest,
+    },
     /// A TSP message requesting a nested relationship
-    NestedRelationProposal { nonce: Nonce, new_vid: Vid },
+    NestedRelationProposal {
+        nonce: Nonce,
+        new_vid: Vid,
+    },
     /// A TSP message confiming a relationship
     NestedRelationAffirm {
         new_vid: Vid,
@@ -79,7 +88,12 @@ pub enum Payload<'a, Bytes: AsRef<[u8]>, Vid> {
         reply: &'a Sha256Digest,
     },
     /// A TSP cancellation message
-    RelationshipCancel { reply: &'a Sha256Digest },
+    RelationshipReferral {
+        referred_vid: Vid,
+    },
+    RelationshipCancel {
+        reply: &'a Sha256Digest,
+    },
 }
 
 impl<'a, Bytes: AsRef<[u8]>, Vid> Payload<'a, Bytes, Vid> {
@@ -229,6 +243,10 @@ pub fn encode_payload(
             checked_encode_variable_data(TSP_DEVELOPMENT_VID, connect_to_vid.as_ref(), output)?;
             encode_fixed_data(TSP_SHA256, reply.as_slice(), output);
         }
+        Payload::RelationshipReferral { referred_vid } => {
+            encode_fixed_data(TSP_TYPECODE, &msgtype::THIRDP_REFER_REL, output);
+            checked_encode_variable_data(TSP_DEVELOPMENT_VID, referred_vid.as_ref(), output)?;
+        }
         Payload::RelationshipCancel { reply } => {
             encode_fixed_data(TSP_TYPECODE, &msgtype::REL_CANCEL, output);
             encode_fixed_data(TSP_SHA256, reply.as_slice(), output);
@@ -336,6 +354,12 @@ pub fn decode_payload(mut stream: &[u8]) -> Result<DecodedPayload, DecodeError> 
                 connect_to_vid,
                 reply,
             })
+        }
+        msgtype::THIRDP_REFER_REL => {
+            let referred_vid = decode_variable_data(TSP_DEVELOPMENT_VID, &mut stream)
+                .ok_or(DecodeError::UnexpectedData)?;
+
+            Some(Payload::RelationshipReferral { referred_vid })
         }
         msgtype::REL_CANCEL => decode_fixed_data(TSP_SHA256, &mut stream)
             .map(|reply| Payload::RelationshipCancel { reply }),
@@ -1111,6 +1135,14 @@ mod test {
             vec![b"foo", b"bar"],
             &b"Hello TSP!"[..],
         ));
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_3p_refer_rel() {
+        test_turn_around(Payload::RelationshipReferral {
+            referred_vid: b"Charlie",
+        });
     }
 
     fn test_turn_around(payload: Payload<&[u8], &[u8]>) {

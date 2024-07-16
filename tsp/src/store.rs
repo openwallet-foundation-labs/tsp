@@ -637,6 +637,13 @@ impl Store {
                             nested_vid: Some(vid.to_string()),
                         })
                     }
+                    Payload::Referral { referred_vid } => {
+                        let vid = std::str::from_utf8(referred_vid)?;
+                        Ok(ReceivedTspMessage::Referral {
+                            sender,
+                            referred_vid: vid.to_string(),
+                        })
+                    }
                 }
             }
             EnvelopeType::SignedMessage {
@@ -832,6 +839,28 @@ impl Store {
         )?;
 
         Ok(((transport, tsp_message), nested_vid))
+    }
+
+    pub fn make_relationship_referral(
+        &self,
+        sender: &str,
+        receiver: &str,
+        referred_vid: &str,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        let _sender = self.get_private_vid(sender)?;
+        let _receiver = self.get_verified_vid(receiver)?;
+        let _referred_vid = self.get_vid(referred_vid)?;
+
+        let (transport, tsp_message) = self.seal_message_payload(
+            sender,
+            receiver,
+            None,
+            Payload::Referral {
+                referred_vid: referred_vid.as_ref(),
+            },
+        )?;
+
+        Ok((transport, tsp_message))
     }
 
     fn make_propositioning_vid(&self, parent_vid: &str) -> Result<OwnedVid, Error> {
@@ -1151,6 +1180,37 @@ mod test {
             panic!("unexpected message type");
         };
         assert_eq!(sender, bob.identifier());
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_make_referral() {
+        let store = Store::new();
+        let alice = new_vid();
+        let bob = new_vid();
+        let charles = new_vid();
+
+        store.add_private_vid(alice.clone()).unwrap();
+        store.add_private_vid(bob.clone()).unwrap();
+        store.add_private_vid(charles.clone()).unwrap();
+
+        // alice vouches for charlies to bob
+        let (url, sealed) = store
+            .make_relationship_referral(alice.identifier(), bob.identifier(), charles.identifier())
+            .unwrap();
+
+        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        let received = store.open_message(&mut sealed.clone()).unwrap();
+
+        let ReceivedTspMessage::Referral {
+            sender,
+            referred_vid,
+        } = received
+        else {
+            panic!("unexpected message type");
+        };
+        assert_eq!(sender, alice.identifier());
+        assert_eq!(referred_vid, charles.identifier());
     }
 
     #[test]

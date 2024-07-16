@@ -126,6 +126,21 @@ impl Store {
         Ok((url.to_string(), bytes))
     }
 
+    #[pyo3(signature = (sender, receiver, referred_vid))]
+    fn make_relationship_referral(
+        &self,
+        sender: String,
+        receiver: String,
+        referred_vid: String,
+    ) -> PyResult<(String, Vec<u8>)> {
+        let (url, bytes) = self
+            .0
+            .make_relationship_referral(&sender, &receiver, &referred_vid)
+            .map_err(py_exception)?;
+
+        Ok((url.to_string(), bytes))
+    }
+
     fn make_nested_relationship_request(
         &self,
         parent_sender: String,
@@ -185,6 +200,7 @@ enum ReceivedTspMessageVariant {
     CancelRelationship,
     ForwardRequest,
     PendingMessage,
+    Referral,
 }
 
 impl From<&tsp::ReceivedTspMessage> for ReceivedTspMessageVariant {
@@ -196,6 +212,7 @@ impl From<&tsp::ReceivedTspMessage> for ReceivedTspMessageVariant {
             tsp::ReceivedTspMessage::CancelRelationship { .. } => Self::CancelRelationship,
             tsp::ReceivedTspMessage::ForwardRequest { .. } => Self::ForwardRequest,
             tsp::ReceivedTspMessage::PendingMessage { .. } => Self::PendingMessage,
+            tsp::ReceivedTspMessage::Referral { .. } => Self::Referral,
         }
     }
 }
@@ -234,6 +251,8 @@ struct FlatReceivedTspMessage {
     opaque_payload: Option<Vec<u8>>,
     #[pyo3(get, set)]
     unknown_vid: Option<String>,
+    #[pyo3(get, set)]
+    referred_vid: Option<String>,
 }
 
 #[pymethods]
@@ -260,6 +279,7 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
             payload: None,
             opaque_payload: None,
             unknown_vid: None,
+            referred_vid: None,
         };
 
         match value {
@@ -296,6 +316,13 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
             }
             tsp::ReceivedTspMessage::CancelRelationship { sender } => {
                 this.sender = Some(sender);
+            }
+            tsp::ReceivedTspMessage::Referral {
+                sender,
+                referred_vid,
+            } => {
+                this.sender = Some(sender);
+                this.referred_vid = Some(referred_vid);
             }
             tsp::ReceivedTspMessage::ForwardRequest {
                 sender,
