@@ -18,7 +18,7 @@ You will need to install the most recent Rust compiler, by following the
 Then, you can use these commands to check out and test the repository:
 
 ```sh
-git clone https://github.com/wenjing/rust-tsp.git
+git clone https://github.com/openwallet-foundation-labs/tsp.git
 cd rust-tsp
 cargo test
 ```

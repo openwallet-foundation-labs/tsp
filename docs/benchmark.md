@@ -51,7 +51,7 @@ cargo build --release
 samply record -- target/release/benchmark # or whatever your binary is called
 ```
 
-![tsp-seal-open](https://github.com/wenjing/rust-tsp/assets/7949978/bbd18ac4-af29-44dd-8b11-71fc9527a5a9)
+![tsp-seal-open](https://raw.githubusercontent.com/openwallet-foundation-labs/tsp/main/docs/flamegraph.png)
 
 The flamegraph shows the call stack on the y axis, and relative time spent in a particular function on the x axis. We can see that the call stack starts at `start`, and eventually gets to our `benchmark::main` function.
 
