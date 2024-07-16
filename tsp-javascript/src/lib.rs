@@ -438,11 +438,9 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
             }
             tsp::ReceivedTspMessage::Referral {
                 sender,
-                route,
                 referred_vid,
             } => {
                 this.sender = Some(sender);
-                this.route = Some(route);
                 this.referred_vid = Some(referred_vid);
             }
             tsp::ReceivedTspMessage::ForwardRequest {

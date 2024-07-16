@@ -637,14 +637,10 @@ impl Store {
                             nested_vid: Some(vid.to_string()),
                         })
                     }
-                    Payload::Referral {
-                        route,
-                        referred_vid,
-                    } => {
+                    Payload::Referral { referred_vid } => {
                         let vid = std::str::from_utf8(referred_vid)?;
                         Ok(ReceivedTspMessage::Referral {
                             sender,
-                            route: route.map(|vec| vec.iter().map(|vid| vid.to_vec()).collect()),
                             referred_vid: vid.to_string(),
                         })
                     }

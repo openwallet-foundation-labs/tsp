@@ -68,7 +68,6 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
                 connect_to_vid: Arbitrary::arbitrary(u)?,
             },
             Variants::RelationshipReferral => Payload::RelationshipReferral {
-                hops: Arbitrary::arbitrary(u)?,
                 referred_vid: Arbitrary::arbitrary(u)?,
             },
             Variants::RelationshipCancel => Payload::RelationshipCancel { reply: &DIGEST },
@@ -125,14 +124,12 @@ impl<'a> PartialEq<Payload<'a, &'a [u8], &'a [u8]>> for Wrapper {
 
             (
                 Payload::RelationshipReferral {
-                    hops: l_hops,
                     referred_vid: l_vid,
                 },
                 Payload::RelationshipReferral {
-                    hops: r_hops,
                     referred_vid: r_vid,
                 },
-            ) => l_hops == r_hops && l_vid == r_vid,
+            ) => l_vid == r_vid,
             (
                 Payload::RelationshipCancel { reply: l_reply },
                 Payload::RelationshipCancel { reply: r_reply },

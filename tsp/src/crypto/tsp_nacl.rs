@@ -56,13 +56,9 @@ pub(crate) fn seal(
             new_vid: vid,
             connect_to_vid,
         },
-        Payload::Referral {
-            route,
-            referred_vid,
-        } => crate::cesr::Payload::RelationshipReferral {
-            hops: route.unwrap_or_else(Vec::new),
-            referred_vid,
-        },
+        Payload::Referral { referred_vid } => {
+            crate::cesr::Payload::RelationshipReferral { referred_vid }
+        }
         Payload::CancelRelationship { ref thread_id } => {
             crate::cesr::Payload::RelationshipCancel { reply: thread_id }
         }
@@ -188,10 +184,9 @@ pub(crate) fn open<'a>(
             connect_to_vid,
             thread_id,
         },
-        crate::cesr::Payload::RelationshipReferral { hops, referred_vid } => Payload::Referral {
-            route: if hops.is_empty() { None } else { Some(hops) },
-            referred_vid,
-        },
+        crate::cesr::Payload::RelationshipReferral { referred_vid } => {
+            Payload::Referral { referred_vid }
+        }
         crate::cesr::Payload::RelationshipCancel {
             reply: &thread_id, ..
         } => Payload::CancelRelationship { thread_id },

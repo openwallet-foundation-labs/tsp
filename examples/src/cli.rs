@@ -417,7 +417,6 @@ async fn run() -> Result<(), Error> {
                         }
                         ReceivedTspMessage::Referral {
                             sender,
-                            route: _,
                             referred_vid,
                         } => {
                             info!(

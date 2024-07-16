@@ -89,7 +89,6 @@ pub enum Payload<'a, Bytes: AsRef<[u8]>, Vid> {
     },
     /// A TSP cancellation message
     RelationshipReferral {
-        hops: Vec<Vid>,
         referred_vid: Vid,
     },
     RelationshipCancel {
@@ -244,9 +243,8 @@ pub fn encode_payload(
             checked_encode_variable_data(TSP_DEVELOPMENT_VID, connect_to_vid.as_ref(), output)?;
             encode_fixed_data(TSP_SHA256, reply.as_slice(), output);
         }
-        Payload::RelationshipReferral { hops, referred_vid } => {
+        Payload::RelationshipReferral { referred_vid } => {
             encode_fixed_data(TSP_TYPECODE, &msgtype::THIRDP_REFER_REL, output);
-            encode_hops(hops, output)?;
             checked_encode_variable_data(TSP_DEVELOPMENT_VID, referred_vid.as_ref(), output)?;
         }
         Payload::RelationshipCancel { reply } => {
@@ -358,11 +356,10 @@ pub fn decode_payload(mut stream: &[u8]) -> Result<DecodedPayload, DecodeError> 
             })
         }
         msgtype::THIRDP_REFER_REL => {
-            let hops = decode_hops(&mut stream)?;
             let referred_vid = decode_variable_data(TSP_DEVELOPMENT_VID, &mut stream)
                 .ok_or(DecodeError::UnexpectedData)?;
 
-            Some(Payload::RelationshipReferral { hops, referred_vid })
+            Some(Payload::RelationshipReferral { referred_vid })
         }
         msgtype::REL_CANCEL => decode_fixed_data(TSP_SHA256, &mut stream)
             .map(|reply| Payload::RelationshipCancel { reply }),
@@ -1144,7 +1141,6 @@ mod test {
     #[wasm_bindgen_test]
     fn test_3p_refer_rel() {
         test_turn_around(Payload::RelationshipReferral {
-            hops: vec![],
             referred_vid: b"Charlie",
         });
     }

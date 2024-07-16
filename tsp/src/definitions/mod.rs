@@ -72,7 +72,6 @@ pub enum ReceivedTspMessage {
     },
     Referral {
         sender: String,
-        route: Option<Vec<Vec<u8>>>,
         referred_vid: String,
     },
     #[cfg(feature = "async")]
@@ -105,7 +104,6 @@ pub enum Payload<'a, Bytes: AsRef<[u8]>> {
         connect_to_vid: VidData<'a>,
     },
     Referral {
-        route: Option<Vec<VidData<'a>>>,
         referred_vid: VidData<'a>,
     },
 }
