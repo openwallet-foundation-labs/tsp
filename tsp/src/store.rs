@@ -638,9 +638,21 @@ impl Store {
                         })
                     }
                     Payload::NewIdentifier { thread_id, new_vid } => {
-                        todo!()
+                        let vid = std::str::from_utf8(new_vid)?;
+                        match self.get_vid(vid)?.relation_status {
+                            RelationshipStatus::Bidirectional {
+                                thread_id: check_id,
+                                ..
+                            } if check_id == thread_id => Ok(ReceivedTspMessage::NewIdentifier {
+                                sender,
+                                new_vid: vid.to_string(),
+                            }),
+                            _ => Err(Error::Relationship(vid.to_string())),
+                        }
                     }
                     Payload::Referral { referred_vid } => {
+                        //NOTE: we could also check the relationship status here, but since a 3rd party introduction
+                        //might be of interest to a user anyway regardless of existing status, we are less strict about it
                         let vid = std::str::from_utf8(referred_vid)?;
                         Ok(ReceivedTspMessage::Referral {
                             sender,

@@ -70,6 +70,10 @@ pub enum ReceivedTspMessage {
         route: Vec<Vec<u8>>,
         opaque_payload: Vec<u8>,
     },
+    NewIdentifier {
+        sender: String,
+        new_vid: String,
+    },
     Referral {
         sender: String,
         referred_vid: String,
