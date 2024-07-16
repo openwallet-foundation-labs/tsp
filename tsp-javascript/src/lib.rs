@@ -165,6 +165,24 @@ impl Store {
     }
 
     #[wasm_bindgen]
+    pub fn make_relationship_referral(
+        &self,
+        sender: String,
+        receiver: String,
+        referred_vid: String,
+    ) -> Result<SealedMessage, Error> {
+        let (url, sealed) = self
+            .0
+            .make_relationship_referral(&sender, &receiver, &referred_vid)
+            .map_err(Error)?;
+
+        Ok(SealedMessage {
+            url: url.to_string(),
+            sealed,
+        })
+    }
+
+    #[wasm_bindgen]
     pub fn make_nested_relationship_request(
         &self,
         parent_sender: String,

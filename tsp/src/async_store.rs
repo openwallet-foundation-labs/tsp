@@ -237,6 +237,24 @@ impl AsyncStore {
         Ok(())
     }
 
+    /// Send a relationship referral message to `receiver`
+    pub async fn send_relationship_referal(
+        &self,
+        sender: &str,
+        receiver: &str,
+        referred_vid: &str,
+    ) -> Result<(), Error> {
+        let (endpoint, message) =
+            self.inner
+                .make_relationship_referral(sender, receiver, referred_vid)?;
+
+        tracing::info!("sending message to {endpoint}");
+
+        crate::transport::send_message(&endpoint, &message).await?;
+
+        Ok(())
+    }
+
     /// Send a nested relationship request to `receiver`, creating a new nested vid with `outer_sender` as a parent.
     pub async fn send_nested_relationship_request(
         &self,

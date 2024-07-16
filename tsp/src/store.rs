@@ -1184,6 +1184,37 @@ mod test {
 
     #[test]
     #[wasm_bindgen_test]
+    fn test_make_referral() {
+        let store = Store::new();
+        let alice = new_vid();
+        let bob = new_vid();
+        let charles = new_vid();
+
+        store.add_private_vid(alice.clone()).unwrap();
+        store.add_private_vid(bob.clone()).unwrap();
+        store.add_private_vid(charles.clone()).unwrap();
+
+        // alice vouches for charlies to bob
+        let (url, sealed) = store
+            .make_relationship_referral(alice.identifier(), bob.identifier(), charles.identifier())
+            .unwrap();
+
+        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        let received = store.open_message(&mut sealed.clone()).unwrap();
+
+        let ReceivedTspMessage::Referral {
+            sender,
+            referred_vid,
+        } = received
+        else {
+            panic!("unexpected message type");
+        };
+        assert_eq!(sender, alice.identifier());
+        assert_eq!(referred_vid, charles.identifier());
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
     fn test_routed() {
         let a_store = Store::new();
         let b_store = Store::new();

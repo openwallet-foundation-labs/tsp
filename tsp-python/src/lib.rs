@@ -126,6 +126,21 @@ impl Store {
         Ok((url.to_string(), bytes))
     }
 
+    #[pyo3(signature = (sender, receiver, referred_vid))]
+    fn make_relationship_referral(
+        &self,
+        sender: String,
+        receiver: String,
+        referred_vid: String,
+    ) -> PyResult<(String, Vec<u8>)> {
+        let (url, bytes) = self
+            .0
+            .make_relationship_referral(&sender, &receiver, &referred_vid)
+            .map_err(py_exception)?;
+
+        Ok((url.to_string(), bytes))
+    }
+
     fn make_nested_relationship_request(
         &self,
         parent_sender: String,
