@@ -856,14 +856,39 @@ impl Store {
         Ok(((transport, tsp_message), nested_vid))
     }
 
+    pub fn make_new_identifier_notice(
+        &self,
+        sender: &str,
+        receiver: &str,
+        new_vid: &str,
+    ) -> Result<(Url, Vec<u8>), Error> {
+	// check that the new vid is actually one of ours
+        let _new_vid = self.get_private_vid(new_vid)?;
+
+	let RelationshipStatus::Bidirectional { thread_id, .. } = self.get_vid(receiver)?.relation_status else {
+	    return Err(Error::Relationship(receiver.to_string()));
+	};
+
+        let (transport, tsp_message) = self.seal_message_payload(
+            sender,
+            receiver,
+            None,
+            Payload::NewIdentifier {
+		thread_id,
+                new_vid: new_vid.as_ref(),
+            },
+        )?;
+
+        Ok((transport, tsp_message))
+    }
+
     pub fn make_relationship_referral(
         &self,
         sender: &str,
         receiver: &str,
         referred_vid: &str,
     ) -> Result<(Url, Vec<u8>), Error> {
-        let _sender = self.get_private_vid(sender)?;
-        let _receiver = self.get_verified_vid(receiver)?;
+	// check that we actually know the referred vid
         let _referred_vid = self.get_vid(referred_vid)?;
 
         let (transport, tsp_message) = self.seal_message_payload(

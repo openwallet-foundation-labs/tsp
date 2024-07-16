@@ -127,7 +127,16 @@ impl<'a> PartialEq<Payload<'a, &'a [u8], &'a [u8]>> for Wrapper {
                     connect_to_vid: r_vid2,
                 },
             ) => l_reply == r_reply && l_vid == r_vid && l_vid2 == r_vid2,
-
+            (
+                Payload::NewIdentifierProposal {
+                    new_vid: l_vid,
+                    thread_id: l_reply,
+                },
+                Payload::NewIdentifierProposal {
+                    new_vid: r_vid,
+                    thread_id: r_reply,
+                },
+            ) => l_vid == r_vid && l_reply == r_reply,
             (
                 Payload::RelationshipReferral {
                     referred_vid: l_vid,

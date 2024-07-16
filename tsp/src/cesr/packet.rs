@@ -355,6 +355,14 @@ pub fn decode_payload(mut stream: &[u8]) -> Result<DecodedPayload, DecodeError> 
                 reply,
             })
         }
+        msgtype::NEW_REFER_REL => {
+            let thread_id =
+                decode_fixed_data(TSP_SHA256, &mut stream).ok_or(DecodeError::UnexpectedData)?;
+            let new_vid = decode_variable_data(TSP_DEVELOPMENT_VID, &mut stream)
+                .ok_or(DecodeError::UnexpectedData)?;
+
+            Some(Payload::NewIdentifierProposal { thread_id, new_vid })
+        }
         msgtype::THIRDP_REFER_REL => {
             let referred_vid = decode_variable_data(TSP_DEVELOPMENT_VID, &mut stream)
                 .ok_or(DecodeError::UnexpectedData)?;
@@ -1135,6 +1143,15 @@ mod test {
             vec![b"foo", b"bar"],
             &b"Hello TSP!"[..],
         ));
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_par_refer_rel() {
+        test_turn_around(Payload::NewIdentifierProposal {
+            thread_id: &Default::default(),
+            new_vid: b"Charlie",
+        });
     }
 
     #[test]
