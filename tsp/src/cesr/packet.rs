@@ -25,6 +25,7 @@ mod msgtype {
     pub(super) const NEW_REL_REPLY: [u8; 2] = [1, 1];
     pub(super) const NEW_NEST_REL: [u8; 2] = [1, 2];
     pub(super) const NEW_NEST_REL_REPLY: [u8; 2] = [1, 3];
+    pub(super) const NEW_REFER_REL: [u8; 2] = [1, 4];
     pub(super) const THIRDP_REFER_REL: [u8; 2] = [1, 5];
     pub(super) const REL_CANCEL: [u8; 2] = [1, 255];
 }
@@ -68,32 +69,26 @@ pub enum Payload<'a, Bytes: AsRef<[u8]>, Vid> {
     /// A routed payload; same as above but with routing information attached
     RoutedMessage(Vec<Vid>, Bytes),
     /// A TSP message requesting a relationship
-    DirectRelationProposal {
-        nonce: Nonce,
-        hops: Vec<Vid>,
-    },
-    /// A TSP message confiming a relationship
-    DirectRelationAffirm {
-        reply: &'a Sha256Digest,
-    },
+    DirectRelationProposal { nonce: Nonce, hops: Vec<Vid> },
+    /// A TSP message confirming a relationship
+    DirectRelationAffirm { reply: &'a Sha256Digest },
     /// A TSP message requesting a nested relationship
-    NestedRelationProposal {
-        nonce: Nonce,
-        new_vid: Vid,
-    },
-    /// A TSP message confiming a relationship
+    NestedRelationProposal { nonce: Nonce, new_vid: Vid },
+    /// A TSP message confirming a relationship
     NestedRelationAffirm {
         new_vid: Vid,
         connect_to_vid: Vid,
         reply: &'a Sha256Digest,
     },
+    /// A TSP Message establishing a secondary relationship (parallel relationship forming)
+    NewIdentifierProposal {
+        thread_id: &'a Sha256Digest,
+        new_vid: Vid,
+    },
+    /// A TSP Message revealing a third party
+    RelationshipReferral { referred_vid: Vid },
     /// A TSP cancellation message
-    RelationshipReferral {
-        referred_vid: Vid,
-    },
-    RelationshipCancel {
-        reply: &'a Sha256Digest,
-    },
+    RelationshipCancel { reply: &'a Sha256Digest },
 }
 
 impl<'a, Bytes: AsRef<[u8]>, Vid> Payload<'a, Bytes, Vid> {
@@ -242,6 +237,11 @@ pub fn encode_payload(
             checked_encode_variable_data(TSP_DEVELOPMENT_VID, new_vid.as_ref(), output)?;
             checked_encode_variable_data(TSP_DEVELOPMENT_VID, connect_to_vid.as_ref(), output)?;
             encode_fixed_data(TSP_SHA256, reply.as_slice(), output);
+        }
+        Payload::NewIdentifierProposal { thread_id, new_vid } => {
+            encode_fixed_data(TSP_TYPECODE, &msgtype::NEW_REFER_REL, output);
+            encode_fixed_data(TSP_SHA256, thread_id.as_slice(), output);
+            checked_encode_variable_data(TSP_DEVELOPMENT_VID, new_vid.as_ref(), output)?;
         }
         Payload::RelationshipReferral { referred_vid } => {
             encode_fixed_data(TSP_TYPECODE, &msgtype::THIRDP_REFER_REL, output);

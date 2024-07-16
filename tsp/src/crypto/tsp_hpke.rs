@@ -237,6 +237,9 @@ where
         } => Payload::CancelRelationship { thread_id },
         crate::cesr::Payload::NestedMessage(data) => Payload::NestedMessage(data),
         crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data),
+        crate::cesr::Payload::NewIdentifierProposal { thread_id, new_vid } => {
+            todo!()
+        }
         crate::cesr::Payload::RelationshipReferral { referred_vid } => {
             Payload::Referral { referred_vid }
         }

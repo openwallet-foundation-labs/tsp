@@ -25,6 +25,7 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
             DirectRelationAffirm,
             NestedRelationProposal,
             NestedRelationAffirm,
+            NewIdentifierProposal,
             RelationshipReferral,
             RelationshipCancel,
         }
@@ -39,6 +40,7 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
                 Payload::DirectRelationAffirm { .. } => Variants::DirectRelationAffirm,
                 Payload::NestedRelationProposal { .. } => Variants::NestedRelationProposal,
                 Payload::NestedRelationAffirm { .. } => Variants::NestedRelationAffirm,
+                Payload::NewIdentifierProposal { .. } => Variants::NewIdentifierProposal,
                 Payload::RelationshipReferral { .. } => Variants::RelationshipReferral,
                 Payload::RelationshipCancel { .. } => Variants::RelationshipCancel,
             }
@@ -66,6 +68,10 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
                 reply: &DIGEST,
                 new_vid: Arbitrary::arbitrary(u)?,
                 connect_to_vid: Arbitrary::arbitrary(u)?,
+            },
+            Variants::NewIdentifierProposal => Payload::NewIdentifierProposal {
+                thread_id: &DIGEST,
+                new_vid: Arbitrary::arbitrary(u)?,
             },
             Variants::RelationshipReferral => Payload::RelationshipReferral {
                 referred_vid: Arbitrary::arbitrary(u)?,
