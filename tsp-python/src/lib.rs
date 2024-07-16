@@ -200,6 +200,7 @@ enum ReceivedTspMessageVariant {
     CancelRelationship,
     ForwardRequest,
     PendingMessage,
+    NewIdentifier,
     Referral,
 }
 
@@ -212,6 +213,7 @@ impl From<&tsp::ReceivedTspMessage> for ReceivedTspMessageVariant {
             tsp::ReceivedTspMessage::CancelRelationship { .. } => Self::CancelRelationship,
             tsp::ReceivedTspMessage::ForwardRequest { .. } => Self::ForwardRequest,
             tsp::ReceivedTspMessage::PendingMessage { .. } => Self::PendingMessage,
+            tsp::ReceivedTspMessage::NewIdentifier { .. } => Self::NewIdentifier,
             tsp::ReceivedTspMessage::Referral { .. } => Self::Referral,
         }
     }
@@ -252,6 +254,8 @@ struct FlatReceivedTspMessage {
     #[pyo3(get, set)]
     unknown_vid: Option<String>,
     #[pyo3(get, set)]
+    new_vid: Option<String>,
+    #[pyo3(get, set)]
     referred_vid: Option<String>,
 }
 
@@ -279,6 +283,7 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
             payload: None,
             opaque_payload: None,
             unknown_vid: None,
+            new_vid: None,
             referred_vid: None,
         };
 
@@ -316,6 +321,10 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
             }
             tsp::ReceivedTspMessage::CancelRelationship { sender } => {
                 this.sender = Some(sender);
+            }
+            tsp::ReceivedTspMessage::NewIdentifier { sender, new_vid } => {
+                this.sender = Some(sender);
+                this.new_vid = Some(new_vid);
             }
             tsp::ReceivedTspMessage::Referral {
                 sender,

@@ -276,7 +276,8 @@ pub enum ReceivedTspMessageVariant {
     AcceptRelationship = 2,
     CancelRelationship = 3,
     ForwardRequest = 4,
-    Referral = 5,
+    NewIdentifier = 5,
+    Referral = 6,
 }
 
 impl From<&tsp::ReceivedTspMessage> for ReceivedTspMessageVariant {
@@ -287,6 +288,7 @@ impl From<&tsp::ReceivedTspMessage> for ReceivedTspMessageVariant {
             tsp::ReceivedTspMessage::AcceptRelationship { .. } => Self::AcceptRelationship,
             tsp::ReceivedTspMessage::CancelRelationship { .. } => Self::CancelRelationship,
             tsp::ReceivedTspMessage::ForwardRequest { .. } => Self::ForwardRequest,
+            tsp::ReceivedTspMessage::NewIdentifier { .. } => Self::NewIdentifier,
             tsp::ReceivedTspMessage::Referral { .. } => Self::Referral,
             #[cfg(not(target_arch = "wasm32"))]
             tsp::ReceivedTspMessage::PendingMessage { .. } => unreachable!(),
@@ -317,6 +319,7 @@ pub struct FlatReceivedTspMessage {
     opaque_payload: Option<Vec<u8>>,
     unknown_vid: Option<String>,
     referred_vid: Option<String>,
+    new_vid: Option<String>,
 }
 
 #[wasm_bindgen]
@@ -417,6 +420,7 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
             opaque_payload: None,
             unknown_vid: None,
             referred_vid: None,
+            new_vid: None,
         };
 
         match value {
@@ -453,6 +457,10 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
             }
             tsp::ReceivedTspMessage::CancelRelationship { sender } => {
                 this.sender = Some(sender);
+            }
+            tsp::ReceivedTspMessage::NewIdentifier { sender, new_vid } => {
+                this.sender = Some(sender);
+                this.new_vid = Some(new_vid);
             }
             tsp::ReceivedTspMessage::Referral {
                 sender,
