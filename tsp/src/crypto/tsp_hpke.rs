@@ -68,25 +68,22 @@ where
         }
     };
 
+    #[cfg(feature = "essr")]
+    let sender_in_payload = Some(sender.identifier().as_bytes());
+    #[cfg(not(feature = "essr"))]
+    let sender_in_payload = None;
+
     // prepare CESR-encoded ciphertext
     let mut cesr_message = Vec::with_capacity(
         // plaintext size
-        secret_payload.estimate_size()
+        secret_payload.calculate_size(sender_in_payload)
         // authenticated encryption tag length
         + AeadTag::<A>::size()
         // encapsulated key length
         + Kem::EncappedKey::size(),
     );
 
-    #[cfg(feature = "essr")]
-    crate::cesr::encode_payload(
-        &secret_payload,
-        Some(sender.identifier().as_bytes()),
-        &mut cesr_message,
-    )?;
-
-    #[cfg(not(feature = "essr"))]
-    crate::cesr::encode_payload(&secret_payload, None, &mut cesr_message)?;
+    crate::cesr::encode_payload(&secret_payload, sender_in_payload, &mut cesr_message)?;
 
     // HPKE sender mode: "Auth"
     #[cfg(not(feature = "essr"))]
