@@ -17,12 +17,12 @@ use url::Url;
 
 #[derive(Clone)]
 pub(crate) struct VidContext {
-    pub(crate) vid: Arc<dyn VerifiedVid>,
-    pub(crate) private: Option<Arc<dyn PrivateVid>>,
-    pub(crate) relation_status: RelationshipStatus,
-    pub(crate) relation_vid: Option<String>,
-    pub(crate) parent_vid: Option<String>,
-    pub(crate) tunnel: Option<Box<[String]>>,
+    vid: Arc<dyn VerifiedVid>,
+    private: Option<Arc<dyn PrivateVid>>,
+    relation_status: RelationshipStatus,
+    relation_vid: Option<String>,
+    parent_vid: Option<String>,
+    tunnel: Option<Box<[String]>>,
 }
 
 impl VidContext {
