@@ -90,11 +90,12 @@ where
 
     // HPKE sender mode: "Auth"
     #[cfg(not(feature = "essr"))]
-    let sender_decryption_key = Kem::PrivateKey::from_bytes(sender.decryption_key().as_ref())?;
-    #[cfg(not(feature = "essr"))]
-    let sender_encryption_key = Kem::PublicKey::from_bytes(sender.encryption_key().as_ref())?;
-    #[cfg(not(feature = "essr"))]
-    let mode = OpModeS::Auth((sender_decryption_key, sender_encryption_key));
+    let mode = {
+        let sender_decryption_key = Kem::PrivateKey::from_bytes(sender.decryption_key().as_ref())?;
+        let sender_encryption_key = Kem::PublicKey::from_bytes(sender.encryption_key().as_ref())?;
+
+        OpModeS::Auth((sender_decryption_key, sender_encryption_key))
+    };
 
     #[cfg(feature = "essr")]
     let mode = OpModeS::Base;
@@ -181,9 +182,10 @@ where
     let mode = OpModeR::Base;
 
     #[cfg(not(feature = "essr"))]
-    let sender_encryption_key = Kem::PublicKey::from_bytes(sender.encryption_key().as_ref())?;
-    #[cfg(not(feature = "essr"))]
-    let mode = OpModeR::Auth(sender_encryption_key);
+    let mode = {
+        let sender_encryption_key = Kem::PublicKey::from_bytes(sender.encryption_key().as_ref())?;
+        OpModeR::Auth(sender_encryption_key)
+    };
 
     // decrypt the ciphertext
     hpke::single_shot_open_in_place_detached::<A, Kdf, Kem>(
