@@ -22,7 +22,7 @@ zeroize = "1.8"
 once_cell = "1.19"
 #crypto
 ed25519-dalek = { version = "2.1.1", default-features = false, features = ["fast", "std", "zeroize", "rand_core"] }
-hpke = { git = "https://github.com/marlonbaeten/rust-hpke", branch = "keys-by-reference", features = ["alloc", "std"] }
+hpke = { version = "0.12", features = ["std"] }
 rand = "0.8.5"
 sha2 = "0.10.8"
 crypto_box = { version = "0.9.1", features = ["std", "chacha20"] }
