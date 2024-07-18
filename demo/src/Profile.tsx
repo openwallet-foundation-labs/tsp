@@ -4,14 +4,24 @@ import { Button, CopyButton, Flex, Stack, Title } from '@mantine/core';
 import { useElementSize } from '@mantine/hooks';
 import { identityToUrl } from './util';
 import logo from './trust-over-ip.svg';
-import { IconTrash, IconClipboard, IconIdBadge2 } from '@tabler/icons-react';
+import {
+  IconTrash,
+  IconClipboard,
+  IconIdBadge2,
+  IconUserPlus,
+} from '@tabler/icons-react';
 
 interface ProfileProps {
   id: Identity | null;
   deleteIdentity: () => void;
+  openScan: () => void;
 }
 
-export default function Profile({ id, deleteIdentity }: ProfileProps) {
+export default function Profile({
+  id,
+  deleteIdentity,
+  openScan,
+}: ProfileProps) {
   const { ref, width } = useElementSize();
 
   if (id === null) {
@@ -22,7 +32,7 @@ export default function Profile({ id, deleteIdentity }: ProfileProps) {
 
   return (
     <Stack ref={ref}>
-      <Flex align="center" justify="center" bg="gray.1" p="md">
+      <Flex align="center" justify="center" bg="gray.2" p="md">
         <img src={logo} alt="Trust Over IP" style={{ height: 24 }} />
         <Title order={2} ml="md" c="#0031B6">
           TSP Chat
@@ -47,10 +57,20 @@ export default function Profile({ id, deleteIdentity }: ProfileProps) {
                 onClick={copy}
                 leftSection={<IconClipboard size={16} />}
               >
-                {copied ? 'Copied url' : 'Copy url'}
+                {copied ? 'Copied url' : 'Copy my url'}
               </Button>
             )}
           </CopyButton>
+          <Button
+            onClick={() => {
+              openScan();
+            }}
+            color="green"
+            leftSection={<IconUserPlus size={16} />}
+            variant="outline"
+          >
+            Add contact
+          </Button>
           <Button
             onClick={deleteIdentity}
             color="red"

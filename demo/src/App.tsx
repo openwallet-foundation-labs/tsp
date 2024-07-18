@@ -1,13 +1,15 @@
 import useStore, { Contact, Identity } from './useStore';
-import { Burger, Drawer } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
+import { Box, Burger, Drawer, Flex } from '@mantine/core';
+import { useDisclosure, useMediaQuery } from '@mantine/hooks';
 import Initialize from './Initialize';
 import Profile from './Profile';
 import Contacts from './Contacts';
 import Chat from './Chat';
+import ScanContact from './ScanContact';
 
 interface ContentProps {
   active: number | null;
+  mobile: boolean;
   contacts: Contact[];
   createIdentity: (name: string) => void;
   deleteContact: (index: number) => void;
@@ -15,11 +17,14 @@ interface ContentProps {
   deleteMessage: (contactIndex: number, index: number) => void;
   id: Identity | null;
   initialized: boolean;
+  openScan: () => void;
   sendMessage: (vid: string, message: string) => void;
+  verifyContact: (vid: string) => void;
 }
 
 function Content({
   active,
+  mobile,
   contacts,
   createIdentity,
   deleteContact,
@@ -27,7 +32,9 @@ function Content({
   deleteMessage,
   id,
   initialized,
+  openScan,
   sendMessage,
+  verifyContact,
 }: ContentProps) {
   if (!initialized) {
     return <Initialize onClick={(name: string) => createIdentity(name)} />;
@@ -37,15 +44,19 @@ function Content({
     return (
       <Chat
         index={active}
+        mobile={mobile}
         contact={contacts[active]}
         sendMessage={sendMessage}
+        verifyContact={verifyContact}
         deleteContact={deleteContact}
         deleteMessage={deleteMessage}
       />
     );
   }
 
-  return <Profile id={id} deleteIdentity={deleteIdentity} />;
+  return (
+    <Profile id={id} deleteIdentity={deleteIdentity} openScan={openScan} />
+  );
 }
 
 export default function App() {
@@ -61,41 +72,72 @@ export default function App() {
     initialized,
     sendMessage,
     setActive,
+    verifyContact,
   } = useStore();
+  const mobile = useMediaQuery('(max-width: 768px)') ?? true;
   const [opened, { toggle }] = useDisclosure();
+  const [scanOpened, { open: openScan, close: closeScan }] =
+    useDisclosure(false);
 
   return (
-    <>
-      <Drawer opened={opened} onClose={toggle} position="right">
-        <Contacts
-          contacts={contacts}
-          addContact={addContact}
-          setActive={setActive}
-          active={active}
-          toggle={toggle}
-        />
-      </Drawer>
-      {initialized && (
-        <Burger
-          opened={opened}
-          onClick={toggle}
-          size="sm"
-          style={{ position: 'fixed', top: 16, right: 16., zIndex: 10 }}
-        />
+    <Flex justify="stretch" wrap="nowrap" h="100%">
+      {mobile ? (
+        <Drawer opened={opened} onClose={toggle} position="left">
+          <Contacts
+            contacts={contacts}
+            openScan={openScan}
+            setActive={setActive}
+            active={active}
+            toggle={toggle}
+          />
+        </Drawer>
+      ) : (
+        initialized && (
+          <Box w="20rem" p="md" bg="gray.0">
+            <Contacts
+              contacts={contacts}
+              openScan={openScan}
+              setActive={setActive}
+              active={active}
+              toggle={toggle}
+            />
+          </Box>
+        )
       )}
-      <Content
-        {...{
-          active,
-          contacts,
-          createIdentity,
-          deleteContact,
-          deleteIdentity,
-          deleteMessage,
-          id,
-          initialized,
-          sendMessage,
-        }}
-      />
-    </>
+      <Box flex="1">
+        <ScanContact
+          opened={scanOpened}
+          close={closeScan}
+          addContact={(url: string) => {
+            closeScan();
+            addContact(url);
+          }}
+        />
+        {initialized && mobile && (
+          <Burger
+            opened={opened}
+            onClick={toggle}
+            size="sm"
+            style={{ position: 'fixed', top: '1rem', left: '1rem', zIndex: 10 }}
+          />
+        )}
+        <Content
+          {...{
+            active,
+            mobile,
+            contacts,
+            createIdentity,
+            deleteContact,
+            deleteIdentity,
+            deleteMessage,
+            id,
+            initialized,
+            sendMessage,
+            openScan,
+            verifyContact,
+          }}
+        />
+      </Box>
+    </Flex>
   );
 }

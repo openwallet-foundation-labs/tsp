@@ -19,7 +19,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp::{
     definitions::{Payload, VerifiedVid},
     vid::{OwnedVid, Vid},
-    AsyncStore,
+    AsyncStore, Store,
 };
 
 use crate::intermediary::start_intermediary;
@@ -37,6 +37,7 @@ struct Identity {
 /// Application state, used to store the identities and the broadcast channel
 struct AppState {
     db: RwLock<HashMap<String, Identity>>,
+    timestamp_server: Store,
     tx: broadcast::Sender<(String, String, Vec<u8>)>,
 }
 
@@ -51,8 +52,14 @@ async fn main() {
         )
         .init();
 
+    let timestamp_server = Store::new();
+    let piv: OwnedVid =
+        serde_json::from_str(include_str!("../test/timestamp-server.json")).unwrap();
+    timestamp_server.add_private_vid(piv).unwrap();
+
     let state = Arc::new(AppState {
         db: Default::default(),
+        timestamp_server,
         tx: broadcast::channel(100).0,
     });
 
@@ -67,6 +74,7 @@ async fn main() {
         .route("/vid/:vid", get(websocket_vid_handler))
         .route("/user/:user", get(websocket_user_handler))
         .route("/user/:user", post(route_message))
+        .route("/timestamp", post(timestamp_message))
         .route("/send-message", post(send_message))
         .route("/receive-messages", get(websocket_handler))
         .with_state(state);
@@ -276,6 +284,28 @@ struct SendMessageForm {
     nonconfidential_data: Option<String>,
     sender: OwnedVid,
     receiver: Vid,
+}
+
+async fn timestamp_message(
+    State(state): State<Arc<AppState>>,
+    body: Bytes,
+) -> Result<impl IntoResponse, &'static str> {
+    let mut bytes: Vec<u8> = body.into();
+    let timestamp = tsp::cesr::probe(&mut bytes)
+        .map_err(|_| "Error probing message")?
+        .get_nonconfidential_data()
+        .ok_or("No nonconfidential data")?;
+
+    // TODO: check timestamp
+
+    let response_bytes = state
+        .timestamp_server
+        .sign_anycast("did:web:did.tsp-test.org:user:timestamp-server", &bytes)
+        .map_err(|_| "Error signing message")?;
+
+    tracing::debug!("timestamped message");
+
+    Ok(response_bytes)
 }
 
 async fn route_message(State(state): State<Arc<AppState>>, body: Bytes) -> Response {

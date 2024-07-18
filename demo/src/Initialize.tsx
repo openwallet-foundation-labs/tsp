@@ -55,7 +55,7 @@ export default function Initialize({ onClick }: InitializeProps) {
           </Flex>
         </form>
       </Modal>
-      <Flex align="center" justify="center" bg="gray.1" p="md">
+      <Flex align="center" justify="center" bg="gray.2" p="md">
         <img src={logo} alt="Trust Over IP" style={{ height: 24 }} />
         <Title order={2} ml="md" c="#0031B6">
           TSP Chat

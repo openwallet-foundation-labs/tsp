@@ -76,6 +76,21 @@ pub enum EnvelopeType<'a> {
     },
 }
 
+impl EnvelopeType<'_> {
+    pub fn get_nonconfidential_data(&self) -> Option<&[u8]> {
+        match self {
+            EnvelopeType::EncryptedMessage {
+                nonconfidential_data,
+                ..
+            } => *nonconfidential_data,
+            EnvelopeType::SignedMessage {
+                nonconfidential_data,
+                ..
+            } => *nonconfidential_data,
+        }
+    }
+}
+
 pub fn probe(stream: &mut [u8]) -> Result<EnvelopeType, error::DecodeError> {
     let (_, crypto_type, _) = detected_tsp_header_size_and_confidentiality(&mut (stream as &[u8]))?;
 

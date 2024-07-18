@@ -6,6 +6,7 @@ import {
   verify_did_peer,
   probe_message,
 } from '../pkg/tsp_demo';
+import { bufferToBase64 } from './util';
 
 export interface Identity {
   label: string;
@@ -22,6 +23,7 @@ export interface Identity {
 export interface Contact {
   label: string;
   messages: Array<Message>;
+  verified: boolean;
   vid: {
     id: string;
     publicEnckey: string;
@@ -33,6 +35,7 @@ export interface Contact {
 export interface Message {
   date: string;
   message: string;
+  encoded: string;
   me: boolean;
 }
 
@@ -59,9 +62,16 @@ function loadState(): State {
 type Action =
   | { type: 'setActive'; index: number | null }
   | { type: 'addContact'; contact: Contact }
+  | { type: 'verifyContact'; vid: string }
   | { type: 'removeContact'; index: number }
   | { type: 'removeMessage'; contactIndex: number; messageIndex: number }
-  | { type: 'addMessage'; contactVid: string; message: string; me: boolean }
+  | {
+      type: 'addMessage';
+      contactVid: string;
+      message: string;
+      encoded: string;
+      me: boolean;
+    }
   | { type: 'setId'; id: Identity }
   | { type: 'reset' };
 
@@ -74,6 +84,14 @@ function reducer(state: State, action: Action) {
         ...state,
         contacts: [...state.contacts, action.contact],
         active: state.contacts.length,
+      };
+    case 'verifyContact':
+      return {
+        ...state,
+        contacts: state.contacts.map((c) =>
+          c.vid.id === action.vid ? { ...c, verified: true } : c
+        ),
+        active: null,
       };
     case 'removeContact':
       return {
@@ -109,6 +127,7 @@ function reducer(state: State, action: Action) {
                 {
                   date: new Date().toISOString(),
                   message: action.message,
+                  encoded: action.encoded,
                   me: action.me,
                 },
               ],
@@ -143,7 +162,12 @@ export default function useStore() {
 
   const addContact = (vidString: string, label: string) => {
     const vid = verify_did_peer(vidString);
-    const contact = { label, vid: JSON.parse(vid.to_json()), messages: [] };
+    const contact = {
+      label,
+      vid: JSON.parse(vid.to_json()),
+      messages: [],
+      verified: false,
+    };
 
     if (state.contacts.find((c) => c.vid.id === contact.vid)) {
       window.alert('Contact already exists');
@@ -183,11 +207,22 @@ export default function useStore() {
     dispatch({ type: 'setActive', index });
   };
 
+  const verifyContact = (vid: string) => {
+    dispatch({
+      type: 'verifyContact',
+      vid,
+    });
+    dispatch({
+      type: 'setActive',
+      index: state.contacts.findIndex((c) => c.vid.id === vid),
+    });
+  };
+
   const sendMessage = async (vid: string, message: string) => {
     if (state.id) {
       const body = new TextEncoder().encode(message);
       const unencrypted = new TextEncoder().encode(state.id.label);
-      const { url, bytes } = store.current.seal_message(
+      const { url, sealed } = store.current.seal_message(
         state.id.vid.id,
         vid,
         unencrypted,
@@ -195,9 +230,16 @@ export default function useStore() {
       );
       await fetch(url, {
         method: 'POST',
-        body: bytes,
+        body: sealed,
       });
-      dispatch({ type: 'addMessage', contactVid: vid, message, me: true });
+      const encoded = await bufferToBase64(sealed);
+      dispatch({
+        type: 'addMessage',
+        contactVid: vid,
+        encoded,
+        message,
+        me: true,
+      });
     }
   };
 
@@ -245,23 +287,22 @@ export default function useStore() {
           const envelope = JSON.parse(probe_message(bytes));
 
           if (!state.contacts.find((c) => c.vid.id === envelope.sender)) {
-            if (
-              !window.confirm(
-                `Received a message from unknown sender '${envelope.nonconfidential_data}'. ` +
-                  `Do you want to add '${envelope.nonconfidential_data}' to your contacts?`
-              )
-            ) {
-              return;
-            }
             addContact(envelope.sender, envelope.nonconfidential_data);
           }
 
+          const encoded = await bufferToBase64(bytes);
           const plaintext = store.current.open_message(bytes);
           const body = new Uint8Array(plaintext.message);
           const message = new TextDecoder().decode(body);
           const contactVid = plaintext.sender as string;
 
-          dispatch({ type: 'addMessage', contactVid, message, me: false });
+          dispatch({
+            type: 'addMessage',
+            contactVid,
+            message,
+            encoded,
+            me: false,
+          });
         } catch (e) {
           console.error(e);
         }
@@ -278,6 +319,7 @@ export default function useStore() {
     deleteIdentity,
     sendMessage,
     deleteContact,
+    verifyContact,
     deleteMessage,
     initialized: state.id !== null,
     ...state,
