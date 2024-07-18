@@ -94,9 +94,19 @@ pub enum Payload<'a, Bytes: AsRef<[u8]>, Vid> {
     },
 }
 
-impl<'a, Bytes: AsRef<[u8]>, Vid> Payload<'a, Bytes, Vid> {
-    pub fn estimate_size(&self) -> usize {
-        0 // TODO
+impl<'a, Bytes: AsRef<[u8]>, Vid: AsRef<[u8]>> Payload<'a, Bytes, Vid> {
+    pub fn calculate_size(&self, sender_identity: Option<&[u8]>) -> usize {
+        struct Count(usize);
+        impl<'a> std::iter::Extend<&'a u8> for Count {
+            fn extend<T: IntoIterator<Item = &'a u8>>(&mut self, iter: T) {
+                self.0 += iter.into_iter().count()
+            }
+        }
+
+        let mut count = Count(0);
+        let _ignore = encode_payload(self, sender_identity, &mut count);
+
+        count.0
     }
 }
 
