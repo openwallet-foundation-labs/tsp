@@ -52,18 +52,16 @@ impl Nonce {
 }
 
 /// A SHA256 Digest
-//TODO: this should probably be in tsp-definitions
-pub type Sha256Digest = [u8; 32];
+type Sha256Digest = crate::definitions::Digest;
 
 /// A type to distinguish "normal" TSP messages from "control" messages
 #[repr(u32)]
 #[derive(Debug)]
 #[cfg_attr(any(test, feature = "fuzzing"), derive(PartialEq, Eq, Clone))]
-//TODO: Boxed slices?
 pub enum Payload<'a, Bytes: AsRef<[u8]>, Vid> {
     /// A TSP message which consists only of a message which will be protected using HPKE
     GenericMessage(Bytes),
-    /// A payload that consists of a TSP Envelope+Message (TODO: maybe add some extra decoding)
+    /// A payload that consists of a TSP Envelope+Message
     NestedMessage(Bytes),
     /// A routed payload; same as above but with routing information attached
     RoutedMessage(Vec<Vid>, Bytes),
@@ -172,8 +170,7 @@ pub struct DecodedEnvelope<'a, Vid, Bytes> {
     pub ciphertext: Option<Bytes>,
 }
 
-/// TODO: something more type safe
-pub type Signature = [u8; 64];
+type Signature = [u8; 64];
 
 /// Safely encode variable data, returning a soft error in case the size limit is exceeded
 fn checked_encode_variable_data(
@@ -377,7 +374,6 @@ pub fn decode_payload(mut stream: &[u8]) -> Result<DecodedPayload, DecodeError> 
 }
 
 /// Encode a encrypted TSP message plus Envelope into CESR
-/// TODO: replace types of sender/receiver with VIDs (once we have that type)
 pub fn encode_ets_envelope<'a, Vid: AsRef<[u8]>>(
     envelope: Envelope<'a, Vid>,
     output: &mut impl for<'b> Extend<&'b u8>,
@@ -387,7 +383,6 @@ pub fn encode_ets_envelope<'a, Vid: AsRef<[u8]>>(
 }
 
 /// Encode a encrypted TSP message plus Envelope into CESR
-/// TODO: replace types of sender/receiver with VIDs (once we have that type)
 pub fn encode_s_envelope<'a, Vid: AsRef<[u8]>>(
     envelope: Envelope<'a, Vid>,
     output: &mut impl for<'b> Extend<&'b u8>,
@@ -424,7 +419,6 @@ fn encode_envelope_fields<'a, Vid: AsRef<[u8]>>(
 }
 
 /// Encode a Ed25519 signature into CESR
-/// TODO: replace type with a more precise "signature" type
 pub fn encode_signature(signature: &Signature, output: &mut impl for<'a> Extend<&'a u8>) {
     encode_fixed_data(ED25519_SIGNATURE, signature, output);
 }
