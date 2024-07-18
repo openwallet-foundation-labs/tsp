@@ -6,7 +6,7 @@ use crate::{
         VerifiedVid,
     },
     error::Error,
-    vid::VidError,
+    vid::{resolve::verify_vid_offline, VidError},
     ExportVid, OwnedVid,
 };
 use std::{
@@ -885,15 +885,7 @@ impl Store {
     }
 
     fn add_nested_vid(&self, vid: &str) -> Result<(), Error> {
-        //TODO: a non-async resolve function should probably be added to the `vid` module instead of here
-        use crate::vid::did::{self, peer};
-        let parts = vid.split(':').collect::<Vec<&str>>();
-        let Some([did::SCHEME, did::peer::SCHEME]) = parts.get(0..2) else {
-            return Err(Error::Relationship(
-                "nested relationships must use did:peer".into(),
-            ));
-        };
-        let nested_vid = peer::verify_did_peer(&parts)?;
+        let nested_vid = verify_vid_offline(vid)?;
 
         self.add_verified_vid(nested_vid)
     }
