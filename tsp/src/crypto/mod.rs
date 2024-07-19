@@ -83,7 +83,7 @@ pub fn seal_and_hash(
 
 pub type MessageContents<'a> = (
     Option<NonConfidentialData<'a>>,
-    Payload<'a, &'a [u8]>,
+    Payload<'a, &'a [u8], &'a mut [u8]>,
     &'a [u8],
 );
 
