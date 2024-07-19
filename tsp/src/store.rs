@@ -545,10 +545,8 @@ impl Store {
                         message,
                         message_type: MessageType::SignedAndEncrypted,
                     }),
-                    Payload::NestedMessage(message) => {
-                        let mut inner = message.to_owned();
-
-                        let mut received_message = self.open_message(&mut inner)?;
+                    Payload::NestedMessage(inner) => {
+                        let mut received_message = self.open_message(inner)?;
                         if let ReceivedTspMessage::GenericMessage {
                             ref mut message_type,
                             ..
@@ -557,7 +555,6 @@ impl Store {
                             *message_type = MessageType::SignedAndEncrypted;
                         }
 
-                        todo!("nested messages must not necessitate a copy");
                         Ok(received_message)
                     }
                     Payload::RoutedMessage(hops, message) => {

@@ -249,7 +249,7 @@ where
         crate::cesr::Payload::RelationshipCancel {
             reply: &thread_id, ..
         } => Payload::CancelRelationship { thread_id },
-        crate::cesr::Payload::NestedMessage(data) => Payload::NestedMessage(data),
+        crate::cesr::Payload::NestedMessage(data) => todo!(), // Payload::NestedMessage(data),
         crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data),
         crate::cesr::Payload::NewIdentifierProposal {
             thread_id: &thread_id,

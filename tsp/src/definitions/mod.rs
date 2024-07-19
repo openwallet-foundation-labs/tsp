@@ -109,10 +109,10 @@ pub enum ReceivedTspMessage<Data: AsRef<[u8]> = Vec<u8>> {
 
 mod conversions;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Payload<'a, Bytes: AsRef<[u8]>> {
+#[derive(Debug, PartialEq, Eq)]
+pub enum Payload<'a, Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]> = Bytes> {
     Content(Bytes),
-    NestedMessage(Bytes),
+    NestedMessage(MaybeMutBytes),
     RoutedMessage(Vec<VidData<'a>>, Bytes),
     CancelRelationship {
         thread_id: Digest,
@@ -140,7 +140,7 @@ pub enum Payload<'a, Bytes: AsRef<[u8]>> {
     },
 }
 
-impl<'a, Bytes: AsRef<[u8]>> Payload<'a, Bytes> {
+impl<'a, Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]>> Payload<'a, Bytes, MaybeMutBytes> {
     pub fn as_bytes(&self) -> &[u8] {
         match self {
             Payload::Content(bytes) => bytes.as_ref(),
