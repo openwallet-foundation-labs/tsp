@@ -364,7 +364,7 @@ async fn run() -> Result<(), Error> {
             info!("listening for messages...");
 
             while let Some(Ok(message)) = messages.next().await {
-                let handle_message = |message| {
+                let handle_message = |message: ReceivedTspMessage| {
                     match message {
                         ReceivedTspMessage::GenericMessage {
                             sender,

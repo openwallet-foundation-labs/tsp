@@ -348,7 +348,10 @@ impl AsyncStore {
 
     /// Decode an encrypted `message``, which has to be addressed to one of the VIDs in `receivers`, and has to have
     /// `verified_vids` as one of the senders.
-    pub fn open_message(&self, message: &mut [u8]) -> Result<ReceivedTspMessage, Error> {
+    pub fn open_message<'a>(
+        &self,
+        message: &'a mut [u8],
+    ) -> Result<ReceivedTspMessage<&'a [u8]>, Error> {
         self.inner.open_message(message)
     }
 
@@ -371,7 +374,7 @@ impl AsyncStore {
                                 payload: m,
                             })
                         }
-                        maybe_message => maybe_message,
+                        maybe_message => maybe_message.map(|msg| msg.into_owned()),
                     },
                     Err(e) => Err(e.into()),
                 }
@@ -398,13 +401,16 @@ impl AsyncStore {
     }
 
     /// Process the payload from a  'PendingMessage' by resolving the unknown vid and retrying
-    pub async fn verify_and_open(
+    pub async fn verify_and_open<'a, T: AsRef<[u8]>>(
         &mut self,
         vid: &str,
-        payload: &mut [u8],
-    ) -> Result<ReceivedTspMessage, Error> {
+        payload: &'a mut [u8],
+    ) -> Result<ReceivedTspMessage<T>, Error>
+    where
+        &'a [u8]: Into<T>,
+    {
         self.verify_vid(vid).await?;
 
-        self.inner.open_message(payload)
+        Ok(self.inner.open_message(payload)?.converted())
     }
 }

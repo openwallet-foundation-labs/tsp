@@ -66,11 +66,11 @@ pub enum RelationshipStatus {
 }
 
 #[derive(Debug)]
-pub enum ReceivedTspMessage {
+pub enum ReceivedTspMessage<Data: AsRef<[u8]> = Vec<u8>> {
     GenericMessage {
         sender: String,
-        nonconfidential_data: Option<Vec<u8>>,
-        message: Vec<u8>,
+        nonconfidential_data: Option<Data>,
+        message: Data,
         message_type: MessageType,
     },
     RequestRelationship {
@@ -106,6 +106,8 @@ pub enum ReceivedTspMessage {
         payload: Vec<u8>,
     },
 }
+
+mod conversions;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Payload<'a, Bytes: AsRef<[u8]>> {

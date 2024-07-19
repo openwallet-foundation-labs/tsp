@@ -485,7 +485,7 @@ async fn attack_failures() {
             // (We cannot test this exhaustively -- but because the cryptographic material for this
             // message does not belong to the corrupted vid, it should reliably always fail)
             assert!(bob_db
-                .verify_and_open(&unknown_vid, &mut payload)
+                .verify_and_open::<Vec<u8>>(&unknown_vid, &mut payload)
                 .await
                 .is_err());
         };
