@@ -188,7 +188,7 @@ fn checked_encode_variable_data(
     payload: &[u8],
     stream: &mut impl for<'a> Extend<&'a u8>,
 ) -> Result<(), EncodeError> {
-    const DATA_LIMIT: usize = 50000000;
+    const DATA_LIMIT: usize = 3 * (1 << 24);
 
     if payload.len() >= DATA_LIMIT {
         return Err(EncodeError::PayloadTooLarge);
