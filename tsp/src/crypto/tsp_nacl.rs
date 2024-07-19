@@ -169,7 +169,7 @@ pub(crate) fn open<'a>(
     }
 
     let secret_payload = match payload {
-        crate::cesr::Payload::GenericMessage(data) => Payload::Content(data),
+        crate::cesr::Payload::GenericMessage(data) => Payload::Content(data as _),
         crate::cesr::Payload::DirectRelationProposal { hops, .. } => Payload::RequestRelationship {
             route: if hops.is_empty() { None } else { Some(hops) },
         },
@@ -199,7 +199,7 @@ pub(crate) fn open<'a>(
             reply: &thread_id, ..
         } => Payload::CancelRelationship { thread_id },
         crate::cesr::Payload::NestedMessage(data) => Payload::NestedMessage(data),
-        crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data),
+        crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data as _),
     };
 
     Ok((envelope.nonconfidential_data, secret_payload, ciphertext))

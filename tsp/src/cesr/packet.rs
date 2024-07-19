@@ -299,13 +299,25 @@ fn decode_hops<'a, Vid: TryFrom<&'a [u8]>>(stream: &mut &'a [u8]) -> Result<Vec<
     Ok(hop_list)
 }
 
-pub struct DecodedPayload<'a> {
-    pub payload: Payload<'a, &'a [u8], &'a [u8]>,
+// "NestedBytes" to support both mutable and non-mutable data
+/// A decoded payload + optional ESSR data
+pub struct DecodedPayload<'a, Bytes: AsRef<[u8]> = &'a mut [u8]> {
+    pub payload: Payload<'a, Bytes, &'a [u8]>,
     pub sender_identity: Option<&'a [u8]>,
 }
 
+// temporary
+fn fudge(x: &[u8]) -> &mut [u8] {
+    unsafe { std::mem::transmute(x as *const _) }
+}
+
+mod from_mut;
+use from_mut::FromMut;
+
 /// Decode a TSP Payload
-pub fn decode_payload(mut stream: &[u8]) -> Result<DecodedPayload, DecodeError> {
+pub fn decode_payload<'a, Bytes: AsRef<[u8]> + FromMut<'a, [u8]>>(
+    mut stream: &'a [u8],
+) -> Result<DecodedPayload<'a, Bytes>, DecodeError> {
     let sender_identity = match decode_count(TSP_PAYLOAD, &mut stream) {
         Some(2) => Some(
             decode_variable_data(TSP_DEVELOPMENT_VID, &mut stream)
@@ -321,10 +333,11 @@ pub fn decode_payload(mut stream: &[u8]) -> Result<DecodedPayload, DecodeError> 
         msgtype::GEN_MSG => {
             let hop_list = decode_hops(&mut stream)?;
             if hop_list.is_empty() {
-                decode_variable_data(TSP_PLAINTEXT, &mut stream).map(Payload::GenericMessage)
+                decode_variable_data(TSP_PLAINTEXT, &mut stream)
+                    .map(|msg| Payload::GenericMessage(FromMut::from_mut(fudge(msg))))
             } else {
                 decode_variable_data(TSP_PLAINTEXT, &mut stream)
-                    .map(|msg| Payload::RoutedMessage(hop_list, msg))
+                    .map(|msg| Payload::RoutedMessage(hop_list, FromMut::from_mut(fudge(msg))))
             }
         }
         msgtype::NEW_REL => {
@@ -335,9 +348,8 @@ pub fn decode_payload(mut stream: &[u8]) -> Result<DecodedPayload, DecodeError> 
                 hops: hop_list,
             })
         }
-        msgtype::NEST_MSG => {
-            decode_variable_data(TSP_PLAINTEXT, &mut stream).map(Payload::NestedMessage)
-        }
+        msgtype::NEST_MSG => decode_variable_data(TSP_PLAINTEXT, &mut stream)
+            .map(|msg| Payload::NestedMessage(FromMut::from_mut(fudge(msg)))),
         msgtype::NEW_REL_REPLY => decode_fixed_data(TSP_SHA256, &mut stream)
             .map(|reply| Payload::DirectRelationAffirm { reply }),
         msgtype::NEW_NEST_REL => {
@@ -933,8 +945,8 @@ mod test {
         assert_eq!(env.receiver, Some(&b"Bobbi"[..]));
         assert_eq!(env.nonconfidential_data, None);
 
-        let DecodedPayload {
-            payload: Payload::<_, &[u8]>::GenericMessage(data),
+        let DecodedPayload::<&[u8]> {
+            payload: Payload::GenericMessage(data),
             ..
         } = decode_payload(dummy_crypt(ciphertext.unwrap())).unwrap()
         else {
@@ -982,8 +994,8 @@ mod test {
         assert_eq!(env.receiver, Some(&b"Bobbi"[..]));
         assert_eq!(env.nonconfidential_data, Some(&b"treasure"[..]));
 
-        let DecodedPayload {
-            payload: Payload::<_, &[u8]>::GenericMessage(data),
+        let DecodedPayload::<&[u8]> {
+            payload: Payload::GenericMessage(data),
             ..
         } = decode_payload(dummy_crypt(ciphertext.unwrap())).unwrap()
         else {

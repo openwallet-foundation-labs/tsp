@@ -6,7 +6,7 @@ fuzz_target!(|data: tsp::cesr::fuzzing::Wrapper| {
     let mut buf = Vec::new();
     match tsp::cesr::encode_payload(&data.0, None, &mut buf) {
         Ok(()) => {
-            let result = tsp::cesr::decode_payload(&buf).unwrap();
+            let result = tsp::cesr::decode_payload::<&[u8]>(&buf).unwrap();
 
             assert_eq!(data, result.payload);
         }

@@ -227,7 +227,7 @@ where
     }
 
     let secret_payload = match payload {
-        crate::cesr::Payload::GenericMessage(data) => Payload::Content(data),
+        crate::cesr::Payload::GenericMessage(data) => Payload::Content(data as _),
         crate::cesr::Payload::DirectRelationProposal { hops, .. } => Payload::RequestRelationship {
             route: if hops.is_empty() { None } else { Some(hops) },
         },
@@ -249,8 +249,8 @@ where
         crate::cesr::Payload::RelationshipCancel {
             reply: &thread_id, ..
         } => Payload::CancelRelationship { thread_id },
-        crate::cesr::Payload::NestedMessage(data) => todo!(), // Payload::NestedMessage(data),
-        crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data),
+        crate::cesr::Payload::NestedMessage(data) => Payload::NestedMessage(data),
+        crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data as _),
         crate::cesr::Payload::NewIdentifierProposal {
             thread_id: &thread_id,
             new_vid,

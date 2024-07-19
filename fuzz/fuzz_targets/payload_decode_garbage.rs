@@ -3,7 +3,7 @@
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    match tsp::cesr::decode_payload(data) {
+    match tsp::cesr::decode_payload::<&[u8]>(data) {
         Ok(decoded) => {
             let mut buf = Vec::new();
             tsp::cesr::encode_payload(&decoded.payload, None, &mut buf).unwrap();
