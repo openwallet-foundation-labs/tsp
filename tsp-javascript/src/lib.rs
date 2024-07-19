@@ -93,6 +93,7 @@ impl Store {
     pub fn open_message(&self, mut message: Vec<u8>) -> Result<FlatReceivedTspMessage, Error> {
         self.0
             .open_message(&mut message)
+            .map(|msg| msg.into_owned())
             .map(FlatReceivedTspMessage::from)
             .map_err(Error)
     }

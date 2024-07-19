@@ -201,6 +201,7 @@ impl Store {
     fn open_message(&self, mut message: Vec<u8>) -> PyResult<FlatReceivedTspMessage> {
         self.0
             .open_message(&mut message)
+            .map(|msg| msg.into_owned())
             .map(FlatReceivedTspMessage::from)
             .map_err(py_exception)
     }
