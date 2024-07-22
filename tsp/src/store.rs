@@ -637,7 +637,22 @@ impl Store {
                             nested_vid: Some(vid.to_string()),
                         })
                     }
+                    Payload::NewIdentifier { thread_id, new_vid } => {
+                        let vid = std::str::from_utf8(new_vid)?;
+                        match self.get_vid(&sender)?.relation_status {
+                            RelationshipStatus::Bidirectional {
+                                thread_id: check_id,
+                                ..
+                            } if check_id == thread_id => Ok(ReceivedTspMessage::NewIdentifier {
+                                sender,
+                                new_vid: vid.to_string(),
+                            }),
+                            _ => Err(Error::Relationship(vid.to_string())),
+                        }
+                    }
                     Payload::Referral { referred_vid } => {
+                        //NOTE: we could also check the relationship status here, but since a 3rd party introduction
+                        //might be of interest to a user anyway regardless of existing status, we are less strict about it
                         let vid = std::str::from_utf8(referred_vid)?;
                         Ok(ReceivedTspMessage::Referral {
                             sender,
@@ -841,14 +856,41 @@ impl Store {
         Ok(((transport, tsp_message), nested_vid))
     }
 
+    pub fn make_new_identifier_notice(
+        &self,
+        sender: &str,
+        receiver: &str,
+        new_vid: &str,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        // check that the new vid is actually one of ours
+        let _new_vid = self.get_private_vid(new_vid)?;
+
+        let RelationshipStatus::Bidirectional { thread_id, .. } =
+            self.get_vid(receiver)?.relation_status
+        else {
+            return Err(Error::Relationship(receiver.to_string()));
+        };
+
+        let (transport, tsp_message) = self.seal_message_payload(
+            sender,
+            receiver,
+            None,
+            Payload::NewIdentifier {
+                thread_id,
+                new_vid: new_vid.as_ref(),
+            },
+        )?;
+
+        Ok((transport, tsp_message))
+    }
+
     pub fn make_relationship_referral(
         &self,
         sender: &str,
         receiver: &str,
         referred_vid: &str,
     ) -> Result<(Url, Vec<u8>), Error> {
-        let _sender = self.get_private_vid(sender)?;
-        let _receiver = self.get_verified_vid(receiver)?;
+        // check that we actually know the referred vid
         let _referred_vid = self.get_vid(referred_vid)?;
 
         let (transport, tsp_message) = self.seal_message_payload(
@@ -1176,6 +1218,49 @@ mod test {
 
     #[test]
     #[wasm_bindgen_test]
+    fn test_make_new_identity() {
+        let a_store = Store::new();
+        let b_store = Store::new();
+        let alice = new_vid();
+        let bob = new_vid();
+        let charles = new_vid();
+
+        a_store.add_private_vid(alice.clone()).unwrap();
+        b_store.add_private_vid(bob.clone()).unwrap();
+        a_store.add_private_vid(charles.clone()).unwrap();
+
+        a_store.add_verified_vid(bob.clone()).unwrap();
+        b_store.add_verified_vid(alice.clone()).unwrap();
+
+        let status = super::RelationshipStatus::Bidirectional {
+            thread_id: Default::default(),
+            outstanding_nested_thread_ids: vec![],
+        };
+
+        a_store
+            .replace_relation_status_for_vid(bob.identifier(), status.clone())
+            .unwrap();
+        b_store
+            .replace_relation_status_for_vid(alice.identifier(), status)
+            .unwrap();
+
+        // alice introduces her new identity to bob
+        let (url, sealed) = a_store
+            .make_new_identifier_notice(alice.identifier(), bob.identifier(), charles.identifier())
+            .unwrap();
+
+        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        let received = b_store.open_message(&mut sealed.clone()).unwrap();
+
+        let ReceivedTspMessage::NewIdentifier { sender, new_vid } = received else {
+            panic!("unexpected message type");
+        };
+        assert_eq!(sender, alice.identifier());
+        assert_eq!(new_vid, charles.identifier());
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
     fn test_make_referral() {
         let store = Store::new();
         let alice = new_vid();
@@ -1184,7 +1269,7 @@ mod test {
 
         store.add_private_vid(alice.clone()).unwrap();
         store.add_private_vid(bob.clone()).unwrap();
-        store.add_private_vid(charles.clone()).unwrap();
+        store.add_verified_vid(charles.clone()).unwrap();
 
         // alice vouches for charlies to bob
         let (url, sealed) = store

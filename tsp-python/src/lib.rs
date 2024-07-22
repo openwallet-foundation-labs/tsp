@@ -126,6 +126,21 @@ impl Store {
         Ok((url.to_string(), bytes))
     }
 
+    #[pyo3(signature = (sender, receiver, sender_new_vid))]
+    fn make_new_identifier_notice(
+        &self,
+        sender: String,
+        receiver: String,
+        sender_new_vid: String,
+    ) -> PyResult<(String, Vec<u8>)> {
+        let (url, bytes) = self
+            .0
+            .make_new_identifier_notice(&sender, &receiver, &sender_new_vid)
+            .map_err(py_exception)?;
+
+        Ok((url.to_string(), bytes))
+    }
+
     #[pyo3(signature = (sender, receiver, referred_vid))]
     fn make_relationship_referral(
         &self,
@@ -200,6 +215,7 @@ enum ReceivedTspMessageVariant {
     CancelRelationship,
     ForwardRequest,
     PendingMessage,
+    NewIdentifier,
     Referral,
 }
 
@@ -212,6 +228,7 @@ impl From<&tsp::ReceivedTspMessage> for ReceivedTspMessageVariant {
             tsp::ReceivedTspMessage::CancelRelationship { .. } => Self::CancelRelationship,
             tsp::ReceivedTspMessage::ForwardRequest { .. } => Self::ForwardRequest,
             tsp::ReceivedTspMessage::PendingMessage { .. } => Self::PendingMessage,
+            tsp::ReceivedTspMessage::NewIdentifier { .. } => Self::NewIdentifier,
             tsp::ReceivedTspMessage::Referral { .. } => Self::Referral,
         }
     }
@@ -252,6 +269,8 @@ struct FlatReceivedTspMessage {
     #[pyo3(get, set)]
     unknown_vid: Option<String>,
     #[pyo3(get, set)]
+    new_vid: Option<String>,
+    #[pyo3(get, set)]
     referred_vid: Option<String>,
 }
 
@@ -279,6 +298,7 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
             payload: None,
             opaque_payload: None,
             unknown_vid: None,
+            new_vid: None,
             referred_vid: None,
         };
 
@@ -316,6 +336,10 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
             }
             tsp::ReceivedTspMessage::CancelRelationship { sender } => {
                 this.sender = Some(sender);
+            }
+            tsp::ReceivedTspMessage::NewIdentifier { sender, new_vid } => {
+                this.sender = Some(sender);
+                this.new_vid = Some(new_vid);
             }
             tsp::ReceivedTspMessage::Referral {
                 sender,

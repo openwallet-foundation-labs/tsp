@@ -25,6 +25,7 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
             DirectRelationAffirm,
             NestedRelationProposal,
             NestedRelationAffirm,
+            NewIdentifierProposal,
             RelationshipReferral,
             RelationshipCancel,
         }
@@ -39,6 +40,7 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
                 Payload::DirectRelationAffirm { .. } => Variants::DirectRelationAffirm,
                 Payload::NestedRelationProposal { .. } => Variants::NestedRelationProposal,
                 Payload::NestedRelationAffirm { .. } => Variants::NestedRelationAffirm,
+                Payload::NewIdentifierProposal { .. } => Variants::NewIdentifierProposal,
                 Payload::RelationshipReferral { .. } => Variants::RelationshipReferral,
                 Payload::RelationshipCancel { .. } => Variants::RelationshipCancel,
             }
@@ -66,6 +68,10 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
                 reply: &DIGEST,
                 new_vid: Arbitrary::arbitrary(u)?,
                 connect_to_vid: Arbitrary::arbitrary(u)?,
+            },
+            Variants::NewIdentifierProposal => Payload::NewIdentifierProposal {
+                thread_id: &DIGEST,
+                new_vid: Arbitrary::arbitrary(u)?,
             },
             Variants::RelationshipReferral => Payload::RelationshipReferral {
                 referred_vid: Arbitrary::arbitrary(u)?,
@@ -121,7 +127,16 @@ impl<'a> PartialEq<Payload<'a, &'a [u8], &'a [u8]>> for Wrapper {
                     connect_to_vid: r_vid2,
                 },
             ) => l_reply == r_reply && l_vid == r_vid && l_vid2 == r_vid2,
-
+            (
+                Payload::NewIdentifierProposal {
+                    new_vid: l_vid,
+                    thread_id: l_reply,
+                },
+                Payload::NewIdentifierProposal {
+                    new_vid: r_vid,
+                    thread_id: r_reply,
+                },
+            ) => l_vid == r_vid && l_reply == r_reply,
             (
                 Payload::RelationshipReferral {
                     referred_vid: l_vid,

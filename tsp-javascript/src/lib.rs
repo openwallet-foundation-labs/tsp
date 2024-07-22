@@ -165,6 +165,24 @@ impl Store {
     }
 
     #[wasm_bindgen]
+    pub fn make_new_identifier_notice(
+        &self,
+        sender: String,
+        receiver: String,
+        sender_new_vid: String,
+    ) -> Result<SealedMessage, Error> {
+        let (url, sealed) = self
+            .0
+            .make_new_identifier_notice(&sender, &receiver, &sender_new_vid)
+            .map_err(Error)?;
+
+        Ok(SealedMessage {
+            url: url.to_string(),
+            sealed,
+        })
+    }
+
+    #[wasm_bindgen]
     pub fn make_relationship_referral(
         &self,
         sender: String,
@@ -276,7 +294,8 @@ pub enum ReceivedTspMessageVariant {
     AcceptRelationship = 2,
     CancelRelationship = 3,
     ForwardRequest = 4,
-    Referral = 5,
+    NewIdentifier = 5,
+    Referral = 6,
 }
 
 impl From<&tsp::ReceivedTspMessage> for ReceivedTspMessageVariant {
@@ -287,6 +306,7 @@ impl From<&tsp::ReceivedTspMessage> for ReceivedTspMessageVariant {
             tsp::ReceivedTspMessage::AcceptRelationship { .. } => Self::AcceptRelationship,
             tsp::ReceivedTspMessage::CancelRelationship { .. } => Self::CancelRelationship,
             tsp::ReceivedTspMessage::ForwardRequest { .. } => Self::ForwardRequest,
+            tsp::ReceivedTspMessage::NewIdentifier { .. } => Self::NewIdentifier,
             tsp::ReceivedTspMessage::Referral { .. } => Self::Referral,
             #[cfg(not(target_arch = "wasm32"))]
             tsp::ReceivedTspMessage::PendingMessage { .. } => unreachable!(),
@@ -317,6 +337,7 @@ pub struct FlatReceivedTspMessage {
     opaque_payload: Option<Vec<u8>>,
     unknown_vid: Option<String>,
     referred_vid: Option<String>,
+    new_vid: Option<String>,
 }
 
 #[wasm_bindgen]
@@ -417,6 +438,7 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
             opaque_payload: None,
             unknown_vid: None,
             referred_vid: None,
+            new_vid: None,
         };
 
         match value {
@@ -453,6 +475,10 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
             }
             tsp::ReceivedTspMessage::CancelRelationship { sender } => {
                 this.sender = Some(sender);
+            }
+            tsp::ReceivedTspMessage::NewIdentifier { sender, new_vid } => {
+                this.sender = Some(sender);
+                this.new_vid = Some(new_vid);
             }
             tsp::ReceivedTspMessage::Referral {
                 sender,

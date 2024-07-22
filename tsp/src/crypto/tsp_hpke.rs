@@ -74,6 +74,10 @@ where
         }
         Payload::NestedMessage(data) => crate::cesr::Payload::NestedMessage(data),
         Payload::RoutedMessage(hops, data) => crate::cesr::Payload::RoutedMessage(hops, data),
+        Payload::NewIdentifier {
+            ref thread_id,
+            new_vid,
+        } => crate::cesr::Payload::NewIdentifierProposal { thread_id, new_vid },
         Payload::Referral { referred_vid } => {
             crate::cesr::Payload::RelationshipReferral { referred_vid }
         }
@@ -247,6 +251,10 @@ where
         } => Payload::CancelRelationship { thread_id },
         crate::cesr::Payload::NestedMessage(data) => Payload::NestedMessage(data),
         crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data),
+        crate::cesr::Payload::NewIdentifierProposal {
+            thread_id: &thread_id,
+            new_vid,
+        } => Payload::NewIdentifier { thread_id, new_vid },
         crate::cesr::Payload::RelationshipReferral { referred_vid } => {
             Payload::Referral { referred_vid }
         }

@@ -415,6 +415,9 @@ async fn run() -> Result<(), Error> {
                         } => {
                             info!("messaging forwarding request from {sender} to {next_hop}",);
                         }
+                        ReceivedTspMessage::NewIdentifier { sender, new_vid } => {
+                            info!("received request for new identifier '{new_vid}' from {sender}");
+                        }
                         ReceivedTspMessage::Referral {
                             sender,
                             referred_vid,
