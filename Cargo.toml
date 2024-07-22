@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = [ "tsp", "examples", "fuzz" , "tsp-python", "tsp-javascript"]
+members = ["tsp", "examples", "fuzz", "tsp-python", "tsp-javascript"]
 
 [workspace.package]
 version = "0.1.0"
@@ -15,28 +15,52 @@ rust-version = "1.77"
 
 [workspace.dependencies]
 # generic
-base64ct = { version = "1.6", default-features = false, features = ["alloc", "std"] }
+base64ct = { version = "1.6", default-features = false, features = [
+    "alloc",
+    "std",
+] }
 thiserror = "1.0"
 url = { version = "2.5", features = ["serde"] }
 zeroize = "1.8"
 once_cell = "1.19"
 #crypto
-ed25519-dalek = { version = "2.1.1", default-features = false, features = ["fast", "std", "zeroize", "rand_core"] }
+ed25519-dalek = { version = "2.1.1", default-features = false, features = [
+    "fast",
+    "std",
+    "zeroize",
+    "rand_core",
+] }
 hpke = { version = "0.12", features = ["std"] }
+hpke_pq = { version = "0.11.1", features = ["alloc", "std", "xyber768d00"] }
 rand = "0.8.5"
 sha2 = "0.10.8"
 crypto_box = { version = "0.9.1", features = ["std", "chacha20"] }
 # async
-async-stream = { version = "0.3"}
+async-stream = { version = "0.3" }
 futures = { version = "0.3" }
-tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "net", "macros"] }
-aries-askar = { git = "https://github.com/marlonbaeten/aries-askar", branch = "ciborium", default-features = false, features = ["sqlite"] }
+tokio = { version = "1.0", default-features = false, features = [
+    "rt-multi-thread",
+    "net",
+    "macros",
+] }
+aries-askar = { git = "https://github.com/marlonbaeten/aries-askar", branch = "ciborium", default-features = false, features = [
+    "sqlite",
+] }
 # logging
 tracing = "0.1"
-tracing-subscriber = { version = "0.3.1", default-features = false, features = ["fmt", "ansi", "env-filter", "tracing-log"] }
+tracing-subscriber = { version = "0.3.1", default-features = false, features = [
+    "fmt",
+    "ansi",
+    "env-filter",
+    "tracing-log",
+] }
 # transport
-tokio-tungstenite = { version = "0.21",  default-features = false, features = ["rustls-tls-native-roots", "stream", "connect"] }
-tokio-util = { version = "0.7",  default-features = false, features = ["codec"] }
+tokio-tungstenite = { version = "0.21", default-features = false, features = [
+    "rustls-tls-native-roots",
+    "stream",
+    "connect",
+] }
+tokio-util = { version = "0.7", default-features = false, features = ["codec"] }
 rustls = "0.23"
 tokio-rustls = "0.26"
 rustls-pki-types = "1.7"
@@ -44,10 +68,18 @@ rustls-native-certs = "0.7"
 rustls-pemfile = "2.1"
 quinn = "0.11"
 # resolve
-reqwest = { version = "0.12.3", default-features = false, features = ["rustls-tls-native-roots", "json", "stream", "charset", "http2", "macos-system-configuration"] }
+reqwest = { version = "0.12.3", default-features = false, features = [
+    "rustls-tls-native-roots",
+    "json",
+    "stream",
+    "charset",
+    "http2",
+    "macos-system-configuration",
+] }
 # serialize
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
+serde_with = { version = "3.8.1", features = ["base64"] }
 bs58 = "0.5"
 # fuzzing
 arbitrary = { version = "1.0", features = ["derive"] }

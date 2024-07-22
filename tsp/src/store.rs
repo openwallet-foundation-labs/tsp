@@ -1403,6 +1403,7 @@ mod test {
         assert_eq!(message_type, MessageType::SignedAndEncrypted);
     }
 
+    #[cfg(not(feature = "pq"))]
     #[test]
     #[wasm_bindgen_test]
     fn test_nested_automatic_setup() {

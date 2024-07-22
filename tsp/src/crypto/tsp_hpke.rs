@@ -3,8 +3,19 @@ use crate::{
     definitions::{NonConfidentialData, Payload, PrivateVid, TSPMessage, VerifiedVid},
 };
 use ed25519_dalek::Signer;
-use hpke::{aead::AeadTag, Deserializable, OpModeR, OpModeS, Serializable};
 use rand::{rngs::StdRng, SeedableRng};
+
+#[cfg(not(feature = "pq"))]
+use hpke::{
+    aead, kdf, kem, single_shot_open_in_place_detached, single_shot_seal_in_place_detached,
+    Deserializable, OpModeR, OpModeS, Serializable,
+};
+
+#[cfg(feature = "pq")]
+use hpke_pq::{
+    aead, kdf, kem, single_shot_open_in_place_detached, single_shot_seal_in_place_detached,
+    Deserializable, OpModeR, OpModeS, Serializable,
+};
 
 use super::{CryptoError, MessageContents};
 
@@ -16,9 +27,9 @@ pub(crate) fn seal<A, Kdf, Kem>(
     plaintext_observer: Option<super::ObservingClosure>,
 ) -> Result<TSPMessage, CryptoError>
 where
-    A: hpke::aead::Aead,
-    Kdf: hpke::kdf::Kdf,
-    Kem: hpke::kem::Kem,
+    A: aead::Aead,
+    Kdf: kdf::Kdf,
+    Kem: kem::Kem,
 {
     let mut csprng = StdRng::from_entropy();
 
@@ -78,15 +89,15 @@ where
         // plaintext size
         secret_payload.calculate_size(sender_in_payload)
         // authenticated encryption tag length
-        + AeadTag::<A>::size()
+        + aead::AeadTag::<A>::size()
         // encapsulated key length
         + Kem::EncappedKey::size(),
     );
 
     crate::cesr::encode_payload(&secret_payload, sender_in_payload, &mut cesr_message)?;
 
-    // HPKE sender mode: "Auth"
-    #[cfg(not(feature = "essr"))]
+    // HPKE sender mode: "Auth" for ESSR and PQ features
+    #[cfg(all(not(feature = "essr"), not(feature = "pq")))]
     let mode = {
         let sender_decryption_key = Kem::PrivateKey::from_bytes(sender.decryption_key().as_ref())?;
         let sender_encryption_key = Kem::PublicKey::from_bytes(sender.encryption_key().as_ref())?;
@@ -94,7 +105,7 @@ where
         OpModeS::Auth((sender_decryption_key, sender_encryption_key))
     };
 
-    #[cfg(feature = "essr")]
+    #[cfg(any(feature = "essr", feature = "pq"))]
     let mode = OpModeS::Base;
 
     // recipient public key
@@ -106,7 +117,7 @@ where
     }
 
     // perform encryption
-    let (encapped_key, tag) = hpke::single_shot_seal_in_place_detached::<A, Kdf, Kem, StdRng>(
+    let (encapped_key, tag) = single_shot_seal_in_place_detached::<A, Kdf, Kem, StdRng>(
         &mode,
         &message_receiver,
         &data,
@@ -136,9 +147,9 @@ pub(crate) fn open<'a, A, Kdf, Kem>(
     tsp_message: &'a mut [u8],
 ) -> Result<MessageContents<'a>, CryptoError>
 where
-    A: hpke::aead::Aead,
-    Kdf: hpke::kdf::Kdf,
-    Kem: hpke::kem::Kem,
+    A: aead::Aead,
+    Kdf: kdf::Kdf,
+    Kem: kem::Kem,
 {
     let view = crate::cesr::decode_envelope_mut(tsp_message)?;
 
@@ -166,26 +177,26 @@ where
     }
 
     // split encapsulated key and authenticated encryption tag length
-    let (ciphertext, footer) =
-        ciphertext.split_at_mut(ciphertext.len() - AeadTag::<A>::size() - Kem::EncappedKey::size());
+    let (ciphertext, footer) = ciphertext
+        .split_at_mut(ciphertext.len() - aead::AeadTag::<A>::size() - Kem::EncappedKey::size());
     let (tag, encapped_key) = footer.split_at(footer.len() - Kem::EncappedKey::size());
 
     // construct correct key types
     let receiver_decryption_key = Kem::PrivateKey::from_bytes(receiver.decryption_key().as_ref())?;
     let encapped_key = Kem::EncappedKey::from_bytes(encapped_key)?;
-    let tag = AeadTag::from_bytes(tag)?;
+    let tag = aead::AeadTag::from_bytes(tag)?;
 
-    #[cfg(feature = "essr")]
+    #[cfg(any(feature = "essr", feature = "pq"))]
     let mode = OpModeR::Base;
 
-    #[cfg(not(feature = "essr"))]
+    #[cfg(all(not(feature = "essr"), not(feature = "pq")))]
     let mode = {
         let sender_encryption_key = Kem::PublicKey::from_bytes(sender.encryption_key().as_ref())?;
         OpModeR::Auth(sender_encryption_key)
     };
 
     // decrypt the ciphertext
-    hpke::single_shot_open_in_place_detached::<A, Kdf, Kem>(
+    single_shot_open_in_place_detached::<A, Kdf, Kem>(
         &mode,
         &receiver_decryption_key,
         &encapped_key,

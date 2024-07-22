@@ -11,13 +11,14 @@ publish.workspace = true
 rust-version.workspace = true
 
 [features]
-cesr-t = [ ]
+cesr-t = []
 default = ["async"]
-essr = [ ]
-strict = [ ]
+essr = []
+strict = []
 fuzzing = ["dep:arbitrary"]
-demo = [ ]
+demo = []
 nacl = ["dep:crypto_box", "essr"]
+pq = ["dep:hpke_pq", "essr"]
 async = [
     "resolve",
     "aries-askar",
@@ -32,17 +33,10 @@ async = [
     "dep:rustls-pki-types",
     "dep:rustls-native-certs",
     "dep:rustls-pemfile",
-    "dep:quinn"
+    "dep:quinn",
 ]
-resolve = [
-    "serialize",
-    "dep:reqwest"
-]
-serialize = [
-    "dep:serde",
-    "dep:serde_json",
-    "dep:bs58"
-]
+resolve = ["serialize", "dep:reqwest"]
+serialize = ["dep:serde", "dep:serde_json", "dep:serde_with", "dep:bs58"]
 
 [dependencies]
 # generic
@@ -55,6 +49,7 @@ once_cell = { workspace = true }
 # crypto
 ed25519-dalek = { workspace = true }
 hpke = { workspace = true }
+hpke_pq = { workspace = true, optional = true }
 rand = { workspace = true }
 sha2 = { workspace = true }
 crypto_box = { workspace = true, optional = true }
@@ -77,9 +72,10 @@ reqwest = { workspace = true, optional = true }
 # serialize
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-bs58 ={ workspace = true, optional = true }
+serde_with = { workspace = true, optional = true }
+bs58 = { workspace = true, optional = true }
 # fuzzing
-arbitrary ={ workspace = true, optional = true }
+arbitrary = { workspace = true, optional = true }
 
 # not used directly, but we need to configure
 # the JS feature in this transitive dependency

@@ -98,6 +98,7 @@ mod async_store;
 #[cfg(feature = "async")]
 mod vault;
 
+#[cfg(not(feature = "pq"))]
 #[cfg(feature = "async")]
 #[cfg(test)]
 mod test;

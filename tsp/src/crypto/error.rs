@@ -4,7 +4,10 @@ pub enum CryptoError {
     Encode(#[from] crate::cesr::error::EncodeError),
     #[error("failed to decode message {0}")]
     Decode(#[from] crate::cesr::error::DecodeError),
-    #[cfg(not(feature = "nacl"))]
+    #[cfg(feature = "pq")]
+    #[error("encryption or decryption failed: {0}")]
+    Cryptographic(#[from] hpke_pq::HpkeError),
+    #[cfg(all(not(feature = "nacl"), not(feature = "pq")))]
     #[error("encryption or decryption failed: {0}")]
     Cryptographic(#[from] hpke::HpkeError),
     #[cfg(feature = "nacl")]

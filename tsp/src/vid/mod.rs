@@ -1,5 +1,8 @@
 use crate::{
-    definitions::{PrivateKeyData, PrivateVid, PublicKeyData, VerifiedVid},
+    definitions::{
+        PrivateKeyData, PrivateSigningKeyData, PrivateVid, PublicKeyData,
+        PublicVerificationKeyData, VerifiedVid,
+    },
     RelationshipStatus,
 };
 
@@ -16,9 +19,6 @@ pub mod error;
 
 #[cfg(feature = "resolve")]
 pub mod resolve;
-
-#[cfg(feature = "serialize")]
-use deserialize::{serde_key_data, serde_key_data_option, serde_public_key_data};
 
 #[cfg(feature = "resolve")]
 pub use did::web::{create_did_web, vid_to_did_document};
@@ -40,9 +40,7 @@ pub use resolve::verify_vid;
 pub struct Vid {
     id: String,
     transport: Url,
-    #[cfg_attr(feature = "serialize", serde(with = "serde_public_key_data"))]
-    public_sigkey: PublicKeyData,
-    #[cfg_attr(feature = "serialize", serde(with = "serde_public_key_data"))]
+    public_sigkey: PublicVerificationKeyData,
     public_enckey: PublicKeyData,
 }
 
@@ -56,9 +54,7 @@ pub struct Vid {
 pub struct OwnedVid {
     #[cfg_attr(feature = "serialize", serde(flatten))]
     vid: Vid,
-    #[cfg_attr(feature = "serialize", serde(with = "serde_key_data"))]
-    sigkey: PrivateKeyData,
-    #[cfg_attr(feature = "serialize", serde(with = "serde_key_data"))]
+    sigkey: PrivateSigningKeyData,
     enckey: PrivateKeyData,
 }
 
@@ -82,7 +78,7 @@ impl VerifiedVid for Vid {
         &self.transport
     }
 
-    fn verifying_key(&self) -> &PublicKeyData {
+    fn verifying_key(&self) -> &PublicVerificationKeyData {
         &self.public_sigkey
     }
 
@@ -100,7 +96,7 @@ impl VerifiedVid for OwnedVid {
         self.vid.endpoint()
     }
 
-    fn verifying_key(&self) -> &PublicKeyData {
+    fn verifying_key(&self) -> &PublicVerificationKeyData {
         self.vid.verifying_key()
     }
 
@@ -110,7 +106,7 @@ impl VerifiedVid for OwnedVid {
 }
 
 impl PrivateVid for OwnedVid {
-    fn signing_key(&self) -> &PrivateKeyData {
+    fn signing_key(&self) -> &PrivateSigningKeyData {
         &self.sigkey
     }
 
@@ -173,17 +169,13 @@ impl OwnedVid {
 }
 
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ExportVid {
     pub(crate) id: String,
     pub(crate) transport: Url,
-    #[cfg_attr(feature = "serialize", serde(with = "serde_public_key_data"))]
-    pub(crate) public_sigkey: PublicKeyData,
-    #[cfg_attr(feature = "serialize", serde(with = "serde_public_key_data"))]
+    pub(crate) public_sigkey: PublicVerificationKeyData,
     pub(crate) public_enckey: PublicKeyData,
-    #[cfg_attr(feature = "serialize", serde(with = "serde_key_data_option"))]
-    pub(crate) sigkey: Option<PrivateKeyData>,
-    #[cfg_attr(feature = "serialize", serde(with = "serde_key_data_option"))]
+    pub(crate) sigkey: Option<PrivateSigningKeyData>,
     pub(crate) enckey: Option<PrivateKeyData>,
     pub(crate) relation_status: RelationshipStatus,
     pub(crate) relation_vid: Option<String>,
