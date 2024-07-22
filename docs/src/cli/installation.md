@@ -21,7 +21,7 @@ cargo 1.77.1 (e52e36006 2024-03-26) for example
 Installing the TSP CLI program:
 
 ```sh
-cargo install --git https://github.com/wenjing/rust-tsp.git examples --bin tsp
+cargo install --git https://github.com/openwallet-foundation-labs/tsp.git examples --bin tsp
 ```
 
 You should be able to run `tsp`:

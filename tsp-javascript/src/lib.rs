@@ -18,7 +18,17 @@ pub struct SealedMessage {
     #[wasm_bindgen(getter_with_clone)]
     pub url: String,
     #[wasm_bindgen(getter_with_clone)]
-    pub bytes: Vec<u8>,
+    pub sealed: Vec<u8>,
+}
+
+#[wasm_bindgen]
+pub struct NestedSealedMessage {
+    #[wasm_bindgen(getter_with_clone)]
+    pub url: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub sealed: Vec<u8>,
+    #[wasm_bindgen(getter_with_clone)]
+    pub nested_vid: OwnedVid,
 }
 
 #[wasm_bindgen]
@@ -29,8 +39,30 @@ impl Store {
     }
 
     #[wasm_bindgen]
-    pub fn add_private_vid(&self, vid: OwnedVid) -> Result<(), Error> {
-        self.0.add_private_vid(vid.0).map_err(Error)
+    pub fn add_private_vid(&self, vid: &OwnedVid) -> Result<(), Error> {
+        self.0.add_private_vid(vid.0.clone()).map_err(Error)
+    }
+
+    #[wasm_bindgen]
+    pub fn add_verified_vid(&self, vid: &OwnedVid) -> Result<(), Error> {
+        self.0.add_verified_vid(vid.0.clone()).map_err(Error)
+    }
+
+    #[wasm_bindgen]
+    pub fn set_relation_for_vid(
+        &self,
+        vid: String,
+        relation_vid: Option<String>,
+    ) -> Result<(), Error> {
+        self.0
+            .set_relation_for_vid(&vid, relation_vid.as_deref())
+            .map_err(Error)
+    }
+
+    #[wasm_bindgen]
+    pub fn set_route_for_vid(&self, vid: String, route: Vec<String>) -> Result<(), Error> {
+        let borrowed: Vec<_> = route.iter().map(|s| s.as_str()).collect();
+        self.0.set_route_for_vid(&vid, &borrowed).map_err(Error)
     }
 
     #[wasm_bindgen]
@@ -41,7 +73,7 @@ impl Store {
         nonconfidential_data: Option<Vec<u8>>,
         message: Vec<u8>,
     ) -> Result<SealedMessage, Error> {
-        let (url, bytes) = self
+        let (url, sealed) = self
             .0
             .seal_message(
                 &sender,
@@ -53,7 +85,7 @@ impl Store {
 
         Ok(SealedMessage {
             url: url.to_string(),
-            bytes,
+            sealed,
         })
     }
 
@@ -64,9 +96,162 @@ impl Store {
             .map(FlatReceivedTspMessage::from)
             .map_err(Error)
     }
+
+    #[wasm_bindgen]
+    pub fn make_relationship_request(
+        &self,
+        sender: String,
+        receiver: String,
+        route: Option<Vec<String>>,
+    ) -> Result<SealedMessage, Error> {
+        let route_items: Vec<&str> = route.iter().flatten().map(|s| s.as_str()).collect();
+
+        let (url, sealed) = self
+            .0
+            .make_relationship_request(
+                &sender,
+                &receiver,
+                route.as_ref().map(|_| route_items.as_slice()),
+            )
+            .map_err(Error)?;
+
+        Ok(SealedMessage {
+            url: url.to_string(),
+            sealed,
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn make_relationship_accept(
+        &self,
+        sender: String,
+        receiver: String,
+        thread_id: Vec<u8>,
+        route: Option<Vec<String>>,
+    ) -> Result<SealedMessage, Error> {
+        let route_items: Vec<&str> = route.iter().flatten().map(|s| s.as_str()).collect();
+
+        let (url, sealed) = self
+            .0
+            .make_relationship_accept(
+                &sender,
+                &receiver,
+                thread_id.try_into().unwrap(),
+                route.as_ref().map(|_| route_items.as_slice()),
+            )
+            .map_err(Error)?;
+
+        Ok(SealedMessage {
+            url: url.to_string(),
+            sealed,
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn make_relationship_cancel(
+        &self,
+        sender: String,
+        receiver: String,
+    ) -> Result<SealedMessage, Error> {
+        let (url, sealed) = self
+            .0
+            .make_relationship_cancel(&sender, &receiver)
+            .map_err(Error)?;
+
+        Ok(SealedMessage {
+            url: url.to_string(),
+            sealed,
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn make_relationship_referral(
+        &self,
+        sender: String,
+        receiver: String,
+        referred_vid: String,
+    ) -> Result<SealedMessage, Error> {
+        let (url, sealed) = self
+            .0
+            .make_relationship_referral(&sender, &receiver, &referred_vid)
+            .map_err(Error)?;
+
+        Ok(SealedMessage {
+            url: url.to_string(),
+            sealed,
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn make_nested_relationship_request(
+        &self,
+        parent_sender: String,
+        receiver: String,
+    ) -> Result<NestedSealedMessage, Error> {
+        let ((url, sealed), vid) = self
+            .0
+            .make_nested_relationship_request(&parent_sender, &receiver)
+            .map_err(Error)?;
+
+        Ok(NestedSealedMessage {
+            url: url.to_string(),
+            sealed,
+            nested_vid: OwnedVid(vid),
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn make_nested_relationship_accept(
+        &self,
+        sender: String,
+        receiver: String,
+        thread_id: Vec<u8>,
+    ) -> Result<NestedSealedMessage, Error> {
+        let ((url, sealed), vid) = self
+            .0
+            .make_nested_relationship_accept(&sender, &receiver, thread_id.try_into().unwrap())
+            .map_err(Error)?;
+
+        Ok(NestedSealedMessage {
+            url: url.to_string(),
+            sealed,
+            nested_vid: OwnedVid(vid),
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn forward_routed_message(
+        &self,
+        next_hop: String,
+        route: JsValue,
+        opaque_payload: Vec<u8>,
+    ) -> Result<SealedMessage, Error> {
+        let route = convert(route).unwrap();
+        let borrowed_route: Vec<_> = route.iter().map(|v| v.as_slice()).collect();
+        let (url, sealed) = self
+            .0
+            .forward_routed_message(&next_hop, borrowed_route, &opaque_payload)
+            .map_err(Error)?;
+
+        Ok(SealedMessage {
+            url: url.to_string(),
+            sealed,
+        })
+    }
+}
+
+fn convert(value: JsValue) -> Result<Vec<Vec<u8>>, serde_wasm_bindgen::Error> {
+    match serde_wasm_bindgen::from_value(value.clone()) {
+        Ok(x) => Ok(x),
+        Err(_) => {
+            let x: Vec<String> = serde_wasm_bindgen::from_value(value)?;
+            Ok(x.into_iter().map(Vec::from).collect())
+        }
+    }
 }
 
 #[wasm_bindgen]
+#[derive(Clone)]
 pub struct OwnedVid(tsp::OwnedVid);
 
 #[wasm_bindgen]
@@ -91,6 +276,7 @@ pub enum ReceivedTspMessageVariant {
     AcceptRelationship = 2,
     CancelRelationship = 3,
     ForwardRequest = 4,
+    Referral = 5,
 }
 
 impl From<&tsp::ReceivedTspMessage> for ReceivedTspMessageVariant {
@@ -101,6 +287,7 @@ impl From<&tsp::ReceivedTspMessage> for ReceivedTspMessageVariant {
             tsp::ReceivedTspMessage::AcceptRelationship { .. } => Self::AcceptRelationship,
             tsp::ReceivedTspMessage::CancelRelationship { .. } => Self::CancelRelationship,
             tsp::ReceivedTspMessage::ForwardRequest { .. } => Self::ForwardRequest,
+            tsp::ReceivedTspMessage::Referral { .. } => Self::Referral,
             #[cfg(not(target_arch = "wasm32"))]
             tsp::ReceivedTspMessage::PendingMessage { .. } => unreachable!(),
         }
@@ -129,6 +316,7 @@ pub struct FlatReceivedTspMessage {
     payload: Option<Vec<u8>>,
     opaque_payload: Option<Vec<u8>>,
     unknown_vid: Option<String>,
+    referred_vid: Option<String>,
 }
 
 #[wasm_bindgen]
@@ -228,6 +416,7 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
             payload: None,
             opaque_payload: None,
             unknown_vid: None,
+            referred_vid: None,
         };
 
         match value {
@@ -264,6 +453,13 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
             }
             tsp::ReceivedTspMessage::CancelRelationship { sender } => {
                 this.sender = Some(sender);
+            }
+            tsp::ReceivedTspMessage::Referral {
+                sender,
+                referred_vid,
+            } => {
+                this.sender = Some(sender);
+                this.referred_vid = Some(referred_vid);
             }
             tsp::ReceivedTspMessage::ForwardRequest {
                 sender,

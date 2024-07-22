@@ -25,6 +25,7 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
             DirectRelationAffirm,
             NestedRelationProposal,
             NestedRelationAffirm,
+            RelationshipReferral,
             RelationshipCancel,
         }
 
@@ -38,6 +39,7 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
                 Payload::DirectRelationAffirm { .. } => Variants::DirectRelationAffirm,
                 Payload::NestedRelationProposal { .. } => Variants::NestedRelationProposal,
                 Payload::NestedRelationAffirm { .. } => Variants::NestedRelationAffirm,
+                Payload::RelationshipReferral { .. } => Variants::RelationshipReferral,
                 Payload::RelationshipCancel { .. } => Variants::RelationshipCancel,
             }
         }
@@ -57,6 +59,7 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
             },
             Variants::DirectRelationAffirm => Payload::DirectRelationAffirm { reply: &DIGEST },
             Variants::NestedRelationProposal => Payload::NestedRelationProposal {
+                nonce: Nonce(Arbitrary::arbitrary(u)?),
                 new_vid: Arbitrary::arbitrary(u)?,
             },
             Variants::NestedRelationAffirm => Payload::NestedRelationAffirm {
@@ -64,10 +67,10 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
                 new_vid: Arbitrary::arbitrary(u)?,
                 connect_to_vid: Arbitrary::arbitrary(u)?,
             },
-            Variants::RelationshipCancel => Payload::RelationshipCancel {
-                nonce: Nonce(Arbitrary::arbitrary(u)?),
-                reply: &DIGEST,
+            Variants::RelationshipReferral => Payload::RelationshipReferral {
+                referred_vid: Arbitrary::arbitrary(u)?,
             },
+            Variants::RelationshipCancel => Payload::RelationshipCancel { reply: &DIGEST },
         };
 
         Ok(Wrapper(payload))
@@ -97,9 +100,15 @@ impl<'a> PartialEq<Payload<'a, &'a [u8], &'a [u8]>> for Wrapper {
                 Payload::DirectRelationAffirm { reply: r_reply },
             ) => l_reply == r_reply,
             (
-                Payload::NestedRelationProposal { new_vid: l_vid },
-                Payload::NestedRelationProposal { new_vid: r_vid },
-            ) => l_vid == r_vid,
+                Payload::NestedRelationProposal {
+                    new_vid: l_vid,
+                    nonce: l_nonce,
+                },
+                Payload::NestedRelationProposal {
+                    new_vid: r_vid,
+                    nonce: r_nonce,
+                },
+            ) => l_nonce.0 == r_nonce.0 && l_vid == r_vid,
             (
                 Payload::NestedRelationAffirm {
                     reply: l_reply,
@@ -114,15 +123,17 @@ impl<'a> PartialEq<Payload<'a, &'a [u8], &'a [u8]>> for Wrapper {
             ) => l_reply == r_reply && l_vid == r_vid && l_vid2 == r_vid2,
 
             (
-                Payload::RelationshipCancel {
-                    nonce: l_nonce,
-                    reply: l_reply,
+                Payload::RelationshipReferral {
+                    referred_vid: l_vid,
                 },
-                Payload::RelationshipCancel {
-                    nonce: r_nonce,
-                    reply: r_reply,
+                Payload::RelationshipReferral {
+                    referred_vid: r_vid,
                 },
-            ) => l_nonce.0 == r_nonce.0 && l_reply == r_reply,
+            ) => l_vid == r_vid,
+            (
+                Payload::RelationshipCancel { reply: l_reply },
+                Payload::RelationshipCancel { reply: r_reply },
+            ) => l_reply == r_reply,
             _ => false,
         }
     }

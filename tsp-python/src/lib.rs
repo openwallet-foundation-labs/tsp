@@ -30,6 +30,23 @@ impl Store {
         self.0.add_private_vid(vid.0).map_err(py_exception)
     }
 
+    fn add_verified_vid(&self, vid: OwnedVid) -> PyResult<()> {
+        self.0.add_verified_vid(vid.0).map_err(py_exception)
+    }
+
+    fn set_relation_for_vid(&self, vid: String, relation_vid: Option<String>) -> PyResult<()> {
+        self.0
+            .set_relation_for_vid(&vid, relation_vid.as_deref())
+            .map_err(py_exception)
+    }
+
+    fn set_route_for_vid(&self, vid: String, route: Vec<String>) -> PyResult<()> {
+        let borrowed: Vec<_> = route.iter().map(|s| s.as_str()).collect();
+        self.0
+            .set_route_for_vid(&vid, &borrowed)
+            .map_err(py_exception)
+    }
+
     #[pyo3(signature = (sender, receiver, nonconfidential_data, message))]
     fn seal_message(
         &self,
@@ -109,6 +126,63 @@ impl Store {
         Ok((url.to_string(), bytes))
     }
 
+    #[pyo3(signature = (sender, receiver, referred_vid))]
+    fn make_relationship_referral(
+        &self,
+        sender: String,
+        receiver: String,
+        referred_vid: String,
+    ) -> PyResult<(String, Vec<u8>)> {
+        let (url, bytes) = self
+            .0
+            .make_relationship_referral(&sender, &receiver, &referred_vid)
+            .map_err(py_exception)?;
+
+        Ok((url.to_string(), bytes))
+    }
+
+    fn make_nested_relationship_request(
+        &self,
+        parent_sender: String,
+        receiver: String,
+    ) -> PyResult<((String, Vec<u8>), OwnedVid)> {
+        let ((url, bytes), vid) = self
+            .0
+            .make_nested_relationship_request(&parent_sender, &receiver)
+            .map_err(py_exception)?;
+
+        Ok(((url.to_string(), bytes), OwnedVid(vid)))
+    }
+
+    fn make_nested_relationship_accept(
+        &self,
+        sender: String,
+        receiver: String,
+        thread_id: [u8; 32],
+    ) -> PyResult<((String, Vec<u8>), OwnedVid)> {
+        let ((url, bytes), vid) = self
+            .0
+            .make_nested_relationship_accept(&sender, &receiver, thread_id)
+            .map_err(py_exception)?;
+
+        Ok(((url.to_string(), bytes), OwnedVid(vid)))
+    }
+
+    fn forward_routed_message(
+        &self,
+        next_hop: String,
+        route: Vec<Vec<u8>>,
+        opaque_payload: Vec<u8>,
+    ) -> PyResult<(String, Vec<u8>)> {
+        let borrowed_route: Vec<_> = route.iter().map(|v| v.as_slice()).collect();
+        let (url, bytes) = self
+            .0
+            .forward_routed_message(&next_hop, borrowed_route, &opaque_payload)
+            .map_err(py_exception)?;
+
+        Ok((url.to_string(), bytes))
+    }
+
     fn open_message(&self, mut message: Vec<u8>) -> PyResult<FlatReceivedTspMessage> {
         self.0
             .open_message(&mut message)
@@ -126,6 +200,7 @@ enum ReceivedTspMessageVariant {
     CancelRelationship,
     ForwardRequest,
     PendingMessage,
+    Referral,
 }
 
 impl From<&tsp::ReceivedTspMessage> for ReceivedTspMessageVariant {
@@ -137,6 +212,7 @@ impl From<&tsp::ReceivedTspMessage> for ReceivedTspMessageVariant {
             tsp::ReceivedTspMessage::CancelRelationship { .. } => Self::CancelRelationship,
             tsp::ReceivedTspMessage::ForwardRequest { .. } => Self::ForwardRequest,
             tsp::ReceivedTspMessage::PendingMessage { .. } => Self::PendingMessage,
+            tsp::ReceivedTspMessage::Referral { .. } => Self::Referral,
         }
     }
 }
@@ -175,6 +251,8 @@ struct FlatReceivedTspMessage {
     opaque_payload: Option<Vec<u8>>,
     #[pyo3(get, set)]
     unknown_vid: Option<String>,
+    #[pyo3(get, set)]
+    referred_vid: Option<String>,
 }
 
 #[pymethods]
@@ -201,6 +279,7 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
             payload: None,
             opaque_payload: None,
             unknown_vid: None,
+            referred_vid: None,
         };
 
         match value {
@@ -237,6 +316,13 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
             }
             tsp::ReceivedTspMessage::CancelRelationship { sender } => {
                 this.sender = Some(sender);
+            }
+            tsp::ReceivedTspMessage::Referral {
+                sender,
+                referred_vid,
+            } => {
+                this.sender = Some(sender);
+                this.referred_vid = Some(referred_vid);
             }
             tsp::ReceivedTspMessage::ForwardRequest {
                 sender,

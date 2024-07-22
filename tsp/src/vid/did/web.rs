@@ -243,6 +243,7 @@ mod tests {
     use super::resolve_url;
     use crate::vid::error::VidError;
     use url::Url;
+    #[cfg(not(feature = "pq"))]
     use wasm_bindgen_test::wasm_bindgen_test;
 
     fn resolve_did_string(did: &str) -> Result<Url, VidError> {

@@ -55,7 +55,10 @@ where
             crate::cesr::Payload::DirectRelationAffirm { reply: thread_id }
         }
         Payload::RequestNestedRelationship { vid } => {
-            crate::cesr::Payload::NestedRelationProposal { new_vid: vid }
+            crate::cesr::Payload::NestedRelationProposal {
+                nonce: fresh_nonce(&mut csprng),
+                new_vid: vid,
+            }
         }
         Payload::AcceptNestedRelationship {
             ref thread_id,
@@ -66,41 +69,42 @@ where
             new_vid: vid,
             connect_to_vid,
         },
-        Payload::CancelRelationship { ref thread_id } => crate::cesr::Payload::RelationshipCancel {
-            nonce: fresh_nonce(&mut csprng),
-            reply: thread_id,
-        },
+        Payload::CancelRelationship { ref thread_id } => {
+            crate::cesr::Payload::RelationshipCancel { reply: thread_id }
+        }
         Payload::NestedMessage(data) => crate::cesr::Payload::NestedMessage(data),
         Payload::RoutedMessage(hops, data) => crate::cesr::Payload::RoutedMessage(hops, data),
+        Payload::Referral { referred_vid } => {
+            crate::cesr::Payload::RelationshipReferral { referred_vid }
+        }
     };
+
+    #[cfg(feature = "essr")]
+    let sender_in_payload = Some(sender.identifier().as_bytes());
+    #[cfg(not(feature = "essr"))]
+    let sender_in_payload = None;
 
     // prepare CESR-encoded ciphertext
     let mut cesr_message = Vec::with_capacity(
         // plaintext size
-        secret_payload.estimate_size()
+        secret_payload.calculate_size(sender_in_payload)
         // authenticated encryption tag length
         + aead::AeadTag::<A>::size()
         // encapsulated key length
         + Kem::EncappedKey::size(),
     );
 
-    #[cfg(feature = "essr")]
-    crate::cesr::encode_payload(
-        &secret_payload,
-        Some(sender.identifier().as_bytes()),
-        &mut cesr_message,
-    )?;
+    crate::cesr::encode_payload(&secret_payload, sender_in_payload, &mut cesr_message)?;
 
-    #[cfg(not(feature = "essr"))]
-    crate::cesr::encode_payload(&secret_payload, None, &mut cesr_message)?;
-
-    // HPKE sender mode: "Auth"
-    #[cfg(not(feature = "essr"))]
-    let sender_decryption_key = Kem::PrivateKey::from_bytes(sender.decryption_key().as_ref())?;
-    #[cfg(not(feature = "essr"))]
-    let sender_encryption_key = Kem::PublicKey::from_bytes(sender.encryption_key().as_ref())?;
+    // HPKE sender mode: "Auth" for ESSR and PQ features
     #[cfg(all(not(feature = "essr"), not(feature = "pq")))]
-    let mode = OpModeS::Auth((&sender_decryption_key, &sender_encryption_key));
+    let mode = {
+        let sender_decryption_key = Kem::PrivateKey::from_bytes(sender.decryption_key().as_ref())?;
+        let sender_encryption_key = Kem::PublicKey::from_bytes(sender.encryption_key().as_ref())?;
+
+        OpModeS::Auth((sender_decryption_key, sender_encryption_key))
+    };
+
     #[cfg(any(feature = "essr", feature = "pq"))]
     let mode = OpModeS::Base;
 
@@ -185,11 +189,11 @@ where
     #[cfg(any(feature = "essr", feature = "pq"))]
     let mode = OpModeR::Base;
 
-    #[cfg(not(feature = "essr"))]
-    let sender_encryption_key = Kem::PublicKey::from_bytes(sender.encryption_key().as_ref())?;
-
     #[cfg(all(not(feature = "essr"), not(feature = "pq")))]
-    let mode = OpModeR::Auth(&sender_encryption_key);
+    let mode = {
+        let sender_encryption_key = Kem::PublicKey::from_bytes(sender.encryption_key().as_ref())?;
+        OpModeR::Auth(sender_encryption_key)
+    };
 
     // decrypt the ciphertext
     single_shot_open_in_place_detached::<A, Kdf, Kem>(
@@ -226,7 +230,7 @@ where
         crate::cesr::Payload::DirectRelationAffirm { reply: &thread_id } => {
             Payload::AcceptRelationship { thread_id }
         }
-        crate::cesr::Payload::NestedRelationProposal { new_vid } => {
+        crate::cesr::Payload::NestedRelationProposal { new_vid, .. } => {
             Payload::RequestNestedRelationship { vid: new_vid }
         }
         crate::cesr::Payload::NestedRelationAffirm {
@@ -243,6 +247,9 @@ where
         } => Payload::CancelRelationship { thread_id },
         crate::cesr::Payload::NestedMessage(data) => Payload::NestedMessage(data),
         crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data),
+        crate::cesr::Payload::RelationshipReferral { referred_vid } => {
+            Payload::Referral { referred_vid }
+        }
     };
 
     Ok((envelope.nonconfidential_data, secret_payload, ciphertext))

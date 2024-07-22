@@ -12,6 +12,15 @@ class Store:
     def add_private_vid(self, *args, **kwargs):
         return self.inner.add_private_vid(*args, **kwargs)
 
+    def add_verified_vid(self, *args, **kwargs):
+        return self.inner.add_verified_vid(*args, **kwargs)
+
+    def set_relation_for_vid(self, *args, **kwargs):
+        return self.inner.set_relation_for_vid(*args, **kwargs)
+
+    def set_route_for_vid(self, *args, **kwargs):
+        return self.inner.set_route_for_vid(*args, **kwargs)
+
     def seal_message(self, *args, **kwargs):
         return self.inner.seal_message(*args, **kwargs)
 
@@ -21,12 +30,21 @@ class Store:
 
     def make_relationship_request(self, *args, **kwargs):
         return self.inner.make_relationship_request(*args, **kwargs)
-    
+
     def make_relationship_accept(self, *args, **kwargs):
         return self.inner.make_relationship_accept(*args, **kwargs)
 
     def make_relationship_cancel(self, *args, **kwargs):
         return self.inner.make_relationship_cancel(*args, **kwargs)
+
+    def make_nested_relationship_request(self, *args, **kwargs):
+        return self.inner.make_nested_relationship_request(*args, **kwargs)
+
+    def make_nested_relationship_accept(self, *args, **kwargs):
+        return self.inner.make_nested_relationship_accept(*args, **kwargs)
+
+    def forward_routed_message(self, *args, **kwargs):
+        return self.inner.forward_routed_message(*args, **kwargs)
 
 class ReceivedTspMessage:
     @staticmethod
@@ -45,7 +63,7 @@ class ReceivedTspMessage:
                 return CancelRelationship(msg.sender)
 
             case ReceivedTspMessageVariant.ForwardRequest:
-                raise ValueError("todo!")
+                return ForwardRequest(msg.sender, msg.next_hop, msg.route, msg.opaque_payload)
 
             case ReceivedTspMessageVariant.PendingMessage:
                 raise ValueError("todo!")
@@ -58,7 +76,7 @@ class GenericMessage(ReceivedTspMessage):
     sender: str
     nonconfidential_data: str
     message: str
-    message_type: str 
+    message_type: str
 
 @dataclass
 class AcceptRelationship(ReceivedTspMessage):
@@ -74,5 +92,11 @@ class RequestRelationship(ReceivedTspMessage):
     sender: str
     route: str
     nested_vid: str
-    thread_id: str 
+    thread_id: str
 
+@dataclass
+class ForwardRequest(ReceivedTspMessage):
+    sender: str
+    next_hop: str
+    route: str
+    opaque_payload: str
