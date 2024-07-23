@@ -34,19 +34,23 @@ pub(crate) fn seal(
 
     let secret_payload = match secret_payload {
         Payload::Content(data) => crate::cesr::Payload::GenericMessage(data),
-        Payload::RequestRelationship { route } => crate::cesr::Payload::DirectRelationProposal {
+        Payload::RequestRelationship {
+            route,
+            thread_id: _ignored,
+        } => crate::cesr::Payload::DirectRelationProposal {
             nonce: fresh_nonce(&mut csprng),
             hops: route.unwrap_or_else(Vec::new),
         },
         Payload::AcceptRelationship { ref thread_id } => {
             crate::cesr::Payload::DirectRelationAffirm { reply: thread_id }
         }
-        Payload::RequestNestedRelationship { vid } => {
-            crate::cesr::Payload::NestedRelationProposal {
-                nonce: fresh_nonce(&mut csprng),
-                new_vid: vid,
-            }
-        }
+        Payload::RequestNestedRelationship {
+            vid,
+            thread_id: _ignored,
+        } => crate::cesr::Payload::NestedRelationProposal {
+            nonce: fresh_nonce(&mut csprng),
+            new_vid: vid,
+        },
         Payload::AcceptNestedRelationship {
             ref thread_id,
             vid,
@@ -152,6 +156,8 @@ pub(crate) fn open<'a>(
 
     receiver_box.decrypt_in_place_detached(nonce.into(), &[], ciphertext, tag.into())?;
 
+    let thread_id = crate::crypto::sha256(ciphertext);
+
     #[allow(unused_variables)]
     let DecodedPayload {
         payload,
@@ -172,12 +178,16 @@ pub(crate) fn open<'a>(
         crate::cesr::Payload::GenericMessage(data) => Payload::Content(data as _),
         crate::cesr::Payload::DirectRelationProposal { hops, .. } => Payload::RequestRelationship {
             route: if hops.is_empty() { None } else { Some(hops) },
+            thread_id,
         },
         crate::cesr::Payload::DirectRelationAffirm { reply: &thread_id } => {
             Payload::AcceptRelationship { thread_id }
         }
         crate::cesr::Payload::NestedRelationProposal { new_vid, .. } => {
-            Payload::RequestNestedRelationship { vid: new_vid }
+            Payload::RequestNestedRelationship {
+                vid: new_vid,
+                thread_id,
+            }
         }
         crate::cesr::Payload::NestedRelationAffirm {
             new_vid,
@@ -202,8 +212,7 @@ pub(crate) fn open<'a>(
         crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data as _),
     };
 
-    let ciphertext = todo!();
-    Ok((envelope.nonconfidential_data, secret_payload, ciphertext))
+    Ok((envelope.nonconfidential_data, secret_payload))
 }
 
 /// Generate N random bytes using the provided RNG

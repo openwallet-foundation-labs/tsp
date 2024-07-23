@@ -119,12 +119,14 @@ pub enum Payload<'a, Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]> = Bytes> {
     },
     RequestRelationship {
         route: Option<Vec<VidData<'a>>>,
+        thread_id: Digest,
     },
     AcceptRelationship {
         thread_id: Digest,
     },
     RequestNestedRelationship {
         vid: VidData<'a>,
+        thread_id: Digest,
     },
     AcceptNestedRelationship {
         thread_id: Digest,

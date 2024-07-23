@@ -47,19 +47,23 @@ where
 
     let secret_payload = match secret_payload {
         Payload::Content(data) => crate::cesr::Payload::GenericMessage(data),
-        Payload::RequestRelationship { route } => crate::cesr::Payload::DirectRelationProposal {
+        Payload::RequestRelationship {
+            route,
+            thread_id: _ignored,
+        } => crate::cesr::Payload::DirectRelationProposal {
             nonce: fresh_nonce(&mut csprng),
             hops: route.unwrap_or_else(Vec::new),
         },
         Payload::AcceptRelationship { ref thread_id } => {
             crate::cesr::Payload::DirectRelationAffirm { reply: thread_id }
         }
-        Payload::RequestNestedRelationship { vid } => {
-            crate::cesr::Payload::NestedRelationProposal {
-                nonce: fresh_nonce(&mut csprng),
-                new_vid: vid,
-            }
-        }
+        Payload::RequestNestedRelationship {
+            vid,
+            thread_id: _ignored,
+        } => crate::cesr::Payload::NestedRelationProposal {
+            nonce: fresh_nonce(&mut csprng),
+            new_vid: vid,
+        },
         Payload::AcceptNestedRelationship {
             ref thread_id,
             vid,
@@ -210,6 +214,14 @@ where
         &tag,
     )?;
 
+    // micro-optimization: only compute the thread_id digest if we really need it; we cannot do this
+    // later since after constructing the resulting Payload, we are giving out mutable borrows
+    let thread_id = match crate::cesr::decode_payload(ciphertext)?.payload {
+        crate::cesr::Payload::DirectRelationProposal { .. }
+        | crate::cesr::Payload::NestedRelationProposal { .. } => crate::crypto::sha256(ciphertext),
+        _ => Default::default(),
+    };
+
     #[allow(unused_variables)]
     let DecodedPayload {
         payload,
@@ -230,12 +242,16 @@ where
         crate::cesr::Payload::GenericMessage(data) => Payload::Content(data as _),
         crate::cesr::Payload::DirectRelationProposal { hops, .. } => Payload::RequestRelationship {
             route: if hops.is_empty() { None } else { Some(hops) },
+            thread_id,
         },
         crate::cesr::Payload::DirectRelationAffirm { reply: &thread_id } => {
             Payload::AcceptRelationship { thread_id }
         }
         crate::cesr::Payload::NestedRelationProposal { new_vid, .. } => {
-            Payload::RequestNestedRelationship { vid: new_vid }
+            Payload::RequestNestedRelationship {
+                vid: new_vid,
+                thread_id,
+            }
         }
         crate::cesr::Payload::NestedRelationAffirm {
             new_vid,
@@ -260,10 +276,7 @@ where
         }
     };
 
-    // TODO: we cannot lend access to the raw bytes of the ciphertext, since they are mutably shared now;
-    // see issue #9 for changes to the THREAD_ID digest
-    let ciphertext = &[];
-    Ok((envelope.nonconfidential_data, secret_payload, ciphertext))
+    Ok((envelope.nonconfidential_data, secret_payload))
 }
 
 /// Generate N random bytes using the provided RNG
