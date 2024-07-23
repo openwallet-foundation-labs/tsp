@@ -524,54 +524,6 @@ pub fn decode_sender_receiver<'a, Vid: TryFrom<&'a [u8]>>(
     Ok((sender, receiver, crypto_type, signature_type))
 }
 
-/// Decode an encrypted TSP message plus Envelope & Signature
-pub fn decode_envelope<'a, Vid: TryFrom<&'a [u8]>>(
-    mut stream: &'a [u8],
-) -> Result<
-    (
-        DecodedEnvelope<'a, Vid, &'a [u8]>,
-        VerificationChallenge<'a>,
-    ),
-    DecodeError,
-> {
-    let origin = stream;
-    let (sender, receiver, crypto_type, signature_type) = decode_sender_receiver(&mut stream)?;
-
-    let nonconfidential_data = decode_variable_data(TSP_PLAINTEXT, &mut stream);
-    let raw_header = &origin[..origin.len() - stream.len()];
-
-    let ciphertext = (crypto_type != CryptoType::Plaintext)
-        .then(|| {
-            decode_variable_data(TSP_CIPHERTEXT, &mut stream).ok_or(DecodeError::UnexpectedData)
-        })
-        .transpose()?;
-    let signed_data = &origin[..origin.len() - stream.len()];
-    let signature =
-        decode_fixed_data(ED25519_SIGNATURE, &mut stream).ok_or(DecodeError::UnexpectedData)?;
-
-    if !stream.is_empty() {
-        return Err(DecodeError::TrailingGarbage);
-    }
-
-    Ok((
-        DecodedEnvelope {
-            envelope: Envelope {
-                crypto_type,
-                signature_type,
-                sender,
-                receiver,
-                nonconfidential_data,
-            },
-            raw_header,
-            ciphertext,
-        },
-        VerificationChallenge {
-            signed_data,
-            signature,
-        },
-    ))
-}
-
 use std::ops::Range;
 
 #[derive(Debug)]
@@ -650,7 +602,7 @@ impl<'a> CipherView<'a> {
 
 /// Decode an encrypted TSP message plus Envelope & Signature
 /// Produces the ciphertext as a mutable stream.
-pub fn decode_envelope_mut<'a>(stream: &'a mut [u8]) -> Result<CipherView<'a>, DecodeError> {
+pub fn decode_envelope<'a>(stream: &'a mut [u8]) -> Result<CipherView<'a>, DecodeError> {
     let (mut pos, crypto_type, signature_type) =
         detected_tsp_header_size_and_confidentiality(&mut (stream as &[u8]))?;
 
@@ -915,16 +867,15 @@ mod test {
         let signed_data = outer.clone();
         encode_signature(&fixed_sig, &mut outer);
 
-        let (
-            DecodedEnvelope {
-                envelope: env,
-                ciphertext,
-                ..
-            },
-            ver,
-        ) = decode_envelope::<&[u8]>(&outer).unwrap();
+        let view = decode_envelope(&mut outer).unwrap();
+        let ver = view.as_challenge();
         assert_eq!(ver.signed_data, signed_data);
         assert_eq!(ver.signature, &fixed_sig);
+        let DecodedEnvelope {
+            envelope: env,
+            ciphertext,
+            ..
+        } = view.into_opened().unwrap();
         assert_eq!(env.sender, &b"Alister"[..]);
         assert_eq!(env.receiver, Some(&b"Bobbi"[..]));
         assert_eq!(env.nonconfidential_data, None);
@@ -964,16 +915,15 @@ mod test {
         let signed_data = outer.clone();
         encode_signature(&fixed_sig, &mut outer);
 
-        let (
-            DecodedEnvelope {
-                envelope: env,
-                ciphertext,
-                ..
-            },
-            ver,
-        ) = decode_envelope::<&[u8]>(&outer).unwrap();
+        let view = decode_envelope(&mut outer).unwrap();
+        let ver = view.as_challenge();
         assert_eq!(ver.signed_data, signed_data);
         assert_eq!(ver.signature, &fixed_sig);
+        let DecodedEnvelope {
+            envelope: env,
+            ciphertext,
+            ..
+        } = view.into_opened().unwrap();
         assert_eq!(env.sender, &b"Alister"[..]);
         assert_eq!(env.receiver, Some(&b"Bobbi"[..]));
         assert_eq!(env.nonconfidential_data, Some(&b"treasure"[..]));
@@ -1005,16 +955,15 @@ mod test {
         let signed_data = outer.clone();
         encode_signature(&fixed_sig, &mut outer);
 
-        let (
-            DecodedEnvelope {
-                envelope: env,
-                ciphertext,
-                ..
-            },
-            ver,
-        ) = decode_envelope::<&[u8]>(&outer).unwrap();
+        let view = decode_envelope(&mut outer).unwrap();
+        let ver = view.as_challenge();
         assert_eq!(ver.signed_data, signed_data);
         assert_eq!(ver.signature, &fixed_sig);
+        let DecodedEnvelope {
+            envelope: env,
+            ciphertext,
+            ..
+        } = view.into_opened().unwrap();
         assert_eq!(env.sender, &b"Alister"[..]);
         assert_eq!(env.receiver, Some(&b"Bobbi"[..]));
         assert_eq!(env.nonconfidential_data, Some(&b"treasure"[..]));
@@ -1045,7 +994,7 @@ mod test {
         encode_ciphertext(ciphertext, &mut outer).unwrap();
         encode_signature(&fixed_sig, &mut outer);
 
-        assert!(decode_envelope::<&[u8]>(&outer).is_err());
+        assert!(decode_envelope(&mut outer).is_err());
     }
 
     #[test]
@@ -1068,7 +1017,7 @@ mod test {
         encode_signature(&fixed_sig, &mut outer);
         encode_ciphertext(&[], &mut outer).unwrap();
 
-        assert!(decode_envelope::<&[u8]>(&outer).is_err());
+        assert!(decode_envelope(&mut outer).is_err());
     }
 
     #[test]
@@ -1088,7 +1037,7 @@ mod test {
         encode_signature(&fixed_sig, &mut outer);
         outer.push(b'-');
 
-        assert!(decode_envelope::<&[u8]>(&outer).is_err());
+        assert!(decode_envelope(&mut outer).is_err());
     }
 
     #[cfg(all(feature = "demo", test))]
@@ -1183,7 +1132,7 @@ mod test {
         let signed_data = outer.clone();
         encode_signature(&fixed_sig, &mut outer);
 
-        let view = decode_envelope_mut(&mut outer).unwrap();
+        let view = decode_envelope(&mut outer).unwrap();
         assert_eq!(view.as_challenge().signed_data, signed_data);
         assert_eq!(view.as_challenge().signature, &fixed_sig);
         let DecodedEnvelope {
