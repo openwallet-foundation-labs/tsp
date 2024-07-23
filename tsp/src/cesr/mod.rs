@@ -77,6 +77,13 @@ pub enum EnvelopeType<'a> {
 }
 
 impl EnvelopeType<'_> {
+    pub fn get_receiver(&self) -> Option<&[u8]> {
+        match self {
+            EnvelopeType::EncryptedMessage { receiver, .. } => Some(*receiver),
+            EnvelopeType::SignedMessage { receiver, .. } => *receiver,
+        }
+    }
+
     pub fn get_nonconfidential_data(&self) -> Option<&[u8]> {
         match self {
             EnvelopeType::EncryptedMessage {

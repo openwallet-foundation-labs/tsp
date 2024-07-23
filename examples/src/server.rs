@@ -2,7 +2,7 @@ use axum::{
     body::Bytes,
     extract::{
         ws::{Message, WebSocket},
-        Path, State, WebSocketUpgrade,
+        DefaultBodyLimit, Path, State, WebSocketUpgrade,
     },
     http::{header, StatusCode},
     response::{Html, IntoResponse, Response},
@@ -10,10 +10,16 @@ use axum::{
     Form, Json, Router,
 };
 use base64ct::{Base64UrlUnpadded, Encoding};
+use core::time;
 use futures::{sink::SinkExt, stream::StreamExt};
 use serde::Deserialize;
 use serde_json::json;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    str::from_utf8,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::sync::{broadcast, RwLock};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp::{
@@ -45,7 +51,11 @@ struct AppState {
 #[tokio::main]
 async fn main() {
     tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
+        .with(
+            tracing_subscriber::fmt::layer()
+                .without_time()
+                .with_ansi(false),
+        )
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "demo_server=trace,tsp=trace".into()),
@@ -74,9 +84,10 @@ async fn main() {
         .route("/vid/:vid", get(websocket_vid_handler))
         .route("/user/:user", get(websocket_user_handler))
         .route("/user/:user", post(route_message))
-        .route("/timestamp", post(timestamp_message))
+        .route("/sign-timestamp", post(sign_timestamp))
         .route("/send-message", post(send_message))
         .route("/receive-messages", get(websocket_handler))
+        .layer(DefaultBodyLimit::max(50 * 1024 * 1024))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
@@ -286,24 +297,77 @@ struct SendMessageForm {
     receiver: Vid,
 }
 
-async fn timestamp_message(
+#[derive(Deserialize, Debug)]
+struct Metadata {
+    name: String,
+    timestamp: u64,
+}
+
+async fn sign_timestamp(
     State(state): State<Arc<AppState>>,
     body: Bytes,
-) -> Result<impl IntoResponse, &'static str> {
-    let mut bytes: Vec<u8> = body.into();
-    let timestamp = tsp::cesr::probe(&mut bytes)
-        .map_err(|_| "Error probing message")?
+) -> Result<impl IntoResponse, Response> {
+    let bytes: Vec<u8> = body.into();
+    let mut header_bytes = bytes.clone();
+    let header = tsp::cesr::probe(&mut header_bytes)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "Error probing message").into_response())?;
+
+    let metadata = header
         .get_nonconfidential_data()
-        .ok_or("No nonconfidential data")?;
+        .ok_or((StatusCode::BAD_REQUEST, "No nonconfidential data").into_response())?;
 
-    // TODO: check timestamp
+    let receiver = header
+        .get_receiver()
+        .ok_or((StatusCode::BAD_REQUEST, "No receiver set").into_response())?;
 
-    let response_bytes = state
+    let receiver = from_utf8(receiver)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "Receiver vid is not valid utf8").into_response())?;
+
+    let metadata: Metadata = serde_json::from_slice(metadata)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "Error parsing json").into_response())?;
+
+    tracing::info!(
+        "received timestamp sign request from {}: {}",
+        metadata.name,
+        metadata.timestamp
+    );
+
+    let start = SystemTime::now();
+    let since_the_epoch = start
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid timestamp").into_response())?
+        .as_secs();
+    let delta = metadata.timestamp.max(since_the_epoch) - metadata.timestamp.min(since_the_epoch);
+
+    if delta > time::Duration::from_secs(60).as_secs() {
+        tracing::error!("timestamp delta to large: {delta} seconds");
+
+        return Err((StatusCode::BAD_REQUEST, "Invalid timestamp").into_response());
+    }
+
+    tracing::info!("timestamp delta ok: {delta} seconds");
+
+    let verified_vid = tsp::vid::verify_vid(receiver)
+        .await
+        .map_err(|_| (StatusCode::BAD_REQUEST, "Error verifying vid").into_response())?;
+    state
         .timestamp_server
-        .sign_anycast("did:web:did.tsp-test.org:user:timestamp-server", &bytes)
-        .map_err(|_| "Error signing message")?;
+        .add_verified_vid(verified_vid)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "Error adding verified vid").into_response())?;
 
-    tracing::debug!("timestamped message");
+    let (_url, response_bytes) = state
+        .timestamp_server
+        .seal_message(
+            "did:web:did.tsp-test.org:user:timestamp-server",
+            receiver,
+            Some(&bytes),
+            &[],
+        )
+        .map_err(|_| {
+            (StatusCode::INTERNAL_SERVER_ERROR, "Error signing message").into_response()
+        })?;
+
+    tracing::info!("timestamped message");
 
     Ok(response_bytes)
 }

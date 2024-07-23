@@ -4,11 +4,11 @@ import {
   Flex,
   Menu,
   Stack,
-  Text,
   rem,
   Modal,
+  Badge,
 } from '@mantine/core';
-import { IconDotsVertical, IconTrash, IconCode } from '@tabler/icons-react';
+import { IconDotsVertical, IconTrash, IconCode, IconCheck } from '@tabler/icons-react';
 import { useDisclosure, useHover } from '@mantine/hooks';
 
 interface ChatMessageProps {
@@ -40,16 +40,23 @@ export default function ChatMessage({
       <Alert
         miw={200}
         variant="light"
-        color={me ? 'green' : 'blue'}
+        color={me ? 'blue.3' : 'gray.5'}
         style={{ textAlign: 'right' }}
-        pr={24}
-        py="sm"
+        px="sm"
+        py="xs"
         ref={ref}
       >
         <Flex align="center" justify="flex-end">
-          <Text c="gray" size="xs">
-            {date.slice(11, 16)}
-          </Text>
+          <Badge
+            leftSection={<IconCheck size={10} stroke={4} />}
+            color="green"
+            variant="light"
+            size="sm"
+            radius="sm"
+            mb="xs"
+          >
+            {date.slice(11, 19)}
+          </Badge>
           <Modal
             opened={opened}
             onClose={close}
@@ -69,7 +76,7 @@ export default function ChatMessage({
                 style={{
                   position: 'absolute',
                   top: 0,
-                  right: 0,
+                  left: 0,
                   visibility: hovered ? 'visible' : 'hidden',
                 }}
               >

@@ -7,6 +7,14 @@ import {
   probe_message,
 } from '../pkg/tsp_demo';
 import { bufferToBase64, humanFileSize } from './util';
+import ReconnectingWebSocket from 'reconnecting-websocket';
+
+const TIMESTAMP_SERVER = {
+  id: "did:web:did.tsp-test.org:user:timestamp-server",
+  publicEnckey: "2SOeMndN9z4oArm7Vu7D7ZGnkbsAXZ2DO-GUAfBd_Bo",
+  publicSigkey: "HR76y6YG5BWHbj4UQsqX-5ybQPjtETiaZFa4LHWaI68",
+  transport: "https://tsp-test.org/timestamp"
+};
 
 export interface Identity {
   label: string;
@@ -32,16 +40,17 @@ export interface Contact {
   };
 }
 
+type Encoded = string
+| {
+    name: string;
+    href: string;
+    size: string;
+  };
+
 export interface Message {
   date: string;
   message: string;
-  encoded:
-    | string
-    | {
-        name: string;
-        href: string;
-        size: string;
-      };
+  encoded: Encoded;
   me: boolean;
 }
 
@@ -88,13 +97,8 @@ type Action =
       type: 'addMessage';
       contactVid: string;
       message: string;
-      encoded:
-        | string
-        | {
-            name: string;
-            href: string;
-            size: string;
-          };
+      encoded: Encoded;
+      timestamp: number;
       me: boolean;
     }
   | { type: 'setId'; id: Identity }
@@ -150,7 +154,7 @@ function reducer(state: State, action: Action) {
               messages: [
                 ...contact.messages,
                 {
-                  date: new Date().toISOString(),
+                  date: (new Date(action.timestamp * 1000)).toISOString(),
                   message: action.message,
                   encoded: action.encoded,
                   me: action.me,
@@ -172,7 +176,7 @@ function reducer(state: State, action: Action) {
 }
 
 export default function useStore() {
-  const ws = useRef<WebSocket | null>(null);
+  const ws = useRef<ReconnectingWebSocket | null>(null);
   const store = useRef<Store>(new Store());
   const [state, dispatch] = useReducer(reducer, loadState());
 
@@ -243,70 +247,96 @@ export default function useStore() {
     });
   };
 
+  const sendBody = async (
+    sender: Identity,
+    vid: string,
+    message: string,
+    encoded: null | Encoded,
+    body: Uint8Array
+  ) => {
+    const d = new Date();
+    const timestamp = Math.round(d.getTime() / 1000);
+    const unencrypted = new TextEncoder().encode(JSON.stringify({
+      name: sender.label,
+      timestamp,
+    }));
+
+    const { url, sealed } = store.current.seal_message(
+      sender.vid.id,
+      vid,
+      unencrypted,
+      body
+    );
+    // timestamp sign
+    const signResponse = await fetch('https://tsp-test.org/sign-timestamp', {
+      method: 'POST',
+      body: sealed,
+    });
+
+    if (signResponse.status !== 200) {
+      window.alert(`Failed sending message ${signResponse.statusText}`);
+      return;
+    }
+
+    const signed = new Uint8Array(await signResponse.arrayBuffer());
+
+    const response = await fetch(url, {
+      method: 'POST',
+      body: signed,
+    });
+
+    if (response.status !== 200) {
+      window.alert(`Failed sending message ${response.statusText}`);
+      return;
+    }
+
+    dispatch({
+      type: 'addMessage',
+      contactVid: vid,
+      encoded: encoded || await bufferToBase64(sealed),
+      message,
+      timestamp,
+      me: true,
+    });
+  }
+
   const sendMessage = async (vid: string, message: string) => {
     if (state.id) {
       const bytes = new TextEncoder().encode(message);
       const body = new Uint8Array([0, ...bytes]);
-      const unencrypted = new TextEncoder().encode(state.id.label);
-      const { url, sealed } = store.current.seal_message(
-        state.id.vid.id,
-        vid,
-        unencrypted,
-        body
-      );
-      await fetch(url, {
-        method: 'POST',
-        body: sealed,
-      });
-      const encoded = await bufferToBase64(sealed);
-      dispatch({
-        type: 'addMessage',
-        contactVid: vid,
-        encoded,
-        message,
-        me: true,
-      });
+
+      sendBody(state.id, vid, message, null, body);
     }
   };
 
   const sendFile = async (vid: string, file: File) => {
     if (state.id && file.name.length > 0) {
-      const unencrypted = new TextEncoder().encode(state.id.label);
       const name = new TextEncoder().encode(file.name.slice(0, 254));
       const fileBytes = new Uint8Array(await file.arrayBuffer());
       const body = new Uint8Array([name.length, ...name, ...fileBytes]);
-      const { url, sealed } = store.current.seal_message(
-        state.id.vid.id,
-        vid,
-        unencrypted,
-        body
-      );
-      await fetch(url, {
-        method: 'POST',
-        body: sealed,
-      });
 
       const blob = new Blob([fileBytes], {
         type: 'application/octet-stream',
       });
 
-      dispatch({
-        type: 'addMessage',
-        contactVid: vid,
-        encoded: {
-          name: file.name,
-          href: window.URL.createObjectURL(blob),
-          size: humanFileSize(fileBytes.length),
-        },
-        message: `File: ${file.name} (${humanFileSize(file.size)})`,
-        me: true,
-      });
+      const encoded = {
+        name: file.name,
+        href: window.URL.createObjectURL(blob),
+        size: humanFileSize(fileBytes.length),
+      };
+
+      const message = `File: ${file.name} (${humanFileSize(file.size)})`;
+      sendBody(state.id, vid, message, encoded, body);
     }
   };
 
   // populate the store
   useEffect(() => {
     if (store.current) {
+      // timestamp server vid
+      store.current.add_verified_vid(
+        Vid.from_json(JSON.stringify(TIMESTAMP_SERVER))
+      );
       state.contacts.forEach((contact) => {
         store.current.add_verified_vid(
           Vid.from_json(JSON.stringify(contact.vid))
@@ -340,15 +370,27 @@ export default function useStore() {
   // setup websocket
   useEffect(() => {
     if (state.id) {
-      ws.current = new WebSocket(`wss://tsp-test.org/vid/${state.id.vid.id}`);
+      ws.current = new ReconnectingWebSocket(`wss://tsp-test.org/vid/${state.id.vid.id}`);
       const wsCurrent = ws.current;
       ws.current.onmessage = async (e) => {
         try {
-          const bytes = new Uint8Array(await e.data.arrayBuffer());
+          // unseal timestamp server message
+          const tsBytes = new Uint8Array(await e.data.arrayBuffer());
+          const tsPlaintext = store.current.open_message(tsBytes);
+
+          if (tsPlaintext.sender !== TIMESTAMP_SERVER.id) {
+            window.alert('Did not receive message signed by the timestamp server');
+            return;
+          }
+          
+          // unseal inner message
+          const bytes = tsPlaintext.nonconfidential_data;
           const envelope = JSON.parse(probe_message(bytes));
+          const metadata = JSON.parse(envelope.nonconfidential_data);
+          const timestamp = metadata.timestamp;
 
           if (!state.contacts.find((c) => c.vid.id === envelope.sender)) {
-            addContact(envelope.sender, envelope.nonconfidential_data);
+            addContact(envelope.sender, metadata.name);
           }
 
           const plaintext = store.current.open_message(bytes);
@@ -365,6 +407,7 @@ export default function useStore() {
               contactVid,
               message,
               encoded,
+              timestamp,
               me: false,
             });
           } else {
@@ -388,6 +431,7 @@ export default function useStore() {
                 href: window.URL.createObjectURL(blob),
                 size: humanFileSize(fileBytes.length),
               },
+              timestamp,
               me: false,
             });
           }
