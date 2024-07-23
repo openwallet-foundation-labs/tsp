@@ -400,7 +400,7 @@ async fn websocket(stream: WebSocket, state: Arc<AppState>) {
 
             // if the sender is verified, decrypt the message
             let result = if let Some(sender_vid) = incoming_senders_read.get(&sender_id) {
-                let Ok((_, payload, _)) =
+                let Ok((_, payload)) =
                     tsp::crypto::open(receiver_vid, sender_vid, &mut encrypted_message)
                 else {
                     continue;

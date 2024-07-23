@@ -84,7 +84,6 @@ pub fn seal_and_hash(
 pub type MessageContents<'a> = (
     Option<NonConfidentialData<'a>>,
     Payload<'a, &'a [u8], &'a mut [u8]>,
-    &'a [u8],
 );
 
 /// Decode a CESR Authentic Confidential Message, verify the signature and decrypt its contents
@@ -201,7 +200,7 @@ mod tests {
         )
         .unwrap();
 
-        let (received_nonconfidential_data, received_secret_message, _) =
+        let (received_nonconfidential_data, received_secret_message) =
             open(&alice, &bob, &mut message).unwrap();
 
         assert_eq!(received_nonconfidential_data.unwrap(), nonconfidential_data);

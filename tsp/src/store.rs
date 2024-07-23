@@ -440,7 +440,7 @@ impl Store {
             return Err(CryptoError::UnexpectedRecipient.into());
         };
 
-        let (_, payload, _) = crate::crypto::open(&*receiver, &*sender, message)?;
+        let (_, payload) = crate::crypto::open(&*receiver, &*sender, message)?;
 
         let (next_hop, path, inner_message) = match payload {
             Payload::RoutedMessage(hops, inner_message) => {
@@ -535,7 +535,7 @@ impl Store {
                     return Err(Error::UnverifiedSource(sender));
                 };
 
-                let (nonconfidential_data, payload, raw_bytes) =
+                let (nonconfidential_data, payload) =
                     crate::crypto::open(&*intended_receiver, &*sender_vid, message)?;
 
                 match payload {
@@ -567,11 +567,11 @@ impl Store {
                             opaque_payload: message.to_owned(),
                         })
                     }
-                    Payload::RequestRelationship { route } => {
+                    Payload::RequestRelationship { route, thread_id } => {
                         Ok(ReceivedTspMessage::RequestRelationship {
                             sender,
                             route: route.map(|vec| vec.iter().map(|vid| vid.to_vec()).collect()),
-                            thread_id: crate::crypto::sha256(raw_bytes),
+                            thread_id,
                             nested_vid: None,
                         })
                     }
@@ -608,7 +608,7 @@ impl Store {
 
                         Ok(ReceivedTspMessage::CancelRelationship { sender })
                     }
-                    Payload::RequestNestedRelationship { vid } => {
+                    Payload::RequestNestedRelationship { vid, thread_id } => {
                         let vid = std::str::from_utf8(vid)?;
                         self.add_nested_vid(vid)?;
                         self.set_parent_for_vid(vid, Some(&sender))?;
@@ -616,7 +616,7 @@ impl Store {
                         Ok(ReceivedTspMessage::RequestRelationship {
                             sender,
                             route: None,
-                            thread_id: crate::crypto::sha256(raw_bytes),
+                            thread_id,
                             nested_vid: Some(vid.to_string()),
                         })
                     }
@@ -708,7 +708,10 @@ impl Store {
             &*sender,
             &*receiver,
             None,
-            Payload::RequestRelationship { route },
+            Payload::RequestRelationship {
+                route,
+                thread_id: Default::default(),
+            },
         )?;
 
         let (transport, tsp_message) = if let Some(hop_list) = path {
@@ -806,6 +809,7 @@ impl Store {
             None,
             Payload::RequestNestedRelationship {
                 vid: nested_vid.vid().as_ref(),
+                thread_id: Default::default(),
             },
         )?;
 
