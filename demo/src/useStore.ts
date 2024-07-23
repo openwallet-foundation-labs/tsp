@@ -6,7 +6,7 @@ import {
   verify_did_peer,
   probe_message,
 } from '../pkg/tsp_demo';
-import { bufferToBase64 } from './util';
+import { bufferToBase64, humanFileSize } from './util';
 
 export interface Identity {
   label: string;
@@ -35,7 +35,13 @@ export interface Contact {
 export interface Message {
   date: string;
   message: string;
-  encoded: string;
+  encoded:
+    | string
+    | {
+        name: string;
+        href: string;
+        size: string;
+      };
   me: boolean;
 }
 
@@ -49,7 +55,20 @@ function loadState(): State {
   const state = localStorage.getItem('state');
 
   if (state) {
-    return JSON.parse(state);
+    const parsed = JSON.parse(state);
+
+    // clear old object url's
+    parsed.contacts.forEach((contact: Contact) => {
+      contact.messages.forEach((message: Message) => {
+        if (typeof message.encoded !== 'string') {
+          message.encoded.href = '';
+        }
+      });
+
+      return contact;
+    });
+
+    return parsed;
   }
 
   return {
@@ -69,7 +88,13 @@ type Action =
       type: 'addMessage';
       contactVid: string;
       message: string;
-      encoded: string;
+      encoded:
+        | string
+        | {
+            name: string;
+            href: string;
+            size: string;
+          };
       me: boolean;
     }
   | { type: 'setId'; id: Identity }
@@ -220,7 +245,8 @@ export default function useStore() {
 
   const sendMessage = async (vid: string, message: string) => {
     if (state.id) {
-      const body = new TextEncoder().encode(message);
+      const bytes = new TextEncoder().encode(message);
+      const body = new Uint8Array([0, ...bytes]);
       const unencrypted = new TextEncoder().encode(state.id.label);
       const { url, sealed } = store.current.seal_message(
         state.id.vid.id,
@@ -238,6 +264,41 @@ export default function useStore() {
         contactVid: vid,
         encoded,
         message,
+        me: true,
+      });
+    }
+  };
+
+  const sendFile = async (vid: string, file: File) => {
+    if (state.id && file.name.length > 0) {
+      const unencrypted = new TextEncoder().encode(state.id.label);
+      const name = new TextEncoder().encode(file.name.slice(0, 254));
+      const fileBytes = new Uint8Array(await file.arrayBuffer());
+      const body = new Uint8Array([name.length, ...name, ...fileBytes]);
+      const { url, sealed } = store.current.seal_message(
+        state.id.vid.id,
+        vid,
+        unencrypted,
+        body
+      );
+      await fetch(url, {
+        method: 'POST',
+        body: sealed,
+      });
+
+      const blob = new Blob([fileBytes], {
+        type: 'application/octet-stream',
+      });
+
+      dispatch({
+        type: 'addMessage',
+        contactVid: vid,
+        encoded: {
+          name: file.name,
+          href: window.URL.createObjectURL(blob),
+          size: humanFileSize(fileBytes.length),
+        },
+        message: `File: ${file.name} (${humanFileSize(file.size)})`,
         me: true,
       });
     }
@@ -290,19 +351,46 @@ export default function useStore() {
             addContact(envelope.sender, envelope.nonconfidential_data);
           }
 
-          const encoded = await bufferToBase64(bytes);
           const plaintext = store.current.open_message(bytes);
-          const body = new Uint8Array(plaintext.message);
-          const message = new TextDecoder().decode(body);
           const contactVid = plaintext.sender as string;
+          const isText = plaintext.message[0] === 0;
 
-          dispatch({
-            type: 'addMessage',
-            contactVid,
-            message,
-            encoded,
-            me: false,
-          });
+          if (isText) {
+            const encoded = await bufferToBase64(bytes);
+            const body = new Uint8Array(plaintext.message);
+            const message = new TextDecoder().decode(body.slice(1));
+
+            dispatch({
+              type: 'addMessage',
+              contactVid,
+              message,
+              encoded,
+              me: false,
+            });
+          } else {
+            const body = new Uint8Array(plaintext.message);
+            const name = new TextDecoder().decode(body.slice(1, body[0] + 1));
+            const fileBytes = body.slice(body[0] + 1);
+            const message = `File: ${name} (${humanFileSize(
+              fileBytes.length
+            )})`;
+
+            const blob = new Blob([fileBytes], {
+              type: 'application/octet-stream',
+            });
+
+            dispatch({
+              type: 'addMessage',
+              contactVid,
+              message,
+              encoded: {
+                name,
+                href: window.URL.createObjectURL(blob),
+                size: humanFileSize(fileBytes.length),
+              },
+              me: false,
+            });
+          }
         } catch (e) {
           console.error(e);
         }
@@ -318,6 +406,7 @@ export default function useStore() {
     createIdentity,
     deleteIdentity,
     sendMessage,
+    sendFile,
     deleteContact,
     verifyContact,
     deleteMessage,

@@ -5,9 +5,7 @@ import {
   Flex,
   Menu,
   Stack,
-  TextInput,
   Title,
-  Text,
   rem,
   Modal,
   Center,
@@ -15,112 +13,26 @@ import {
 } from '@mantine/core';
 import { Contact } from './useStore';
 import {
-  IconSend,
   IconMessages,
   IconDotsVertical,
   IconTrash,
-  IconCode,
   IconCodeCircle,
   IconAlertTriangle,
   IconChecklist,
 } from '@tabler/icons-react';
-import { useState } from 'react';
-import { useDisclosure, useFocusTrap, useHover } from '@mantine/hooks';
+import { useDisclosure } from '@mantine/hooks';
+import ChatMessage from './ChatMessage';
+import ChatInput from './ChatInput';
 
 interface ChatProps {
   contact: Contact;
   mobile: boolean;
   sendMessage: (vid: string, message: string) => void;
+  sendFile: (vid: string, file: File) => void;
   deleteContact: (index: number) => void;
   deleteMessage: (contactIndex: number, index: number) => void;
   index: number;
   verifyContact: (vid: string) => void;
-}
-
-interface ChatMessageProps {
-  date: string;
-  me: boolean;
-  deleteMessage: () => void;
-  message: string;
-  encoded: string;
-}
-
-function ChatMessage({
-  date,
-  me,
-  message,
-  encoded,
-  deleteMessage,
-}: ChatMessageProps) {
-  const { hovered, ref } = useHover();
-  const [opened, { open, close }] = useDisclosure(false);
-
-  return (
-    <Stack align={me ? 'flex-end' : 'flex-start'}>
-      <Alert
-        miw={200}
-        variant="light"
-        color={me ? 'green' : 'blue'}
-        style={{ textAlign: 'right' }}
-        pr={24}
-        py="sm"
-        ref={ref}
-      >
-        <Flex align="center" justify="flex-end">
-          <Text c="gray" size="xs">
-            {date.slice(11, 16)}
-          </Text>
-          <Modal
-            opened={opened}
-            onClose={close}
-            title={<strong>CESR encoded message</strong>}
-            size="lg"
-          >
-            <code style={{ wordWrap: 'break-word', wordBreak: 'break-all' }}>
-              {encoded}
-            </code>
-          </Modal>
-          <Menu shadow="md" width={180}>
-            <Menu.Target>
-              <ActionIcon
-                variant="transparent"
-                color="light"
-                size="md"
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  right: 0,
-                  visibility: hovered ? 'visible' : 'hidden',
-                }}
-              >
-                <IconDotsVertical size={14} />
-              </ActionIcon>
-            </Menu.Target>
-            <Menu.Dropdown>
-              <Menu.Item
-                onClick={open}
-                leftSection={
-                  <IconCode style={{ width: rem(14), height: rem(14) }} />
-                }
-              >
-                CESR message
-              </Menu.Item>
-              <Menu.Item
-                color="red"
-                onClick={() => deleteMessage()}
-                leftSection={
-                  <IconTrash style={{ width: rem(14), height: rem(14) }} />
-                }
-              >
-                Delete message
-              </Menu.Item>
-            </Menu.Dropdown>
-          </Menu>
-        </Flex>
-        {message}
-      </Alert>
-    </Stack>
-  );
 }
 
 export default function Chat({
@@ -128,18 +40,12 @@ export default function Chat({
   index,
   mobile,
   sendMessage,
+  sendFile,
   deleteContact,
   deleteMessage,
   verifyContact,
 }: ChatProps) {
-  const focusTrapRef = useFocusTrap();
   const [opened, { open, close }] = useDisclosure(false);
-  const [message, setMessage] = useState<string>('');
-  const onSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    sendMessage(contact.vid.id, message);
-    setMessage('');
-  };
 
   return (
     <Stack h="100dvh" justify="space-between" gap={0} align="stretch">
@@ -237,30 +143,11 @@ export default function Chat({
               ))}
             </Flex>
           </Box>
-          <Box bg="gray.2" p="md">
-            <form onSubmit={onSubmit} ref={focusTrapRef}>
-              <Flex gap="md" align="stretch">
-                <TextInput
-                  size="md"
-                  radius="md"
-                  placeholder="Type a message..."
-                  flex={1}
-                  data-autofocus
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                />
-                <ActionIcon
-                  variant="filled"
-                  size="42"
-                  radius="md"
-                  disabled={message.length === 0}
-                  type="submit"
-                >
-                  <IconSend size="20" />
-                </ActionIcon>
-              </Flex>
-            </form>
-          </Box>
+          <ChatInput
+            contact={contact}
+            sendMessage={sendMessage}
+            sendFile={sendFile}
+          />
         </>
       ) : (
         <Box flex={1}>

@@ -18,6 +18,7 @@ interface ContentProps {
   id: Identity | null;
   initialized: boolean;
   openScan: () => void;
+  sendFile: (vid: string, file: File) => void;
   sendMessage: (vid: string, message: string) => void;
   verifyContact: (vid: string) => void;
 }
@@ -34,6 +35,7 @@ function Content({
   initialized,
   openScan,
   sendMessage,
+  sendFile,
   verifyContact,
 }: ContentProps) {
   if (!initialized) {
@@ -47,6 +49,7 @@ function Content({
         mobile={mobile}
         contact={contacts[active]}
         sendMessage={sendMessage}
+        sendFile={sendFile}
         verifyContact={verifyContact}
         deleteContact={deleteContact}
         deleteMessage={deleteMessage}
@@ -71,6 +74,7 @@ export default function App() {
     id,
     initialized,
     sendMessage,
+    sendFile,
     setActive,
     verifyContact,
   } = useStore();
@@ -133,6 +137,7 @@ export default function App() {
             id,
             initialized,
             sendMessage,
+            sendFile,
             openScan,
             verifyContact,
           }}

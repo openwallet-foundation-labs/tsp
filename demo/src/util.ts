@@ -21,3 +21,11 @@ export function identityToUrl(id: Identity) {
 
   return `${window.location.href}#${params}`;
 }
+
+export function humanFileSize(size: number) {
+  const i = size == 0 ? 0 : Math.floor(Math.log(size) / Math.log(1024));
+  const unit = ['B', 'kB', 'MB', 'GB', 'TB'][i];
+  const value = (size / Math.pow(1024, i)).toFixed(1);
+
+  return `${value} ${unit}`;
+}
