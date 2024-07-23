@@ -58,7 +58,7 @@ type Sha256Digest = crate::definitions::Digest;
 #[repr(u32)]
 #[derive(Debug)]
 #[cfg_attr(any(test, feature = "fuzzing"), derive(PartialEq, Eq, Clone))]
-pub enum Payload<'a, Bytes: AsRef<[u8]>, Vid> {
+pub enum Payload<'a, Bytes, Vid> {
     /// A TSP message which consists only of a message which will be protected using HPKE
     GenericMessage(Bytes),
     /// A payload that consists of a TSP Envelope+Message
@@ -301,8 +301,8 @@ fn decode_hops<'a, Vid: TryFrom<&'a [u8]>>(stream: &mut &'a [u8]) -> Result<Vec<
 
 // "NestedBytes" to support both mutable and non-mutable data
 /// A decoded payload + optional ESSR data
-pub struct DecodedPayload<'a, Bytes: AsRef<[u8]> = &'a mut [u8]> {
-    pub payload: Payload<'a, Bytes, &'a [u8]>,
+pub struct DecodedPayload<'a> {
+    pub payload: Payload<'a, &'a mut [u8], &'a [u8]>,
     pub sender_identity: Option<&'a [u8]>,
 }
 
@@ -311,13 +311,10 @@ fn fudge(x: &[u8]) -> &mut [u8] {
     unsafe { std::mem::transmute(x as *const _) }
 }
 
-mod from_mut;
-use from_mut::FromMut;
-
 /// Decode a TSP Payload
-pub fn decode_payload<'a, Bytes: AsRef<[u8]> + FromMut<'a, [u8]>>(
-    mut stream: &'a [u8],
-) -> Result<DecodedPayload<'a, Bytes>, DecodeError> {
+pub fn decode_payload(mut_stream: &mut [u8]) -> Result<DecodedPayload, DecodeError> {
+    let mut stream: &[u8] = mut_stream;
+
     let sender_identity = match decode_count(TSP_PAYLOAD, &mut stream) {
         Some(2) => Some(
             decode_variable_data(TSP_DEVELOPMENT_VID, &mut stream)
@@ -334,10 +331,10 @@ pub fn decode_payload<'a, Bytes: AsRef<[u8]> + FromMut<'a, [u8]>>(
             let hop_list = decode_hops(&mut stream)?;
             if hop_list.is_empty() {
                 decode_variable_data(TSP_PLAINTEXT, &mut stream)
-                    .map(|msg| Payload::GenericMessage(FromMut::from_mut(fudge(msg))))
+                    .map(|msg| Payload::GenericMessage(fudge(msg)))
             } else {
                 decode_variable_data(TSP_PLAINTEXT, &mut stream)
-                    .map(|msg| Payload::RoutedMessage(hop_list, FromMut::from_mut(fudge(msg))))
+                    .map(|msg| Payload::RoutedMessage(hop_list, fudge(msg)))
             }
         }
         msgtype::NEW_REL => {
@@ -349,7 +346,7 @@ pub fn decode_payload<'a, Bytes: AsRef<[u8]> + FromMut<'a, [u8]>>(
             })
         }
         msgtype::NEST_MSG => decode_variable_data(TSP_PLAINTEXT, &mut stream)
-            .map(|msg| Payload::NestedMessage(FromMut::from_mut(fudge(msg)))),
+            .map(|msg| Payload::NestedMessage(fudge(msg))),
         msgtype::NEW_REL_REPLY => decode_fixed_data(TSP_SHA256, &mut stream)
             .map(|reply| Payload::DirectRelationAffirm { reply }),
         msgtype::NEW_NEST_REL => {
@@ -845,12 +842,12 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn envelope_without_nonconfidential_data() {
-        fn dummy_crypt(data: &[u8]) -> &[u8] {
+        fn dummy_crypt(data: &mut [u8]) -> &mut [u8] {
             data
         }
         let fixed_sig = [1; 64];
 
-        let cesr_payload =
+        let mut cesr_payload =
             { encode_payload_vec(&Payload::<_, &[u8]>::GenericMessage(b"Hello TSP!")).unwrap() };
 
         let mut outer = encode_ets_envelope_vec(Envelope {
@@ -861,7 +858,7 @@ mod test {
             nonconfidential_data: None,
         })
         .unwrap();
-        let ciphertext = dummy_crypt(&cesr_payload);
+        let ciphertext = dummy_crypt(&mut cesr_payload);
         encode_ciphertext(ciphertext, &mut outer).unwrap();
 
         let signed_data = outer.clone();
@@ -880,7 +877,7 @@ mod test {
         assert_eq!(env.receiver, Some(&b"Bobbi"[..]));
         assert_eq!(env.nonconfidential_data, None);
 
-        let DecodedPayload::<&[u8]> {
+        let DecodedPayload {
             payload: Payload::GenericMessage(data),
             ..
         } = decode_payload(dummy_crypt(ciphertext.unwrap())).unwrap()
@@ -893,12 +890,12 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn envelope_with_nonconfidential_data() {
-        fn dummy_crypt(data: &[u8]) -> &[u8] {
+        fn dummy_crypt(data: &mut [u8]) -> &mut [u8] {
             data
         }
         let fixed_sig = [1; 64];
 
-        let cesr_payload =
+        let mut cesr_payload =
             { encode_payload_vec(&Payload::<_, &[u8]>::GenericMessage(b"Hello TSP!")).unwrap() };
 
         let mut outer = encode_ets_envelope_vec(Envelope {
@@ -909,7 +906,7 @@ mod test {
             nonconfidential_data: Some(b"treasure"),
         })
         .unwrap();
-        let ciphertext = dummy_crypt(&cesr_payload);
+        let ciphertext = dummy_crypt(&mut cesr_payload);
         encode_ciphertext(ciphertext, &mut outer).unwrap();
 
         let signed_data = outer.clone();
@@ -928,7 +925,7 @@ mod test {
         assert_eq!(env.receiver, Some(&b"Bobbi"[..]));
         assert_eq!(env.nonconfidential_data, Some(&b"treasure"[..]));
 
-        let DecodedPayload::<&[u8]> {
+        let DecodedPayload {
             payload: Payload::GenericMessage(data),
             ..
         } = decode_payload(dummy_crypt(ciphertext.unwrap())).unwrap()
@@ -1075,13 +1072,13 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn mut_envelope_with_nonconfidential_data() {
-        test_turn_around(Payload::GenericMessage(&b"Hello TSP!"[..]));
+        test_turn_around(Payload::GenericMessage(&mut b"Hello TSP!".to_owned()));
     }
 
     #[test]
     #[wasm_bindgen_test]
     fn test_nested_msg() {
-        test_turn_around(Payload::NestedMessage(&b"Hello TSP!"[..]));
+        test_turn_around(Payload::NestedMessage(&mut b"Hello TSP!".to_owned()));
     }
 
     #[test]
@@ -1089,7 +1086,7 @@ mod test {
     fn test_routed_msg() {
         test_turn_around(Payload::RoutedMessage(
             vec![b"foo", b"bar"],
-            &b"Hello TSP!"[..],
+            &mut b"Hello TSP!".to_owned(),
         ));
     }
 
@@ -1110,13 +1107,13 @@ mod test {
         });
     }
 
-    fn test_turn_around(payload: Payload<&[u8], &[u8]>) {
-        fn dummy_crypt(data: &[u8]) -> &[u8] {
+    fn test_turn_around(payload: Payload<&mut [u8], &[u8]>) {
+        fn dummy_crypt(data: &mut [u8]) -> &mut [u8] {
             data
         }
         let fixed_sig = [1; 64];
 
-        let cesr_payload = encode_payload_vec(&payload).unwrap();
+        let mut cesr_payload = encode_payload_vec(&payload).unwrap();
 
         let mut outer = encode_ets_envelope_vec(Envelope {
             crypto_type: CryptoType::HpkeAuth,
@@ -1126,7 +1123,7 @@ mod test {
             nonconfidential_data: Some(b"treasure"),
         })
         .unwrap();
-        let ciphertext = dummy_crypt(&cesr_payload);
+        let ciphertext = dummy_crypt(&mut cesr_payload);
         encode_ciphertext(ciphertext, &mut outer).unwrap();
 
         let signed_data = outer.clone();
