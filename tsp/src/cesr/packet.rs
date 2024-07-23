@@ -654,36 +654,20 @@ pub fn decode_envelope_mut<'a>(stream: &'a mut [u8]) -> Result<CipherView<'a>, D
     let (mut pos, crypto_type, signature_type) =
         detected_tsp_header_size_and_confidentiality(&mut (stream as &[u8]))?;
 
-    let mut sender = decode_variable_data_index(TSP_DEVELOPMENT_VID, &stream[pos..])
+    let sender = decode_variable_data_index(TSP_DEVELOPMENT_VID, stream, &mut pos)
         .ok_or(DecodeError::UnexpectedData)?;
-    sender.start += pos;
-    sender.end += pos;
-    pos = sender.end;
 
-    let mut receiver = decode_variable_data_index(TSP_DEVELOPMENT_VID, &stream[pos..]);
-    if let Some(range) = &mut receiver {
-        range.start += pos;
-        range.end += pos;
-        pos = range.end;
-    }
+    let receiver = decode_variable_data_index(TSP_DEVELOPMENT_VID, stream, &mut pos);
 
-    let mut nonconfidential_data = decode_variable_data_index(TSP_PLAINTEXT, &stream[pos..]);
-    if let Some(range) = &mut nonconfidential_data {
-        range.start += pos;
-        range.end += pos;
-        pos = range.end;
-    }
+    let nonconfidential_data = decode_variable_data_index(TSP_PLAINTEXT, stream, &mut pos);
 
     let associated_data = 0..pos;
 
     let ciphertext = if crypto_type.is_encrypted() {
-        let mut ciphertext = decode_variable_data_index(TSP_CIPHERTEXT, &stream[pos..])
-            .ok_or(DecodeError::UnexpectedData)?;
-        ciphertext.start += pos;
-        ciphertext.end += pos;
-        pos = ciphertext.end;
-
-        Some(ciphertext)
+        Some(
+            decode_variable_data_index(TSP_CIPHERTEXT, stream, &mut pos)
+                .ok_or(DecodeError::UnexpectedData)?,
+        )
     } else {
         None
     };
@@ -762,13 +746,13 @@ pub struct Part<'a> {
 /// Decode a CESR-encoded data into a Part
 impl<'a> Part<'a> {
     fn decode(identifier: u32, data: &'a [u8], pos: &mut usize) -> Option<Part<'a>> {
-        match decode_variable_data_index(identifier, &data[*pos..]) {
+        let begin_pos = *pos;
+        match decode_variable_data_index(identifier, data, pos) {
             Some(range) => {
                 let part = Part {
-                    prefix: &data[*pos..(*pos + range.start)],
-                    data: &data[(*pos + range.start)..(*pos + range.end)],
+                    prefix: &data[begin_pos..range.start],
+                    data: &data[range.start..range.end],
                 };
-                *pos += range.end;
 
                 Some(part)
             }
