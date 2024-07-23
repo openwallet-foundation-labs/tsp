@@ -33,7 +33,9 @@ pub fn decode_fixed_data<'a, const N: usize>(
 pub fn decode_variable_data_index(
     identifier: u32,
     stream: &[u8],
+    pos: &mut usize,
 ) -> Option<std::ops::Range<usize>> {
+    let stream = &stream[*pos..];
     let input = extract_triplet(stream.get(0..=2)?.try_into().unwrap());
     let selector = input >> 18;
 
@@ -59,13 +61,17 @@ pub fn decode_variable_data_index(
 
         // access check: make sure that if this function returns Some(...), that the range is valid
         stream.get(data_begin..data_end)?;
-        Some(data_begin..data_end)
+
+        let origin_range = (data_begin + *pos)..(data_end + *pos);
+        *pos = origin_range.end;
+
+        Some(origin_range)
     } else {
         None
     }
 }
 pub fn decode_variable_data<'a>(identifier: u32, stream: &mut &'a [u8]) -> Option<&'a [u8]> {
-    let range = decode_variable_data_index(identifier, stream)?;
+    let range = decode_variable_data_index(identifier, stream, &mut 0)?;
     let slice = &stream[range.start..range.end];
     *stream = &stream[range.end..];
 
