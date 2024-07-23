@@ -31,6 +31,7 @@ mod msgtype {
 
 use super::{
     decode::{decode_count, decode_fixed_data, decode_variable_data, decode_variable_data_index},
+    decode::{decode_count_mut, decode_fixed_data_mut, decode_variable_data_mut},
     encode::{encode_count, encode_fixed_data},
     error::{DecodeError, EncodeError},
 };
@@ -281,22 +282,28 @@ pub fn encode_hops(
 }
 
 /// Decode a hops list
-fn decode_hops<'a, Vid: TryFrom<&'a [u8]>>(stream: &mut &'a [u8]) -> Result<Vec<Vid>, DecodeError> {
-    let Some(hop_length) = decode_count(TSP_HOP_LIST, stream) else {
-        return Ok(Vec::new());
-    };
+fn decode_hops<'a, Vid: TryFrom<&'a [u8]>>(
+    stream: &'a mut [u8],
+) -> Result<(Vec<Vid>, &'a mut [u8]), DecodeError> {
+    // a rare case of Rust's borrow checker not being able to figure out
+    // that a "None" isn't borrowing from anybody; so we have to call
+    // the referentially transparent decode_count_mut twice...
+    if decode_count_mut(TSP_HOP_LIST, stream).is_none() {
+        return Ok((Vec::new(), stream));
+    }
+
+    let (hop_length, mut stream) = decode_count_mut(TSP_HOP_LIST, stream).unwrap();
 
     let mut hop_list = Vec::with_capacity(hop_length as usize);
     for _ in 0..hop_length {
-        hop_list.push(
-            decode_variable_data(TSP_DEVELOPMENT_VID, stream)
-                .ok_or(DecodeError::UnexpectedData)?
-                .try_into()
-                .map_err(|_| DecodeError::VidError)?,
-        );
+        let hop: &[u8];
+        (hop, stream) = decode_variable_data_mut(TSP_DEVELOPMENT_VID, stream)
+            .ok_or(DecodeError::UnexpectedData)?;
+
+        hop_list.push(hop.try_into().map_err(|_| DecodeError::VidError)?);
     }
 
-    Ok(hop_list)
+    Ok((hop_list, stream))
 }
 
 // "NestedBytes" to support both mutable and non-mutable data
@@ -306,86 +313,123 @@ pub struct DecodedPayload<'a> {
     pub sender_identity: Option<&'a [u8]>,
 }
 
-// temporary
-fn fudge(x: &[u8]) -> &mut [u8] {
-    unsafe { std::mem::transmute(x as *const _) }
-}
-
 /// Decode a TSP Payload
-pub fn decode_payload(mut_stream: &mut [u8]) -> Result<DecodedPayload, DecodeError> {
-    let mut stream: &[u8] = mut_stream;
+pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload, DecodeError> {
+    let sender_identity = match decode_count_mut(TSP_PAYLOAD, stream) {
+        Some((2, upd_stream)) => {
+            let essr_prefix: &[u8];
+            (essr_prefix, stream) = decode_variable_data_mut(TSP_DEVELOPMENT_VID, upd_stream)
+                .ok_or(DecodeError::UnexpectedData)?;
 
-    let sender_identity = match decode_count(TSP_PAYLOAD, &mut stream) {
-        Some(2) => Some(
-            decode_variable_data(TSP_DEVELOPMENT_VID, &mut stream)
-                .ok_or(DecodeError::UnexpectedData)?,
-        ),
-        Some(1) => None,
+            Some(essr_prefix)
+        }
+        Some((1, upd_stream)) => {
+            stream = upd_stream;
+
+            None
+        }
         _ => return Err(DecodeError::VersionMismatch),
     };
 
-    let payload = match *decode_fixed_data(TSP_TYPECODE, &mut stream)
-        .ok_or(DecodeError::UnexpectedData)?
-    {
+    let (&mut msgtype, mut stream) =
+        decode_fixed_data_mut(TSP_TYPECODE, stream).ok_or(DecodeError::UnexpectedData)?;
+
+    let payload = match msgtype {
         msgtype::GEN_MSG => {
-            let hop_list = decode_hops(&mut stream)?;
+            let (hop_list, upd_stream) = decode_hops(stream)?;
+            let msg;
             if hop_list.is_empty() {
-                decode_variable_data(TSP_PLAINTEXT, &mut stream)
-                    .map(|msg| Payload::GenericMessage(fudge(msg)))
+                (msg, stream) = decode_variable_data_mut(TSP_PLAINTEXT, upd_stream)
+                    .ok_or(DecodeError::UnexpectedData)?;
+
+                Payload::GenericMessage(msg)
             } else {
-                decode_variable_data(TSP_PLAINTEXT, &mut stream)
-                    .map(|msg| Payload::RoutedMessage(hop_list, fudge(msg)))
+                (msg, stream) = decode_variable_data_mut(TSP_PLAINTEXT, upd_stream)
+                    .ok_or(DecodeError::UnexpectedData)?;
+
+                Payload::RoutedMessage(hop_list, msg)
             }
         }
         msgtype::NEW_REL => {
-            let hop_list = decode_hops(&mut stream)?;
+            let (hop_list, upd_stream) = decode_hops(stream)?;
 
-            decode_fixed_data(TSP_NONCE, &mut stream).map(|nonce| Payload::DirectRelationProposal {
+            let nonce;
+            (nonce, stream) =
+                decode_fixed_data_mut(TSP_NONCE, upd_stream).ok_or(DecodeError::UnexpectedData)?;
+
+            Payload::DirectRelationProposal {
                 nonce: Nonce(*nonce),
                 hops: hop_list,
-            })
+            }
         }
-        msgtype::NEST_MSG => decode_variable_data(TSP_PLAINTEXT, &mut stream)
-            .map(|msg| Payload::NestedMessage(fudge(msg))),
-        msgtype::NEW_REL_REPLY => decode_fixed_data(TSP_SHA256, &mut stream)
-            .map(|reply| Payload::DirectRelationAffirm { reply }),
-        msgtype::NEW_NEST_REL => {
-            let new_vid = decode_variable_data(TSP_DEVELOPMENT_VID, &mut stream)
+        msgtype::NEST_MSG => {
+            let msg;
+            (msg, stream) = decode_variable_data_mut(TSP_PLAINTEXT, stream)
                 .ok_or(DecodeError::UnexpectedData)?;
 
-            decode_fixed_data(TSP_NONCE, &mut stream).map(|nonce| Payload::NestedRelationProposal {
+            Payload::NestedMessage(msg)
+        }
+        msgtype::NEW_REL_REPLY => {
+            let reply;
+            (reply, stream) =
+                decode_fixed_data_mut(TSP_SHA256, stream).ok_or(DecodeError::UnexpectedData)?;
+
+            Payload::DirectRelationAffirm { reply }
+        }
+        msgtype::NEW_NEST_REL => {
+            let new_vid: &[u8];
+            (new_vid, stream) = decode_variable_data_mut(TSP_DEVELOPMENT_VID, stream)
+                .ok_or(DecodeError::UnexpectedData)?;
+
+            let nonce;
+            (nonce, stream) =
+                decode_fixed_data_mut(TSP_NONCE, stream).ok_or(DecodeError::UnexpectedData)?;
+
+            Payload::NestedRelationProposal {
                 new_vid,
                 nonce: Nonce(*nonce),
-            })
+            }
         }
         msgtype::NEW_NEST_REL_REPLY => {
-            let new_vid = decode_variable_data(TSP_DEVELOPMENT_VID, &mut stream)
+            let new_vid: &[u8];
+            let connect_to_vid: &[u8];
+            let reply;
+            (new_vid, stream) = decode_variable_data_mut(TSP_DEVELOPMENT_VID, stream)
                 .ok_or(DecodeError::UnexpectedData)?;
-            let connect_to_vid = decode_variable_data(TSP_DEVELOPMENT_VID, &mut stream)
+            (connect_to_vid, stream) = decode_variable_data_mut(TSP_DEVELOPMENT_VID, stream)
                 .ok_or(DecodeError::UnexpectedData)?;
+            (reply, stream) =
+                decode_fixed_data_mut(TSP_SHA256, stream).ok_or(DecodeError::UnexpectedData)?;
 
-            decode_fixed_data(TSP_SHA256, &mut stream).map(|reply| Payload::NestedRelationAffirm {
+            Payload::NestedRelationAffirm {
                 new_vid,
                 connect_to_vid,
                 reply,
-            })
+            }
         }
         msgtype::NEW_REFER_REL => {
-            let thread_id =
-                decode_fixed_data(TSP_SHA256, &mut stream).ok_or(DecodeError::UnexpectedData)?;
-            let new_vid = decode_variable_data(TSP_DEVELOPMENT_VID, &mut stream)
+            let (thread_id, upd_stream) =
+                decode_fixed_data_mut(TSP_SHA256, stream).ok_or(DecodeError::UnexpectedData)?;
+            let new_vid: &[u8];
+            (new_vid, stream) = decode_variable_data_mut(TSP_DEVELOPMENT_VID, upd_stream)
                 .ok_or(DecodeError::UnexpectedData)?;
 
-            Some(Payload::NewIdentifierProposal { thread_id, new_vid })
+            Payload::NewIdentifierProposal { thread_id, new_vid }
         }
         msgtype::THIRDP_REFER_REL => {
-            let referred_vid = decode_variable_data(TSP_DEVELOPMENT_VID, &mut stream)
+            let referred_vid: &[u8];
+            (referred_vid, stream) = decode_variable_data_mut(TSP_DEVELOPMENT_VID, stream)
                 .ok_or(DecodeError::UnexpectedData)?;
 
-            Some(Payload::RelationshipReferral { referred_vid })
+            Payload::RelationshipReferral { referred_vid }
         }
-        msgtype::REL_CANCEL => decode_fixed_data(TSP_SHA256, &mut stream)
-            .map(|reply| Payload::RelationshipCancel { reply }),
+        msgtype::REL_CANCEL => {
+            let reply;
+            (reply, stream) =
+                decode_fixed_data_mut(TSP_SHA256, stream).ok_or(DecodeError::UnexpectedData)?;
+
+            Payload::RelationshipCancel { reply }
+        }
         _ => return Err(DecodeError::UnexpectedMsgType),
     };
 
@@ -393,7 +437,7 @@ pub fn decode_payload(mut_stream: &mut [u8]) -> Result<DecodedPayload, DecodeErr
         Err(DecodeError::TrailingGarbage)
     } else {
         Ok(DecodedPayload {
-            payload: payload.ok_or(DecodeError::UnexpectedData)?,
+            payload,
             sender_identity,
         })
     }
