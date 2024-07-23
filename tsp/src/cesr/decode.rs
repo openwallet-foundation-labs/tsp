@@ -1,10 +1,10 @@
 use super::{bits, extract_triplet, header_match, mask, selector::*};
 
 /// Decode fixed size data with a known identifier
-pub fn decode_fixed_data<'a, const N: usize>(
+fn decode_fixed_data_index<const N: usize>(
     identifier: u32,
-    stream: &mut &'a [u8],
-) -> Option<&'a [u8; N]> {
+    stream: &[u8],
+) -> Option<std::ops::Range<usize>> {
     let total_size = (N + 1).next_multiple_of(3);
     let hdr_bytes = total_size - N;
 
@@ -19,13 +19,36 @@ pub fn decode_fixed_data<'a, const N: usize>(
         stream.get(0..hdr_bytes)?,
         &u32::to_be_bytes(word)[1..=hdr_bytes],
     ) {
-        let slice = stream.get(hdr_bytes..total_size)?;
-        *stream = &stream[total_size..];
+        // access check: make sure that if this function returns Some(...), that the range is valid
+        stream.get(hdr_bytes..total_size)?;
 
-        Some(slice.try_into().unwrap())
+        Some(hdr_bytes..total_size)
     } else {
         None
     }
+}
+
+pub fn decode_fixed_data<'a, const N: usize>(
+    identifier: u32,
+    stream: &mut &'a [u8],
+) -> Option<&'a [u8; N]> {
+    let range = decode_fixed_data_index::<N>(identifier, stream)?;
+    let pos = range.end;
+    let slice = &stream[range];
+    *stream = &stream[pos..];
+
+    Some(slice.try_into().unwrap())
+}
+
+pub fn decode_fixed_data_mut<const N: usize>(
+    identifier: u32,
+    stream: &mut [u8],
+) -> Option<(&mut [u8; N], &mut [u8])> {
+    let range = decode_fixed_data_index::<N>(identifier, stream)?;
+    let (prefix, stream) = stream.split_at_mut(range.end);
+    let slice = &mut prefix[range.start..];
+
+    Some((slice.try_into().unwrap(), stream))
 }
 
 /// Decode variable size data with a known identifier
@@ -70,12 +93,24 @@ pub fn decode_variable_data_index(
         None
     }
 }
+
 pub fn decode_variable_data<'a>(identifier: u32, stream: &mut &'a [u8]) -> Option<&'a [u8]> {
     let range = decode_variable_data_index(identifier, stream, &mut 0)?;
     let slice = &stream[range.start..range.end];
     *stream = &stream[range.end..];
 
     Some(slice)
+}
+
+pub fn decode_variable_data_mut(
+    identifier: u32,
+    stream: &mut [u8],
+) -> Option<(&mut [u8], &mut [u8])> {
+    let range = decode_variable_data_index(identifier, stream, &mut 0)?;
+    let (prefix, stream) = stream.split_at_mut(range.end);
+    let slice = &mut prefix[range.start..];
+
+    Some((slice, stream))
 }
 
 /// Decode indexed data with a known identifier
@@ -130,6 +165,15 @@ pub fn decode_count(identifier: u16, stream: &mut &[u8]) -> Option<u16> {
     } else {
         None
     }
+}
+
+/// Decode a frame with known identifier and size
+pub fn decode_count_mut(identifier: u16, stream: &mut [u8]) -> Option<(u16, &mut [u8])> {
+    let mut const_stream: &[u8] = stream;
+    let count = decode_count(identifier, &mut const_stream)?;
+    let offset = stream.len() - const_stream.len();
+
+    Some((count, &mut stream[offset..]))
 }
 
 /// Decode a genus with known identifier and version
