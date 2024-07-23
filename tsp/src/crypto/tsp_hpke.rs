@@ -260,6 +260,9 @@ where
         }
     };
 
+    // TODO: we cannot lend access to the raw bytes of the ciphertext, since they are mutably shared now;
+    // see issue #9 for changes to the THREAD_ID digest
+    let ciphertext = &[];
     Ok((envelope.nonconfidential_data, secret_payload, ciphertext))
 }
 

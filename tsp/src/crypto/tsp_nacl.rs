@@ -202,6 +202,7 @@ pub(crate) fn open<'a>(
         crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data as _),
     };
 
+    let ciphertext = todo!();
     Ok((envelope.nonconfidential_data, secret_payload, ciphertext))
 }
 

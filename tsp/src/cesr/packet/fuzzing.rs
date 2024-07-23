@@ -83,8 +83,8 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
     }
 }
 
-impl<'a> PartialEq<Payload<'a, &'a [u8], &'a [u8]>> for Wrapper {
-    fn eq(&self, other: &Payload<'a, &'a [u8], &'a [u8]>) -> bool {
+impl<'a> PartialEq<Payload<'a, &'a mut [u8], &'a [u8]>> for Wrapper {
+    fn eq(&self, other: &Payload<'a, &'a mut [u8], &'a [u8]>) -> bool {
         match (&self.0, other) {
             (Payload::GenericMessage(l0), Payload::GenericMessage(r0)) => l0 == r0,
             (Payload::NestedMessage(l0), Payload::NestedMessage(r0)) => l0 == r0,
