@@ -77,7 +77,7 @@ pub enum EnvelopeType<'a> {
 pub fn probe(stream: &mut [u8]) -> Result<EnvelopeType, error::DecodeError> {
     let (_, crypto_type, _) = detected_tsp_header_size_and_confidentiality(&mut (stream as &[u8]))?;
 
-    let envelope = decode_envelope_mut(stream)?
+    let envelope = decode_envelope(stream)?
         .into_opened()
         .expect("Infallible")
         .envelope;
