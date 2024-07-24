@@ -1,7 +1,7 @@
 /// An error type to indicate something went wrong with encoding
 #[derive(Clone, Copy, Debug)]
 pub enum EncodeError {
-    PayloadTooLarge,
+    ExcessiveFieldSize,
     MissingHops,
 }
 
