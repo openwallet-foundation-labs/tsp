@@ -37,6 +37,7 @@ async = [
 ]
 resolve = ["serialize", "dep:reqwest"]
 serialize = ["dep:serde", "dep:serde_json", "dep:serde_with", "dep:bs58"]
+lazy-data = []
 
 [dependencies]
 # generic

@@ -1,11 +1,11 @@
 use super::ReceivedTspMessage;
 
 // Rust, there has to be a better way.
-impl<T: AsRef<[u8]>> ReceivedTspMessage<T> {
+impl<T> ReceivedTspMessage<T> {
     /// Turn a ReceivedTspMessage that contains references to borrowed data into a freestanding version;
     /// if it already was a freestanding version, nothing happens.
     // We only offer this version as the 'public' version, since the second can be confusing
-    pub fn into_owned(self) -> ReceivedTspMessage
+    pub fn into_owned(self) -> ReceivedTspMessage<Vec<u8>>
     where
         T: Into<Vec<u8>>,
     {
@@ -14,7 +14,7 @@ impl<T: AsRef<[u8]>> ReceivedTspMessage<T> {
 
     /// Convert the data representation used by a ReceivedTspMessage; we are careful with the payload data
     /// since it may be very large.
-    pub(crate) fn map<U: AsRef<[u8]>>(self, f: impl Fn(T) -> U) -> ReceivedTspMessage<U> {
+    pub(crate) fn map<U>(self, f: impl Fn(T) -> U) -> ReceivedTspMessage<U> {
         use ReceivedTspMessage::*;
         match self {
             GenericMessage {

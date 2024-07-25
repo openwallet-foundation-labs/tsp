@@ -113,3 +113,6 @@ pub use definitions::{Payload, PrivateVid, ReceivedTspMessage, RelationshipStatu
 pub use error::Error;
 pub use store::Store;
 pub use vid::{ExportVid, OwnedVid, Vid};
+
+#[cfg(feature = "lazy-data")]
+mod owned_slice;
