@@ -411,6 +411,6 @@ impl AsyncStore {
     {
         self.verify_vid(vid).await?;
 
-        Ok(self.inner.open_message(payload)?.converted())
+        Ok(self.inner.open_message(payload)?.map(|x| x.into()))
     }
 }
