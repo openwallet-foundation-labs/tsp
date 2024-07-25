@@ -386,6 +386,8 @@ impl AsyncStore {
                         };
 
                         #[cfg(feature = "lazy-data")]
+                        let m = std::sync::Arc::new(m);
+                        #[cfg(feature = "lazy-data")]
                         let opened_msg = opened_msg.map(|msg| {
                             msg.map(|range| crate::owned_slice::OwnedSlice(m.clone(), range))
                         });
