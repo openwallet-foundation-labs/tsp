@@ -65,8 +65,13 @@ pub enum RelationshipStatus {
     Unrelated,
 }
 
+#[cfg(not(feature = "lazy-data"))]
+type DefaultPayload = Vec<u8>;
+#[cfg(feature = "lazy-data")]
+type DefaultPayload = crate::owned_slice::OwnedSlice<Vec<u8>>;
+
 #[derive(Debug)]
-pub enum ReceivedTspMessage<Data: AsRef<[u8]> = Vec<u8>> {
+pub enum ReceivedTspMessage<Data = DefaultPayload> {
     GenericMessage {
         sender: String,
         nonconfidential_data: Option<Data>,

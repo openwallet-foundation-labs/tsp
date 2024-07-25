@@ -367,15 +367,30 @@ impl AsyncStore {
             let db_inner = db.clone();
             async move {
                 match message {
-                    Ok(mut m) => match db_inner.open_message(&mut m) {
-                        Err(Error::UnverifiedSource(unknown_vid)) => {
-                            Ok(ReceivedTspMessage::PendingMessage {
-                                unknown_vid,
-                                payload: m,
-                            })
-                        }
-                        maybe_message => maybe_message.map(|msg| msg.into_owned()),
-                    },
+                    Ok(mut m) => {
+                        #[cfg(feature = "lazy-data")]
+                        let m_span = m.as_ptr_range();
+                        let opened_msg = match db_inner.open_message(&mut m) {
+                            Err(Error::UnverifiedSource(unknown_vid)) => {
+                                return Ok(ReceivedTspMessage::PendingMessage {
+                                    unknown_vid,
+                                    payload: m,
+                                })
+                            }
+                            #[cfg(not(feature = "lazy-data"))]
+                            maybe_message => maybe_message.map(|msg| msg.into_owned()),
+                            #[cfg(feature = "lazy-data")]
+                            maybe_message => maybe_message.map(|msg| {
+                                msg.map(|slice| crate::owned_slice::to_range(m_span.clone(), slice))
+                            }),
+                        };
+
+                        #[cfg(feature = "lazy-data")]
+                        let opened_msg = opened_msg.map(|msg| {
+                            msg.map(|range| crate::owned_slice::OwnedSlice(m.clone(), range))
+                        });
+                        opened_msg
+                    }
                     Err(e) => Err(e.into()),
                 }
             }
@@ -407,7 +422,7 @@ impl AsyncStore {
         &mut self,
         vid: &str,
         mut payload: Vec<u8>,
-    ) -> Result<ReceivedTspMessage, Error> {
+    ) -> Result<ReceivedTspMessage<Vec<u8>>, Error> {
         self.verify_vid(vid).await?;
 
         Ok(self.inner.open_message(&mut payload)?.into_owned())
