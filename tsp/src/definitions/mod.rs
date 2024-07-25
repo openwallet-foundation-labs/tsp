@@ -68,7 +68,7 @@ pub enum RelationshipStatus {
 #[cfg(not(feature = "lazy-data"))]
 type DefaultPayload = Vec<u8>;
 #[cfg(feature = "lazy-data")]
-type DefaultPayload = crate::owned_slice::OwnedSlice<Vec<u8>>;
+type DefaultPayload = crate::owned_slice::OwnedSlice<std::sync::Arc<Vec<u8>>>;
 
 #[derive(Debug)]
 pub enum ReceivedTspMessage<Data = DefaultPayload> {
