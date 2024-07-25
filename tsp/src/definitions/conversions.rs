@@ -9,16 +9,12 @@ impl<T: AsRef<[u8]>> ReceivedTspMessage<T> {
     where
         T: Into<Vec<u8>>,
     {
-        self.converted()
+        self.map(|x| x.into())
     }
 
     /// Convert the data representation used by a ReceivedTspMessage; we are careful with the payload data
     /// since it may be very large.
-    pub(crate) fn converted<U>(self) -> ReceivedTspMessage<U>
-    where
-        U: AsRef<[u8]>,
-        T: Into<U>,
-    {
+    pub(crate) fn map<U: AsRef<[u8]>>(self, f: impl Fn(T) -> U) -> ReceivedTspMessage<U> {
         use ReceivedTspMessage::*;
         match self {
             GenericMessage {
@@ -28,8 +24,8 @@ impl<T: AsRef<[u8]>> ReceivedTspMessage<T> {
                 message_type,
             } => GenericMessage {
                 sender,
-                nonconfidential_data: nonconfidential_data.map(|x| x.into()),
-                message: message.into(),
+                nonconfidential_data: nonconfidential_data.map(&f),
+                message: f(message),
                 message_type,
             },
             RequestRelationship {
