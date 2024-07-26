@@ -401,16 +401,15 @@ impl AsyncStore {
     }
 
     /// Process the payload from a  'PendingMessage' by resolving the unknown vid and retrying
-    pub async fn verify_and_open<'a, T: AsRef<[u8]>>(
+    /// This takes a Vec as a payload; for a borrowing version the `as_inner()` version can be used; usually after
+    /// unpacking a TSP message you can't or need to do anything with it anyway.
+    pub async fn verify_and_open(
         &mut self,
         vid: &str,
-        payload: &'a mut [u8],
-    ) -> Result<ReceivedTspMessage<T>, Error>
-    where
-        &'a [u8]: Into<T>,
-    {
+        mut payload: Vec<u8>,
+    ) -> Result<ReceivedTspMessage, Error> {
         self.verify_vid(vid).await?;
 
-        Ok(self.inner.open_message(payload)?.map(|x| x.into()))
+        Ok(self.inner.open_message(&mut payload)?.into_owned())
     }
 }
