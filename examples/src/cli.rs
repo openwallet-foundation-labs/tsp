@@ -459,10 +459,8 @@ async fn run() -> Result<(), Error> {
                     None
                 };
 
-                if let Some((unknown_vid, mut payload)) = handle_message(message) {
-                    let message = vid_database
-                        .verify_and_open(&unknown_vid, &mut payload)
-                        .await?;
+                if let Some((unknown_vid, payload)) = handle_message(message) {
+                    let message = vid_database.verify_and_open(&unknown_vid, payload).await?;
 
                     info!(
                         "{vid} is verified and added to the database {}",
