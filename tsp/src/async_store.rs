@@ -424,9 +424,22 @@ impl AsyncStore {
         &mut self,
         vid: &str,
         mut payload: Vec<u8>,
-    ) -> Result<ReceivedTspMessage<Vec<u8>>, Error> {
+    ) -> Result<ReceivedTspMessage, Error> {
         self.verify_vid(vid).await?;
 
-        Ok(self.inner.open_message(&mut payload)?.into_owned())
+        #[cfg(not(feature = "lazy-data"))]
+        let result = self.inner.open_message(&mut payload)?.into_owned();
+        #[cfg(feature = "lazy-data")]
+        let result = {
+            let payload_range = payload.as_ptr_range();
+            let result = self
+                .inner
+                .open_message(&mut payload)?
+                .map(|x| crate::owned_slice::to_range(payload_range.clone(), x));
+            let payload = std::sync::Arc::new(payload);
+            result.map(|range| crate::owned_slice::OwnedSlice(payload.clone(), range))
+        };
+
+        Ok(result)
     }
 }
