@@ -8,6 +8,14 @@ impl<Inner: 'static + ?Sized + AsRef<[u8]>, T: Deref<Target = Inner>> Deref for 
     }
 }
 
+impl<Inner: 'static + ?Sized + AsRef<[u8]>, T: Deref<Target = Inner>> AsRef<[u8]>
+    for OwnedSlice<T>
+{
+    fn as_ref(&self) -> &[u8] {
+        self
+    }
+}
+
 // this function feels strange, but it is completely safe Rust
 // requirement for not panicking: "y" is a slice from "x"
 pub fn to_range(x: std::ops::Range<*const u8>, y: &[u8]) -> std::ops::Range<usize> {

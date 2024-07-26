@@ -299,8 +299,8 @@ pub enum ReceivedTspMessageVariant {
     Referral = 6,
 }
 
-impl From<&tsp::ReceivedTspMessage> for ReceivedTspMessageVariant {
-    fn from(value: &tsp::ReceivedTspMessage) -> Self {
+impl<T> From<&tsp::ReceivedTspMessage<T>> for ReceivedTspMessageVariant {
+    fn from(value: &tsp::ReceivedTspMessage<T>) -> Self {
         match value {
             tsp::ReceivedTspMessage::GenericMessage { .. } => Self::GenericMessage,
             tsp::ReceivedTspMessage::RequestRelationship { .. } => Self::RequestRelationship,
@@ -421,8 +421,8 @@ impl FlatReceivedTspMessage {
     }
 }
 
-impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
-    fn from(value: tsp::ReceivedTspMessage) -> Self {
+impl From<tsp::ReceivedTspMessage<Vec<u8>>> for FlatReceivedTspMessage {
+    fn from(value: tsp::ReceivedTspMessage<Vec<u8>>) -> Self {
         let variant = ReceivedTspMessageVariant::from(&value);
 
         let mut this = FlatReceivedTspMessage {
