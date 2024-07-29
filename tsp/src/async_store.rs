@@ -256,7 +256,7 @@ impl AsyncStore {
     }
 
     /// Send a relationship referral message to `receiver`
-    pub async fn send_relationship_referal(
+    pub async fn send_relationship_referral(
         &self,
         sender: &str,
         receiver: &str,
