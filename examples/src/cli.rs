@@ -235,6 +235,20 @@ fn print_message(message: &[u8]) {
     println!();
 }
 
+fn prompt(message: String) -> bool {
+    use std::io::{self, BufRead, Write};
+    print!("{message}? [y/n] ");
+    io::stdout().flush().expect("I/O error");
+    let mut line = String::new();
+    io::stdin()
+        .lock()
+        .read_line(&mut line)
+        .expect("could not read reply");
+    line = line.to_uppercase();
+
+    matches!(line.trim(), "Y" | "YES")
+}
+
 async fn run() -> Result<(), Error> {
     let args = Cli::parse();
 
@@ -466,6 +480,7 @@ async fn run() -> Result<(), Error> {
                             nested_vid: Some(vid),
                         } => {
                             info!("received accept nested relationship from '{vid}' (new identity for {sender})");
+                            println!("{vid}");
                         }
                         ReceivedTspMessage::CancelRelationship { sender } => {
                             info!("received cancel relationship from {sender}");
@@ -474,6 +489,9 @@ async fn run() -> Result<(), Error> {
                             sender, next_hop, ..
                         } => {
                             info!("messaging forwarding request from {sender} to {next_hop}",);
+                            if args.yes || prompt(format!("do you want to forward this message?")) {
+                                todo!()
+                            }
                         }
                         ReceivedTspMessage::NewIdentifier { sender, new_vid } => {
                             info!("received request for new identifier '{new_vid}' from {sender}");
@@ -494,24 +512,12 @@ async fn run() -> Result<(), Error> {
                             unknown_vid,
                             payload,
                         } => {
-                            use std::io::{self, BufRead, Write};
                             info!("message involving unknown party {}", unknown_vid);
 
-                            let user_affirms = args.yes || {
-                                print!(
-                                    "do you want to read a message from '{}' [y/n]? ",
-                                    unknown_vid
-                                );
-                                io::stdout().flush().expect("I/O error");
-                                let mut line = String::new();
-                                io::stdin()
-                                    .lock()
-                                    .read_line(&mut line)
-                                    .expect("could not read reply");
-                                line = line.to_uppercase();
-
-                                matches!(line.trim(), "Y" | "YES")
-                            };
+                            let user_affirms = args.yes
+                                || prompt(format!(
+                                    "do you want to read a message from '{unknown_vid}'"
+                                ));
 
                             if user_affirms {
                                 trace!("processing pending message");
@@ -588,6 +594,7 @@ async fn run() -> Result<(), Error> {
 			    "sent a nested relationship request to {receiver_vid} with new identity '{}'",
 			    vid.identifier()
                     );
+                        println!("{}", vid.identifier());
                     }
                     Err(e) => {
                         tracing::error!(

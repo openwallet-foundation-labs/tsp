@@ -331,15 +331,15 @@ impl AsyncStore {
 
     /// Pass along a in-transit routed TSP `opaque_message` that is not meant for us, given earlier resolved VIDs.
     /// The message is routed through the route that has been established with `receiver`.
-    pub async fn forward_routed_message(
+    pub async fn forward_routed_message<T: AsRef<[u8]>>(
         &self,
         next_hop: &str,
-        path: Vec<&[u8]>,
+        path: Vec<T>,
         opaque_message: &[u8],
     ) -> Result<Url, Error> {
         let (transport, message) =
             self.inner
-                .forward_routed_message(next_hop, path, opaque_message)?;
+                .forward_routed_message(next_hop, path.iter().map(|x| x.as_ref()).collect(), opaque_message)?;
 
         crate::transport::send_message(&transport, &message).await?;
 
