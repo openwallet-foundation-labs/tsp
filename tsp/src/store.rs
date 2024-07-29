@@ -363,6 +363,10 @@ impl Store {
                 return Err(VidError::ResolveVid("missing parent for inner VID").into());
             };
 
+            if parent_sender != sender.identifier() && inner_sender != sender.identifier() {
+                return Err(VidError::ResolveVid("incorrect sender VID").into());
+            }
+
             let inner_sender = self.get_private_vid(inner_sender)?;
             let inner_message = crate::crypto::sign(
                 &*inner_sender,
