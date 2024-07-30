@@ -50,6 +50,11 @@ impl Store {
     }
 
     #[wasm_bindgen]
+    pub fn add_private_as_verified_vid(&self, vid: &OwnedVid) -> Result<(), Error> {
+        self.0.add_verified_vid(vid.0.clone()).map_err(Error)
+    }
+
+    #[wasm_bindgen]
     pub fn set_relation_for_vid(
         &self,
         vid: String,
