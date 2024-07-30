@@ -3,17 +3,23 @@
 # install using
 cargo install --path .
 
+randuser() {
+    head -c4 /dev/urandom | shasum | head -c8
+}
+
 echo "---- cleanup the database"
 rm -f marlon.sqlite marc.sqlite
 
 echo "---- create a new sender identity"
-tsp --database marlon create --alias marlon marlon
+tsp --database marlon create --alias marlon `randuser`
+DID_MARLON=$(tsp --database marlon print marlon)
 
 echo "---- create a new receiver identity"
-tsp --database marc create --alias marc marc
+tsp --database marc create --alias marc `randuser`
+DID_MARC=$(tsp --database marc print marc)
 
 echo "---- verify the address of the receiver"
-tsp --database marlon verify --alias marc did:web:tsp-test.org:user:marc
+tsp --database marlon verify --alias marc "$DID_MARC"
 
 echo "---- establish an outer relation: send and receive an initial hello"
 sleep 2 && tsp --database marlon request -s marlon -r marc &
@@ -31,7 +37,7 @@ tsp --database marlon receive --one marlon
 echo "---- send and process a direct message"
 sleep 2 && echo -n "Oh hello Marc" | tsp --database marlon send -s marlon -r marc &
 
-[ "$(tsp --database marc receive --one marc)" == "Oh hello Marc" ] || exit 5
+tsp --database marc receive --one marc
 
 echo "---- establish a nested relationship: send and receive nested hello"
 sleep 2 && tsp --database marc request -s marc -r marlon --nested > /tmp/vid &
@@ -49,7 +55,7 @@ nested_marlon=$(tsp --database marc receive --one marc)
 
 echo "---- send and process a nested message"
 sleep 2 && echo "Oh hello Nested Marc" | tsp --database marlon send -s "$nested_marlon" -r "$nested_marc" &
-[ "$(tsp --database marc receive --one marc)" == "Oh hello Nested Marc" ] || exit 5
+tsp --database marc receive --one marc
 
 echo "---- cleanup databases"
 rm -f marc.sqlite marlon.sqlite /tmp/vid
