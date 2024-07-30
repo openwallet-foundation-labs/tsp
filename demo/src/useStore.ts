@@ -3,17 +3,17 @@ import {
   OwnedVid,
   Vid,
   Store,
-  verify_did_peer,
+  verify_vid,
   probe_message,
 } from '../pkg/tsp_demo';
 import { bufferToBase64, humanFileSize } from './util';
 import ReconnectingWebSocket from 'reconnecting-websocket';
 
 const TIMESTAMP_SERVER = {
-  id: "did:web:did.tsp-test.org:user:timestamp-server",
-  publicEnckey: "2SOeMndN9z4oArm7Vu7D7ZGnkbsAXZ2DO-GUAfBd_Bo",
-  publicSigkey: "HR76y6YG5BWHbj4UQsqX-5ybQPjtETiaZFa4LHWaI68",
-  transport: "https://tsp-test.org/timestamp"
+  id: 'did:web:did.tsp-test.org:user:timestamp-server',
+  publicEnckey: '2SOeMndN9z4oArm7Vu7D7ZGnkbsAXZ2DO-GUAfBd_Bo',
+  publicSigkey: 'HR76y6YG5BWHbj4UQsqX-5ybQPjtETiaZFa4LHWaI68',
+  transport: 'https://tsp-test.org/timestamp',
 };
 
 export interface Identity {
@@ -40,17 +40,19 @@ export interface Contact {
   };
 }
 
-type Encoded = string
-| {
-    name: string;
-    href: string;
-    size: string;
-  };
+type Encoded =
+  | string
+  | {
+      name: string;
+      href: string;
+      size: string;
+    };
 
 export interface Message {
   date: string;
   message: string;
   encoded: Encoded;
+  timestampSignature: string;
   me: boolean;
 }
 
@@ -99,12 +101,13 @@ type Action =
       message: string;
       encoded: Encoded;
       timestamp: number;
+      timestampSignature: string;
       me: boolean;
     }
   | { type: 'setId'; id: Identity }
   | { type: 'reset' };
 
-function reducer(state: State, action: Action) {
+function reducer(state: State, action: Action): State {
   switch (action.type) {
     case 'setActive':
       return { ...state, active: action.index };
@@ -154,9 +157,10 @@ function reducer(state: State, action: Action) {
               messages: [
                 ...contact.messages,
                 {
-                  date: (new Date(action.timestamp * 1000)).toISOString(),
+                  date: new Date(action.timestamp * 1000).toISOString(),
                   message: action.message,
                   encoded: action.encoded,
+                  timestampSignature: action.timestampSignature || 'none',
                   me: action.me,
                 },
               ],
@@ -180,25 +184,43 @@ export default function useStore() {
   const store = useRef<Store>(new Store());
   const [state, dispatch] = useReducer(reducer, loadState());
 
-  const createIdentity = (label: string) => {
-    const vid = OwnedVid.new_did_peer(
-      `https://tsp-test.org/user/${label.toLowerCase()}`
-    );
-    const id = { label, vid: JSON.parse(vid.to_json()) };
-    store.current.add_private_vid(vid.create_clone());
-    dispatch({ type: 'setId', id });
+  const createIdentity = async (label: string, web: boolean) => {
+    if (web) {
+      const data = new URLSearchParams();
+      data.append('name', label);
+      let result = await fetch('https://tsp-test.org/create-identity', {
+        method: 'POST',
+        body: data,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      });
+      let vidData = await result.json();
+      const vid = OwnedVid.from_json(JSON.stringify(vidData));
+      const id = { label, vid: vidData };
+      store.current.add_private_vid(vid.create_clone());
+      dispatch({ type: 'setId', id });
+    } else {
+      const vid = OwnedVid.new_did_peer(
+        `https://tsp-test.org/user/${label.toLowerCase()}`
+      );
+      const id = { label, vid: JSON.parse(vid.to_json()) };
+      store.current.add_private_vid(vid.create_clone());
+      dispatch({ type: 'setId', id });
+    }
   };
 
-  const addContact = (vidString: string, label: string) => {
-    const vid = verify_did_peer(vidString);
+  const addContact = async (vidString: string, label: string) => {
+    const vid = await verify_vid(vidString);
+
     const contact = {
       label,
-      vid: JSON.parse(vid.to_json()),
+      vid: JSON.parse(vid.create_clone().to_json()),
       messages: [],
       verified: false,
     };
 
-    if (state.contacts.find((c) => c.vid.id === contact.vid)) {
+    if (state.contacts.find((c: Contact) => c.vid.id === contact.vid)) {
       window.alert('Contact already exists');
       return;
     }
@@ -256,10 +278,12 @@ export default function useStore() {
   ) => {
     const d = new Date();
     const timestamp = Math.round(d.getTime() / 1000);
-    const unencrypted = new TextEncoder().encode(JSON.stringify({
-      name: sender.label,
-      timestamp,
-    }));
+    const unencrypted = new TextEncoder().encode(
+      JSON.stringify({
+        name: sender.label,
+        timestamp,
+      })
+    );
 
     const { url, sealed } = store.current.seal_message(
       sender.vid.id,
@@ -293,12 +317,13 @@ export default function useStore() {
     dispatch({
       type: 'addMessage',
       contactVid: vid,
-      encoded: encoded || await bufferToBase64(sealed),
+      encoded: encoded || (await bufferToBase64(sealed)),
       message,
       timestamp,
+      timestampSignature: 'none',
       me: true,
     });
-  }
+  };
 
   const sendMessage = async (vid: string, message: string) => {
     if (state.id) {
@@ -337,7 +362,7 @@ export default function useStore() {
       store.current.add_verified_vid(
         Vid.from_json(JSON.stringify(TIMESTAMP_SERVER))
       );
-      state.contacts.forEach((contact) => {
+      state.contacts.forEach((contact: Contact) => {
         store.current.add_verified_vid(
           Vid.from_json(JSON.stringify(contact.vid))
         );
@@ -370,19 +395,24 @@ export default function useStore() {
   // setup websocket
   useEffect(() => {
     if (state.id) {
-      ws.current = new ReconnectingWebSocket(`wss://tsp-test.org/vid/${state.id.vid.id}`);
+      ws.current = new ReconnectingWebSocket(
+        `wss://tsp-test.org/vid/${state.id.vid.id}`
+      );
       const wsCurrent = ws.current;
       ws.current.onmessage = async (e) => {
         try {
           // unseal timestamp server message
           const tsBytes = new Uint8Array(await e.data.arrayBuffer());
+          const timestampSignature = bufferToBase64(tsBytes.slice(-64));
           const tsPlaintext = store.current.open_message(tsBytes);
 
           if (tsPlaintext.sender !== TIMESTAMP_SERVER.id) {
-            window.alert('Did not receive message signed by the timestamp server');
+            window.alert(
+              'Did not receive message signed by the timestamp server'
+            );
             return;
           }
-          
+
           // unseal inner message
           const bytes = tsPlaintext.nonconfidential_data;
           const envelope = JSON.parse(probe_message(bytes));
@@ -390,7 +420,7 @@ export default function useStore() {
           const timestamp = metadata.timestamp;
 
           if (!state.contacts.find((c) => c.vid.id === envelope.sender)) {
-            addContact(envelope.sender, metadata.name);
+            await addContact(envelope.sender, metadata.name);
           }
 
           const plaintext = store.current.open_message(bytes);
@@ -398,7 +428,7 @@ export default function useStore() {
           const isText = plaintext.message[0] === 0;
 
           if (isText) {
-            const encoded = await bufferToBase64(bytes);
+            const encoded = bufferToBase64(bytes);
             const body = new Uint8Array(plaintext.message);
             const message = new TextDecoder().decode(body.slice(1));
 
@@ -407,6 +437,7 @@ export default function useStore() {
               contactVid,
               message,
               encoded,
+              timestampSignature,
               timestamp,
               me: false,
             });
@@ -431,6 +462,7 @@ export default function useStore() {
                 href: window.URL.createObjectURL(blob),
                 size: humanFileSize(fileBytes.length),
               },
+              timestampSignature,
               timestamp,
               me: false,
             });

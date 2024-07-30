@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tsp::cesr::EnvelopeType;
 use wasm_bindgen::prelude::*;
-
 pub struct Error(tsp::Error);
 
 impl From<Error> for JsValue {
@@ -313,12 +312,46 @@ impl OwnedVid {
 }
 
 #[wasm_bindgen]
+pub async fn verify_vid(did: &str) -> Result<Vid, Error> {
+    tsp::vid::resolve::verify_vid(did)
+        .await
+        .map(Vid)
+        .map_err(|e| Error(e.into()))
+}
+
+#[wasm_bindgen]
 pub fn verify_did_peer(did: &str) -> Result<Vid, Error> {
     let parts = did.split(':').collect::<Vec<&str>>();
 
     tsp::vid::verify_did_peer(&parts)
         .map(Vid)
         .map_err(|e| Error(e.into()))
+}
+
+fn format_part(title: &str, part: &tsp::cesr::Part, plain: Option<&[u8]>) -> serde_json::Value {
+    let full = [part.prefix, part.data].concat();
+
+    json!({
+        "title": title,
+        "prefix": part.prefix.iter().map(|b| format!("{:#04x}", b)).collect::<Vec<String>>().join(" "),
+        "data": full,
+        "plain": plain
+            .and_then(|b| std::str::from_utf8(b).ok())
+            .or(std::str::from_utf8(part.data).ok()),
+    })
+}
+#[wasm_bindgen]
+pub fn message_parts(message: &[u8]) -> Result<String, Error> {
+    let parts = tsp::cesr::open_message_into_parts(message).map_err(|e| Error(e.into()))?;
+
+    Ok(serde_json::to_string(&json!({
+        "prefix": format_part("Prefix", &parts.prefix, None),
+        "sender": format_part("Sender", &parts.sender, None),
+        "receiver": parts.receiver.map(|v| format_part("Receiver", &v, None)),
+        "nonconfidentialData": parts.nonconfidential_data.map(|v| format_part("Non-confidential data", &v, None)),
+        "ciphertext": parts.ciphertext.map(|v| format_part("Ciphertext", &v, None)),
+        "signature": format_part("Signature", &parts.signature, None),
+    })).unwrap())
 }
 
 #[wasm_bindgen]

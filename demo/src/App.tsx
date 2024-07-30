@@ -11,7 +11,7 @@ interface ContentProps {
   active: number | null;
   mobile: boolean;
   contacts: Contact[];
-  createIdentity: (name: string) => void;
+  createIdentity: (name: string, web: boolean) => void;
   deleteContact: (index: number) => void;
   deleteIdentity: () => void;
   deleteMessage: (contactIndex: number, index: number) => void;
@@ -39,7 +39,11 @@ function Content({
   verifyContact,
 }: ContentProps) {
   if (!initialized) {
-    return <Initialize onClick={(name: string) => createIdentity(name)} />;
+    return (
+      <Initialize
+        onClick={(name: string, web: boolean) => createIdentity(name, web)}
+      />
+    );
   }
 
   if (active !== null) {

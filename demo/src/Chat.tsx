@@ -131,16 +131,19 @@ export default function Chat({
               gap="sm"
               py="sm"
             >
-              {contact.messages.map(({ date, me, message, encoded }, i) => (
-                <ChatMessage
-                  key={date}
-                  date={date}
-                  me={me}
-                  message={message}
-                  encoded={encoded}
-                  deleteMessage={() => deleteMessage(index, i)}
-                />
-              ))}
+              {contact.messages.map(
+                ({ date, me, message, encoded, timestampSignature }, i) => (
+                  <ChatMessage
+                    key={date}
+                    date={date}
+                    me={me}
+                    message={message}
+                    encoded={encoded}
+                    timestampSignature={timestampSignature}
+                    deleteMessage={() => deleteMessage(index, i)}
+                  />
+                )
+              )}
             </Flex>
           </Box>
           <ChatInput

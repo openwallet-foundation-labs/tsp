@@ -7,15 +7,24 @@ import {
   rem,
   Modal,
   Badge,
+  Box,
+  CheckIcon,
 } from '@mantine/core';
-import { IconDotsVertical, IconTrash, IconCode, IconCheck } from '@tabler/icons-react';
+import {
+  IconDotsVertical,
+  IconTrash,
+  IconCode,
+  IconCheck,
+} from '@tabler/icons-react';
 import { useDisclosure, useHover } from '@mantine/hooks';
+import EncodedMessage from './EncodedMessage';
 
 interface ChatMessageProps {
   date: string;
   me: boolean;
   deleteMessage: () => void;
   message: string;
+  timestampSignature: string;
   encoded:
     | string
     | {
@@ -30,6 +39,7 @@ export default function ChatMessage({
   me,
   message,
   encoded,
+  timestampSignature,
   deleteMessage,
 }: ChatMessageProps) {
   const { hovered, ref } = useHover();
@@ -54,18 +64,41 @@ export default function ChatMessage({
             size="sm"
             radius="sm"
             mb="xs"
+            onClick={open}
+            style={{ cursor: 'pointer' }}
           >
             {date.slice(11, 19)}
           </Badge>
+
           <Modal
             opened={opened}
             onClose={close}
-            title={<strong>CESR encoded message</strong>}
+            title={<strong>TSP message</strong>}
             size="lg"
           >
-            <code style={{ wordWrap: 'break-word', wordBreak: 'break-all' }}>
-              {typeof encoded === 'object' ? encoded.size : encoded}
-            </code>
+            <Box c="green" mb="lg">
+              <CheckIcon size={14} color="green" />
+              &nbsp; Verified by the time server
+            </Box>
+            <Box c="dimmed">Full date</Box>
+            <Box mb="lg">{date.replace('T', ' ').slice(0, 19)}</Box>
+            {typeof encoded === 'string' && (
+              <>
+                <Box c="dimmed">Signature</Box>
+                <Box mb="lg">
+                  <code
+                    style={{
+                      display: 'block',
+                      wordWrap: 'break-word',
+                      wordBreak: 'break-all',
+                    }}
+                  >
+                    {timestampSignature}
+                  </code>
+                </Box>
+              </>
+            )}
+            <EncodedMessage encoded={encoded} plain={message} />
           </Modal>
           <Menu shadow="md" width={180}>
             <Menu.Target>

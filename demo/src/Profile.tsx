@@ -1,6 +1,6 @@
 import { QRCode } from 'react-qrcode-logo';
 import { Identity } from './useStore';
-import { Button, CopyButton, Flex, Stack, Title } from '@mantine/core';
+import { Box, Button, CopyButton, Flex, Stack, Title } from '@mantine/core';
 import { useElementSize } from '@mantine/hooks';
 import { identityToUrl } from './util';
 import logo from './trust-over-ip.svg';
@@ -48,6 +48,7 @@ export default function Profile({
         {width !== null && (
           <QRCode quietZone={0} value={url} size={Math.min(width * 0.8, 512)} />
         )}
+        <Box>{id.vid.id.length < 128 && <pre>{id.vid.id}</pre>}</Box>
         <Flex gap="md" align="center">
           <CopyButton value={url}>
             {({ copied, copy }) => (

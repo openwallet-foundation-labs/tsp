@@ -1,22 +1,25 @@
 import { Button, Center, Flex, Input, Modal, Title } from '@mantine/core';
 import { useDisclosure, useFocusTrap } from '@mantine/hooks';
 import { IconUserPlus } from '@tabler/icons-react';
-import { useState } from 'react';
+import { FormEvent, useState } from 'react';
 import logo from './trust-over-ip.svg';
 
 interface InitializeProps {
-  onClick: (name: string) => void;
+  onClick: (name: string, web: boolean) => void;
 }
 
 export default function Initialize({ onClick }: InitializeProps) {
   const [opened, { open, close }] = useDisclosure(false);
   const [label, setLabel] = useState<string>('');
+  const [web, setWeb] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   const focusTrapRef = useFocusTrap();
 
-  const save = () => {
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+
     if (label.length > 0) {
-      onClick(label);
+      onClick(label, web);
       setLabel('');
       setError('');
       close();
@@ -49,8 +52,21 @@ export default function Initialize({ onClick }: InitializeProps) {
             />
           </Input.Wrapper>
           <Flex mih={60} gap="md" justify="flex-end" align="flex-end">
-            <Button size="md" variant="filled" type="submit">
-              Create
+            <Button
+              size="md"
+              variant="filled"
+              type="submit"
+              onClick={() => setWeb(true)}
+            >
+              Create did:web
+            </Button>
+            <Button
+              size="md"
+              variant="filled"
+              type="submit"
+              onClick={() => setWeb(false)}
+            >
+              Create did:peer
             </Button>
           </Flex>
         </form>
