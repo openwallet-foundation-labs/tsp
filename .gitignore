@@ -4,3 +4,4 @@ Cargo.lock
 .tgops
 .dockerignore
 docs/book/
+data/

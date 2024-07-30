@@ -11,7 +11,7 @@ interface ContentProps {
   active: number | null;
   mobile: boolean;
   contacts: Contact[];
-  createIdentity: (name: string, web: boolean) => void;
+  createIdentity: (name: string, web: boolean) => Promise<boolean>;
   deleteContact: (index: number) => void;
   deleteIdentity: () => void;
   deleteMessage: (contactIndex: number, index: number) => void;

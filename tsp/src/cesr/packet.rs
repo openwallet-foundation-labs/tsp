@@ -30,8 +30,10 @@ mod msgtype {
 }
 
 use super::{
-    decode::{decode_count, decode_fixed_data, decode_variable_data, decode_variable_data_index},
-    decode::{decode_count_mut, decode_fixed_data_mut, decode_variable_data_mut},
+    decode::{
+        decode_count, decode_count_mut, decode_fixed_data, decode_fixed_data_mut,
+        decode_variable_data, decode_variable_data_index, decode_variable_data_mut,
+    },
     encode::{encode_count, encode_fixed_data},
     error::{DecodeError, EncodeError},
 };

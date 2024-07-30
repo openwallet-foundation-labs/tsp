@@ -185,29 +185,36 @@ export default function useStore() {
   const [state, dispatch] = useReducer(reducer, loadState());
 
   const createIdentity = async (label: string, web: boolean) => {
-    if (web) {
-      const data = new URLSearchParams();
-      data.append('name', label);
-      let result = await fetch('https://tsp-test.org/create-identity', {
-        method: 'POST',
-        body: data,
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-      });
-      let vidData = await result.json();
-      const vid = OwnedVid.from_json(JSON.stringify(vidData));
-      const id = { label, vid: vidData };
-      store.current.add_private_vid(vid.create_clone());
-      dispatch({ type: 'setId', id });
-    } else {
-      const vid = OwnedVid.new_did_peer(
-        `https://tsp-test.org/user/${label.toLowerCase()}`
-      );
-      const id = { label, vid: JSON.parse(vid.to_json()) };
-      store.current.add_private_vid(vid.create_clone());
-      dispatch({ type: 'setId', id });
+    try {
+      if (web) {
+        const data = new URLSearchParams();
+        data.append('name', label);
+        let result = await fetch('https://tsp-test.org/create-identity', {
+          method: 'POST',
+          body: data,
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        });
+        let vidData = await result.json();
+        const vid = OwnedVid.from_json(JSON.stringify(vidData));
+        const id = { label, vid: vidData };
+        store.current.add_private_vid(vid.create_clone());
+        dispatch({ type: 'setId', id });
+      } else {
+        const vid = OwnedVid.new_did_peer(
+          `https://tsp-test.org/user/${label.toLowerCase()}`
+        );
+        const id = { label, vid: JSON.parse(vid.to_json()) };
+        store.current.add_private_vid(vid.create_clone());
+        dispatch({ type: 'setId', id });
+      }
+    } catch (e) {
+      console.error(e);
+      return false;
     }
+
+    return true;
   };
 
   const addContact = async (vidString: string, label: string) => {

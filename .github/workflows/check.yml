@@ -90,6 +90,33 @@ jobs:
           maturin develop
           python3 test.py
 
+  check-node:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '20'
+
+      - name: Install wasm-pack
+        run: |
+          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          wasm-pack --version
+      - name: Build Wasm extension
+        run: wasm-pack build --target nodejs tsp-javascript/
+
+      - name: Install npm dependencies
+        working-directory: tsp-node/
+        run: npm install
+
+      - name: Run tests with Mocha
+        working-directory: tsp-node/
+        run: npm test
+
   fuzz:
     name: run cargo-fuzz
     runs-on: ubuntu-latest

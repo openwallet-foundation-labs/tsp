@@ -12,7 +12,7 @@ use axum::{
 use base64ct::{Base64UrlUnpadded, Encoding};
 use core::time;
 use futures::{sink::SinkExt, stream::StreamExt};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
     collections::HashMap,
@@ -35,14 +35,46 @@ mod intermediary;
 const DOMAIN: &str = "tsp-test.org";
 
 /// Identity struct, used to store the DID document and VID of a user
+#[derive(Debug, Serialize, Deserialize)]
 struct Identity {
     did_doc: serde_json::Value,
     vid: Vid,
 }
 
+async fn write_id(id: Identity) -> Result<(), Box<dyn std::error::Error>> {
+    let name = id
+        .vid
+        .identifier()
+        .split(':')
+        .last()
+        .ok_or("invalid name")?;
+    let did = serde_json::to_string_pretty(&id)?;
+    let path = format!("data/{name}.json");
+
+    if std::path::Path::new(&path).exists() {
+        return Err("identity already exists".into());
+    }
+
+    tokio::fs::write(path, did).await?;
+
+    Ok(())
+}
+
+async fn read_id(vid: &str) -> Result<Identity, Box<dyn std::error::Error>> {
+    let name = vid.split(':').last().ok_or("invalid name")?;
+    let path = format!("data/{name}.json");
+    let did = tokio::fs::read_to_string(path).await?;
+    let id = serde_json::from_str(&did)?;
+
+    Ok(id)
+}
+
+fn verify_name(name: &str) -> bool {
+    !name.is_empty() && name.len() < 64 && name.chars().all(|c| c.is_alphanumeric())
+}
+
 /// Application state, used to store the identities and the broadcast channel
 struct AppState {
-    db: RwLock<HashMap<String, Identity>>,
     timestamp_server: Store,
     tx: broadcast::Sender<(String, String, Vec<u8>)>,
 }
@@ -68,7 +100,6 @@ async fn main() {
     timestamp_server.add_private_vid(piv).unwrap();
 
     let state = Arc::new(AppState {
-        db: Default::default(),
         timestamp_server,
         tx: broadcast::channel(100).0,
     });
@@ -171,10 +202,11 @@ struct CreateIdentityInput {
 }
 
 /// Create a new identity (private VID)
-async fn create_identity(
-    State(state): State<Arc<AppState>>,
-    Form(form): Form<CreateIdentityInput>,
-) -> impl IntoResponse {
+async fn create_identity(Form(form): Form<CreateIdentityInput>) -> Response {
+    if !verify_name(&form.name) {
+        return (StatusCode::BAD_REQUEST, "invalid name").into_response();
+    }
+
     let (did_doc, _, private_vid) = tsp::vid::create_did_web(
         &form.name,
         DOMAIN,
@@ -183,17 +215,20 @@ async fn create_identity(
 
     let key = private_vid.identifier();
 
-    state.db.write().await.insert(
-        key.to_string(),
-        Identity {
-            did_doc: did_doc.clone(),
-            vid: private_vid.vid().clone(),
-        },
-    );
+    if let Err(e) = write_id(Identity {
+        did_doc: did_doc.clone(),
+        vid: private_vid.vid().clone(),
+    })
+    .await
+    {
+        tracing::error!("error writing identity {key}: {e}");
+
+        return (StatusCode::INTERNAL_SERVER_ERROR, "error writing identity").into_response();
+    }
 
     tracing::debug!("created identity {key}");
 
-    Json(private_vid)
+    Json(private_vid).into_response()
 }
 
 #[derive(Deserialize, Debug)]
@@ -202,12 +237,15 @@ struct ResolveVidInput {
 }
 
 /// Resolve and verify a VID to JSON encoded key material
-async fn verify_vid(
-    State(state): State<Arc<AppState>>,
-    Form(form): Form<ResolveVidInput>,
-) -> Response {
+async fn verify_vid(Form(form): Form<ResolveVidInput>) -> Response {
+    let name = form.vid.split(':').last().unwrap_or_default();
+
+    if !verify_name(name) {
+        return (StatusCode::BAD_REQUEST, "invalid name").into_response();
+    }
+
     // local state lookup
-    if let Some(identity) = state.db.read().await.get(&form.vid) {
+    if let Ok(identity) = read_id(&form.vid).await {
         return Json(&identity.vid).into_response();
     }
 
@@ -223,16 +261,25 @@ async fn verify_vid(
 }
 
 /// Add did document to the local state
-async fn add_vid(State(state): State<Arc<AppState>>, Json(vid): Json<Vid>) -> Response {
+async fn add_vid(Json(vid): Json<Vid>) -> Response {
+    let name = vid.identifier().split(':').last().unwrap_or_default();
+
+    if !verify_name(name) {
+        return (StatusCode::BAD_REQUEST, "invalid name").into_response();
+    }
+
     let did_doc = tsp::vid::vid_to_did_document(&vid);
 
-    state.db.write().await.insert(
-        vid.identifier().to_string(),
-        Identity {
-            did_doc,
-            vid: vid.clone(),
-        },
-    );
+    if let Err(e) = write_id(Identity {
+        did_doc,
+        vid: vid.clone(),
+    })
+    .await
+    {
+        tracing::error!("error writing identity {}: {e}", vid.identifier());
+
+        return (StatusCode::INTERNAL_SERVER_ERROR, "error writing identity").into_response();
+    }
 
     tracing::debug!("added VID {}", vid.identifier());
 
@@ -240,19 +287,21 @@ async fn add_vid(State(state): State<Arc<AppState>>, Json(vid): Json<Vid>) -> Re
 }
 
 /// Get the DID document of a user
-async fn get_did_doc(State(state): State<Arc<AppState>>, Path(name): Path<String>) -> Response {
+async fn get_did_doc(Path(name): Path<String>) -> Response {
+    if !verify_name(&name) {
+        return (StatusCode::BAD_REQUEST, "invalid name").into_response();
+    }
+
     let key = format!("did:web:{DOMAIN}:user:{name}");
 
-    match state.db.read().await.get(&key) {
-        Some(identity) => {
+    match read_id(&key).await {
+        Ok(identity) => {
             tracing::debug!("served did.json for {key}");
 
             Json(identity.did_doc.clone()).into_response()
         }
-        None => {
-            let keys = state.db.read().await;
-            let keys = keys.keys().collect::<Vec<_>>();
-            eprintln!("{key} not found, stored identities: {:?}", keys);
+        Err(e) => {
+            tracing::error!("{key} not found: {e}");
 
             (StatusCode::NOT_FOUND, "no user found").into_response()
         }

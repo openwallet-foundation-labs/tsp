@@ -5,7 +5,7 @@ import { FormEvent, useState } from 'react';
 import logo from './trust-over-ip.svg';
 
 interface InitializeProps {
-  onClick: (name: string, web: boolean) => void;
+  onClick: (name: string, web: boolean) => Promise<boolean>;
 }
 
 export default function Initialize({ onClick }: InitializeProps) {
@@ -19,10 +19,15 @@ export default function Initialize({ onClick }: InitializeProps) {
     e.preventDefault();
 
     if (label.length > 0) {
-      onClick(label, web);
-      setLabel('');
-      setError('');
-      close();
+      onClick(label, web).then((result) => {
+        if (!result) {
+          setError("This username is already taken");
+        } else {
+          setLabel('');
+          setError('');
+          close();
+        }
+      });
     } else {
       setError('Label is required');
     }
