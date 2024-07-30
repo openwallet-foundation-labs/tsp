@@ -366,4 +366,24 @@ ACTD7NDX93ZGTkZBBuSeSGsAQ7u0hngpNTZTK_Um7rUZGnLRNJvo5oOnnC1J2iBQHuxoq8PyjdT3BHS2
         assert_eq!(decode_indexed_data::<64>(0, slice).unwrap().0, 1);
         assert_eq!(decode_indexed_data::<64>(0, slice).unwrap().0, 2);
     }
+
+    #[test]
+    fn blob_encode_decode() {
+        let mut data = vec![];
+        encode_large_blob(b"Where there is power, there is resistance.", &mut data); // 0 lead bytes
+        encode_large_blob(b"TrustSpanP!", &mut data); // 1 lead byte
+        encode_large_blob(b"I always speak the truth. Not the whole truth, because there's no way, to say it all.", &mut data); // 2 lead bytes
+        encode_variable_data(5, b"TrustSpanP!", &mut data); // not a blob
+        let mut input = &data[..];
+        assert_eq!(
+            decode_large_blob(&mut input).unwrap(),
+            b"Where there is power, there is resistance."
+        );
+        assert_eq!(decode_large_blob(&mut input).unwrap(), b"TrustSpanP!");
+        assert_eq!(
+            decode_large_blob(&mut input).unwrap(),
+            b"I always speak the truth. Not the whole truth, because there's no way, to say it all."
+        );
+        assert!(decode_large_blob(&mut input).is_none());
+    }
 }
