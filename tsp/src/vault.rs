@@ -1,4 +1,9 @@
-use crate::{Error, ExportVid, RelationshipStatus};
+use crate::{
+    definitions::{
+        PRIVATE_KEY_SIZE, PRIVATE_SIGNING_KEY_SIZE, PUBLIC_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE,
+    },
+    Error, ExportVid, RelationshipStatus,
+};
 use aries_askar::{
     entry::EntryOperation,
     kms::{KeyAlg, LocalKey},
@@ -208,7 +213,7 @@ impl Vault {
                 continue;
             };
 
-            let verification_bytes: [u8; 32] = verification_key
+            let verification_bytes: [u8; PUBLIC_VERIFICATION_KEY_SIZE] = verification_key
                 .load_local_key()?
                 .to_public_bytes()?
                 .as_ref()
@@ -217,7 +222,7 @@ impl Vault {
                     Error::DecodeState("could not parse verification key bytes from storage")
                 })?;
 
-            let encryption_bytes: [u8; 32] = encryption_key
+            let encryption_bytes: [u8; PUBLIC_KEY_SIZE] = encryption_key
                 .load_local_key()?
                 .to_public_bytes()?
                 .as_ref()
@@ -248,7 +253,7 @@ impl Vault {
             let decryption_key = conn.fetch_key(&decryption_key_name, false).await?;
 
             if let (Some(signing_key), Some(decryption_key)) = (signing_key, decryption_key) {
-                let signing_key: [u8; 32] = signing_key
+                let signing_key: [u8; PRIVATE_SIGNING_KEY_SIZE] = signing_key
                     .load_local_key()?
                     .to_secret_bytes()?
                     .as_ref()
@@ -257,7 +262,7 @@ impl Vault {
                         Error::DecodeState("could not parse signing key bytes from storage")
                     })?;
 
-                let decryption_key: [u8; 32] = decryption_key
+                let decryption_key: [u8; PRIVATE_KEY_SIZE] = decryption_key
                     .load_local_key()?
                     .to_secret_bytes()?
                     .as_ref()
@@ -300,6 +305,7 @@ impl Vault {
     }
 }
 
+#[cfg(not(feature = "pq"))]
 #[cfg(test)]
 mod test {
     use crate::{OwnedVid, Store, VerifiedVid};

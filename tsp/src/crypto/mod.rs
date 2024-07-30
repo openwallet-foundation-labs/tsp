@@ -1,6 +1,6 @@
 use crate::definitions::{
-    Digest, NonConfidentialData, Payload, PrivateKeyData, PrivateVid, PublicKeyData, TSPMessage,
-    VerifiedVid,
+    Digest, NonConfidentialData, Payload, PrivateKeyData, PrivateSigningKeyData, PrivateVid,
+    PublicKeyData, PublicVerificationKeyData, TSPMessage, VerifiedVid,
 };
 pub use digest::sha256;
 use rand::rngs::OsRng;
@@ -17,14 +17,23 @@ mod tsp_hpke;
 
 pub use error::CryptoError;
 
-#[cfg(not(feature = "nacl"))]
+#[cfg(all(not(feature = "nacl"), not(feature = "pq")))]
 pub type Aead = hpke::aead::ChaCha20Poly1305;
 
-#[cfg(not(feature = "nacl"))]
+#[cfg(all(not(feature = "nacl"), not(feature = "pq")))]
 pub type Kdf = hpke::kdf::HkdfSha256;
 
-#[cfg(not(feature = "nacl"))]
+#[cfg(all(not(feature = "nacl"), not(feature = "pq")))]
 pub type Kem = hpke::kem::X25519HkdfSha256;
+
+#[cfg(feature = "pq")]
+pub type Aead = hpke_pq::aead::ChaCha20Poly1305;
+
+#[cfg(feature = "pq")]
+pub type Kdf = hpke_pq::kdf::HkdfSha256;
+
+#[cfg(feature = "pq")]
+pub type Kem = hpke_pq::kem::X25519Kyber768Draft00;
 
 type ObservingClosure<'a> = &'a mut dyn FnMut(&[u8]);
 
@@ -74,8 +83,7 @@ pub fn seal_and_hash(
 
 pub type MessageContents<'a> = (
     Option<NonConfidentialData<'a>>,
-    Payload<'a, &'a [u8]>,
-    &'a [u8],
+    Payload<'a, &'a [u8], &'a mut [u8]>,
 );
 
 /// Decode a CESR Authentic Confidential Message, verify the signature and decrypt its contents
@@ -108,7 +116,7 @@ pub fn verify<'a>(
     nonconfidential::verify(sender, tsp_message)
 }
 
-#[cfg(not(feature = "nacl"))]
+#[cfg(all(not(feature = "essr"), not(feature = "pq")))]
 /// Generate a new encryption / decryption key pair
 pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
     use hpke::Serializable;
@@ -118,6 +126,27 @@ pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
     (
         Into::<[u8; 32]>::into(private.to_bytes()).into(),
         Into::<[u8; 32]>::into(public.to_bytes()).into(),
+    )
+}
+
+#[cfg(feature = "pq")]
+/// Generate a new encryption / decryption key pair
+pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
+    use crate::definitions::{PRIVATE_KEY_SIZE, PUBLIC_KEY_SIZE};
+    use hpke_pq::Serializable;
+
+    let (private, public) = <Kem as hpke_pq::Kem>::gen_keypair(&mut OsRng);
+
+    let private = private.to_bytes();
+    let public = public.to_bytes();
+
+    (
+        TryInto::<[u8; PRIVATE_KEY_SIZE]>::try_into(private.as_slice())
+            .unwrap()
+            .into(),
+        TryInto::<[u8; PUBLIC_KEY_SIZE]>::try_into(public.as_slice())
+            .unwrap()
+            .into(),
     )
 }
 
@@ -133,7 +162,7 @@ pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
 }
 
 /// Generate a new signing / verificationkey pair
-pub fn gen_sign_keypair() -> (PrivateKeyData, PublicKeyData) {
+pub fn gen_sign_keypair() -> (PrivateSigningKeyData, PublicVerificationKeyData) {
     let sigkey = ed25519_dalek::SigningKey::generate(&mut OsRng);
 
     (
@@ -171,7 +200,7 @@ mod tests {
         )
         .unwrap();
 
-        let (received_nonconfidential_data, received_secret_message, _) =
+        let (received_nonconfidential_data, received_secret_message) =
             open(&alice, &bob, &mut message).unwrap();
 
         assert_eq!(received_nonconfidential_data.unwrap(), nonconfidential_data);

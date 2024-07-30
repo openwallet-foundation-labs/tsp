@@ -31,6 +31,7 @@ jobs:
           cargo test
           cargo test --doc
           cargo test --package tsp --features nacl
+          cargo test --package tsp --lib --features pq
 
   cargo-deny:
     runs-on: ubuntu-latest

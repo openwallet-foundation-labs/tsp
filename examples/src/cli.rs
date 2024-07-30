@@ -364,7 +364,7 @@ async fn run() -> Result<(), Error> {
             info!("listening for messages...");
 
             while let Some(Ok(message)) = messages.next().await {
-                let handle_message = |message| {
+                let handle_message = |message: ReceivedTspMessage| {
                     match message {
                         ReceivedTspMessage::GenericMessage {
                             sender,
@@ -415,6 +415,9 @@ async fn run() -> Result<(), Error> {
                         } => {
                             info!("messaging forwarding request from {sender} to {next_hop}",);
                         }
+                        ReceivedTspMessage::NewIdentifier { sender, new_vid } => {
+                            info!("received request for new identifier '{new_vid}' from {sender}");
+                        }
                         ReceivedTspMessage::Referral {
                             sender,
                             referred_vid,
@@ -456,10 +459,8 @@ async fn run() -> Result<(), Error> {
                     None
                 };
 
-                if let Some((unknown_vid, mut payload)) = handle_message(message) {
-                    let message = vid_database
-                        .verify_and_open(&unknown_vid, &mut payload)
-                        .await?;
+                if let Some((unknown_vid, payload)) = handle_message(message) {
+                    let message = vid_database.verify_and_open(&unknown_vid, payload).await?;
 
                     info!(
                         "{vid} is verified and added to the database {}",

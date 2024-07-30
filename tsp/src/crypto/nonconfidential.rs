@@ -38,7 +38,7 @@ pub fn verify<'a>(
     sender: &dyn VerifiedVid,
     tsp_message: &'a mut [u8],
 ) -> Result<&'a [u8], CryptoError> {
-    let view = crate::cesr::decode_envelope_mut(tsp_message)?;
+    let view = crate::cesr::decode_envelope(tsp_message)?;
 
     // verify outer signature
     let verification_challenge = view.as_challenge();

@@ -237,6 +237,24 @@ impl AsyncStore {
         Ok(())
     }
 
+    /// Send a new identifier introduction notice
+    pub async fn send_new_identifier_notice(
+        &self,
+        sender: &str,
+        receiver: &str,
+        sender_new_vid: &str,
+    ) -> Result<(), Error> {
+        let (endpoint, message) =
+            self.inner
+                .make_new_identifier_notice(sender, receiver, sender_new_vid)?;
+
+        tracing::info!("sending message to {endpoint}");
+
+        crate::transport::send_message(&endpoint, &message).await?;
+
+        Ok(())
+    }
+
     /// Send a relationship referral message to `receiver`
     pub async fn send_relationship_referal(
         &self,
@@ -330,7 +348,10 @@ impl AsyncStore {
 
     /// Decode an encrypted `message``, which has to be addressed to one of the VIDs in `receivers`, and has to have
     /// `verified_vids` as one of the senders.
-    pub fn open_message(&self, message: &mut [u8]) -> Result<ReceivedTspMessage, Error> {
+    pub fn open_message<'a>(
+        &self,
+        message: &'a mut [u8],
+    ) -> Result<ReceivedTspMessage<&'a [u8]>, Error> {
         self.inner.open_message(message)
     }
 
@@ -353,7 +374,7 @@ impl AsyncStore {
                                 payload: m,
                             })
                         }
-                        maybe_message => maybe_message,
+                        maybe_message => maybe_message.map(|msg| msg.into_owned()),
                     },
                     Err(e) => Err(e.into()),
                 }
@@ -380,13 +401,15 @@ impl AsyncStore {
     }
 
     /// Process the payload from a  'PendingMessage' by resolving the unknown vid and retrying
+    /// This takes a Vec as a payload; for a borrowing version the `as_inner()` version can be used; usually after
+    /// unpacking a TSP message you can't or need to do anything with it anyway.
     pub async fn verify_and_open(
         &mut self,
         vid: &str,
-        payload: &mut [u8],
+        mut payload: Vec<u8>,
     ) -> Result<ReceivedTspMessage, Error> {
         self.verify_vid(vid).await?;
 
-        self.inner.open_message(payload)
+        Ok(self.inner.open_message(&mut payload)?.into_owned())
     }
 }

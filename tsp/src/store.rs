@@ -440,7 +440,7 @@ impl Store {
             return Err(CryptoError::UnexpectedRecipient.into());
         };
 
-        let (_, payload, _) = crate::crypto::open(&*receiver, &*sender, message)?;
+        let (_, payload) = crate::crypto::open(&*receiver, &*sender, message)?;
 
         let (next_hop, path, inner_message) = match payload {
             Payload::RoutedMessage(hops, inner_message) => {
@@ -512,7 +512,10 @@ impl Store {
 
     /// Decode an encrypted `message``, which has to be addressed to one of the VIDs in `receivers`, and has to have
     /// `verified_vids` as one of the senders.
-    pub fn open_message(&self, message: &mut [u8]) -> Result<ReceivedTspMessage, Error> {
+    pub fn open_message<'a>(
+        &self,
+        message: &'a mut [u8],
+    ) -> Result<ReceivedTspMessage<&'a [u8]>, Error> {
         let probed_message = crate::cesr::probe(message)?;
 
         match probed_message {
@@ -533,20 +536,18 @@ impl Store {
                     return Err(Error::UnverifiedSource(sender));
                 };
 
-                let (nonconfidential_data, payload, raw_bytes) =
+                let (nonconfidential_data, payload) =
                     crate::crypto::open(&*intended_receiver, &*sender_vid, message)?;
 
                 match payload {
                     Payload::Content(message) => Ok(ReceivedTspMessage::GenericMessage {
                         sender,
-                        nonconfidential_data: nonconfidential_data.map(|v| v.to_vec()),
-                        message: message.to_owned(),
+                        nonconfidential_data,
+                        message,
                         message_type: MessageType::SignedAndEncrypted,
                     }),
-                    Payload::NestedMessage(message) => {
-                        let mut inner = message.to_owned();
-
-                        let mut received_message = self.open_message(&mut inner)?;
+                    Payload::NestedMessage(inner) => {
+                        let mut received_message = self.open_message(inner)?;
                         if let ReceivedTspMessage::GenericMessage {
                             ref mut message_type,
                             ..
@@ -567,11 +568,11 @@ impl Store {
                             opaque_payload: message.to_owned(),
                         })
                     }
-                    Payload::RequestRelationship { route } => {
+                    Payload::RequestRelationship { route, thread_id } => {
                         Ok(ReceivedTspMessage::RequestRelationship {
                             sender,
                             route: route.map(|vec| vec.iter().map(|vid| vid.to_vec()).collect()),
-                            thread_id: crate::crypto::sha256(raw_bytes),
+                            thread_id,
                             nested_vid: None,
                         })
                     }
@@ -608,7 +609,7 @@ impl Store {
 
                         Ok(ReceivedTspMessage::CancelRelationship { sender })
                     }
-                    Payload::RequestNestedRelationship { vid } => {
+                    Payload::RequestNestedRelationship { vid, thread_id } => {
                         let vid = std::str::from_utf8(vid)?;
                         self.add_nested_vid(vid)?;
                         self.set_parent_for_vid(vid, Some(&sender))?;
@@ -616,7 +617,7 @@ impl Store {
                         Ok(ReceivedTspMessage::RequestRelationship {
                             sender,
                             route: None,
-                            thread_id: crate::crypto::sha256(raw_bytes),
+                            thread_id,
                             nested_vid: Some(vid.to_string()),
                         })
                     }
@@ -638,7 +639,22 @@ impl Store {
                             nested_vid: Some(vid.to_string()),
                         })
                     }
+                    Payload::NewIdentifier { thread_id, new_vid } => {
+                        let vid = std::str::from_utf8(new_vid)?;
+                        match self.get_vid(&sender)?.relation_status {
+                            RelationshipStatus::Bidirectional {
+                                thread_id: check_id,
+                                ..
+                            } if check_id == thread_id => Ok(ReceivedTspMessage::NewIdentifier {
+                                sender,
+                                new_vid: vid.to_string(),
+                            }),
+                            _ => Err(Error::Relationship(vid.to_string())),
+                        }
+                    }
                     Payload::Referral { referred_vid } => {
+                        //NOTE: we could also check the relationship status here, but since a 3rd party introduction
+                        //might be of interest to a user anyway regardless of existing status, we are less strict about it
                         let vid = std::str::from_utf8(referred_vid)?;
                         Ok(ReceivedTspMessage::Referral {
                             sender,
@@ -666,12 +682,12 @@ impl Store {
                     return Err(Error::UnverifiedVid(sender.to_string()));
                 };
 
-                let payload = crate::crypto::verify(&*sender_vid, message)?;
+                let message = crate::crypto::verify(&*sender_vid, message)?;
 
                 Ok(ReceivedTspMessage::GenericMessage {
                     sender,
                     nonconfidential_data: None,
-                    message: payload.to_owned(),
+                    message,
                     message_type: MessageType::Signed,
                 })
             }
@@ -694,7 +710,10 @@ impl Store {
             &*sender,
             &*receiver,
             None,
-            Payload::RequestRelationship { route },
+            Payload::RequestRelationship {
+                route,
+                thread_id: Default::default(),
+            },
         )?;
 
         let (transport, tsp_message) = if let Some(hop_list) = path {
@@ -792,6 +811,7 @@ impl Store {
             None,
             Payload::RequestNestedRelationship {
                 vid: nested_vid.vid().as_ref(),
+                thread_id: Default::default(),
             },
         )?;
 
@@ -843,14 +863,41 @@ impl Store {
         Ok(((transport, tsp_message), nested_vid))
     }
 
+    pub fn make_new_identifier_notice(
+        &self,
+        sender: &str,
+        receiver: &str,
+        new_vid: &str,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        // check that the new vid is actually one of ours
+        let _new_vid = self.get_private_vid(new_vid)?;
+
+        let RelationshipStatus::Bidirectional { thread_id, .. } =
+            self.get_vid(receiver)?.relation_status
+        else {
+            return Err(Error::Relationship(receiver.to_string()));
+        };
+
+        let (transport, tsp_message) = self.seal_message_payload(
+            sender,
+            receiver,
+            None,
+            Payload::NewIdentifier {
+                thread_id,
+                new_vid: new_vid.as_ref(),
+            },
+        )?;
+
+        Ok((transport, tsp_message))
+    }
+
     pub fn make_relationship_referral(
         &self,
         sender: &str,
         receiver: &str,
         referred_vid: &str,
     ) -> Result<(Url, Vec<u8>), Error> {
-        let _sender = self.get_private_vid(sender)?;
-        let _receiver = self.get_verified_vid(receiver)?;
+        // check that we actually know the referred vid
         let _referred_vid = self.get_vid(referred_vid)?;
 
         let (transport, tsp_message) = self.seal_message_payload(
@@ -1034,13 +1081,13 @@ mod test {
 
         let message = b"hello world";
 
-        let (url, sealed) = store
+        let (url, mut sealed) = store
             .seal_message(alice.identifier(), bob.identifier(), None, message)
             .unwrap();
 
         assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
 
-        let received = store.open_message(&mut sealed.clone()).unwrap();
+        let received = store.open_message(&mut sealed).unwrap();
 
         if let ReceivedTspMessage::GenericMessage {
             sender,
@@ -1067,13 +1114,13 @@ mod test {
         store.add_private_vid(alice.clone()).unwrap();
         store.add_private_vid(bob.clone()).unwrap();
 
-        let (url, sealed) = store
+        let (url, mut sealed) = store
             .make_relationship_request(alice.identifier(), bob.identifier(), None)
             .unwrap();
 
         assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
 
-        let received = store.open_message(&mut sealed.clone()).unwrap();
+        let received = store.open_message(&mut sealed).unwrap();
 
         if let ReceivedTspMessage::RequestRelationship { sender, .. } = received {
             assert_eq!(sender, alice.identifier());
@@ -1093,12 +1140,12 @@ mod test {
         store.add_private_vid(bob.clone()).unwrap();
 
         // alice wants to establish a relation
-        let (url, sealed) = store
+        let (url, mut sealed) = store
             .make_relationship_request(alice.identifier(), bob.identifier(), None)
             .unwrap();
 
         assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
-        let received = store.open_message(&mut sealed.clone()).unwrap();
+        let received = store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::RequestRelationship {
             sender, thread_id, ..
@@ -1110,12 +1157,12 @@ mod test {
         assert_eq!(sender, alice.identifier());
 
         // bob accepts the relation
-        let (url, sealed) = store
+        let (url, mut sealed) = store
             .make_relationship_accept(bob.identifier(), alice.identifier(), thread_id, None)
             .unwrap();
 
         assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
-        let received = store.open_message(&mut sealed.clone()).unwrap();
+        let received = store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::AcceptRelationship { sender, .. } = received else {
             panic!("unexpected message type");
@@ -1134,12 +1181,12 @@ mod test {
         store.add_private_vid(bob.clone()).unwrap();
 
         // alice wants to establish a relation
-        let (url, sealed) = store
+        let (url, mut sealed) = store
             .make_relationship_request(alice.identifier(), bob.identifier(), None)
             .unwrap();
 
         assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
-        let received = store.open_message(&mut sealed.clone()).unwrap();
+        let received = store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::RequestRelationship {
             sender, thread_id, ..
@@ -1150,12 +1197,12 @@ mod test {
         assert_eq!(sender, alice.identifier());
 
         // bob accepts the relation
-        let (url, sealed) = store
+        let (url, mut sealed) = store
             .make_relationship_accept(bob.identifier(), alice.identifier(), thread_id, None)
             .unwrap();
 
         assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
-        let received = store.open_message(&mut sealed.clone()).unwrap();
+        let received = store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::AcceptRelationship { sender, .. } = received else {
             panic!("unexpected message type");
@@ -1163,17 +1210,60 @@ mod test {
         assert_eq!(sender, bob.identifier());
 
         // now bob cancels the relation
-        let (url, sealed) = store
+        let (url, mut sealed) = store
             .make_relationship_cancel(bob.identifier(), alice.identifier())
             .unwrap();
 
         assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
-        let received = store.open_message(&mut sealed.clone()).unwrap();
+        let received = store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::CancelRelationship { sender, .. } = received else {
             panic!("unexpected message type");
         };
         assert_eq!(sender, bob.identifier());
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_make_new_identity() {
+        let a_store = Store::new();
+        let b_store = Store::new();
+        let alice = new_vid();
+        let bob = new_vid();
+        let charles = new_vid();
+
+        a_store.add_private_vid(alice.clone()).unwrap();
+        b_store.add_private_vid(bob.clone()).unwrap();
+        a_store.add_private_vid(charles.clone()).unwrap();
+
+        a_store.add_verified_vid(bob.clone()).unwrap();
+        b_store.add_verified_vid(alice.clone()).unwrap();
+
+        let status = super::RelationshipStatus::Bidirectional {
+            thread_id: Default::default(),
+            outstanding_nested_thread_ids: vec![],
+        };
+
+        a_store
+            .replace_relation_status_for_vid(bob.identifier(), status.clone())
+            .unwrap();
+        b_store
+            .replace_relation_status_for_vid(alice.identifier(), status)
+            .unwrap();
+
+        // alice introduces her new identity to bob
+        let (url, mut sealed) = a_store
+            .make_new_identifier_notice(alice.identifier(), bob.identifier(), charles.identifier())
+            .unwrap();
+
+        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        let received = b_store.open_message(&mut sealed).unwrap();
+
+        let ReceivedTspMessage::NewIdentifier { sender, new_vid } = received else {
+            panic!("unexpected message type");
+        };
+        assert_eq!(sender, alice.identifier());
+        assert_eq!(new_vid, charles.identifier());
     }
 
     #[test]
@@ -1186,15 +1276,15 @@ mod test {
 
         store.add_private_vid(alice.clone()).unwrap();
         store.add_private_vid(bob.clone()).unwrap();
-        store.add_private_vid(charles.clone()).unwrap();
+        store.add_verified_vid(charles.clone()).unwrap();
 
         // alice vouches for charlies to bob
-        let (url, sealed) = store
+        let (url, mut sealed) = store
             .make_relationship_referral(alice.identifier(), bob.identifier(), charles.identifier())
             .unwrap();
 
         assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
-        let received = store.open_message(&mut sealed.clone()).unwrap();
+        let received = store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::Referral {
             sender,
@@ -1271,7 +1361,7 @@ mod test {
 
         let hello_world = b"hello world";
 
-        let (_url, sealed) = a_store
+        let (_url, mut sealed) = a_store
             .seal_message(
                 sneaky_a.identifier(),
                 sneaky_d.identifier(),
@@ -1280,7 +1370,7 @@ mod test {
             )
             .unwrap();
 
-        let received = b_store.open_message(&mut sealed.clone()).unwrap();
+        let received = b_store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::ForwardRequest {
             sender,
@@ -1293,7 +1383,7 @@ mod test {
         };
         assert_eq!(sender, nette_a.identifier());
 
-        let (_url, sealed) = b_store
+        let (_url, mut sealed) = b_store
             .forward_routed_message(
                 &next_hop,
                 route.iter().map(|s| s.as_slice()).collect(),
@@ -1301,7 +1391,7 @@ mod test {
             )
             .unwrap();
 
-        let received = c_store.open_message(&mut sealed.clone()).unwrap();
+        let received = c_store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::ForwardRequest {
             sender,
@@ -1314,7 +1404,7 @@ mod test {
         };
         assert_eq!(sender, b.identifier());
 
-        let (_url, sealed) = c_store
+        let (_url, mut sealed) = c_store
             .forward_routed_message(
                 &next_hop,
                 route.iter().map(|s| s.as_slice()).collect(),
@@ -1322,7 +1412,7 @@ mod test {
             )
             .unwrap();
 
-        let received = d_store.open_message(&mut sealed.clone()).unwrap();
+        let received = d_store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::GenericMessage {
             sender,
@@ -1378,7 +1468,7 @@ mod test {
 
         let hello_world = b"hello world";
 
-        let (_url, sealed) = a_store
+        let (_url, mut sealed) = a_store
             .seal_message(
                 nested_a.identifier(),
                 nested_b.identifier(),
@@ -1387,7 +1477,7 @@ mod test {
             )
             .unwrap();
 
-        let received = b_store.open_message(&mut sealed.clone()).unwrap();
+        let received = b_store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::GenericMessage {
             sender,
@@ -1405,6 +1495,7 @@ mod test {
         assert_eq!(message_type, MessageType::SignedAndEncrypted);
     }
 
+    #[cfg(not(feature = "pq"))]
     #[test]
     #[wasm_bindgen_test]
     fn test_nested_automatic_setup() {
@@ -1507,7 +1598,7 @@ mod test {
 
         let hello_world = b"hello world";
 
-        let (_url, sealed) = a_store
+        let (_url, mut sealed) = a_store
             .seal_message(
                 nested_a.identifier(),
                 nested_b.identifier(),
@@ -1516,7 +1607,7 @@ mod test {
             )
             .unwrap();
 
-        let received = b_store.open_message(&mut sealed.clone()).unwrap();
+        let received = b_store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::GenericMessage {
             sender,

@@ -3,8 +3,19 @@ use crate::{
     definitions::{NonConfidentialData, Payload, PrivateVid, TSPMessage, VerifiedVid},
 };
 use ed25519_dalek::Signer;
-use hpke::{aead::AeadTag, Deserializable, OpModeR, OpModeS, Serializable};
 use rand::{rngs::StdRng, SeedableRng};
+
+#[cfg(not(feature = "pq"))]
+use hpke::{
+    aead, kdf, kem, single_shot_open_in_place_detached, single_shot_seal_in_place_detached,
+    Deserializable, OpModeR, OpModeS, Serializable,
+};
+
+#[cfg(feature = "pq")]
+use hpke_pq::{
+    aead, kdf, kem, single_shot_open_in_place_detached, single_shot_seal_in_place_detached,
+    Deserializable, OpModeR, OpModeS, Serializable,
+};
 
 use super::{CryptoError, MessageContents};
 
@@ -16,9 +27,9 @@ pub(crate) fn seal<A, Kdf, Kem>(
     plaintext_observer: Option<super::ObservingClosure>,
 ) -> Result<TSPMessage, CryptoError>
 where
-    A: hpke::aead::Aead,
-    Kdf: hpke::kdf::Kdf,
-    Kem: hpke::kem::Kem,
+    A: aead::Aead,
+    Kdf: kdf::Kdf,
+    Kem: kem::Kem,
 {
     let mut csprng = StdRng::from_entropy();
 
@@ -36,19 +47,23 @@ where
 
     let secret_payload = match secret_payload {
         Payload::Content(data) => crate::cesr::Payload::GenericMessage(data),
-        Payload::RequestRelationship { route } => crate::cesr::Payload::DirectRelationProposal {
+        Payload::RequestRelationship {
+            route,
+            thread_id: _ignored,
+        } => crate::cesr::Payload::DirectRelationProposal {
             nonce: fresh_nonce(&mut csprng),
             hops: route.unwrap_or_else(Vec::new),
         },
         Payload::AcceptRelationship { ref thread_id } => {
             crate::cesr::Payload::DirectRelationAffirm { reply: thread_id }
         }
-        Payload::RequestNestedRelationship { vid } => {
-            crate::cesr::Payload::NestedRelationProposal {
-                nonce: fresh_nonce(&mut csprng),
-                new_vid: vid,
-            }
-        }
+        Payload::RequestNestedRelationship {
+            vid,
+            thread_id: _ignored,
+        } => crate::cesr::Payload::NestedRelationProposal {
+            nonce: fresh_nonce(&mut csprng),
+            new_vid: vid,
+        },
         Payload::AcceptNestedRelationship {
             ref thread_id,
             vid,
@@ -63,6 +78,10 @@ where
         }
         Payload::NestedMessage(data) => crate::cesr::Payload::NestedMessage(data),
         Payload::RoutedMessage(hops, data) => crate::cesr::Payload::RoutedMessage(hops, data),
+        Payload::NewIdentifier {
+            ref thread_id,
+            new_vid,
+        } => crate::cesr::Payload::NewIdentifierProposal { thread_id, new_vid },
         Payload::Referral { referred_vid } => {
             crate::cesr::Payload::RelationshipReferral { referred_vid }
         }
@@ -78,15 +97,15 @@ where
         // plaintext size
         secret_payload.calculate_size(sender_in_payload)
         // authenticated encryption tag length
-        + AeadTag::<A>::size()
+        + aead::AeadTag::<A>::size()
         // encapsulated key length
         + Kem::EncappedKey::size(),
     );
 
     crate::cesr::encode_payload(&secret_payload, sender_in_payload, &mut cesr_message)?;
 
-    // HPKE sender mode: "Auth"
-    #[cfg(not(feature = "essr"))]
+    // HPKE sender mode: "Auth" for ESSR and PQ features
+    #[cfg(all(not(feature = "essr"), not(feature = "pq")))]
     let mode = {
         let sender_decryption_key = Kem::PrivateKey::from_bytes(sender.decryption_key().as_ref())?;
         let sender_encryption_key = Kem::PublicKey::from_bytes(sender.encryption_key().as_ref())?;
@@ -94,7 +113,7 @@ where
         OpModeS::Auth((sender_decryption_key, sender_encryption_key))
     };
 
-    #[cfg(feature = "essr")]
+    #[cfg(any(feature = "essr", feature = "pq"))]
     let mode = OpModeS::Base;
 
     // recipient public key
@@ -106,7 +125,7 @@ where
     }
 
     // perform encryption
-    let (encapped_key, tag) = hpke::single_shot_seal_in_place_detached::<A, Kdf, Kem, StdRng>(
+    let (encapped_key, tag) = single_shot_seal_in_place_detached::<A, Kdf, Kem, StdRng>(
         &mode,
         &message_receiver,
         &data,
@@ -136,11 +155,11 @@ pub(crate) fn open<'a, A, Kdf, Kem>(
     tsp_message: &'a mut [u8],
 ) -> Result<MessageContents<'a>, CryptoError>
 where
-    A: hpke::aead::Aead,
-    Kdf: hpke::kdf::Kdf,
-    Kem: hpke::kem::Kem,
+    A: aead::Aead,
+    Kdf: kdf::Kdf,
+    Kem: kem::Kem,
 {
-    let view = crate::cesr::decode_envelope_mut(tsp_message)?;
+    let view = crate::cesr::decode_envelope(tsp_message)?;
 
     // verify outer signature
     let verification_challenge = view.as_challenge();
@@ -166,26 +185,26 @@ where
     }
 
     // split encapsulated key and authenticated encryption tag length
-    let (ciphertext, footer) =
-        ciphertext.split_at_mut(ciphertext.len() - AeadTag::<A>::size() - Kem::EncappedKey::size());
+    let (ciphertext, footer) = ciphertext
+        .split_at_mut(ciphertext.len() - aead::AeadTag::<A>::size() - Kem::EncappedKey::size());
     let (tag, encapped_key) = footer.split_at(footer.len() - Kem::EncappedKey::size());
 
     // construct correct key types
     let receiver_decryption_key = Kem::PrivateKey::from_bytes(receiver.decryption_key().as_ref())?;
     let encapped_key = Kem::EncappedKey::from_bytes(encapped_key)?;
-    let tag = AeadTag::from_bytes(tag)?;
+    let tag = aead::AeadTag::from_bytes(tag)?;
 
-    #[cfg(feature = "essr")]
+    #[cfg(any(feature = "essr", feature = "pq"))]
     let mode = OpModeR::Base;
 
-    #[cfg(not(feature = "essr"))]
+    #[cfg(all(not(feature = "essr"), not(feature = "pq")))]
     let mode = {
         let sender_encryption_key = Kem::PublicKey::from_bytes(sender.encryption_key().as_ref())?;
         OpModeR::Auth(sender_encryption_key)
     };
 
     // decrypt the ciphertext
-    hpke::single_shot_open_in_place_detached::<A, Kdf, Kem>(
+    single_shot_open_in_place_detached::<A, Kdf, Kem>(
         &mode,
         &receiver_decryption_key,
         &encapped_key,
@@ -194,6 +213,14 @@ where
         &[],
         &tag,
     )?;
+
+    // micro-optimization: only compute the thread_id digest if we really need it; we cannot do this
+    // later since after constructing the resulting Payload, we are giving out mutable borrows
+    let thread_id = match crate::cesr::decode_payload(ciphertext)?.payload {
+        crate::cesr::Payload::DirectRelationProposal { .. }
+        | crate::cesr::Payload::NestedRelationProposal { .. } => crate::crypto::sha256(ciphertext),
+        _ => Default::default(),
+    };
 
     #[allow(unused_variables)]
     let DecodedPayload {
@@ -212,15 +239,19 @@ where
     }
 
     let secret_payload = match payload {
-        crate::cesr::Payload::GenericMessage(data) => Payload::Content(data),
+        crate::cesr::Payload::GenericMessage(data) => Payload::Content(data as _),
         crate::cesr::Payload::DirectRelationProposal { hops, .. } => Payload::RequestRelationship {
             route: if hops.is_empty() { None } else { Some(hops) },
+            thread_id,
         },
         crate::cesr::Payload::DirectRelationAffirm { reply: &thread_id } => {
             Payload::AcceptRelationship { thread_id }
         }
         crate::cesr::Payload::NestedRelationProposal { new_vid, .. } => {
-            Payload::RequestNestedRelationship { vid: new_vid }
+            Payload::RequestNestedRelationship {
+                vid: new_vid,
+                thread_id,
+            }
         }
         crate::cesr::Payload::NestedRelationAffirm {
             new_vid,
@@ -235,13 +266,17 @@ where
             reply: &thread_id, ..
         } => Payload::CancelRelationship { thread_id },
         crate::cesr::Payload::NestedMessage(data) => Payload::NestedMessage(data),
-        crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data),
+        crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data as _),
+        crate::cesr::Payload::NewIdentifierProposal {
+            thread_id: &thread_id,
+            new_vid,
+        } => Payload::NewIdentifier { thread_id, new_vid },
         crate::cesr::Payload::RelationshipReferral { referred_vid } => {
             Payload::Referral { referred_vid }
         }
     };
 
-    Ok((envelope.nonconfidential_data, secret_payload, ciphertext))
+    Ok((envelope.nonconfidential_data, secret_payload))
 }
 
 /// Generate N random bytes using the provided RNG

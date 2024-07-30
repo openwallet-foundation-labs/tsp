@@ -34,19 +34,23 @@ pub(crate) fn seal(
 
     let secret_payload = match secret_payload {
         Payload::Content(data) => crate::cesr::Payload::GenericMessage(data),
-        Payload::RequestRelationship { route } => crate::cesr::Payload::DirectRelationProposal {
+        Payload::RequestRelationship {
+            route,
+            thread_id: _ignored,
+        } => crate::cesr::Payload::DirectRelationProposal {
             nonce: fresh_nonce(&mut csprng),
             hops: route.unwrap_or_else(Vec::new),
         },
         Payload::AcceptRelationship { ref thread_id } => {
             crate::cesr::Payload::DirectRelationAffirm { reply: thread_id }
         }
-        Payload::RequestNestedRelationship { vid } => {
-            crate::cesr::Payload::NestedRelationProposal {
-                nonce: fresh_nonce(&mut csprng),
-                new_vid: vid,
-            }
-        }
+        Payload::RequestNestedRelationship {
+            vid,
+            thread_id: _ignored,
+        } => crate::cesr::Payload::NestedRelationProposal {
+            nonce: fresh_nonce(&mut csprng),
+            new_vid: vid,
+        },
         Payload::AcceptNestedRelationship {
             ref thread_id,
             vid,
@@ -56,6 +60,10 @@ pub(crate) fn seal(
             new_vid: vid,
             connect_to_vid,
         },
+        Payload::NewIdentifier {
+            ref thread_id,
+            new_vid,
+        } => crate::cesr::Payload::NewIdentifierProposal { thread_id, new_vid },
         Payload::Referral { referred_vid } => {
             crate::cesr::Payload::RelationshipReferral { referred_vid }
         }
@@ -114,7 +122,7 @@ pub(crate) fn open<'a>(
     sender: &dyn VerifiedVid,
     tsp_message: &'a mut [u8],
 ) -> Result<MessageContents<'a>, CryptoError> {
-    let view = crate::cesr::decode_envelope_mut(tsp_message)?;
+    let view = crate::cesr::decode_envelope(tsp_message)?;
 
     // verify outer signature
     let verification_challenge = view.as_challenge();
@@ -148,6 +156,8 @@ pub(crate) fn open<'a>(
 
     receiver_box.decrypt_in_place_detached(nonce.into(), &[], ciphertext, tag.into())?;
 
+    let thread_id = crate::crypto::sha256(ciphertext);
+
     #[allow(unused_variables)]
     let DecodedPayload {
         payload,
@@ -165,15 +175,19 @@ pub(crate) fn open<'a>(
     }
 
     let secret_payload = match payload {
-        crate::cesr::Payload::GenericMessage(data) => Payload::Content(data),
+        crate::cesr::Payload::GenericMessage(data) => Payload::Content(data as _),
         crate::cesr::Payload::DirectRelationProposal { hops, .. } => Payload::RequestRelationship {
             route: if hops.is_empty() { None } else { Some(hops) },
+            thread_id,
         },
         crate::cesr::Payload::DirectRelationAffirm { reply: &thread_id } => {
             Payload::AcceptRelationship { thread_id }
         }
         crate::cesr::Payload::NestedRelationProposal { new_vid, .. } => {
-            Payload::RequestNestedRelationship { vid: new_vid }
+            Payload::RequestNestedRelationship {
+                vid: new_vid,
+                thread_id,
+            }
         }
         crate::cesr::Payload::NestedRelationAffirm {
             new_vid,
@@ -184,6 +198,10 @@ pub(crate) fn open<'a>(
             connect_to_vid,
             thread_id,
         },
+        crate::cesr::Payload::NewIdentifierProposal {
+            thread_id: &thread_id,
+            new_vid,
+        } => Payload::NewIdentifier { thread_id, new_vid },
         crate::cesr::Payload::RelationshipReferral { referred_vid } => {
             Payload::Referral { referred_vid }
         }
@@ -191,10 +209,10 @@ pub(crate) fn open<'a>(
             reply: &thread_id, ..
         } => Payload::CancelRelationship { thread_id },
         crate::cesr::Payload::NestedMessage(data) => Payload::NestedMessage(data),
-        crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data),
+        crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data as _),
     };
 
-    Ok((envelope.nonconfidential_data, secret_payload, ciphertext))
+    Ok((envelope.nonconfidential_data, secret_payload))
 }
 
 /// Generate N random bytes using the provided RNG
