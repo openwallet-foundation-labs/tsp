@@ -369,18 +369,15 @@ impl AsyncStore {
             let db_inner = db.clone();
             async move {
                 match message {
-                    Ok(mut m) => {
-                        let m_copy = m.clone();
-                        match db_inner.open_message(&mut m) {
-                            Err(Error::UnverifiedSource(unknown_vid)) => {
-                                Ok(ReceivedTspMessage::PendingMessage {
-                                    unknown_vid,
-                                    payload: m_copy,
-                                })
-                            }
-                            maybe_message => maybe_message.map(|msg| msg.into_owned()),
+                    Ok(mut m) => match db_inner.open_message(&mut m) {
+                        Err(Error::UnverifiedSource(unknown_vid, opaque_data)) => {
+                            Ok(ReceivedTspMessage::PendingMessage {
+                                unknown_vid,
+                                payload: opaque_data.unwrap_or(m),
+                            })
                         }
-                    }
+                        maybe_message => maybe_message.map(|msg| msg.into_owned()),
+                    },
                     Err(e) => Err(e.into()),
                 }
             }
