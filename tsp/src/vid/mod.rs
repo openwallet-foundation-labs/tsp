@@ -12,12 +12,10 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "serialize")]
 pub mod deserialize;
 
-#[cfg(feature = "resolve")]
 pub mod did;
 
 pub mod error;
 
-#[cfg(feature = "resolve")]
 pub mod resolve;
 
 #[cfg(feature = "resolve")]
@@ -138,7 +136,6 @@ impl OwnedVid {
         }
     }
 
-    #[cfg(feature = "resolve")]
     pub fn new_did_peer(transport: Url) -> OwnedVid {
         let (sigkey, public_sigkey) = crate::crypto::gen_sign_keypair();
         let (enckey, public_enckey) = crate::crypto::gen_encrypt_keypair();

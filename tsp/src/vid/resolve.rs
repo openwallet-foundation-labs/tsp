@@ -4,6 +4,7 @@ use super::{
 };
 use crate::Vid;
 
+#[cfg(feature = "resolve")]
 /// Resolve and verify the vid identified by `id`, by using online and offline methods
 pub async fn verify_vid(id: &str) -> Result<Vid, VidError> {
     let parts = id.split(':').collect::<Vec<&str>>();
