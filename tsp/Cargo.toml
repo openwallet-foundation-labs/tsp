@@ -36,7 +36,7 @@ async = [
     "dep:quinn",
 ]
 resolve = ["serialize", "dep:reqwest"]
-serialize = ["dep:serde", "dep:serde_json", "dep:serde_with", "dep:bs58"]
+serialize = ["dep:serde", "dep:serde_with"]
 
 [dependencies]
 # generic
@@ -71,9 +71,9 @@ quinn = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 # serialize
 serde = { workspace = true, optional = true }
-serde_json = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = false }
 serde_with = { workspace = true, optional = true }
-bs58 = { workspace = true, optional = true }
+bs58 = { workspace = true, optional = false }
 # fuzzing
 arbitrary = { workspace = true, optional = true }
 
