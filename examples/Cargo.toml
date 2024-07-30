@@ -21,7 +21,7 @@ name = "demo-server"
 path = "src/server.rs"
 
 [dependencies]
-tsp = { path = "../tsp" }
+tsp = { path = "../tsp", features = ["async"] }
 axum = { workspace = true}
 base64ct = { workspace = true }
 clap = { workspace = true}

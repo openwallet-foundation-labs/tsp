@@ -544,7 +544,10 @@ impl Store {
                 let sender = String::from_utf8(sender.to_vec())?;
 
                 let Ok(sender_vid) = self.get_verified_vid(&sender) else {
+                    #[cfg(feature = "async")]
                     return Err(Error::UnverifiedSource(sender, None));
+                    #[cfg(not(feature = "async"))]
+                    return Err(Error::UnverifiedSource(sender));
                 };
 
                 let (nonconfidential_data, payload) =
@@ -565,6 +568,7 @@ impl Store {
                         if self.get_verified_vid(inner_vid).is_err() {
                             return Err(Error::UnverifiedSource(
                                 inner_vid.to_owned(),
+                                #[cfg(feature = "async")]
                                 Some(inner.to_vec()),
                             ));
                         }

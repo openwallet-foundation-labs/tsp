@@ -31,8 +31,12 @@ pub enum Error {
     MissingVid(String),
     #[error("Error: unresolved vid {0}")]
     UnverifiedVid(String),
+    #[cfg(feature = "async")]
     #[error("Error: no relation with sender {0}")]
     UnverifiedSource(String, Option<Vec<u8>>),
+    #[cfg(not(feature = "async"))]
+    #[error("Error: no relation with sender {0}")]
+    UnverifiedSource(String),
     #[error("Error: unresolved next hop {0}")]
     UnresolvedNextHop(String),
     #[error("Error: no relation with next hop {0}")]
