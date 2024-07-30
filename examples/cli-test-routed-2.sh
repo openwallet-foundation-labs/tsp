@@ -64,14 +64,12 @@ tsp --database marlon set-relation p marlon
 tsp --database p set-relation did:web:tsp-test.org:user:q p
 tsp --database q set-relation did:web:tsp-test.org:user:q2 did:web:tsp-test.org:user:marc
 
-tsp --database marc verify did:web:tsp-test.org:user:marlon
-
 echo "---- send a routed message"
 
 sleep 2 && echo -n "Indirect Message from Marlon to Marc was received!" | tsp --database marlon send -s marlon -r marc &
 tsp --yes --database p receive --one p &
 tsp --yes --database q receive --one q &
-tsp --database marc receive --one marc
+tsp --yes --database marc receive --one marc
 
 echo "---- cleanup databases"
 rm -f marlon.sqlite marc.sqlite p.sqlite q.sqlite
