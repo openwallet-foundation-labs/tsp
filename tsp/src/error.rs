@@ -32,7 +32,7 @@ pub enum Error {
     #[error("Error: unresolved vid {0}")]
     UnverifiedVid(String),
     #[error("Error: no relation with sender {0}")]
-    UnverifiedSource(String),
+    UnverifiedSource(String, Option<Vec<u8>>),
     #[error("Error: unresolved next hop {0}")]
     UnresolvedNextHop(String),
     #[error("Error: no relation with next hop {0}")]
