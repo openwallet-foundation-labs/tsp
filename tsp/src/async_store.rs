@@ -337,9 +337,11 @@ impl AsyncStore {
         path: Vec<T>,
         opaque_message: &[u8],
     ) -> Result<Url, Error> {
-        let (transport, message) =
-            self.inner
-                .forward_routed_message(next_hop, path.iter().map(|x| x.as_ref()).collect(), opaque_message)?;
+        let (transport, message) = self.inner.forward_routed_message(
+            next_hop,
+            path.iter().map(|x| x.as_ref()).collect(),
+            opaque_message,
+        )?;
 
         crate::transport::send_message(&transport, &message).await?;
 
