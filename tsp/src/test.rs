@@ -347,11 +347,10 @@ async fn test_routed_mode() {
         .unwrap();
 
     // test1: alice doens't know "realbob"
-    //TODO: the lifetime vs. Vec thing in 'Payload' vs 'ReceivedTspMessage' bites us here
     bob_db
         .forward_routed_message(
             "did:web:did.tsp-test.org:user:alice",
-            route.iter().map(|x| x.as_ref()).collect(),
+            route,
             &opaque_payload,
         )
         .await
@@ -368,18 +367,14 @@ async fn test_routed_mode() {
     };
     assert_eq!(next_hop, "did:web:hidden.web:user:realbob");
     let crate::Error::UnverifiedVid { .. } = alice_db
-        .forward_routed_message(
-            &next_hop,
-            route.iter().map(|x| x.as_ref()).collect(),
-            &opaque_payload,
-        )
+        .forward_routed_message(&next_hop, route, &opaque_payload)
         .await
         .unwrap_err()
     else {
         panic!("unexpected error");
     };
     let crate::Error::UnverifiedVid { .. } = alice_db
-        .forward_routed_message(&next_hop, vec![], &opaque_payload)
+        .forward_routed_message(&next_hop, Vec::<&[u8]>::new(), &opaque_payload)
         .await
         .unwrap_err()
     else {
@@ -416,7 +411,11 @@ async fn test_routed_mode() {
         )
         .unwrap();
     bob_db
-        .forward_routed_message("did:web:did.tsp-test.org:user:bob", vec![], &opaque_payload)
+        .forward_routed_message(
+            "did:web:did.tsp-test.org:user:bob",
+            Vec::<&[u8]>::new(),
+            &opaque_payload,
+        )
         .await
         .unwrap();
     let crate::definitions::ReceivedTspMessage::GenericMessage {

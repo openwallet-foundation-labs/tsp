@@ -435,6 +435,14 @@ async fn run() -> Result<(), Error> {
 
             info!("listening for messages...");
 
+            // closures cannot be async, and async fn's don't easily do recursion
+            enum Action {
+                Nothing,
+                Verify(String),
+                VerifyAndOpen(String, Vec<u8>),
+                Forward(String, Vec<Vec<u8>>, Vec<u8>),
+            }
+
             while let Some(Ok(message)) = messages.next().await {
                 let handle_message = |message: ReceivedTspMessage| {
                     match message {
@@ -486,17 +494,22 @@ async fn run() -> Result<(), Error> {
                             info!("received cancel relationship from {sender}");
                         }
                         ReceivedTspMessage::ForwardRequest {
-                            sender, next_hop, ..
+                            sender,
+                            route,
+                            next_hop,
+                            opaque_payload,
                         } => {
-                            info!("messaging forwarding request from {sender} to {next_hop}",);
-                            if args.yes || prompt(format!("do you want to forward this message?")) {
-                                todo!()
+                            info!("messaging forwarding request from {sender} to {next_hop} ({} hops)", route.len());
+                            if args.yes
+                                || prompt("do you want to forward this message?".to_string())
+                            {
+                                return Action::Forward(next_hop, route, opaque_payload);
                             }
                         }
                         ReceivedTspMessage::NewIdentifier { sender, new_vid } => {
                             info!("received request for new identifier '{new_vid}' from {sender}");
                             println!("{new_vid}");
-                            return Some((new_vid, None));
+                            return Action::Verify(new_vid);
                         }
                         ReceivedTspMessage::Referral {
                             sender,
@@ -506,7 +519,7 @@ async fn run() -> Result<(), Error> {
                                 "received relationship referral for '{referred_vid}' from {sender}"
                             );
                             println!("{referred_vid}");
-                            return Some((referred_vid, None));
+                            return Action::Verify(referred_vid);
                         }
                         ReceivedTspMessage::PendingMessage {
                             unknown_vid,
@@ -521,19 +534,18 @@ async fn run() -> Result<(), Error> {
 
                             if user_affirms {
                                 trace!("processing pending message");
-                                return Some((unknown_vid, Some(payload)));
+                                return Action::VerifyAndOpen(unknown_vid, payload);
                             }
                         }
                     }
 
-                    None
+                    Action::Nothing
                 };
 
-                if let Some((unknown_vid, payload)) = handle_message(message) {
-                    if let Some(payload) = payload {
-                        let message = vid_database
-                            .verify_and_open(&unknown_vid, payload)
-                            .await?;
+                match handle_message(message) {
+                    Action::Nothing => {}
+                    Action::VerifyAndOpen(vid, payload) => {
+                        let message = vid_database.verify_and_open(&vid, payload).await?;
 
                         info!(
                             "{vid} is verified and added to the database {}",
@@ -541,15 +553,23 @@ async fn run() -> Result<(), Error> {
                         );
 
                         let _ = handle_message(message);
-                    } else {
-                        vid_database.verify_vid(&unknown_vid).await?;
+                    }
+                    Action::Verify(vid) => {
+                        vid_database.verify_vid(&vid).await?;
 
                         info!(
                             "{vid} is verified and added to the database {}",
                             &args.database
                         );
                     }
+                    Action::Forward(next_hop, route, payload) => {
+                        vid_database
+                            .forward_routed_message(&next_hop, route, &payload)
+                            .await?;
+                        info!("forwarding to next hop: {next_hop}");
+                    }
                 }
+
                 write_database(&vault, &vid_database, aliases.clone()).await?;
 
                 if one {
