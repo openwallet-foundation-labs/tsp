@@ -9,7 +9,6 @@ randuser() {
 
 cointoss() {
     (( $RANDOM % 2 ))
-    true
 }
 
 echo "---- cleanup the database"
