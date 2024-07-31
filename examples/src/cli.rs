@@ -1,4 +1,4 @@
-use base64ct::{Base64UrlUnpadded, Encoding};
+use base64ct::{Base64Unpadded, Base64UrlUnpadded, Encoding};
 use clap::{Parser, Subcommand};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -456,7 +456,7 @@ async fn run() -> Result<(), Error> {
                             route: _,
                             nested_vid: None,
                         } => {
-                            let thread_id = Base64UrlUnpadded::encode_string(&thread_id);
+                            let thread_id = Base64Unpadded::encode_string(&thread_id);
                             info!(
                                 "received relationship request from {sender}, thread-id '{thread_id}'",
                             );
@@ -474,7 +474,7 @@ async fn run() -> Result<(), Error> {
                             route: _,
                             nested_vid: Some(vid),
                         } => {
-                            let thread_id = Base64UrlUnpadded::encode_string(&thread_id);
+                            let thread_id = Base64Unpadded::encode_string(&thread_id);
                             info!("received nested relationship request from '{vid}' (new identity for {sender}), thread-id '{thread_id}'");
                             println!("{vid}\t{thread_id}");
                         }
@@ -639,7 +639,7 @@ async fn run() -> Result<(), Error> {
             let receiver_vid = aliases.get(&receiver_vid).unwrap_or(&receiver_vid);
 
             let mut digest: [u8; 32] = Default::default();
-            Base64UrlUnpadded::decode(&thread_id, &mut digest).unwrap();
+            Base64Unpadded::decode(&thread_id, &mut digest).unwrap();
 
             if nested {
                 match vid_database
