@@ -14,7 +14,8 @@ cointoss() {
 echo "---- cleanup the database"
 rm -f marlon.sqlite marc.sqlite p.sqlite q.sqlite
 
-echo "---- create sender, receiver, and intermediaries"
+echo
+echo "==== create sender, receiver, and intermediaries"
 
 for entity in marlon p q q2 marc; do
     if cointoss; then
@@ -26,7 +27,7 @@ for entity in marlon p q q2 marc; do
 	    tsp --database "${entity%%[0-9]*}" create-peer $entity
 	else
 	    echo "------ $entity (identifier for ${entity%%[0-9]*}) uses did:peer with local transport"
-	    port=$((RANDOM % 1000 + 1000))
+	    port=$((${port:-1000} + RANDOM % 1000))
 	    tsp --database "${entity%%[0-9]*}" create-peer --tcp localhost:$port $entity
 	fi
     fi
@@ -36,6 +37,10 @@ DID_P=$(tsp --database p print p)
 DID_Q=$(tsp --database q print q)
 DID_Q2=$(tsp --database q print q2)
 DID_MARC=$(tsp --database marc print marc)
+
+sleep 5
+echo
+echo "==== let the nodes introduce each other"
 
 echo "---- verify the address of the receiver"
 tsp --database marlon verify --alias marc "$DID_MARC"
@@ -84,7 +89,10 @@ tsp --database marlon set-relation p marlon
 tsp --database p set-relation q p
 tsp --database q set-relation q2 marc
 
-echo "---- send a routed message"
+sleep 5
+
+echo
+echo "==== send a routed message"
 
 sleep 2 && echo -n "Indirect Message from Marlon to Marc was received!" | tsp --database marlon send -s marlon -r marc &
 tsp --yes --database p receive --one p &
