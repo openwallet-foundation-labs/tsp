@@ -16,13 +16,19 @@ rm -f marlon.sqlite marc.sqlite p.sqlite q.sqlite
 
 echo "---- create sender, receiver, and intermediaries"
 
-for entity in marc marlon p q q2; do
+for entity in marlon p q q2 marc; do
     if cointoss; then
 	echo "------ $entity (identifier for ${entity%%[0-9]*}) uses did:web"
 	tsp --database "${entity%%[0-9]*}" create --alias $entity `randuser`
     else
-	echo "------ $entity (identifier for ${entity%%[0-9]*}) uses did:peer"
-	tsp --database "${entity%%[0-9]*}" create-peer $entity
+	if cointoss; then
+	    echo "------ $entity (identifier for ${entity%%[0-9]*}) uses did:peer with https:// transport"
+	    tsp --database "${entity%%[0-9]*}" create-peer $entity
+	else
+	    echo "------ $entity (identifier for ${entity%%[0-9]*}) uses did:peer with local transport"
+	    port=$((RANDOM % 1000 + 1000))
+	    tsp --database "${entity%%[0-9]*}" create-peer --tcp localhost:$port $entity
+	fi
     fi
 done
 DID_MARLON=$(tsp --database marlon print marlon)

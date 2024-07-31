@@ -53,9 +53,7 @@ enum Commands {
         sender: Option<String>,
     },
     #[command(arg_required_else_help = true)]
-    Print {
-        alias: String,
-    },
+    Print { alias: String },
     #[command(
         arg_required_else_help = true,
         about = "create and register a did:web identifier"
@@ -67,6 +65,11 @@ enum Commands {
     },
     CreatePeer {
         alias: String,
+        #[arg(
+            long,
+            help = "Specify a network address and port instead of HTTPS transport"
+        )]
+        tcp: Option<String>,
     },
     #[command(
         arg_required_else_help = true,
@@ -78,25 +81,13 @@ enum Commands {
         alias: Option<String>,
     },
     #[command(arg_required_else_help = true)]
-    SetAlias {
-        alias: String,
-        vid: String,
-    },
+    SetAlias { alias: String, vid: String },
     #[command(arg_required_else_help = true)]
-    SetRoute {
-        vid: String,
-        route: String,
-    },
+    SetRoute { vid: String, route: String },
     #[command(arg_required_else_help = true)]
-    SetParent {
-        vid: String,
-        other_vid: String,
-    },
+    SetParent { vid: String, other_vid: String },
     #[command(arg_required_else_help = true)]
-    SetRelation {
-        vid: String,
-        other_vid: String,
-    },
+    SetRelation { vid: String, other_vid: String },
     #[command(arg_required_else_help = true, about = "send a message")]
     Send {
         #[arg(short, long, required = true)]
@@ -324,8 +315,12 @@ async fn run() -> Result<(), Error> {
             vid_database.add_private_vid(private_vid.clone())?;
             write_database(&vault, &vid_database, aliases).await?;
         }
-        Commands::CreatePeer { alias } => {
-            let transport = url::Url::parse(&format!("https://{server}/user/{alias}")).unwrap();
+        Commands::CreatePeer { alias, tcp } => {
+            let transport = if let Some(address) = tcp {
+                url::Url::parse(&format!("tcp://{address}")).unwrap()
+            } else {
+                url::Url::parse(&format!("https://{server}/user/{alias}")).unwrap()
+            };
             let private_vid = OwnedVid::new_did_peer(transport);
 
             aliases.insert(alias.clone(), private_vid.identifier().to_string());
