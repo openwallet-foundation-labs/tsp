@@ -256,7 +256,7 @@ impl AsyncStore {
     }
 
     /// Send a relationship referral message to `receiver`
-    pub async fn send_relationship_referal(
+    pub async fn send_relationship_referral(
         &self,
         sender: &str,
         receiver: &str,
@@ -331,15 +331,17 @@ impl AsyncStore {
 
     /// Pass along a in-transit routed TSP `opaque_message` that is not meant for us, given earlier resolved VIDs.
     /// The message is routed through the route that has been established with `receiver`.
-    pub async fn forward_routed_message(
+    pub async fn forward_routed_message<T: AsRef<[u8]>>(
         &self,
         next_hop: &str,
-        path: Vec<&[u8]>,
+        path: Vec<T>,
         opaque_message: &[u8],
     ) -> Result<Url, Error> {
-        let (transport, message) =
-            self.inner
-                .forward_routed_message(next_hop, path, opaque_message)?;
+        let (transport, message) = self.inner.forward_routed_message(
+            next_hop,
+            path.iter().map(|x| x.as_ref()).collect(),
+            opaque_message,
+        )?;
 
         crate::transport::send_message(&transport, &message).await?;
 
@@ -368,10 +370,10 @@ impl AsyncStore {
             async move {
                 match message {
                     Ok(mut m) => match db_inner.open_message(&mut m) {
-                        Err(Error::UnverifiedSource(unknown_vid)) => {
+                        Err(Error::UnverifiedSource(unknown_vid, opaque_data)) => {
                             Ok(ReceivedTspMessage::PendingMessage {
                                 unknown_vid,
-                                payload: m,
+                                payload: opaque_data.unwrap_or(m),
                             })
                         }
                         maybe_message => maybe_message.map(|msg| msg.into_owned()),

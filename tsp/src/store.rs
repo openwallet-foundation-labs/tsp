@@ -363,6 +363,10 @@ impl Store {
                 return Err(VidError::ResolveVid("missing parent for inner VID").into());
             };
 
+            if parent_sender != sender.identifier() && inner_sender != sender.identifier() {
+                return Err(VidError::ResolveVid("incorrect sender VID").into());
+            }
+
             let inner_sender = self.get_private_vid(inner_sender)?;
             let inner_message = crate::crypto::sign(
                 &*inner_sender,
@@ -510,6 +514,14 @@ impl Store {
         }
     }
 
+    /// Get the sender from a CESR message
+    fn probe_sender(message: &mut [u8]) -> Result<&str, Error> {
+        Ok(match crate::cesr::probe(message)? {
+            EnvelopeType::EncryptedMessage { sender, .. } => std::str::from_utf8(sender)?,
+            EnvelopeType::SignedMessage { sender, .. } => std::str::from_utf8(sender)?,
+        })
+    }
+
     /// Decode an encrypted `message``, which has to be addressed to one of the VIDs in `receivers`, and has to have
     /// `verified_vids` as one of the senders.
     pub fn open_message<'a>(
@@ -533,6 +545,9 @@ impl Store {
                 let sender = String::from_utf8(sender.to_vec())?;
 
                 let Ok(sender_vid) = self.get_verified_vid(&sender) else {
+                    #[cfg(feature = "async")]
+                    return Err(Error::UnverifiedSource(sender, None));
+                    #[cfg(not(feature = "async"))]
                     return Err(Error::UnverifiedSource(sender));
                 };
 
@@ -547,7 +562,20 @@ impl Store {
                         message_type: MessageType::SignedAndEncrypted,
                     }),
                     Payload::NestedMessage(inner) => {
+                        // we must communicate the correct payload to the caller, in case
+                        // the inner vid isn't recognized (which can happen in Routed mode)
+                        // we cannot do this after 'open_message' since 'inner' will be borrowed
+                        let inner_vid = Self::probe_sender(inner)?;
+                        if self.get_verified_vid(inner_vid).is_err() {
+                            return Err(Error::UnverifiedSource(
+                                inner_vid.to_owned(),
+                                #[cfg(feature = "async")]
+                                Some(inner.to_vec()),
+                            ));
+                        }
+
                         let mut received_message = self.open_message(inner)?;
+
                         if let ReceivedTspMessage::GenericMessage {
                             ref mut message_type,
                             ..

@@ -1,4 +1,4 @@
-use base64ct::{Base64UrlUnpadded, Encoding};
+use base64ct::{Base64Unpadded, Base64UrlUnpadded, Encoding};
 use clap::{Parser, Subcommand};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -41,7 +41,10 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    #[command(arg_required_else_help = true)]
+    #[command(
+        arg_required_else_help = true,
+        about = "verify and add a identifier to the database"
+    )]
     Verify {
         vid: String,
         #[arg(short, long)]
@@ -51,25 +54,41 @@ enum Commands {
     },
     #[command(arg_required_else_help = true)]
     Print { alias: String },
+    #[command(
+        arg_required_else_help = true,
+        about = "create and register a did:web identifier"
+    )]
     Create {
         username: String,
         #[arg(short, long)]
         alias: Option<String>,
     },
-    #[command(arg_required_else_help = true)]
-    CreatePeer { alias: String },
+    CreatePeer {
+        alias: String,
+        #[arg(
+            long,
+            help = "Specify a network address and port instead of HTTPS transport"
+        )]
+        tcp: Option<String>,
+    },
+    #[command(
+        arg_required_else_help = true,
+        about = "import an identity from a file"
+    )]
     CreateFromFile {
         file: PathBuf,
         #[arg(short, long)]
         alias: Option<String>,
     },
     #[command(arg_required_else_help = true)]
+    SetAlias { alias: String, vid: String },
+    #[command(arg_required_else_help = true)]
     SetRoute { vid: String, route: String },
     #[command(arg_required_else_help = true)]
     SetParent { vid: String, other_vid: String },
     #[command(arg_required_else_help = true)]
     SetRelation { vid: String, other_vid: String },
-    #[command(arg_required_else_help = true)]
+    #[command(arg_required_else_help = true, about = "send a message")]
     Send {
         #[arg(short, long, required = true)]
         sender_vid: String,
@@ -78,13 +97,13 @@ enum Commands {
         #[arg(short, long)]
         non_confidential_data: Option<String>,
     },
-    #[command(arg_required_else_help = true)]
+    #[command(arg_required_else_help = true, about = "listen for messages")]
     Receive {
         vid: String,
         #[arg(short, long)]
         one: bool,
     },
-    #[command(arg_required_else_help = true)]
+    #[command(arg_required_else_help = true, about = "propose a relationship")]
     Request {
         #[arg(short, long, required = true)]
         sender_vid: String,
@@ -93,6 +112,7 @@ enum Commands {
         #[arg(long)]
         nested: bool,
     },
+    #[command(arg_required_else_help = true, about = "accept a relationship")]
     Accept {
         #[arg(short, long, required = true)]
         sender_vid: String,
@@ -103,11 +123,30 @@ enum Commands {
         #[arg(long)]
         nested: bool,
     },
+    #[command(arg_required_else_help = true, about = "break up a relationship")]
     Cancel {
         #[arg(short, long, required = true)]
         sender_vid: String,
         #[arg(short, long, required = true)]
         receiver_vid: String,
+    },
+    #[command(arg_required_else_help = true, about = "send an identity referral")]
+    Refer {
+        #[arg(short, long, required = true)]
+        sender_vid: String,
+        #[arg(short, long, required = true)]
+        receiver_vid: String,
+        #[arg(short, long, required = true)]
+        referred_vid: String,
+    },
+    #[command(arg_required_else_help = true, about = "publish a new own identity")]
+    Publish {
+        #[arg(short, long, required = true)]
+        sender_vid: String,
+        #[arg(short, long, required = true)]
+        receiver_vid: String,
+        #[arg(short, long, required = true)]
+        new_vid: String,
     },
 }
 
@@ -187,11 +226,30 @@ fn print_message(message: &[u8]) {
     println!();
 }
 
+fn prompt(message: String) -> bool {
+    use std::io::{self, BufRead, Write};
+    print!("{message}? [y/n] ");
+    io::stdout().flush().expect("I/O error");
+    let mut line = String::new();
+    io::stdin()
+        .lock()
+        .read_line(&mut line)
+        .expect("could not read reply");
+    line = line.to_uppercase();
+
+    matches!(line.trim(), "Y" | "YES")
+}
+
 async fn run() -> Result<(), Error> {
     let args = Cli::parse();
 
     tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer().compact().without_time())
+        .with(
+            tracing_subscriber::fmt::layer()
+                .compact()
+                .without_time()
+                .with_writer(std::io::stderr),
+        )
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
                 if args.verbose {
@@ -257,8 +315,12 @@ async fn run() -> Result<(), Error> {
             vid_database.add_private_vid(private_vid.clone())?;
             write_database(&vault, &vid_database, aliases).await?;
         }
-        Commands::CreatePeer { alias } => {
-            let transport = url::Url::parse(&format!("https://{server}/user/{alias}")).unwrap();
+        Commands::CreatePeer { alias, tcp } => {
+            let transport = if let Some(address) = tcp {
+                url::Url::parse(&format!("tcp://{address}")).unwrap()
+            } else {
+                url::Url::parse(&format!("https://{server}/user/{alias}")).unwrap()
+            };
             let private_vid = OwnedVid::new_did_peer(transport);
 
             aliases.insert(alias.clone(), private_vid.identifier().to_string());
@@ -288,6 +350,11 @@ async fn run() -> Result<(), Error> {
 
             info!("{vid} is now a child of {other_vid}");
 
+            write_database(&vault, &vid_database, aliases).await?;
+        }
+        Commands::SetAlias { vid, alias } => {
+            aliases.insert(alias.clone(), vid.clone());
+            info!("added alias {alias} -> {vid}");
             write_database(&vault, &vid_database, aliases).await?;
         }
         Commands::SetRoute { vid, route } => {
@@ -363,6 +430,14 @@ async fn run() -> Result<(), Error> {
 
             info!("listening for messages...");
 
+            // closures cannot be async, and async fn's don't easily do recursion
+            enum Action {
+                Nothing,
+                Verify(String),
+                VerifyAndOpen(String, Vec<u8>),
+                Forward(String, Vec<Vec<u8>>, Vec<u8>),
+            }
+
             while let Some(Ok(message)) = messages.next().await {
                 let handle_message = |message: ReceivedTspMessage| {
                     match message {
@@ -381,10 +456,11 @@ async fn run() -> Result<(), Error> {
                             route: _,
                             nested_vid: None,
                         } => {
-                            let thread_id = Base64UrlUnpadded::encode_string(&thread_id);
+                            let thread_id = Base64Unpadded::encode_string(&thread_id);
                             info!(
                                 "received relationship request from {sender}, thread-id '{thread_id}'",
                             );
+                            println!("{sender}\t{thread_id}");
                         }
                         ReceivedTspMessage::AcceptRelationship {
                             sender,
@@ -398,25 +474,37 @@ async fn run() -> Result<(), Error> {
                             route: _,
                             nested_vid: Some(vid),
                         } => {
-                            let thread_id = Base64UrlUnpadded::encode_string(&thread_id);
+                            let thread_id = Base64Unpadded::encode_string(&thread_id);
                             info!("received nested relationship request from '{vid}' (new identity for {sender}), thread-id '{thread_id}'");
+                            println!("{vid}\t{thread_id}");
                         }
                         ReceivedTspMessage::AcceptRelationship {
                             sender,
                             nested_vid: Some(vid),
                         } => {
                             info!("received accept nested relationship from '{vid}' (new identity for {sender})");
+                            println!("{vid}");
                         }
                         ReceivedTspMessage::CancelRelationship { sender } => {
                             info!("received cancel relationship from {sender}");
                         }
                         ReceivedTspMessage::ForwardRequest {
-                            sender, next_hop, ..
+                            sender,
+                            route,
+                            next_hop,
+                            opaque_payload,
                         } => {
-                            info!("messaging forwarding request from {sender} to {next_hop}",);
+                            info!("messaging forwarding request from {sender} to {next_hop} ({} hops)", route.len());
+                            if args.yes
+                                || prompt("do you want to forward this message?".to_string())
+                            {
+                                return Action::Forward(next_hop, route, opaque_payload);
+                            }
                         }
                         ReceivedTspMessage::NewIdentifier { sender, new_vid } => {
                             info!("received request for new identifier '{new_vid}' from {sender}");
+                            println!("{new_vid}");
+                            return Action::Verify(new_vid);
                         }
                         ReceivedTspMessage::Referral {
                             sender,
@@ -425,49 +513,58 @@ async fn run() -> Result<(), Error> {
                             info!(
                                 "received relationship referral for '{referred_vid}' from {sender}"
                             );
+                            println!("{referred_vid}");
+                            return Action::Verify(referred_vid);
                         }
                         ReceivedTspMessage::PendingMessage {
                             unknown_vid,
                             payload,
                         } => {
-                            use std::io::{self, BufRead, Write};
                             info!("message involving unknown party {}", unknown_vid);
-                            print!(
-                                "do you want to read a message from '{}' [y/n]? ",
-                                unknown_vid
-                            );
-                            io::stdout().flush().expect("I/O error");
 
-                            let user_affirms = args.yes || {
-                                let mut line = String::new();
-                                io::stdin()
-                                    .lock()
-                                    .read_line(&mut line)
-                                    .expect("could not read reply");
-                                line = line.to_uppercase();
-
-                                matches!(line.trim(), "Y" | "YES")
-                            };
+                            let user_affirms = args.yes
+                                || prompt(format!(
+                                    "do you want to read a message from '{unknown_vid}'"
+                                ));
 
                             if user_affirms {
                                 trace!("processing pending message");
-                                return Some((unknown_vid, payload));
+                                return Action::VerifyAndOpen(unknown_vid, payload);
                             }
                         }
                     }
 
-                    None
+                    Action::Nothing
                 };
 
-                if let Some((unknown_vid, payload)) = handle_message(message) {
-                    let message = vid_database.verify_and_open(&unknown_vid, payload).await?;
+                match handle_message(message) {
+                    Action::Nothing => {}
+                    Action::VerifyAndOpen(vid, payload) => {
+                        let message = vid_database.verify_and_open(&vid, payload).await?;
 
-                    info!(
-                        "{vid} is verified and added to the database {}",
-                        &args.database
-                    );
-                    let _ = handle_message(message);
+                        info!(
+                            "{vid} is verified and added to the database {}",
+                            &args.database
+                        );
+
+                        let _ = handle_message(message);
+                    }
+                    Action::Verify(vid) => {
+                        vid_database.verify_vid(&vid).await?;
+
+                        info!(
+                            "{vid} is verified and added to the database {}",
+                            &args.database
+                        );
+                    }
+                    Action::Forward(next_hop, route, payload) => {
+                        vid_database
+                            .forward_routed_message(&next_hop, route, &payload)
+                            .await?;
+                        info!("forwarding to next hop: {next_hop}");
+                    }
                 }
+
                 write_database(&vault, &vid_database, aliases.clone()).await?;
 
                 if one {
@@ -512,6 +609,7 @@ async fn run() -> Result<(), Error> {
 			    "sent a nested relationship request to {receiver_vid} with new identity '{}'",
 			    vid.identifier()
                     );
+                        println!("{}", vid.identifier());
                     }
                     Err(e) => {
                         tracing::error!(
@@ -541,7 +639,7 @@ async fn run() -> Result<(), Error> {
             let receiver_vid = aliases.get(&receiver_vid).unwrap_or(&receiver_vid);
 
             let mut digest: [u8; 32] = Default::default();
-            Base64UrlUnpadded::decode(&thread_id, &mut digest).unwrap();
+            Base64Unpadded::decode(&thread_id, &mut digest).unwrap();
 
             if nested {
                 match vid_database
@@ -564,6 +662,48 @@ async fn run() -> Result<(), Error> {
                 }
             } else if let Err(e) = vid_database
                 .send_relationship_accept(sender_vid, receiver_vid, digest, None)
+                .await
+            {
+                tracing::error!("error sending message from {sender_vid} to {receiver_vid}: {e}");
+
+                return Ok(());
+            }
+
+            info!("sent control message from {sender_vid} to {receiver_vid}",);
+            write_database(&vault, &vid_database, aliases.clone()).await?;
+        }
+        Commands::Refer {
+            sender_vid,
+            receiver_vid,
+            referred_vid,
+        } => {
+            let sender_vid = aliases.get(&sender_vid).unwrap_or(&sender_vid);
+            let receiver_vid = aliases.get(&receiver_vid).unwrap_or(&receiver_vid);
+            let referred_vid = aliases.get(&referred_vid).unwrap_or(&referred_vid);
+
+            if let Err(e) = vid_database
+                .send_relationship_referral(sender_vid, receiver_vid, referred_vid)
+                .await
+            {
+                tracing::error!("error sending message from {sender_vid} to {receiver_vid}: {e}");
+
+                return Ok(());
+            }
+
+            info!("sent control message from {sender_vid} to {receiver_vid}",);
+            write_database(&vault, &vid_database, aliases.clone()).await?;
+        }
+        Commands::Publish {
+            sender_vid,
+            receiver_vid,
+            new_vid,
+        } => {
+            let sender_vid = aliases.get(&sender_vid).unwrap_or(&sender_vid);
+            let receiver_vid = aliases.get(&receiver_vid).unwrap_or(&receiver_vid);
+            let new_vid = aliases.get(&new_vid).unwrap_or(&new_vid);
+
+            if let Err(e) = vid_database
+                .send_new_identifier_notice(sender_vid, receiver_vid, new_vid)
                 .await
             {
                 tracing::error!("error sending message from {sender_vid} to {receiver_vid}: {e}");

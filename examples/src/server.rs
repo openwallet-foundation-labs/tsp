@@ -429,7 +429,20 @@ async fn route_message(State(state): State<Arc<AppState>>, body: Bytes) -> Respo
     let sender = String::from_utf8_lossy(sender).to_string();
     let receiver = String::from_utf8_lossy(receiver).to_string();
 
-    tracing::debug!("forwarded message {sender} {receiver}");
+    // translate received identifier into the transport; either because it is a
+    // known user or because it is a did:peer. note that this allows "snooping" messages
+    // that are not intended for you --- but that will allow to build interesting demo cases
+    // since the unintended recipient cannot read the message: the security of TSP is not based
+    // on security of the transport layer.
+    let receiver = if let Ok(receiver) = read_id(&receiver).await {
+        receiver.vid.endpoint().to_string()
+    } else if let Ok(vid) = tsp::vid::resolve::verify_vid_offline(&receiver) {
+        vid.endpoint().to_string()
+    } else {
+        return (StatusCode::BAD_REQUEST, "unknown receiver").into_response();
+    };
+
+    tracing::debug!("forwarded message from {sender} to endpoint {receiver}");
 
     // insert message in queue
     let _ = state.tx.send((sender, receiver, body.into()));
@@ -517,7 +530,7 @@ async fn websocket_user_handler(
     Path(name): Path<String>,
 ) -> impl IntoResponse {
     let mut messages_rx = state.tx.subscribe();
-    let current = format!("did:web:{DOMAIN}:user:{name}");
+    let current = format!("https://{DOMAIN}/user/{name}");
 
     tracing::debug!("new websocket connection for {current}");
 
