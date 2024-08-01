@@ -57,9 +57,7 @@ echo "---- establish outer relation a<->p"
 tsp --database marlon verify --alias p "$DID_P"
 
 sleep 2 && tsp --database marlon request -s marlon -r p &
-received=$(tsp --yes --database p receive --one p)
-vid=$(echo "$received" | cut -f1)
-thread_id=$(echo "$received" | cut -f2)
+read -d '\t' vid thread_id <<< $(tsp --yes --database p receive --one p)
 
 tsp --database p set-alias marlon "$vid"
 sleep 2 && tsp --database p accept -s p -r marlon --thread-id "$thread_id" &
@@ -69,9 +67,7 @@ echo "---- establish outer relation p<->q"
 tsp --database q verify --alias p "$DID_P"
 
 sleep 2 && tsp --database q request -s q -r p &
-received=$(tsp --yes --database p receive --one p)
-vid=$(echo "$received" | cut -f1)
-thread_id=$(echo "$received" | cut -f2)
+read -d '\t' vid thread_id <<< $(tsp --yes --database p receive --one p)
 tsp --database p set-alias q "$vid"
 
 sleep 2 && tsp --database p accept -s p -r q --thread-id "$thread_id" &
@@ -82,9 +78,7 @@ if [ "$Q2" ]; then
     tsp --database marc verify --alias q2 "$DID_Q2"
 
     sleep 2 && tsp --database marc request -s marc -r q2 &
-    received=$(tsp --yes --database q receive --one q2)
-    vid=$(echo "$received" | cut -f1)
-    thread_id=$(echo "$received" | cut -f2)
+    read -d '\t' vid thread_id <<< $(tsp --yes --database q receive --one q2)
     tsp --database q set-alias marc "$vid"
 
     sleep 2 && tsp --database q accept -s q2 -r marc --thread-id "$thread_id" &
@@ -96,9 +90,7 @@ else
     tsp --database marc verify --alias q "$DID_Q"
 
     sleep 2 && tsp --database marc request -s marc -r q &
-    received=$(tsp --yes --database q receive --one q)
-    vid=$(echo "$received" | cut -f1)
-    thread_id=$(echo "$received" | cut -f2)
+    read -d '\t' vid thread_id <<< $(tsp --yes --database q receive --one q)
     tsp --database q set-alias marc "$vid"
 
     sleep 2 && tsp --database q accept -s q -r marc --thread-id "$thread_id" &
@@ -107,9 +99,7 @@ else
     echo "---- establish nested relation q<->b"
 
     sleep 2 && tsp --database marc request --nested -s marc -r q > /dev/null &
-    received=$(tsp --database q receive --one q)
-    nested_marc=$(echo "$received" | cut -f1)
-    thread_id=$(echo "$received" | cut -f2)
+    read -d '\t' nested_marc thread_id <<< $(tsp --database q receive --one q)
 
     sleep 2 && tsp --database q accept --nested -s q -r "$nested_marc" --thread-id "$thread_id" > /tmp/vid &
     DID_Q2=$(tsp --database marc receive --one marc)

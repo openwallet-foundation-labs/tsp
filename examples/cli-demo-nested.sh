@@ -24,9 +24,7 @@ tsp --database marlon verify --alias marc "$DID_MARC"
 echo "---- establish an outer relation: send and receive an initial hello"
 sleep 2 && tsp --database marlon request -s marlon -r marc &
 
-received=$(tsp --yes --database marc receive --one marc)
-vid=$(echo "$received" | cut -f1)
-thread_id=$(echo "$received" | cut -f2)
+read -d '\t' vid thread_id <<< $(tsp --yes --database marc receive --one marc)
 
 tsp --database marc set-alias marlon "$vid"
 
@@ -42,9 +40,7 @@ tsp --database marc receive --one marc
 echo "---- establish a nested relationship: send and receive nested hello"
 sleep 2 && tsp --database marc request -s marc -r marlon --nested > /tmp/vid &
 
-received=$(tsp --database marlon receive --one marlon)
-nested_marc=$(echo "$received" | cut -f1)
-thread_id=$(echo "$received" | cut -f2)
+read -d '\t' nested_marc thread_id <<< $(tsp --database marlon receive --one marlon)
 
 [ "$nested_marc" == `cat /tmp/vid` ] || exit 5
 
