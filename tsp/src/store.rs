@@ -199,6 +199,21 @@ impl Store {
         Ok(self.vids.read()?.keys().cloned().collect())
     }
 
+    /// Sets the relationship status and relation for a VID.
+    pub fn set_relation_and_status_for_vid(
+        &self,
+        vid: &str,
+        relation_status: RelationshipStatus,
+        relation_vid: &str,
+    ) -> Result<(), Error> {
+        self.modify_vid(vid, |resolved| {
+            resolved.set_relation_vid(Some(relation_vid));
+            let _ = resolved.replace_relation_status(relation_status);
+
+            Ok(())
+        })
+    }
+
     /// Sets the relationship status for a VID
     pub fn set_relation_status_for_vid(
         &self,
@@ -781,12 +796,13 @@ impl Store {
             (transport.to_owned(), tsp_message)
         };
 
-        self.set_relation_status_for_vid(
+        self.set_relation_and_status_for_vid(
             receiver,
             RelationshipStatus::Bidirectional {
                 thread_id,
                 outstanding_nested_thread_ids: Default::default(),
             },
+            sender,
         )?;
 
         Ok((transport, tsp_message))
@@ -965,7 +981,12 @@ impl Store {
         self.add_verified_vid(nested_vid)
     }
 
-    fn upgrade_relation(&self, my_vid: &str, other_vid: &str, thread_id: Digest) -> Result<(), Error> {
+    fn upgrade_relation(
+        &self,
+        my_vid: &str,
+        other_vid: &str,
+        thread_id: Digest,
+    ) -> Result<(), Error> {
         let mut vids = self.vids.write()?;
         let Some(context) = vids.get_mut(other_vid) else {
             return Err(Error::Relationship(other_vid.into()));
@@ -980,7 +1001,7 @@ impl Store {
             return Err(Error::Relationship(other_vid.into()));
         }
 
-	context.relation_vid = Some(my_vid.to_string());
+        context.relation_vid = Some(my_vid.to_string());
 
         context.relation_status = RelationshipStatus::Bidirectional {
             thread_id: digest,
