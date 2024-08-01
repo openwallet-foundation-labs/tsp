@@ -378,11 +378,16 @@ impl Store {
             }
 
             let inner_sender = self.get_private_vid(inner_sender)?;
-            let inner_message = crate::crypto::sign(
-                &*inner_sender,
-                Some(&*receiver_context.vid),
-                payload.as_bytes(),
-            )?;
+
+            let inner_message = if let Payload::Content(_) = payload {
+                crate::crypto::sign(
+                    &*inner_sender,
+                    Some(&*receiver_context.vid),
+                    payload.as_bytes(),
+                )?
+            } else {
+                crate::crypto::seal(&*inner_sender, &*receiver_context.vid, None, payload)?
+            };
 
             let parent_sender = self.get_private_vid(parent_sender)?;
             let parent_receiver = self.get_verified_vid(parent_receiver)?;
@@ -494,14 +499,12 @@ impl Store {
                 None => return Err(Error::MissingDropOff(sender.vid.identifier().to_string())),
             };
 
-            let tsp_message = crate::crypto::seal(
-                &**sender_private,
-                &*recipient,
+            self.seal_message_payload(
+                sender_private.identifier(),
+                recipient.identifier(),
                 None,
                 Payload::NestedMessage(opaque_payload),
-            )?;
-
-            Ok((recipient.endpoint().clone(), tsp_message))
+            )
         } else {
             // we are an intermediary, continue sending the message
             let next_hop_context = self
@@ -513,14 +516,12 @@ impl Store {
                 None => return Err(Error::InvalidNextHop(next_hop.to_string())),
             };
 
-            let tsp_message = crate::crypto::seal(
-                &*sender,
-                &*next_hop_context.vid,
+            self.seal_message_payload(
+                sender.identifier(),
+                next_hop_context.vid.identifier(),
                 None,
                 Payload::RoutedMessage(route, opaque_payload),
-            )?;
-
-            Ok((next_hop_context.vid.endpoint().clone(), tsp_message))
+            )
         }
     }
 
@@ -950,7 +951,7 @@ impl Store {
     }
 
     fn make_propositioning_vid(&self, parent_vid: &str) -> Result<OwnedVid, Error> {
-        let transport = Url::parse("https://example.net").expect("error generating a URL");
+        let transport = Url::parse("tsp://").expect("error generating a URL");
 
         let vid = OwnedVid::new_did_peer(transport);
         self.add_private_vid(vid.clone())?;
