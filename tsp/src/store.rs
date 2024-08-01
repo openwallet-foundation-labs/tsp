@@ -176,7 +176,7 @@ impl Store {
         Ok(())
     }
 
-    /// Sets the parent for a VID. This is used to create a nested message.
+    /// Sets the parent for a VID, thus making it a nested VID
     pub fn set_parent_for_vid(&self, vid: &str, parent_vid: Option<&str>) -> Result<(), Error> {
         self.modify_vid(vid, |resolved| {
             resolved.set_parent_vid(parent_vid);
@@ -185,7 +185,7 @@ impl Store {
         })
     }
 
-    /// Adds a relation to an already existing vid, making it a nested Vid
+    /// Adds a relation to an already existing vid
     pub fn set_relation_for_vid(&self, vid: &str, relation_vid: Option<&str>) -> Result<(), Error> {
         self.modify_vid(vid, |resolved| {
             resolved.set_relation_vid(relation_vid);
@@ -197,6 +197,21 @@ impl Store {
     /// List all VIDs in the database
     pub fn list_vids(&self) -> Result<Vec<String>, Error> {
         Ok(self.vids.read()?.keys().cloned().collect())
+    }
+
+    /// Sets the relationship status and relation for a VID.
+    pub fn set_relation_and_status_for_vid(
+        &self,
+        vid: &str,
+        relation_status: RelationshipStatus,
+        relation_vid: &str,
+    ) -> Result<(), Error> {
+        self.modify_vid(vid, |resolved| {
+            resolved.set_relation_vid(Some(relation_vid));
+            let _ = resolved.replace_relation_status(relation_status);
+
+            Ok(())
+        })
     }
 
     /// Sets the relationship status for a VID
@@ -310,11 +325,11 @@ impl Store {
         if let Some(intermediaries) = receiver_context.get_route() {
             let first_hop = self.get_vid(&intermediaries[0])?;
 
-            let (sender, inner_message) = match (
-                first_hop.get_relation_vid(),
-                receiver_context.get_relation_vid(),
-            ) {
-                (Some(first_sender), Some(inner_sender)) => {
+            let (sender, inner_message) = match first_hop.get_relation_vid() {
+                Some(first_sender) => {
+                    let inner_sender = receiver_context
+                        .get_relation_vid()
+                        .unwrap_or(sender.identifier());
                     let inner_sender = self.get_private_vid(inner_sender)?;
 
                     let tsp_message: Vec<u8> = crate::crypto::seal(
@@ -328,12 +343,7 @@ impl Store {
 
                     (first_sender, tsp_message)
                 }
-                (None, _) => {
-                    return Err(VidError::ResolveVid("missing sender VID for first hop").into())
-                }
-                (_, None) => {
-                    return Err(VidError::ResolveVid("missing sender VID for receiver").into())
-                }
+                None => return Err(VidError::ResolveVid("missing sender VID for first hop").into()),
             };
 
             let hops = intermediaries[1..]
@@ -368,11 +378,16 @@ impl Store {
             }
 
             let inner_sender = self.get_private_vid(inner_sender)?;
-            let inner_message = crate::crypto::sign(
-                &*inner_sender,
-                Some(&*receiver_context.vid),
-                payload.as_bytes(),
-            )?;
+
+            let inner_message = if let Payload::Content(_) = payload {
+                crate::crypto::sign(
+                    &*inner_sender,
+                    Some(&*receiver_context.vid),
+                    payload.as_bytes(),
+                )?
+            } else {
+                crate::crypto::seal(&*inner_sender, &*receiver_context.vid, None, payload)?
+            };
 
             let parent_sender = self.get_private_vid(parent_sender)?;
             let parent_receiver = self.get_verified_vid(parent_receiver)?;
@@ -484,14 +499,12 @@ impl Store {
                 None => return Err(Error::MissingDropOff(sender.vid.identifier().to_string())),
             };
 
-            let tsp_message = crate::crypto::seal(
-                &**sender_private,
-                &*recipient,
+            self.seal_message_payload(
+                sender_private.identifier(),
+                recipient.identifier(),
                 None,
                 Payload::NestedMessage(opaque_payload),
-            )?;
-
-            Ok((recipient.endpoint().clone(), tsp_message))
+            )
         } else {
             // we are an intermediary, continue sending the message
             let next_hop_context = self
@@ -503,14 +516,12 @@ impl Store {
                 None => return Err(Error::InvalidNextHop(next_hop.to_string())),
             };
 
-            let tsp_message = crate::crypto::seal(
-                &*sender,
-                &*next_hop_context.vid,
+            self.seal_message_payload(
+                sender.identifier(),
+                next_hop_context.vid.identifier(),
                 None,
                 Payload::RoutedMessage(route, opaque_payload),
-            )?;
-
-            Ok((next_hop_context.vid.endpoint().clone(), tsp_message))
+            )
         }
     }
 
@@ -605,7 +616,7 @@ impl Store {
                         })
                     }
                     Payload::AcceptRelationship { thread_id } => {
-                        self.upgrade_relation(&sender, thread_id)?;
+                        self.upgrade_relation(intended_receiver.identifier(), &sender, thread_id)?;
 
                         Ok(ReceivedTspMessage::AcceptRelationship {
                             sender,
@@ -783,12 +794,13 @@ impl Store {
             (transport.to_owned(), tsp_message)
         };
 
-        self.set_relation_status_for_vid(
+        self.set_relation_and_status_for_vid(
             receiver,
             RelationshipStatus::Bidirectional {
                 thread_id,
                 outstanding_nested_thread_ids: Default::default(),
             },
+            sender,
         )?;
 
         Ok((transport, tsp_message))
@@ -941,7 +953,7 @@ impl Store {
     }
 
     fn make_propositioning_vid(&self, parent_vid: &str) -> Result<OwnedVid, Error> {
-        let transport = Url::parse("https://example.net").expect("error generating a URL");
+        let transport = Url::parse("tsp://").expect("error generating a URL");
 
         let vid = OwnedVid::new_did_peer(transport);
         self.add_private_vid(vid.clone())?;
@@ -967,20 +979,27 @@ impl Store {
         self.add_verified_vid(nested_vid)
     }
 
-    fn upgrade_relation(&self, vid: &str, thread_id: Digest) -> Result<(), Error> {
+    fn upgrade_relation(
+        &self,
+        my_vid: &str,
+        other_vid: &str,
+        thread_id: Digest,
+    ) -> Result<(), Error> {
         let mut vids = self.vids.write()?;
-        let Some(context) = vids.get_mut(vid) else {
-            return Err(Error::Relationship(vid.into()));
+        let Some(context) = vids.get_mut(other_vid) else {
+            return Err(Error::Relationship(other_vid.into()));
         };
 
         let RelationshipStatus::Unidirectional { thread_id: digest } = context.relation_status
         else {
-            return Err(Error::Relationship(vid.into()));
+            return Err(Error::Relationship(other_vid.into()));
         };
 
         if thread_id != digest {
-            return Err(Error::Relationship(vid.into()));
+            return Err(Error::Relationship(other_vid.into()));
         }
+
+        context.relation_vid = Some(my_vid.to_string());
 
         context.relation_status = RelationshipStatus::Bidirectional {
             thread_id: digest,
