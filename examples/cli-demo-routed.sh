@@ -84,7 +84,6 @@ tsp --database marc receive --one marc
 echo "---- setup the route"
 tsp --database marlon set-route marc "p,$DID_Q,$DID_Q2"
 tsp --database marlon set-relation marc marlon
-tsp --database marlon set-relation p marlon
 
 tsp --database p set-relation q p
 tsp --database q set-relation q2 marc

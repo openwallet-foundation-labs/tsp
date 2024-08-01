@@ -176,7 +176,7 @@ impl Store {
         Ok(())
     }
 
-    /// Sets the parent for a VID. This is used to create a nested message.
+    /// Sets the parent for a VID, thus making it a nested VID
     pub fn set_parent_for_vid(&self, vid: &str, parent_vid: Option<&str>) -> Result<(), Error> {
         self.modify_vid(vid, |resolved| {
             resolved.set_parent_vid(parent_vid);
@@ -185,7 +185,7 @@ impl Store {
         })
     }
 
-    /// Adds a relation to an already existing vid, making it a nested Vid
+    /// Adds a relation to an already existing vid
     pub fn set_relation_for_vid(&self, vid: &str, relation_vid: Option<&str>) -> Result<(), Error> {
         self.modify_vid(vid, |resolved| {
             resolved.set_relation_vid(relation_vid);
@@ -604,7 +604,7 @@ impl Store {
                         })
                     }
                     Payload::AcceptRelationship { thread_id } => {
-                        self.upgrade_relation(&sender, thread_id)?;
+                        self.upgrade_relation(intended_receiver.identifier(), &sender, thread_id)?;
 
                         Ok(ReceivedTspMessage::AcceptRelationship {
                             sender,
@@ -965,20 +965,22 @@ impl Store {
         self.add_verified_vid(nested_vid)
     }
 
-    fn upgrade_relation(&self, vid: &str, thread_id: Digest) -> Result<(), Error> {
+    fn upgrade_relation(&self, my_vid: &str, other_vid: &str, thread_id: Digest) -> Result<(), Error> {
         let mut vids = self.vids.write()?;
-        let Some(context) = vids.get_mut(vid) else {
-            return Err(Error::Relationship(vid.into()));
+        let Some(context) = vids.get_mut(other_vid) else {
+            return Err(Error::Relationship(other_vid.into()));
         };
 
         let RelationshipStatus::Unidirectional { thread_id: digest } = context.relation_status
         else {
-            return Err(Error::Relationship(vid.into()));
+            return Err(Error::Relationship(other_vid.into()));
         };
 
         if thread_id != digest {
-            return Err(Error::Relationship(vid.into()));
+            return Err(Error::Relationship(other_vid.into()));
         }
+
+	context.relation_vid = Some(my_vid.to_string());
 
         context.relation_status = RelationshipStatus::Bidirectional {
             thread_id: digest,
