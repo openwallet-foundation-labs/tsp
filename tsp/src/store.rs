@@ -325,11 +325,11 @@ impl Store {
         if let Some(intermediaries) = receiver_context.get_route() {
             let first_hop = self.get_vid(&intermediaries[0])?;
 
-            let (sender, inner_message) = match (
-                first_hop.get_relation_vid(),
-                receiver_context.get_relation_vid(),
-            ) {
-                (Some(first_sender), Some(inner_sender)) => {
+            let (sender, inner_message) = match first_hop.get_relation_vid() {
+                Some(first_sender) => {
+                    let inner_sender = receiver_context
+                        .get_relation_vid()
+                        .unwrap_or(sender.identifier());
                     let inner_sender = self.get_private_vid(inner_sender)?;
 
                     let tsp_message: Vec<u8> = crate::crypto::seal(
@@ -343,12 +343,7 @@ impl Store {
 
                     (first_sender, tsp_message)
                 }
-                (None, _) => {
-                    return Err(VidError::ResolveVid("missing sender VID for first hop").into())
-                }
-                (_, None) => {
-                    return Err(VidError::ResolveVid("missing sender VID for receiver").into())
-                }
+                None => return Err(VidError::ResolveVid("missing sender VID for first hop").into()),
             };
 
             let hops = intermediaries[1..]
