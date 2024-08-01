@@ -209,7 +209,7 @@ createForm.addEventListener('submit', async (event) => {
     updateIdentities();
     ws.send(JSON.stringify(identity));
   } else {
-    window.alert('Failed to create identity');
+    window.alert('Failed to create identity, this VID might already exist');
   }
 });
 

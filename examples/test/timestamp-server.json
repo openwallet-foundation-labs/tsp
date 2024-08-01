@@ -1,0 +1,8 @@
+{
+  "enckey": "_2TV6ly5FULP1Lvk89t3TdTSeKi9t5TPP8QuvIOanNg",
+  "id": "did:web:did.tsp-test.org:user:timestamp-server",
+  "publicEnckey": "2SOeMndN9z4oArm7Vu7D7ZGnkbsAXZ2DO-GUAfBd_Bo",
+  "publicSigkey": "HR76y6YG5BWHbj4UQsqX-5ybQPjtETiaZFa4LHWaI68",
+  "sigkey": "fjSXHx-2-XoyoDk-Usr3XdBQf-kfazcMuSVwrGL9FTQ",
+  "transport": "https://tsp-test.org/timestamp"
+}

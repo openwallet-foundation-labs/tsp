@@ -15,6 +15,10 @@ class Store {
         return this.inner.add_private_vid(...args);
     }
 
+    add_private_as_verified_vid(...args) {
+        return this.inner.add_private_as_verified_vid(...args);
+    }
+
     add_verified_vid(...args) {
         return this.inner.add_verified_vid(...args);
     }
@@ -175,4 +179,3 @@ module.exports = {
     RequestRelationship,
     ForwardRequest,
 };
-

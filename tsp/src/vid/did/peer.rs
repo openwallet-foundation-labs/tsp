@@ -8,7 +8,7 @@ pub(crate) const SCHEME: &str = "peer";
 /// Encode VID as did:peer,include verification end encryption key
 /// The service definition has type `tsp`
 /// See https://identity.foundation/peer-did-method-spec/
-pub(crate) fn encode_did_peer(vid: &Vid) -> String {
+pub fn encode_did_peer(vid: &Vid) -> String {
     let mut v = Vec::with_capacity(34);
     // multicodec for ed25519-pub
     v.push(0xed);
@@ -45,7 +45,7 @@ pub(crate) fn encode_did_peer(vid: &Vid) -> String {
     format!("did:peer:2.Vz{verification_key}.Ez{encryption_key}.S{service}")
 }
 
-pub(crate) fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
+pub fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
     let mut peer_parts = parts[2].split('.');
 
     // only numalgo 2 is supported

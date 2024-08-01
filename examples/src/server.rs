@@ -2,7 +2,7 @@ use axum::{
     body::Bytes,
     extract::{
         ws::{Message, WebSocket},
-        Path, State, WebSocketUpgrade,
+        DefaultBodyLimit, Path, State, WebSocketUpgrade,
     },
     http::{header, StatusCode},
     response::{Html, IntoResponse, Response},
@@ -10,16 +10,22 @@ use axum::{
     Form, Json, Router,
 };
 use base64ct::{Base64UrlUnpadded, Encoding};
+use core::time;
 use futures::{sink::SinkExt, stream::StreamExt};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    str::from_utf8,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::sync::{broadcast, RwLock};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp::{
     definitions::{Payload, VerifiedVid},
     vid::{OwnedVid, Vid},
-    AsyncStore,
+    AsyncStore, Store,
 };
 
 use crate::intermediary::start_intermediary;
@@ -29,14 +35,47 @@ mod intermediary;
 const DOMAIN: &str = "tsp-test.org";
 
 /// Identity struct, used to store the DID document and VID of a user
+#[derive(Debug, Serialize, Deserialize)]
 struct Identity {
     did_doc: serde_json::Value,
     vid: Vid,
 }
 
+async fn write_id(id: Identity) -> Result<(), Box<dyn std::error::Error>> {
+    let name = id
+        .vid
+        .identifier()
+        .split(':')
+        .last()
+        .ok_or("invalid name")?;
+    let did = serde_json::to_string_pretty(&id)?;
+    let path = format!("data/{name}.json");
+
+    if std::path::Path::new(&path).exists() {
+        return Err("identity already exists".into());
+    }
+
+    tokio::fs::write(path, did).await?;
+
+    Ok(())
+}
+
+async fn read_id(vid: &str) -> Result<Identity, Box<dyn std::error::Error>> {
+    let name = vid.split(':').last().ok_or("invalid name")?;
+    let path = format!("data/{name}.json");
+    let did = tokio::fs::read_to_string(path).await?;
+    let id = serde_json::from_str(&did)?;
+
+    Ok(id)
+}
+
+fn verify_name(name: &str) -> bool {
+    !name.is_empty() && name.len() < 64 && name.chars().all(|c| c.is_alphanumeric())
+}
+
 /// Application state, used to store the identities and the broadcast channel
 struct AppState {
-    db: RwLock<HashMap<String, Identity>>,
+    timestamp_server: Store,
     tx: broadcast::Sender<(String, String, Vec<u8>)>,
 }
 
@@ -44,15 +83,24 @@ struct AppState {
 #[tokio::main]
 async fn main() {
     tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
+        .with(
+            tracing_subscriber::fmt::layer()
+                .without_time()
+                .with_ansi(false),
+        )
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "demo_server=trace,tsp=trace".into()),
         )
         .init();
 
+    let timestamp_server = Store::new();
+    let piv: OwnedVid =
+        serde_json::from_str(include_str!("../test/timestamp-server.json")).unwrap();
+    timestamp_server.add_private_vid(piv).unwrap();
+
     let state = Arc::new(AppState {
-        db: Default::default(),
+        timestamp_server,
         tx: broadcast::channel(100).0,
     });
 
@@ -64,10 +112,13 @@ async fn main() {
         .route("/verify-vid", post(verify_vid))
         .route("/add-vid", post(add_vid))
         .route("/user/:name/did.json", get(get_did_doc))
+        .route("/vid/:vid", get(websocket_vid_handler))
         .route("/user/:user", get(websocket_user_handler))
         .route("/user/:user", post(route_message))
+        .route("/sign-timestamp", post(sign_timestamp))
         .route("/send-message", post(send_message))
         .route("/receive-messages", get(websocket_handler))
+        .layer(DefaultBodyLimit::max(50 * 1024 * 1024))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
@@ -151,10 +202,11 @@ struct CreateIdentityInput {
 }
 
 /// Create a new identity (private VID)
-async fn create_identity(
-    State(state): State<Arc<AppState>>,
-    Form(form): Form<CreateIdentityInput>,
-) -> impl IntoResponse {
+async fn create_identity(Form(form): Form<CreateIdentityInput>) -> Response {
+    if !verify_name(&form.name) {
+        return (StatusCode::BAD_REQUEST, "invalid name").into_response();
+    }
+
     let (did_doc, _, private_vid) = tsp::vid::create_did_web(
         &form.name,
         DOMAIN,
@@ -163,17 +215,20 @@ async fn create_identity(
 
     let key = private_vid.identifier();
 
-    state.db.write().await.insert(
-        key.to_string(),
-        Identity {
-            did_doc: did_doc.clone(),
-            vid: private_vid.vid().clone(),
-        },
-    );
+    if let Err(e) = write_id(Identity {
+        did_doc: did_doc.clone(),
+        vid: private_vid.vid().clone(),
+    })
+    .await
+    {
+        tracing::error!("error writing identity {key}: {e}");
+
+        return (StatusCode::INTERNAL_SERVER_ERROR, "error writing identity").into_response();
+    }
 
     tracing::debug!("created identity {key}");
 
-    Json(private_vid)
+    Json(private_vid).into_response()
 }
 
 #[derive(Deserialize, Debug)]
@@ -182,12 +237,15 @@ struct ResolveVidInput {
 }
 
 /// Resolve and verify a VID to JSON encoded key material
-async fn verify_vid(
-    State(state): State<Arc<AppState>>,
-    Form(form): Form<ResolveVidInput>,
-) -> Response {
+async fn verify_vid(Form(form): Form<ResolveVidInput>) -> Response {
+    let name = form.vid.split(':').last().unwrap_or_default();
+
+    if !verify_name(name) {
+        return (StatusCode::BAD_REQUEST, "invalid name").into_response();
+    }
+
     // local state lookup
-    if let Some(identity) = state.db.read().await.get(&form.vid) {
+    if let Ok(identity) = read_id(&form.vid).await {
         return Json(&identity.vid).into_response();
     }
 
@@ -203,16 +261,25 @@ async fn verify_vid(
 }
 
 /// Add did document to the local state
-async fn add_vid(State(state): State<Arc<AppState>>, Json(vid): Json<Vid>) -> Response {
+async fn add_vid(Json(vid): Json<Vid>) -> Response {
+    let name = vid.identifier().split(':').last().unwrap_or_default();
+
+    if !verify_name(name) {
+        return (StatusCode::BAD_REQUEST, "invalid name").into_response();
+    }
+
     let did_doc = tsp::vid::vid_to_did_document(&vid);
 
-    state.db.write().await.insert(
-        vid.identifier().to_string(),
-        Identity {
-            did_doc,
-            vid: vid.clone(),
-        },
-    );
+    if let Err(e) = write_id(Identity {
+        did_doc,
+        vid: vid.clone(),
+    })
+    .await
+    {
+        tracing::error!("error writing identity {}: {e}", vid.identifier());
+
+        return (StatusCode::INTERNAL_SERVER_ERROR, "error writing identity").into_response();
+    }
 
     tracing::debug!("added VID {}", vid.identifier());
 
@@ -220,19 +287,21 @@ async fn add_vid(State(state): State<Arc<AppState>>, Json(vid): Json<Vid>) -> Re
 }
 
 /// Get the DID document of a user
-async fn get_did_doc(State(state): State<Arc<AppState>>, Path(name): Path<String>) -> Response {
+async fn get_did_doc(Path(name): Path<String>) -> Response {
+    if !verify_name(&name) {
+        return (StatusCode::BAD_REQUEST, "invalid name").into_response();
+    }
+
     let key = format!("did:web:{DOMAIN}:user:{name}");
 
-    match state.db.read().await.get(&key) {
-        Some(identity) => {
+    match read_id(&key).await {
+        Ok(identity) => {
             tracing::debug!("served did.json for {key}");
 
             Json(identity.did_doc.clone()).into_response()
         }
-        None => {
-            let keys = state.db.read().await;
-            let keys = keys.keys().collect::<Vec<_>>();
-            eprintln!("{key} not found, stored identities: {:?}", keys);
+        Err(e) => {
+            tracing::error!("{key} not found: {e}");
 
             (StatusCode::NOT_FOUND, "no user found").into_response()
         }
@@ -277,6 +346,81 @@ struct SendMessageForm {
     receiver: Vid,
 }
 
+#[derive(Deserialize, Debug)]
+struct Metadata {
+    name: String,
+    timestamp: u64,
+}
+
+async fn sign_timestamp(
+    State(state): State<Arc<AppState>>,
+    body: Bytes,
+) -> Result<impl IntoResponse, Response> {
+    let bytes: Vec<u8> = body.into();
+    let mut header_bytes = bytes.clone();
+    let header = tsp::cesr::probe(&mut header_bytes)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "Error probing message").into_response())?;
+
+    let metadata = header
+        .get_nonconfidential_data()
+        .ok_or((StatusCode::BAD_REQUEST, "No nonconfidential data").into_response())?;
+
+    let receiver = header
+        .get_receiver()
+        .ok_or((StatusCode::BAD_REQUEST, "No receiver set").into_response())?;
+
+    let receiver = from_utf8(receiver)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "Receiver vid is not valid utf8").into_response())?;
+
+    let metadata: Metadata = serde_json::from_slice(metadata)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "Error parsing json").into_response())?;
+
+    tracing::info!(
+        "received timestamp sign request from {}: {}",
+        metadata.name,
+        metadata.timestamp
+    );
+
+    let start = SystemTime::now();
+    let since_the_epoch = start
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid timestamp").into_response())?
+        .as_secs();
+    let delta = metadata.timestamp.max(since_the_epoch) - metadata.timestamp.min(since_the_epoch);
+
+    if delta > time::Duration::from_secs(60).as_secs() {
+        tracing::error!("timestamp delta to large: {delta} seconds");
+
+        return Err((StatusCode::BAD_REQUEST, "Invalid timestamp").into_response());
+    }
+
+    tracing::info!("timestamp delta ok: {delta} seconds");
+
+    let verified_vid = tsp::vid::verify_vid(receiver)
+        .await
+        .map_err(|_| (StatusCode::BAD_REQUEST, "Error verifying vid").into_response())?;
+    state
+        .timestamp_server
+        .add_verified_vid(verified_vid)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "Error adding verified vid").into_response())?;
+
+    let (_url, response_bytes) = state
+        .timestamp_server
+        .seal_message(
+            "did:web:did.tsp-test.org:user:timestamp-server",
+            receiver,
+            Some(&bytes),
+            &[],
+        )
+        .map_err(|_| {
+            (StatusCode::INTERNAL_SERVER_ERROR, "Error signing message").into_response()
+        })?;
+
+    tracing::info!("timestamped message");
+
+    Ok(response_bytes)
+}
+
 async fn route_message(State(state): State<Arc<AppState>>, body: Bytes) -> Response {
     let Ok((sender, Some(receiver))) = tsp::cesr::get_sender_receiver(&body) else {
         return (StatusCode::BAD_REQUEST, "invalid message").into_response();
@@ -290,7 +434,7 @@ async fn route_message(State(state): State<Arc<AppState>>, body: Bytes) -> Respo
     // that are not intended for you --- but that will allow to build interesting demo cases
     // since the unintended recipient cannot read the message: the security of TSP is not based
     // on security of the transport layer.
-    let receiver = if let Some(receiver) = state.db.read().await.get(&receiver) {
+    let receiver = if let Ok(receiver) = read_id(&receiver).await {
         receiver.vid.endpoint().to_string()
     } else if let Ok(vid) = tsp::vid::resolve::verify_vid_offline(&receiver) {
         vid.endpoint().to_string()
@@ -356,7 +500,30 @@ async fn send_message(
     }
 }
 
-/// Handle incoming websocket connections
+/// Handle incoming websocket connections for vid
+async fn websocket_vid_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<AppState>>,
+    Path(vid): Path<String>,
+) -> impl IntoResponse {
+    let mut messages_rx = state.tx.subscribe();
+
+    tracing::debug!("new websocket connection for {vid}");
+
+    ws.on_upgrade(|socket| {
+        let (mut ws_send, _) = socket.split();
+
+        async move {
+            while let Ok((_, receiver, message)) = messages_rx.recv().await {
+                if receiver == vid {
+                    let _ = ws_send.send(Message::Binary(message)).await;
+                }
+            }
+        }
+    })
+}
+
+/// Handle incoming websocket connections for user
 async fn websocket_user_handler(
     ws: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,
