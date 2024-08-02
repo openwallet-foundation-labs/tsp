@@ -351,14 +351,12 @@ impl Store {
                 .map(|x| x.as_ref())
                 .collect::<Vec<_>>();
 
-            let tsp_message = crate::crypto::seal(
-                &*sender,
-                &*first_hop.vid,
+            return self.seal_message_payload(
+                sender.identifier(),
+                first_hop.vid.identifier(),
                 None,
                 Payload::RoutedMessage(hops, &inner_message),
-            )?;
-
-            return Ok((first_hop.vid.endpoint().clone(), tsp_message));
+            );
         }
 
         // send nested mode
@@ -392,14 +390,12 @@ impl Store {
             let parent_sender = self.get_private_vid(parent_sender)?;
             let parent_receiver = self.get_verified_vid(parent_receiver)?;
 
-            let tsp_message = crate::crypto::seal(
-                &*parent_sender,
-                &*parent_receiver,
+            return self.seal_message_payload(
+                parent_sender.identifier(),
+                parent_receiver.identifier(),
                 nonconfidential_data,
                 Payload::NestedMessage(&inner_message),
-            )?;
-
-            return Ok((parent_receiver.endpoint().clone(), tsp_message));
+            );
         }
 
         // send direct mode
