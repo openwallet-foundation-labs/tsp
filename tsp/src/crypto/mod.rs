@@ -35,8 +35,6 @@ pub type Kdf = hpke_pq::kdf::HkdfSha256;
 #[cfg(feature = "pq")]
 pub type Kem = hpke_pq::kem::X25519Kyber768Draft00;
 
-type ObservingClosure<'a> = &'a mut dyn FnMut(&[u8]);
-
 /// Encrypt, authenticate and sign and CESR encode a TSP message
 pub fn seal(
     sender: &dyn PrivateVid,
@@ -58,7 +56,7 @@ pub fn seal_and_hash(
     nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
 ) -> Result<(TSPMessage, Digest), CryptoError> {
-    let digest = &mut Default::default();
+    let mut digest = Default::default();
 
     #[cfg(not(feature = "nacl"))]
     let msg = tsp_hpke::seal::<Aead, Kdf, Kem>(
@@ -66,7 +64,7 @@ pub fn seal_and_hash(
         receiver,
         nonconfidential_data,
         payload,
-        Some(&mut |bytes| *digest = sha256(bytes)),
+        Some(&mut digest),
     )?;
 
     #[cfg(feature = "nacl")]
@@ -75,10 +73,10 @@ pub fn seal_and_hash(
         receiver,
         nonconfidential_data,
         payload,
-        Some(&mut |bytes| *digest = sha256(bytes)),
+        Some(&mut digest),
     )?;
 
-    Ok((msg, *digest))
+    Ok((msg, digest))
 }
 
 pub type MessageContents<'a> = (
