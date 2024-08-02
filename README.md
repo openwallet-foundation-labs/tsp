@@ -1,7 +1,6 @@
 # rust-tsp
 
-Prototype Rust SDK for the [Trust Spanning Protocol](https://www.trustoverip.org/blog/2023/01/05/the-toip-trust-spanning-protocol/).
-
+Prototype Rust SDK for the [Trust Spanning Protocol](https://trustoverip.github.io/tswg-tsp-specification/)
 ## Status
 
 This project is in its initial state. Development is ongoing and interfaces or
