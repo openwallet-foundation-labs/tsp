@@ -318,6 +318,18 @@ impl Store {
         nonconfidential_data: Option<&[u8]>,
         payload: Payload<&[u8]>,
     ) -> Result<(url::Url, Vec<u8>), Error> {
+        self.seal_message_payload_and_hash(sender, receiver, nonconfidential_data, payload, None)
+    }
+
+    /// Seal a TSP message and return the digest of the payload
+    pub(crate) fn seal_message_payload_and_hash(
+        &self,
+        sender: &str,
+        receiver: &str,
+        nonconfidential_data: Option<&[u8]>,
+        payload: Payload<&[u8]>,
+        digest: Option<&mut Digest>,
+    ) -> Result<(url::Url, Vec<u8>), Error> {
         let sender = self.get_private_vid(sender)?;
         let receiver_context = self.get_vid(receiver)?;
 
@@ -332,11 +344,12 @@ impl Store {
                         .unwrap_or(sender.identifier());
                     let inner_sender = self.get_private_vid(inner_sender)?;
 
-                    let tsp_message: Vec<u8> = crate::crypto::seal(
+                    let tsp_message: Vec<u8> = crate::crypto::seal_and_hash(
                         &*inner_sender,
                         &*receiver_context.vid,
                         nonconfidential_data,
                         payload,
+                        digest,
                     )?;
 
                     let first_sender = self.get_private_vid(first_sender)?;
@@ -384,7 +397,13 @@ impl Store {
                     payload.as_bytes(),
                 )?
             } else {
-                crate::crypto::seal(&*inner_sender, &*receiver_context.vid, None, payload)?
+                crate::crypto::seal_and_hash(
+                    &*inner_sender,
+                    &*receiver_context.vid,
+                    None,
+                    payload,
+                    digest,
+                )?
             };
 
             let parent_sender = self.get_private_vid(parent_sender)?;
@@ -399,11 +418,12 @@ impl Store {
         }
 
         // send direct mode
-        let tsp_message = crate::crypto::seal(
+        let tsp_message = crate::crypto::seal_and_hash(
             &*sender,
             &*receiver_context.vid,
             nonconfidential_data,
             payload,
+            digest,
         )?;
 
         Ok((receiver_context.vid.endpoint().clone(), tsp_message))
@@ -733,6 +753,7 @@ impl Store {
         }
     }
 
+    /// Make relationship request messages. The receiver vid has to be a publically discoverable Vid.
     pub fn make_relationship_request(
         &self,
         sender: &str,
@@ -848,9 +869,9 @@ impl Store {
         let nested_vid = self.make_propositioning_vid(sender.identifier())?;
 
         let mut thread_id = Default::default();
-        let tsp_message = crate::crypto::seal_and_hash(
-            &*sender,
-            &*receiver,
+        let (endpoint, tsp_message) = self.seal_message_payload_and_hash(
+            sender.identifier(),
+            receiver.identifier(),
             None,
             Payload::RequestNestedRelationship {
                 vid: nested_vid.vid().as_ref(),
@@ -861,7 +882,7 @@ impl Store {
 
         self.add_nested_thread_id(receiver.identifier(), thread_id)?;
 
-        Ok(((receiver.endpoint().clone(), tsp_message), nested_vid))
+        Ok(((endpoint, tsp_message), nested_vid))
     }
 
     /// Accept a nested relationship with the (nested) VID identified by `nested_receiver`.
