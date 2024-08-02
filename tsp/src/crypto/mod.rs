@@ -42,11 +42,7 @@ pub fn seal(
     nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
 ) -> Result<TSPMessage, CryptoError> {
-    #[cfg(not(feature = "nacl"))]
-    return tsp_hpke::seal::<Aead, Kdf, Kem>(sender, receiver, nonconfidential_data, payload, None);
-
-    #[cfg(feature = "nacl")]
-    return tsp_nacl::seal(sender, receiver, nonconfidential_data, payload, None);
+    seal_and_hash(sender, receiver, nonconfidential_data, payload, None)
 }
 
 /// Encrypt, authenticate and sign and CESR encode a TSP message; also returns the hash value of the plaintext parts before encryption
@@ -55,28 +51,16 @@ pub fn seal_and_hash(
     receiver: &dyn VerifiedVid,
     nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
-) -> Result<(TSPMessage, Digest), CryptoError> {
-    let mut digest = Default::default();
-
+    digest: Option<&mut Digest>,
+) -> Result<TSPMessage, CryptoError> {
     #[cfg(not(feature = "nacl"))]
-    let msg = tsp_hpke::seal::<Aead, Kdf, Kem>(
-        sender,
-        receiver,
-        nonconfidential_data,
-        payload,
-        Some(&mut digest),
-    )?;
+    let msg =
+        tsp_hpke::seal::<Aead, Kdf, Kem>(sender, receiver, nonconfidential_data, payload, digest)?;
 
     #[cfg(feature = "nacl")]
-    let msg = tsp_nacl::seal(
-        sender,
-        receiver,
-        nonconfidential_data,
-        payload,
-        Some(&mut digest),
-    )?;
+    let msg = tsp_nacl::seal(sender, receiver, nonconfidential_data, payload, digest)?;
 
-    Ok((msg, digest))
+    Ok(msg)
 }
 
 pub type MessageContents<'a> = (

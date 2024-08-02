@@ -745,7 +745,8 @@ impl Store {
         let path = route;
         let route = route.map(|collection| collection.iter().map(|vid| vid.as_ref()).collect());
 
-        let (tsp_message, thread_id) = crate::crypto::seal_and_hash(
+        let mut thread_id = Default::default();
+        let tsp_message = crate::crypto::seal_and_hash(
             &*sender,
             &*receiver,
             None,
@@ -753,6 +754,7 @@ impl Store {
                 route,
                 thread_id: Default::default(),
             },
+            Some(&mut thread_id),
         )?;
 
         let (transport, tsp_message) = if let Some(hop_list) = path {
@@ -845,7 +847,8 @@ impl Store {
 
         let nested_vid = self.make_propositioning_vid(sender.identifier())?;
 
-        let (tsp_message, thread_id) = crate::crypto::seal_and_hash(
+        let mut thread_id = Default::default();
+        let tsp_message = crate::crypto::seal_and_hash(
             &*sender,
             &*receiver,
             None,
@@ -853,6 +856,7 @@ impl Store {
                 vid: nested_vid.vid().as_ref(),
                 thread_id: Default::default(),
             },
+            Some(&mut thread_id),
         )?;
 
         self.add_nested_thread_id(receiver.identifier(), thread_id)?;
