@@ -290,7 +290,7 @@ async fn run() -> Result<(), Error> {
             print!("{vid}");
         }
         Commands::Create { username, alias } => {
-            let did = format!("did:web:{server}:user:{username}");
+            let did = format!("did:web:{}:user:{username}", server.replace(":", "%3A"));
 
             if let Some(alias) = alias {
                 aliases.insert(alias.clone(), did.clone());

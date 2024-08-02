@@ -125,44 +125,46 @@ async fn main() {
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
 
     tokio::task::spawn(async {
+        let domain = DOMAIN.replace(":", "%3A");
         let mut db = AsyncStore::new();
         let piv: OwnedVid = serde_json::from_str(include_str!("../test/p.json")).unwrap();
         db.add_private_vid(piv).unwrap();
-        db.verify_vid("did:web:did.tsp-test.org:user:q")
+        db.verify_vid(&format!("did:web:did.{domain}:user:q"))
             .await
             .unwrap();
-        db.verify_vid("did:web:did.tsp-test.org:user:a")
+        db.verify_vid(&format!("did:web:did.{domain}:user:a"))
             .await
             .unwrap();
 
         db.set_relation_for_vid(
-            "did:web:did.tsp-test.org:user:q",
-            Some("did:web:did.tsp-test.org:user:p"),
+            &format!("did:web:did.{domain}:user:q"),
+            Some(&format!("did:web:did.{domain}:user:p")),
         )
         .unwrap();
 
-        if let Err(e) = start_intermediary("p.tsp-test.org", 3001, db).await {
+        if let Err(e) = start_intermediary(&format!("p.{domain}"), 3001, db).await {
             eprintln!("error starting intermediary: {:?}", e);
         }
     });
 
     tokio::task::spawn(async {
+        let domain = DOMAIN.replace(":", "%3A");
         let mut db = AsyncStore::new();
         let piv: OwnedVid = serde_json::from_str(include_str!("../test/q.json")).unwrap();
         db.add_private_vid(piv).unwrap();
-        db.verify_vid("did:web:did.tsp-test.org:user:p")
+        db.verify_vid(&format!("did:web:did.{domain}:user:p"))
             .await
             .unwrap();
-        db.verify_vid("did:web:did.tsp-test.org:user:b")
+        db.verify_vid(&format!("did:web:did.{domain}:user:b"))
             .await
             .unwrap();
         db.set_relation_for_vid(
-            "did:web:did.tsp-test.org:user:q",
-            Some("did:web:did.tsp-test.org:user:b"),
+            &format!("did:web:did.{domain}:user:q"),
+            Some(&format!("did:web:did.{domain}:user:b")),
         )
         .unwrap();
 
-        if let Err(e) = start_intermediary("q.tsp-test.org", 3002, db).await {
+        if let Err(e) = start_intermediary(&format!("q.{domain}"), 3002, db).await {
             eprintln!("error starting intermediary: {:?}", e);
         }
     });
@@ -292,7 +294,7 @@ async fn get_did_doc(Path(name): Path<String>) -> Response {
         return (StatusCode::BAD_REQUEST, "invalid name").into_response();
     }
 
-    let key = format!("did:web:{DOMAIN}:user:{name}");
+    let key = format!("did:web:{}:user:{name}", DOMAIN.replace(":", "%3A"));
 
     match read_id(&key).await {
         Ok(identity) => {
@@ -407,7 +409,10 @@ async fn sign_timestamp(
     let (_url, response_bytes) = state
         .timestamp_server
         .seal_message(
-            "did:web:did.tsp-test.org:user:timestamp-server",
+            &format!(
+                "did:web:did.{}:user:timestamp-server",
+                DOMAIN.replace(":", "%3A")
+            ),
             receiver,
             Some(&bytes),
             &[],
