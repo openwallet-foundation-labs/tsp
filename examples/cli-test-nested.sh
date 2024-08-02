@@ -24,6 +24,11 @@ tsp --database b print b | xargs tsp --database a verify --alias b
 tsp --database b print b-inner | xargs tsp --database a verify --alias b-inner
 tsp --database a set-parent b-inner b
 
+# without the following, the nested message will still be received, but
+# will not be recognized as confidential since b can't tell that "a-inner" and "a"
+# are related
+tsp --database b set-parent a-inner a
+
 echo "---- configure relations"
 tsp --database a set-relation b-inner a-inner
 

@@ -226,6 +226,9 @@ async fn test_nested_mode() {
         .verify_vid(nested_alice_vid.identifier())
         .await
         .unwrap();
+    bob_db
+        .set_parent_for_vid(nested_alice_vid.identifier(), Some(alice_vid.identifier()))
+        .unwrap();
 
     // send a message using inner vid
     alice_db

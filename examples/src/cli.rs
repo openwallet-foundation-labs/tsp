@@ -445,9 +445,18 @@ async fn run() -> Result<(), Error> {
                             sender,
                             nonconfidential_data: _,
                             message,
-                            message_type: _,
+                            message_type,
                         } => {
-                            info!("received message ({} bytes) from {}", message.len(), sender,);
+                            use tsp::definitions::MessageType;
+                            let status = match message_type {
+                                MessageType::Signed => "NON-CONFIDENTIAL",
+                                MessageType::SignedAndEncrypted => "confidential",
+                            };
+                            info!(
+                                "received {status} message ({} bytes) from {}",
+                                message.len(),
+                                sender,
+                            );
                             println!("{}", String::from_utf8_lossy(&message),);
                         }
                         ReceivedTspMessage::RequestRelationship {
