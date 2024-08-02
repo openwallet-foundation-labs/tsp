@@ -573,8 +573,9 @@ impl Store {
                         message_type: MessageType::SignedAndEncrypted,
                     }),
                     Payload::NestedMessage(inner) => {
-                        // we must communicate the correct payload to the caller, in case
-                        // the inner vid isn't recognized (which can happen in Routed mode)
+                        // in case the inner vid isn't recognized (which can realistically happen in Routed mode),
+                        // in async mode we might want to ask if they still want to open the message; but for that
+                        // we must communicate the payload to them so they can process it further.
                         // we cannot do this after 'open_message' since 'inner' will be borrowed
                         let inner_vid = Self::probe_sender(inner)?;
                         if self.get_verified_vid(inner_vid).is_err() {
@@ -588,11 +589,14 @@ impl Store {
                         let mut received_message = self.open_message(inner)?;
 
                         if let ReceivedTspMessage::GenericMessage {
-                            ref mut message_type,
+                            message_type: ref mut message_type @ MessageType::Signed,
+                            sender: ref inner_sender,
                             ..
                         } = received_message
                         {
-                            *message_type = MessageType::SignedAndEncrypted;
+                            if self.get_vid(inner_sender)?.get_parent_vid() == Some(&sender) {
+                                *message_type = MessageType::SignedAndEncrypted;
+                            }
                         }
 
                         Ok(received_message)
@@ -1510,6 +1514,10 @@ mod test {
             .unwrap();
 
         a_store
+            .set_parent_for_vid(nested_a.identifier(), Some(a.identifier()))
+            .unwrap();
+
+        b_store
             .set_parent_for_vid(nested_a.identifier(), Some(a.identifier()))
             .unwrap();
 
