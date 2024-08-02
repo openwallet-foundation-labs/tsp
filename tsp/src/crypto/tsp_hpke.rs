@@ -24,7 +24,7 @@ pub(crate) fn seal<A, Kdf, Kem>(
     receiver: &dyn VerifiedVid,
     nonconfidential_data: Option<NonConfidentialData>,
     secret_payload: Payload<&[u8]>,
-    plaintext_observer: Option<super::ObservingClosure>,
+    digest: Option<&mut super::Digest>,
 ) -> Result<TSPMessage, CryptoError>
 where
     A: aead::Aead,
@@ -119,9 +119,9 @@ where
     // recipient public key
     let message_receiver = Kem::PublicKey::from_bytes(receiver.encryption_key().as_ref())?;
 
-    // this callback allows "observing" the raw bytes of the plaintext before encryption, for hash computations
-    if let Some(func) = plaintext_observer {
-        func(&cesr_message);
+    // hash the raw bytes of the plaintext before encryption
+    if let Some(digest) = digest {
+        *digest = crate::crypto::sha256(&cesr_message)
     }
 
     // perform encryption

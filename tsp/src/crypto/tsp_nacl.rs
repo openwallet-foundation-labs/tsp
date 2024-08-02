@@ -16,7 +16,7 @@ pub(crate) fn seal(
     receiver: &dyn VerifiedVid,
     nonconfidential_data: Option<NonConfidentialData>,
     secret_payload: Payload<&[u8]>,
-    plaintext_observer: Option<super::ObservingClosure>,
+    digest: Option<&mut super::Digest>,
 ) -> Result<TSPMessage, CryptoError> {
     let mut csprng = StdRng::from_entropy();
 
@@ -87,9 +87,9 @@ pub(crate) fn seal(
     #[cfg(not(feature = "essr"))]
     crate::cesr::encode_payload(&secret_payload, None, &mut cesr_message)?;
 
-    // this callback allows "observing" the raw bytes of the plaintext before encryption, for hash computations
-    if let Some(func) = plaintext_observer {
-        func(&cesr_message);
+    // hash the raw bytes of the plaintext before encryption
+    if let Some(digest) = digest {
+        *digest = crate::crypto::sha256(&cesr_message)
     }
 
     let sender_secret_key = SecretKey::from_bytes(**sender.decryption_key());
