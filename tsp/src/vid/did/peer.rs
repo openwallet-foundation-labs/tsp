@@ -7,7 +7,7 @@ pub(crate) const SCHEME: &str = "peer";
 
 /// Encode VID as did:peer,include verification end encryption key
 /// The service definition has type `tsp`
-/// See https://identity.foundation/peer-did-method-spec/
+/// See <https://identity.foundation/peer-did-method-spec/>
 pub fn encode_did_peer(vid: &Vid) -> String {
     let mut v = Vec::with_capacity(34);
     // multicodec for ed25519-pub

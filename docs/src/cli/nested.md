@@ -1,5 +1,101 @@
 # Nested mode
 
+To try out TSP in nested mode, the CLI can be used. A nested relationship can be set up by
+exchanging relationship messages (the preferred way), but it can also be tested by manually
+setting up identifiers, having both sides explicitly verify each other identities
+and establishing a relationship between those identifiers.
+
+## Nested mode (using relationship control messages)
+
+### Establishing an outer relationship
+
+To send a nested TSP message both sender and and receiver should first establish a
+direct relationship. This can be initiated by one party verifying the VID of the other,
+and sending a relationship request.
+
+We use the same __alice__ and __bob__ example as in the previous chapter.
+
+First, __alice__ will have to learn about __bob__'s existence:
+
+```sh
+> tsp -d alice verify bob did:web:tsp-test.org:user:bob
+ INFO tsp: did:web:tsp-test.org:user:bob is verified and added to the database alice
+```
+Then she can send a relationship request message. This requires __bob__ to be listening as
+shown in the previous chapter (i.e. running `tsp -d bob receive` in a separate window):
+```sh
+> tsp -d alice request --sender-vid did:web:tsp-test.org:user:alice --receiver-vid did:web:tsp-test.org:user:bob
+ INFO tsp::async_store: sending message to https://tsp-test.org/user/bob
+ INFO tsp: sent control message from did:web:tsp-test.org:user:alice to did:web:tsp-test.org:user:bob
+```
+
+On __bob__'s side, we will see:
+```sh
+> tsp -d bob receive --one
+ INFO tsp: message involving unknown party did:web:tsp-test.org:user:alice
+do you want to read a message from 'did:web:tsp-test.org:user:alice'? [y/n] y
+ INFO tsp: received relationship request from did:web:tsp-test.org:user:alice, thread-id 'JZla6+N6FP/In7ywOp8yQD2GfXemCn1e4b6tFVWaLxg'
+```
+
+Notice how a thread-id was generated, we need this to confirm the relationship.  This can be done by sending a relationship acceptance message (this requires alice to be listening):
+
+```sh
+> tsp -d bob accept --sender-vid did:web:tsp-test.org:user:bob --receiver-vid did:web:tsp-test.org:user:alice --thread-id 'JZla6+N6FP/In7ywOp8yQD2GfXemCn1e4b6tFVWaLxg'
+```
+
+On __alice__'s side, this will look like:
+```sh
+> tsp -d alice receive --one did:web:tsp-test.org:user:alice
+ INFO tsp: received accept relationship from did:web:tsp-test.org:user:bob
+```
+
+__alice__ and __bob__ now have a bidirectional relationship.
+
+### Nesting the relationship
+
+To establish the nested relationship follows the same procedure as above, except that the `request` and `accept` subcommands will
+have to be passed the `--nested` parameter.
+
+Let's say that __alice__ again takes the initiative to nest the relationship, which starts the same as before:
+
+```sh
+> tsp -d alice request --nested --sender-vid did:web:tsp-test.org:user:alice --receiver-vid did:web:tsp-test.org:user:bob
+ INFO tsp: sent a nested relationship request to did:web:tsp-test.org:user:bob with new identity 'did:peer:2.Vz6Mv3HRDr8nQ28LZxXHrU1zaUdXVJVjQzhuVcFB4pyF5rweQ.Ez6Lc6URPHMVN1vswnk32ND5zNcAb5o2QA1Hs4NThH2YzAuVL.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0'
+```
+Notice that a new `did:peer` identifier was created. This will have a transport set to `tsp://`. Let's create an alias for it:
+
+On __bob__'s side, this message will appear:
+```sh
+> tsp -d bob receive --one
+ INFO tsp: received nested relationship request from 'did:peer:2.Vz6Mv3HRDr8nQ28LZxXHrU1zaUdXVJVjQzhuVcFB4pyF5rweQ.Ez6Lc6URPHMVN1vswnk32ND5zNcAb5o2QA1Hs4NThH2YzAuVL.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0' (new identity for did:web:tsp-test.org:user:alice), thread-id 'cR9RznAELgbp9XZ+VFFjq7vYv4v+ITaGrxa7L2ddCPw'
+```
+
+As before, __bob__ can accept this using `tsp accept`:
+
+```sh
+> tsp -d bob accept --nested --sender-vid did:web:tsp-test.org:user:bob --receiver-vid did:peer:2.Vz6Mv3HRDr8nQ28LZxXHrU1zaUdXVJVjQzhuVcFB4pyF5rweQ.Ez6Lc6URPHMVN1vswnk32ND5zNcAb5o2QA1Hs4NThH2YzAuVL.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0
+ INFO tsp: formed a nested relationship with did:peer:2.Vz6Mv3HRDr8nQ28LZxXHrU1zaUdXVJVjQzhuVcFB4pyF5rweQ.Ez6Lc6URPHMVN1vswnk32ND5zNcAb5o2QA1Hs4NThH2YzAuVL.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0 with new identity 'did:peer:2.Vz6MuvAXTdNjiSV4DkbMUXAzShqiL2wvFNf2Dg4mr34JkQqk6.Ez6LbyVXwzoVNbRVm7X1Bpa4BqM5Aa5QYXyT4j6iRCxJAo4Fc.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0'
+```
+Instead of the `did:peer`, __bob__ could also have used __alice__'s outer VID here. The TSP SDK will know which VID to use. Notice
+how a new VID was also generated for __bob__. On __alice__'s side, this will look as follows:
+
+```sh
+> tsp -d alice receive --one
+ INFO tsp: received accept nested relationship from 'did:peer:2.Vz6MuvAXTdNjiSV4DkbMUXAzShqiL2wvFNf2Dg4mr34JkQqk6.Ez6LbyVXwzoVNbRVm7X1Bpa4BqM5Aa5QYXyT4j6iRCxJAo4Fc.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0' (new identity for did:web:tsp-test.org:user:bob)
+```
+
+Note that to make operation easier, we recommend using the alias mechanism to create better names for these essentially random inner identifiers:
+```sh
+> tsp -d alice set-alias inner_alice did:peer:2.Vz6Mv3HRDr8nQ28LZxXHrU1zaUdXVJVjQzhuVcFB4pyF5rweQ.Ez6Lc6URPHMVN1vswnk32ND5zNcAb5o2QA1Hs4NThH2YzAuVL.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0
+> tsp -d alice set-alias inner_bob did:peer:2.Vz6MuvAXTdNjiSV4DkbMUXAzShqiL2wvFNf2Dg4mr34JkQqk6.Ez6LbyVXwzoVNbRVm7X1Bpa4BqM5Aa5QYXyT4j6iRCxJAo4Fc.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0
+```
+And similarly for __bob__. Using these aliases, nested messages can simply be sent as for any other VID:
+```sh
+echo "Hello Bob" | tsp -d alice send --sender-vid inner_alice --receiver-vid inner_bob
+```
+
+## Nested mode (manual setup)
+
 To send a nested TSP message both sender and and receiver should
 establish a pair of VIDs. One VID is used for the inner message and one for the outer.
 
@@ -8,7 +104,7 @@ We use the same __alice__ and __bob__ example as in the previous chapter.
 First, we create an inner or nested VID for __alice__:
 
 ```sh
-tsp -d alice.json create-peer alice-inner
+tsp -d alice create-peer alice-inner
 ```
 
 Output:
@@ -18,12 +114,12 @@ Output:
  VyaSI6Imh0dHBzOi8vdHNwLXRlc3Qub3JnL3VzZXIvYWxpY2UtaW5uZXIifSwidCI6InRzcCJ9
 ```
 
-The `create-peer` command creates a new identity and key m,aterial in the `did:peer` format.
+The `create-peer` command creates a new identity and key material in the `did:peer` format.
 
 Next we configure the newly created did:peer as a child of our main identity:
 
 ```sh
-tsp -d alice.json set-parent alice-inner alice
+tsp -d alice set-parent alice-inner alice
 ```
 
 Output:
@@ -38,7 +134,7 @@ We do the same for __bob__:
 
 
 ```sh
-tsp -d bob.json create-peer bob-inner
+tsp -d bob create-peer bob-inner
 ```
 
 Output:
@@ -49,7 +145,7 @@ Output:
 ```
 
 ```sh
-tsp -d bob.json set-parent bob-inner bob
+tsp -d bob set-parent bob-inner bob
 ```
 
 Output:
@@ -64,7 +160,7 @@ Next we resolve and verify __bob__'s inner VID. We use the `print` command to pr
 the full VID and use `xargs` to feed the output as input for the `verify` command:
 
 ```sh
-tsp -d bob.json print bob-inner | xargs tsp -d alice.json verify --alias bob-inner
+tsp -d bob print bob-inner | xargs tsp -d alice verify --alias bob-inner
 ```
 
 Output:
@@ -72,13 +168,13 @@ Output:
  INFO tsp: did:peer:2.Vz6Mv49Sf4ui8iG5C7VTjMS2bXq7EZDhyKSDNbcQhcvUmGLLW.Ez6Lc2
  RywGrd9ARMmfLBGL3QFsoijt1PmYMMFrPRk6QMfwTEr.SeyJzIjp7InVyaSI6Imh0dHBzOi8vdHNw
  LXRlc3Qub3JnL3VzZXIvYm9iLWlubmVyIn0sInQiOiJ0c3AifQ
- is verified and added to the database alice.json
+ is verified and added to the database alice
 ```
 
 We do the same for the inner VID of __alice__:
 
 ```sh
-tsp -d alice.json print alice-inner | xargs tsp -d bob.json verify --alias alice-inner
+tsp -d alice print alice-inner | xargs tsp -d bob verify --alias alice-inner
 ```
 
 Output:
@@ -86,33 +182,33 @@ Output:
  INFO tsp: did:peer:2.Vz6MutdCU73wbCRc4Uypzg1a3gU5vAfwsLjHWbgArHzjqWzpw.Ez6Lbw
  xU56UYuE9EwTPgVJFX2nB3UcssbLk7nnrEF8qQNEZQv.SeyJzIjp7InVyaSI6Imh0dHBzOi8vdHNw
  LXRlc3Qub3JnL3VzZXIvYWxpY2UtaW5uZXIifSwidCI6InRzcCJ9
- is verified and added to the database bob.json
+ is verified and added to the database bob
 ```
 
 We need to configure the association between __alice__ and __bob__'s inner VIDs.
-Use the `set-relation` command to soecify which VID should be used to send messages
+Use the `set-relation` command to specify which VID should be used to send messages
 a certain VID:
 
 ```sh
-tsp -d alice.json set-relation bob-inner alice-inner
+tsp -d alice set-relation bob-inner alice-inner
 ```
 
 Then set the parent/child relationship of __bob__'s VIDs in __alice__'s database:
 
 ```sh
-tsp -d alice.json set-parent bob-inner bob
+tsp -d alice set-parent bob-inner bob
 ```
 
 Now we are ready to send a nested message. First start listening for messages from __bob__'s side:
 
 ```sh
-tsp -d bob.json receive --one bob
+tsp -d bob receive --one bob
 ```
 
 Then send a nested message from __alice__:
 
 ```sh
-echo "Hi Bob!" | tsp --pretty-print -d alice.json send -s alice-inner -r bob-inner
+echo "Hi Bob!" | tsp --pretty-print -d alice send -s alice-inner -r bob-inner
 ```
 
 Output:
