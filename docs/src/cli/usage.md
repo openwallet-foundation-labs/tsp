@@ -2,16 +2,17 @@
 
 ## Create a first identity
 
-By default the `tsp` command line tool will store its state in a JSON file 
-in the current directory.
+The `tsp` command line tool will store its state using the Aries-Askar interface
+in a SQLite file in the current directory.
 
 <div class="warning">
-Note that in a production (non-testing) setting this file should probably
-be encrypted, since it contains private keys in plain-text. This tool
-is intended for testing purposes only.
+The TSP command is used as an example and 'playground' to explore TSP, and as an
+example for programmers on how to use the SDK to build TSP applications. It does not
+expose all the functionality of the TSP SDK (e.g. TLS or QUICK transport), neither
+should it used to build production appliations.
 </div>
 
-To create a test identity run the following command:
+To create a test `did:web` identity run the following command:
 
 ```sh
 tsp create example
@@ -40,11 +41,11 @@ tsp --verbose create example
 
 Output:
 ``` 
-TRACE tsp: opened database database.json
+TRACE tsp: opened database database.sqlite
  INFO tsp: added alias example -> did:web:tsp-test.org:user:example
  INFO tsp: created identity did:web:tsp-test.org:user:example
 TRACE tsp: published DID document to https://tsp-test.org/user/example/did.json
-TRACE tsp: persisted database to database.json
+TRACE tsp: persisted database to database.sqlite
 ```
 
 ## Resolve a VID
@@ -60,7 +61,7 @@ tsp verify did:web:tsp-test.org:user:example
 
 Output:
 ```
- INFO tsp: did:web:tsp-test.org:user:example is verified and added to database.json
+ INFO tsp: did:web:tsp-test.org:user:example is verified and added to the database
 ```
 
 The verify command also support the alias argument:
@@ -81,31 +82,31 @@ Use the `--database` flag to specify the file name of the database.
 First create the identity for __alice__:
 
 ```sh
-tsp --database alice.json create alice --alias alice
+tsp --database alice create alice --alias alice
 ```
 
 Then create the identity for __bob__:
 
 ```sh
-tsp --database bob.json create bob --alias bob
+tsp --database bob create bob --alias bob
 ```
 
-Let __alice__ verify __bob__'s VID and add it to the database `alice.json`:
+Let __alice__ verify __bob__'s VID and add it to the database `alice`:
 
 ```sh
-tsp --database alice.json verify did:web:tsp-test.org:user:bob --alias bob
+tsp --database alice verify did:web:tsp-test.org:user:bob --alias bob
 ```
 
-Let __bob__ verify __alice__'s VID and add it to the database `bob.json`:
+Let __bob__ verify __alice__'s VID and add it to the database `bob`:
 
 ```sh
-tsp --database bob.json verify did:web:tsp-test.org:user:alice --alias alice
+tsp --database bob verify did:web:tsp-test.org:user:alice --alias alice
 ```
 
 Let __bob__  start listening for a message:
 
 ```sh
-tsp --database bob.json receive --one bob
+tsp --database bob receive --one bob
 ```
 
 The `--one` argument makes the command exit when the first message is received.
@@ -116,7 +117,7 @@ a new / different terminal to send the message from __alice__.
 To send a message run the following:
 
 ```sh
-echo "Hello Bob!" | tsp --database alice.json send --sender-vid alice --receiver-vid bob
+echo "Hello Bob!" | tsp --database alice send --sender-vid alice --receiver-vid bob
 ```
 
 Note that `alice` and `bob` are aliases of `did:web:tsp-test.org:user:alice`
@@ -125,13 +126,13 @@ and `did:web:tsp-test.org:user:bob`.
 We can also use aliases for the argument, for example:
 
 ```sh
-echo "Hello Bob!" | tsp -d alice.json send -s alice -r bob
+echo "Hello Bob!" | tsp -d alice send -s alice -r bob
 ```
 
 In the other terminal window the message should appear:
 
 ```sh
-tsp --database bob.json receive --one bob
+tsp --database bob receive --one bob
 ```
 
 ```
@@ -139,6 +140,23 @@ tsp --database bob.json receive --one bob
  INFO tsp: received message (11 bytes) from did:web:tsp-test.org:user:alice
 Hello Bob!
 ```
+
+### DID types supported
+
+The TSP CLI example application supports two types of decentralized identifiers:
+
+* `did:web`, created using `tsp create`. These are resolved by finding a `.json` file on a server and checking its contents.
+* `did:peer`, created using `tsp create-peer`. These are essentially self-signed identifiers.
+
+The TSP CLI can use two types of transport:
+
+* `https`, which forces the use of a broadcast server application (see `demo-server.rs`),
+   but will work well across firewalls.
+
+* `tcp`, which requires a direct network connection between two instances of the TSP CLI.
+   In practice you can use this only on a local network (or the same machine, if you use different ports), but
+   this functionality is added to demonstrate the flexibility of having multiple transports. This transport mode
+   is only available to `did:peer`. To use TCP transport, use the `--tcp address:port` flag to `tcp create-peer`.
 
 ### Pretty print messages
 
@@ -148,7 +166,7 @@ This wil output the CESR-encoded TSP mesage that is sent.
 Continuing with the __alice__ and __bob__ example:
 
 ```sh
-echo "Hello Bob!" | tsp --pretty-print -d alice.json send -s alice -r bob
+echo "Hello Bob!" | tsp --pretty-print -d alicen send -s alice -r bob
 ```
 
 Output:

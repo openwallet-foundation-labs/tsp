@@ -1,9 +1,46 @@
 # Routed mode
 
+Like nested mode, routed mode can be set up by exchanging relationship messages between very hop in the node (for the most
+part), or fully manually. In this document we will assume a set up with four nodes: a sender `a`, receiver `b`, and two 
+intermediaries `p` and `q`.
+
+## Routed mode (semi-automated set up)
+
+To set up routed mode, the four nodes needs to establish bidirectional outer relationships with each other using `tsp request` and
+`tsp accept`, as shown in the chapter on nested mode. So we will repeat that here and assume that all the relationships have already
+been formed.
+
+What is special about routed mode, is that the final hop node `q`, needs to have a special VID (say `q2`) that is dedicated to sending
+messages to the final recipient `b`. This can be achieve in two ways:
+
+* Establishing a nested relationship between `q` and `b`, and then using the inner VID for `q` as the final hop. Nested relationships always have a "relation vid".
+* Explicitly creating a separate public identity for the node `q` that is verified by `b` and has `b` as its "relation vid":
+
+  ```sh
+  > tsp -d q create --alias q2 q2
+  > tsp -d q set-relation q2 b
+  ```
+
+When this set up is done, all these is needed to send a routed message from `a` to `b` is to set up a route.
+
+```sh
+tsp -d a set-route b VID-FOR-P,VID-FOR-Q,VID-FOR-Q2
+```
+Note, this requires `a` to have verified the VID of `p`, but it does not need to have verified the VID's `q` or `q2`. In fact, if
+the VID `q2` is an inner vid for a nested relationship, `a` will not have a way to verify it at all.
+
+When this route is set up properly, sending a message proceeds as normal:
+```sh
+echo "Routed Hello" | tsp -d a send --sender-vid a --receiver-vid b
+```
+
+## Routed mode (manual set up)
+
 Routed mode is a bit more involved than direct or nested mode. We need to
 setup correctly configured intermediary servers.
 
-In this example we use preconfigured identities and intermediaries from `tsp-test.org`.
+In this example we use preconfigured identities and intermediaries from `tsp-test.org` instead of using the 
+TSP CLI itself for the intermediaries.
 
 We will use intermediaries `p` and `q` to send a message from `a` to `b`.
 The key material for these can be found in the Rust TSP repository.
@@ -61,7 +98,7 @@ tsp -d b.json print b | xargs tsp -d a.json verify --alias b
 tsp -d b.json verify did:web:did.tsp-test.org:user:q --alias q
 ```
 
-Verify the VIDs foure the intermediaries and the endpoint.
+Verify the VIDs for the intermediaries and the endpoint.
 Passing the `--sender` argument configures which sender VID is used when sending
 messages to the passed VID. This is equivalent with an extra call to the `set-relation`
 command.
@@ -75,7 +112,7 @@ tsp -d a.json set-route b p,q,q
 
 The `set-route` command configures the route for the VID aliased by `b`.
 Note that the last hop in the route, `q`, in practice should be VID that the intermediary
-obnly uses to communicate with the receiver (`b`). For the sake of simplicity
+only uses to communicate with the receiver (`b`). For the sake of simplicity
 we configured the intermediary `q` with a VID that is also configured as the
 sender VID when communication with the VID of `b`.
 

@@ -47,8 +47,9 @@ Note that this will also work over the internet,
 sending messages from one device to the other.
 
 <div class="warning">
-The demo server on tsp-test.org does not have persistent storage. Generated VIDs
-will only persist until the server is restarted, which happens at least once a week.
+The demo server on tsp-test.org should not be used in a production use of TSP. In particular
+there are no guarantees about persistent storage. Generated VIDs might only persist until the server
+is restarted, which happens at least once a week.
 </div>
 
 Enter a full VID in the field "Resolve and verify VID" and push the button.
