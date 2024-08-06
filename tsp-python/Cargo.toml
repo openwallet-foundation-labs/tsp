@@ -10,6 +10,6 @@ name = "tsp_python"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.21" }
+pyo3 = { version = "0.22" }
 tsp.workspace = true
 tokio.workspace = true
