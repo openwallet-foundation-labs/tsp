@@ -1,13 +1,12 @@
 # Routed mode
 
-Like nested mode, routed mode can be set up by exchanging relationship messages between very hop in the node (for the most
-part), or fully manually. In this document we will assume a set up with four nodes: a sender `a`, receiver `b`, and two 
-intermediaries `p` and `q`.
+Like nested mode, routed mode can be set up by exchanging relationship messages between every hop in the node (for the most
+part), or more manually. In this document we will assume a setup with four nodes: a sender `a`, receiver `b`, and two intermediaries `p` and `q`.
 
 ## Routed mode (semi-automated set up)
 
-To set up routed mode, the four nodes needs to establish bidirectional outer relationships with each other using `tsp request` and
-`tsp accept`, as shown in the chapter on nested mode. So we will repeat that here and assume that all the relationships have already
+To set up routed mode, the four nodes need to establish bidirectional outer relationships with each other using `tsp request` and
+`tsp accept`, as shown in the chapter on nested mode. We will not repeat instructions on how to do that here and assume that all the one-to-one relationships have already
 been formed.
 
 What is special about routed mode, is that the final hop node `q`, needs to have a special VID (say `q2`) that is dedicated to sending
