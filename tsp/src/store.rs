@@ -47,11 +47,11 @@ impl VidContext {
     }
 
     /// Set the route for this VID. The route will be used to send routed messages to this VID
-    fn set_route(&mut self, route: &[impl AsRef<str>]) {
+    fn set_route(&mut self, route: Vec<String>) {
         if route.is_empty() {
             self.tunnel = None;
         } else {
-            self.tunnel = Some(route.iter().map(|x| x.as_ref().to_owned()).collect())
+            self.tunnel = Some(route.into_boxed_slice());
         }
     }
 
@@ -237,7 +237,12 @@ impl Store {
     }
 
     /// Adds a route to an already existing vid, making it a nested Vid
-    pub fn set_route_for_vid(&self, vid: &str, route: &[&str]) -> Result<(), Error> {
+    pub fn set_route_for_vid(
+        &self,
+        vid: &str,
+        route: impl IntoIterator<Item: ToString, IntoIter: ExactSizeIterator>,
+    ) -> Result<(), Error> {
+        let route = route.into_iter();
         if route.len() == 1 {
             return Err(Error::InvalidRoute(
                 "A route must have at least two VIDs".into(),
@@ -245,7 +250,7 @@ impl Store {
         }
 
         self.modify_vid(vid, |resolved| {
-            resolved.set_route(route);
+            resolved.set_route(route.map(|x| x.to_string()).collect());
 
             Ok(())
         })
@@ -569,7 +574,7 @@ impl Store {
                     return Err(CryptoError::UnexpectedRecipient.into());
                 };
 
-                let sender = String::from_utf8(sender.to_vec())?;
+                let sender = std::str::from_utf8(sender)?.to_string();
 
                 let Ok(sender_vid) = self.get_verified_vid(&sender) else {
                     #[cfg(feature = "async")]
@@ -678,7 +683,7 @@ impl Store {
                             return Err(Error::Relationship("invalid nested request".into()));
                         };
 
-                        let inner_vid = String::from_utf8(inner_vid.to_vec())?;
+                        let inner_vid = std::str::from_utf8(inner_vid)?.to_string();
 
                         self.add_nested_vid(&inner_vid)?;
 
@@ -705,8 +710,8 @@ impl Store {
                             return Err(Error::Relationship("invalid nested reply".into()));
                         };
 
-                        let vid = String::from_utf8(vid.to_vec())?;
-                        let connect_to_vid = String::from_utf8(connect_to_vid.to_vec())?;
+                        let vid = std::str::from_utf8(vid)?.to_string();
+                        let connect_to_vid = std::str::from_utf8(connect_to_vid)?.to_string();
                         self.add_nested_vid(&vid)?;
 
                         let _ = self.open_message(inner)?;
@@ -722,16 +727,16 @@ impl Store {
                         })
                     }
                     Payload::NewIdentifier { thread_id, new_vid } => {
-                        let vid = std::str::from_utf8(new_vid)?;
+                        let vid = std::str::from_utf8(new_vid)?.to_string();
                         match self.get_vid(&sender)?.relation_status {
                             RelationshipStatus::Bidirectional {
                                 thread_id: check_id,
                                 ..
                             } if check_id == thread_id => Ok(ReceivedTspMessage::NewIdentifier {
                                 sender,
-                                new_vid: vid.to_string(),
+                                new_vid: vid,
                             }),
-                            _ => Err(Error::Relationship(vid.to_string())),
+                            _ => Err(Error::Relationship(vid)),
                         }
                     }
                     Payload::Referral { referred_vid } => {
@@ -758,7 +763,7 @@ impl Store {
                     }
                 };
 
-                let sender = String::from_utf8(sender.to_vec())?;
+                let sender = std::str::from_utf8(sender)?.to_string();
 
                 let Ok(sender_vid) = self.get_verified_vid(&sender) else {
                     return Err(Error::UnverifiedVid(sender.to_string()));
