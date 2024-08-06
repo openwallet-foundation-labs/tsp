@@ -73,11 +73,10 @@ pub enum Payload<'a, Bytes, Vid> {
     /// A TSP message confirming a relationship
     DirectRelationAffirm { reply: &'a Sha256Digest },
     /// A TSP message requesting a nested relationship
-    NestedRelationProposal { nonce: Nonce, new_vid: Vid },
+    NestedRelationProposal { nonce: Nonce, message: Bytes },
     /// A TSP message confirming a relationship
     NestedRelationAffirm {
-        new_vid: Vid,
-        connect_to_vid: Vid,
+        message: Bytes,
         reply: &'a Sha256Digest,
     },
     /// A TSP Message establishing a secondary relationship (parallel relationship forming)
@@ -277,19 +276,20 @@ pub fn encode_payload(
             encode_fixed_data(TSP_TYPECODE, &msgtype::NEW_REL_REPLY, output);
             encode_fixed_data(TSP_SHA256, reply.as_slice(), output);
         }
-        Payload::NestedRelationProposal { new_vid, nonce } => {
+        Payload::NestedRelationProposal {
+            message: data,
+            nonce,
+        } => {
             encode_fixed_data(TSP_TYPECODE, &msgtype::NEW_NEST_REL, output);
-            checked_encode_variable_data(TSP_DEVELOPMENT_VID, new_vid.as_ref(), output)?;
+            checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
             encode_fixed_data(TSP_NONCE, &nonce.0, output);
         }
         Payload::NestedRelationAffirm {
-            new_vid,
-            connect_to_vid,
+            message: data,
             reply,
         } => {
             encode_fixed_data(TSP_TYPECODE, &msgtype::NEW_NEST_REL_REPLY, output);
-            checked_encode_variable_data(TSP_DEVELOPMENT_VID, new_vid.as_ref(), output)?;
-            checked_encode_variable_data(TSP_DEVELOPMENT_VID, connect_to_vid.as_ref(), output)?;
+            checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
             encode_fixed_data(TSP_SHA256, reply.as_slice(), output);
         }
         Payload::NewIdentifierProposal { thread_id, new_vid } => {
@@ -421,8 +421,8 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload, DecodeErr
             Payload::DirectRelationAffirm { reply }
         }
         msgtype::NEW_NEST_REL => {
-            let new_vid: &[u8];
-            (new_vid, stream) = decode_variable_data_mut(TSP_DEVELOPMENT_VID, stream)
+            let data: &mut [u8];
+            (data, stream) = decode_variable_data_mut(TSP_PLAINTEXT, stream)
                 .ok_or(DecodeError::UnexpectedData)?;
 
             let nonce;
@@ -430,24 +430,20 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload, DecodeErr
                 decode_fixed_data_mut(TSP_NONCE, stream).ok_or(DecodeError::UnexpectedData)?;
 
             Payload::NestedRelationProposal {
-                new_vid,
+                message: data,
                 nonce: Nonce(*nonce),
             }
         }
         msgtype::NEW_NEST_REL_REPLY => {
-            let new_vid: &[u8];
-            let connect_to_vid: &[u8];
+            let data: &mut [u8];
             let reply;
-            (new_vid, stream) = decode_variable_data_mut(TSP_DEVELOPMENT_VID, stream)
-                .ok_or(DecodeError::UnexpectedData)?;
-            (connect_to_vid, stream) = decode_variable_data_mut(TSP_DEVELOPMENT_VID, stream)
+            (data, stream) = decode_variable_data_mut(TSP_PLAINTEXT, stream)
                 .ok_or(DecodeError::UnexpectedData)?;
             (reply, stream) =
                 decode_fixed_data_mut(TSP_SHA256, stream).ok_or(DecodeError::UnexpectedData)?;
 
             Payload::NestedRelationAffirm {
-                new_vid,
-                connect_to_vid,
+                message: data,
                 reply,
             }
         }
@@ -1248,14 +1244,12 @@ mod test {
             hops: vec![],
         });
         test_turn_around(Payload::DirectRelationAffirm { reply: nonce });
-        let new_vid = &[];
         test_turn_around(Payload::NestedRelationProposal {
-            new_vid,
+            message: &mut temp.clone(),
             nonce: Nonce(*nonce),
         });
         test_turn_around(Payload::NestedRelationAffirm {
-            new_vid,
-            connect_to_vid: new_vid,
+            message: &mut temp.clone(),
             reply: nonce,
         });
 

@@ -45,20 +45,18 @@ pub(crate) fn seal(
             crate::cesr::Payload::DirectRelationAffirm { reply: thread_id }
         }
         Payload::RequestNestedRelationship {
-            vid,
+            inner,
             thread_id: _ignored,
         } => crate::cesr::Payload::NestedRelationProposal {
             nonce: fresh_nonce(&mut csprng),
-            new_vid: vid,
+            message: inner,
         },
         Payload::AcceptNestedRelationship {
             ref thread_id,
-            vid,
-            connect_to_vid,
+            inner,
         } => crate::cesr::Payload::NestedRelationAffirm {
             reply: thread_id,
-            new_vid: vid,
-            connect_to_vid,
+            message: inner,
         },
         Payload::NewIdentifier {
             ref thread_id,
@@ -183,21 +181,16 @@ pub(crate) fn open<'a>(
         crate::cesr::Payload::DirectRelationAffirm { reply: &thread_id } => {
             Payload::AcceptRelationship { thread_id }
         }
-        crate::cesr::Payload::NestedRelationProposal { new_vid, .. } => {
+        crate::cesr::Payload::NestedRelationProposal { message, .. } => {
             Payload::RequestNestedRelationship {
-                vid: new_vid,
+                inner: message,
                 thread_id,
             }
         }
         crate::cesr::Payload::NestedRelationAffirm {
-            new_vid,
-            connect_to_vid,
+            message: inner,
             reply: &thread_id,
-        } => Payload::AcceptNestedRelationship {
-            vid: new_vid,
-            connect_to_vid,
-            thread_id,
-        },
+        } => Payload::AcceptNestedRelationship { inner, thread_id },
         crate::cesr::Payload::NewIdentifierProposal {
             thread_id: &thread_id,
             new_vid,
