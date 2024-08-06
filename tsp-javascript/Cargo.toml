@@ -23,4 +23,4 @@ tsp = { path = "../tsp", default-features = false, features = [
 ] }
 serde_json.workspace = true
 serde.workspace = true
-serde-wasm-bindgen = "0.4"
+serde-wasm-bindgen = "0.6"
