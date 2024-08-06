@@ -9,6 +9,8 @@ const ED25519_SIGNATURE: u32 = (b'B' - b'A') as u32;
 #[allow(clippy::eq_op)]
 const TSP_NONCE: u32 = (b'A' - b'A') as u32;
 const TSP_SHA256: u32 = (b'I' - b'A') as u32;
+#[allow(dead_code)]
+const TSP_BLAKE2B256: u32 = (b'F' - b'A') as u32;
 
 /// Constants that determine the specific CESR types for the framing codes
 const TSP_ETS_WRAPPER: u16 = (b'E' - b'A') as u16;
@@ -45,6 +47,21 @@ use super::{
 #[cfg_attr(any(test, feature = "fuzzing"), derive(PartialEq, Eq, Clone))]
 pub struct Nonce([u8; 32]);
 
+#[derive(Eq, PartialEq, Debug, Clone, Copy)]
+pub enum Digest<'a> {
+    Sha2_256(&'a [u8; 32]),
+    Blake2b256(&'a [u8; 32]),
+}
+
+impl<'a> Digest<'a> {
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        match self {
+            Digest::Sha2_256(bytes) => bytes,
+            Digest::Blake2b256(bytes) => bytes,
+        }
+    }
+}
+
 impl Nonce {
     pub fn generate(gen: impl FnOnce(&mut [u8; 32])) -> Nonce {
         let mut bytes = Default::default();
@@ -53,9 +70,6 @@ impl Nonce {
         Nonce(bytes)
     }
 }
-
-/// A SHA256 Digest
-type Sha256Digest = crate::definitions::Digest;
 
 /// A type to distinguish "normal" TSP messages from "control" messages
 #[repr(u32)]
@@ -71,23 +85,17 @@ pub enum Payload<'a, Bytes, Vid> {
     /// A TSP message requesting a relationship
     DirectRelationProposal { nonce: Nonce, hops: Vec<Vid> },
     /// A TSP message confirming a relationship
-    DirectRelationAffirm { reply: &'a Sha256Digest },
+    DirectRelationAffirm { reply: Digest<'a> },
     /// A TSP message requesting a nested relationship
     NestedRelationProposal { nonce: Nonce, message: Bytes },
     /// A TSP message confirming a relationship
-    NestedRelationAffirm {
-        message: Bytes,
-        reply: &'a Sha256Digest,
-    },
+    NestedRelationAffirm { message: Bytes, reply: Digest<'a> },
     /// A TSP Message establishing a secondary relationship (parallel relationship forming)
-    NewIdentifierProposal {
-        thread_id: &'a Sha256Digest,
-        new_vid: Vid,
-    },
+    NewIdentifierProposal { thread_id: Digest<'a>, new_vid: Vid },
     /// A TSP Message revealing a third party
     RelationshipReferral { referred_vid: Vid },
     /// A TSP cancellation message
-    RelationshipCancel { reply: &'a Sha256Digest },
+    RelationshipCancel { reply: Digest<'a> },
 }
 
 impl<'a, Bytes: AsRef<[u8]>, Vid: AsRef<[u8]>> Payload<'a, Bytes, Vid> {
@@ -274,7 +282,7 @@ pub fn encode_payload(
         }
         Payload::DirectRelationAffirm { reply } => {
             encode_fixed_data(TSP_TYPECODE, &msgtype::NEW_REL_REPLY, output);
-            encode_fixed_data(TSP_SHA256, reply.as_slice(), output);
+            encode_digest(reply, output);
         }
         Payload::NestedRelationProposal {
             message: data,
@@ -290,11 +298,11 @@ pub fn encode_payload(
         } => {
             encode_fixed_data(TSP_TYPECODE, &msgtype::NEW_NEST_REL_REPLY, output);
             checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
-            encode_fixed_data(TSP_SHA256, reply.as_slice(), output);
+            encode_digest(reply, output);
         }
         Payload::NewIdentifierProposal { thread_id, new_vid } => {
             encode_fixed_data(TSP_TYPECODE, &msgtype::NEW_REFER_REL, output);
-            encode_fixed_data(TSP_SHA256, thread_id.as_slice(), output);
+            encode_digest(thread_id, output);
             checked_encode_variable_data(TSP_DEVELOPMENT_VID, new_vid.as_ref(), output)?;
         }
         Payload::RelationshipReferral { referred_vid } => {
@@ -303,7 +311,7 @@ pub fn encode_payload(
         }
         Payload::RelationshipCancel { reply } => {
             encode_fixed_data(TSP_TYPECODE, &msgtype::REL_CANCEL, output);
-            encode_fixed_data(TSP_SHA256, reply.as_slice(), output);
+            encode_digest(reply, output);
         }
     }
 
@@ -355,6 +363,29 @@ fn decode_hops<'a, Vid: TryFrom<&'a [u8]>>(
 pub struct DecodedPayload<'a> {
     pub payload: Payload<'a, &'a mut [u8], &'a [u8]>,
     pub sender_identity: Option<&'a [u8]>,
+}
+
+/// Decode a TSP Digest
+fn decode_digest(stream: &mut [u8]) -> Result<(Digest, &mut [u8]), DecodeError> {
+    let result = if decode_fixed_data::<32>(TSP_SHA256, &mut (stream as &[u8])).is_some() {
+        decode_fixed_data_mut(TSP_SHA256, stream)
+            .map(|(digest, stream)| (Digest::Sha2_256(digest), stream))
+    } else if decode_fixed_data::<32>(TSP_BLAKE2B256, &mut (stream as &[u8])).is_some() {
+        decode_fixed_data_mut(TSP_BLAKE2B256, stream)
+            .map(|(digest, stream)| (Digest::Blake2b256(digest), stream))
+    } else {
+        None
+    };
+
+    result.ok_or(DecodeError::UnexpectedData)
+}
+
+/// Encode a TSP Digest
+pub fn encode_digest(digest: &Digest, output: &mut impl for<'a> Extend<&'a u8>) {
+    match digest {
+        Digest::Sha2_256(digest) => encode_fixed_data(TSP_SHA256, digest.as_slice(), output),
+        Digest::Blake2b256(digest) => encode_fixed_data(TSP_BLAKE2B256, digest.as_slice(), output),
+    }
 }
 
 /// Decode a TSP Payload
@@ -415,8 +446,7 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload, DecodeErr
         }
         msgtype::NEW_REL_REPLY => {
             let reply;
-            (reply, stream) =
-                decode_fixed_data_mut(TSP_SHA256, stream).ok_or(DecodeError::UnexpectedData)?;
+            (reply, stream) = decode_digest(stream)?;
 
             Payload::DirectRelationAffirm { reply }
         }
@@ -439,8 +469,7 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload, DecodeErr
             let reply;
             (data, stream) = decode_variable_data_mut(TSP_PLAINTEXT, stream)
                 .ok_or(DecodeError::UnexpectedData)?;
-            (reply, stream) =
-                decode_fixed_data_mut(TSP_SHA256, stream).ok_or(DecodeError::UnexpectedData)?;
+            (reply, stream) = decode_digest(stream)?;
 
             Payload::NestedRelationAffirm {
                 message: data,
@@ -448,8 +477,7 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload, DecodeErr
             }
         }
         msgtype::NEW_REFER_REL => {
-            let (thread_id, upd_stream) =
-                decode_fixed_data_mut(TSP_SHA256, stream).ok_or(DecodeError::UnexpectedData)?;
+            let (thread_id, upd_stream) = decode_digest(stream)?;
             let new_vid: &[u8];
             (new_vid, stream) = decode_variable_data_mut(TSP_DEVELOPMENT_VID, upd_stream)
                 .ok_or(DecodeError::UnexpectedData)?;
@@ -465,8 +493,7 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload, DecodeErr
         }
         msgtype::REL_CANCEL => {
             let reply;
-            (reply, stream) =
-                decode_fixed_data_mut(TSP_SHA256, stream).ok_or(DecodeError::UnexpectedData)?;
+            (reply, stream) = decode_digest(stream)?;
 
             Payload::RelationshipCancel { reply }
         }
@@ -1178,7 +1205,7 @@ mod test {
     #[wasm_bindgen_test]
     fn test_par_refer_rel() {
         test_turn_around(Payload::NewIdentifierProposal {
-            thread_id: &Default::default(),
+            thread_id: Digest::Sha2_256(&Default::default()),
             new_vid: b"Charlie",
         });
     }
@@ -1243,17 +1270,31 @@ mod test {
             nonce: Nonce(*nonce),
             hops: vec![],
         });
-        test_turn_around(Payload::DirectRelationAffirm { reply: nonce });
+        test_turn_around(Payload::DirectRelationAffirm {
+            reply: Digest::Sha2_256(nonce),
+        });
+        test_turn_around(Payload::DirectRelationAffirm {
+            reply: Digest::Blake2b256(nonce),
+        });
         test_turn_around(Payload::NestedRelationProposal {
             message: &mut temp.clone(),
             nonce: Nonce(*nonce),
         });
         test_turn_around(Payload::NestedRelationAffirm {
             message: &mut temp.clone(),
-            reply: nonce,
+            reply: Digest::Sha2_256(nonce),
+        });
+        test_turn_around(Payload::NestedRelationAffirm {
+            message: &mut temp.clone(),
+            reply: Digest::Blake2b256(nonce),
         });
 
-        test_turn_around(Payload::RelationshipCancel { reply: nonce });
+        test_turn_around(Payload::RelationshipCancel {
+            reply: Digest::Sha2_256(nonce),
+        });
+        test_turn_around(Payload::RelationshipCancel {
+            reply: Digest::Blake2b256(nonce),
+        });
     }
 
     #[test]
