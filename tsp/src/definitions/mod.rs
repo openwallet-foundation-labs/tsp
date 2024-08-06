@@ -125,7 +125,7 @@ pub enum Payload<'a, Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]> = Bytes> {
         thread_id: Digest,
     },
     RequestNestedRelationship {
-        vid: VidData<'a>,
+        inner: MaybeMutBytes,
         thread_id: Digest,
     },
     AcceptNestedRelationship {

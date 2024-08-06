@@ -668,16 +668,31 @@ impl Store {
 
                         Ok(ReceivedTspMessage::CancelRelationship { sender })
                     }
-                    Payload::RequestNestedRelationship { vid, thread_id } => {
-                        let vid = std::str::from_utf8(vid)?;
-                        self.add_nested_vid(vid)?;
-                        self.set_parent_for_vid(vid, Some(&sender))?;
+                    Payload::RequestNestedRelationship { inner, thread_id } => {
+                        let EnvelopeType::SignedMessage {
+                            sender: inner_vid,
+                            receiver: None,
+                            ..
+                        } = crate::cesr::probe(inner)?
+                        else {
+                            return Err(Error::Relationship("invalid nested request".into()));
+                        };
+
+                        let inner_vid = String::from_utf8(inner_vid.to_vec())?;
+
+                        self.add_nested_vid(&inner_vid)?;
+
+                        // the act of opening this message is simply verifying the signature, because this SDK doesn't yet
+                        // support sending data as part of control messages. This can easily change.
+                        let _ = self.open_message(inner)?;
+
+                        self.set_parent_for_vid(&inner_vid, Some(&sender))?;
 
                         Ok(ReceivedTspMessage::RequestRelationship {
                             sender,
                             route: None,
                             thread_id,
-                            nested_vid: Some(vid.to_string()),
+                            nested_vid: Some(inner_vid),
                         })
                     }
                     Payload::AcceptNestedRelationship {
@@ -868,13 +883,15 @@ impl Store {
 
         let nested_vid = self.make_propositioning_vid(sender.identifier())?;
 
+        let inner_message = crate::crypto::sign(&nested_vid, None, &[])?;
+
         let mut thread_id = Default::default();
         let (endpoint, tsp_message) = self.seal_message_payload_and_hash(
             sender.identifier(),
             receiver.identifier(),
             None,
             Payload::RequestNestedRelationship {
-                vid: nested_vid.vid().as_ref(),
+                inner: &inner_message,
                 thread_id: Default::default(),
             },
             Some(&mut thread_id),

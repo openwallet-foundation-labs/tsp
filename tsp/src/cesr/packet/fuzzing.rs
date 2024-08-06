@@ -62,7 +62,7 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
             Variants::DirectRelationAffirm => Payload::DirectRelationAffirm { reply: &DIGEST },
             Variants::NestedRelationProposal => Payload::NestedRelationProposal {
                 nonce: Nonce(Arbitrary::arbitrary(u)?),
-                new_vid: Arbitrary::arbitrary(u)?,
+                message: Arbitrary::arbitrary(u)?,
             },
             Variants::NestedRelationAffirm => Payload::NestedRelationAffirm {
                 reply: &DIGEST,
@@ -107,14 +107,14 @@ impl<'a> PartialEq<Payload<'a, &'a mut [u8], &'a [u8]>> for Wrapper {
             ) => l_reply == r_reply,
             (
                 Payload::NestedRelationProposal {
-                    new_vid: l_vid,
+                    message: l_msg,
                     nonce: l_nonce,
                 },
                 Payload::NestedRelationProposal {
-                    new_vid: r_vid,
+                    message: r_msg,
                     nonce: r_nonce,
                 },
-            ) => l_nonce.0 == r_nonce.0 && l_vid == r_vid,
+            ) => l_nonce.0 == r_nonce.0 && l_msg == r_msg,
             (
                 Payload::NestedRelationAffirm {
                     reply: l_reply,

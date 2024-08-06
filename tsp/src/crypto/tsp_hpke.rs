@@ -58,11 +58,11 @@ where
             crate::cesr::Payload::DirectRelationAffirm { reply: thread_id }
         }
         Payload::RequestNestedRelationship {
-            vid,
+            inner,
             thread_id: _ignored,
         } => crate::cesr::Payload::NestedRelationProposal {
             nonce: fresh_nonce(&mut csprng),
-            new_vid: vid,
+            message: inner,
         },
         Payload::AcceptNestedRelationship {
             ref thread_id,
@@ -247,11 +247,8 @@ where
         crate::cesr::Payload::DirectRelationAffirm { reply: &thread_id } => {
             Payload::AcceptRelationship { thread_id }
         }
-        crate::cesr::Payload::NestedRelationProposal { new_vid, .. } => {
-            Payload::RequestNestedRelationship {
-                vid: new_vid,
-                thread_id,
-            }
+        crate::cesr::Payload::NestedRelationProposal { message: inner, .. } => {
+            Payload::RequestNestedRelationship { inner, thread_id }
         }
         crate::cesr::Payload::NestedRelationAffirm {
             new_vid,
