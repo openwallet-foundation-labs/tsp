@@ -197,7 +197,10 @@ async fn test_nested_mode() {
     let nested_bob_vid = OwnedVid::new_did_peer(bob_vid.endpoint().clone());
     bob_db.add_private_vid(nested_bob_vid.clone()).unwrap();
     bob_db
-        .set_parent_for_vid(nested_bob_vid.identifier(), Some(bob_vid.identifier()))
+        .set_parent_for_vid(
+            nested_bob_vid.identifier(),
+            Some(bob_vid.identifier().into()),
+        )
         .unwrap();
 
     // receive a messages on inner vid
@@ -206,19 +209,25 @@ async fn test_nested_mode() {
     let nested_alice_vid = OwnedVid::new_did_peer(alice_vid.endpoint().clone());
     alice_db.add_private_vid(nested_alice_vid.clone()).unwrap();
     alice_db
-        .set_parent_for_vid(nested_alice_vid.identifier(), Some(alice_vid.identifier()))
+        .set_parent_for_vid(
+            nested_alice_vid.identifier(),
+            Some(alice_vid.identifier().into()),
+        )
         .unwrap();
     alice_db
         .verify_vid(nested_bob_vid.identifier())
         .await
         .unwrap();
     alice_db
-        .set_parent_for_vid(nested_bob_vid.identifier(), Some(bob_vid.identifier()))
+        .set_parent_for_vid(
+            nested_bob_vid.identifier(),
+            Some(bob_vid.identifier().into()),
+        )
         .unwrap();
     alice_db
         .set_relation_for_vid(
             nested_bob_vid.identifier(),
-            Some(nested_alice_vid.identifier()),
+            Some(nested_alice_vid.identifier().into()),
         )
         .unwrap();
 
@@ -227,7 +236,10 @@ async fn test_nested_mode() {
         .await
         .unwrap();
     bob_db
-        .set_parent_for_vid(nested_alice_vid.identifier(), Some(alice_vid.identifier()))
+        .set_parent_for_vid(
+            nested_alice_vid.identifier(),
+            Some(alice_vid.identifier().into()),
+        )
         .unwrap();
 
     // send a message using inner vid
@@ -299,13 +311,13 @@ async fn test_routed_mode() {
     alice_db
         .set_relation_for_vid(
             "did:web:did.tsp-test.org:user:bob",
-            Some("did:web:did.tsp-test.org:user:alice"),
+            Some("did:web:did.tsp-test.org:user:alice".into()),
         )
         .unwrap();
     alice_db
         .set_relation_for_vid(
             "did:web:did.tsp-test.org:user:alice",
-            Some("did:web:did.tsp-test.org:user:alice"),
+            Some("did:web:did.tsp-test.org:user:alice".into()),
         )
         .unwrap();
 
@@ -345,7 +357,7 @@ async fn test_routed_mode() {
     bob_db
         .set_relation_for_vid(
             "did:web:did.tsp-test.org:user:alice",
-            Some("did:web:did.tsp-test.org:user:bob"),
+            Some("did:web:did.tsp-test.org:user:bob".into()),
         )
         .unwrap();
 
@@ -410,7 +422,7 @@ async fn test_routed_mode() {
     bob_db
         .set_relation_for_vid(
             "did:web:did.tsp-test.org:user:bob",
-            Some("did:web:did.tsp-test.org:user:alice"),
+            Some("did:web:did.tsp-test.org:user:alice".into()),
         )
         .unwrap();
     bob_db

@@ -27,14 +27,14 @@ pub(crate) struct VidContext {
 
 impl VidContext {
     /// Set the parent VID for this VID. Used to create a nested TSP message
-    fn set_parent_vid(&mut self, parent_vid: Option<&str>) {
-        self.parent_vid = parent_vid.map(|r| r.to_string());
+    fn set_parent_vid(&mut self, parent_vid: Option<String>) {
+        self.parent_vid = parent_vid;
     }
 
     /// Set the relation VID for this VID. The relation VID wil be used as
     /// sender VID when sending messages to this VID
-    fn set_relation_vid(&mut self, relation_vid: Option<&str>) {
-        self.relation_vid = relation_vid.map(|r| r.to_string());
+    fn set_relation_vid(&mut self, relation_vid: Option<String>) {
+        self.relation_vid = relation_vid;
     }
 
     /// Replace the relation status for this VID.
@@ -177,7 +177,7 @@ impl Store {
     }
 
     /// Sets the parent for a VID, thus making it a nested VID
-    pub fn set_parent_for_vid(&self, vid: &str, parent_vid: Option<&str>) -> Result<(), Error> {
+    pub fn set_parent_for_vid(&self, vid: &str, parent_vid: Option<String>) -> Result<(), Error> {
         self.modify_vid(vid, |resolved| {
             resolved.set_parent_vid(parent_vid);
 
@@ -186,7 +186,11 @@ impl Store {
     }
 
     /// Adds a relation to an already existing vid
-    pub fn set_relation_for_vid(&self, vid: &str, relation_vid: Option<&str>) -> Result<(), Error> {
+    pub fn set_relation_for_vid(
+        &self,
+        vid: &str,
+        relation_vid: Option<String>,
+    ) -> Result<(), Error> {
         self.modify_vid(vid, |resolved| {
             resolved.set_relation_vid(relation_vid);
 
@@ -204,7 +208,7 @@ impl Store {
         &self,
         vid: &str,
         relation_status: RelationshipStatus,
-        relation_vid: &str,
+        relation_vid: String,
     ) -> Result<(), Error> {
         self.modify_vid(vid, |resolved| {
             resolved.set_relation_vid(Some(relation_vid));
@@ -691,7 +695,7 @@ impl Store {
                         // support sending data as part of control messages. This can easily change.
                         let _ = self.open_message(inner)?;
 
-                        self.set_parent_for_vid(&inner_vid, Some(&sender))?;
+                        self.set_parent_for_vid(&inner_vid, Some(sender.clone()))?;
 
                         Ok(ReceivedTspMessage::RequestRelationship {
                             sender,
@@ -716,10 +720,10 @@ impl Store {
 
                         let _ = self.open_message(inner)?;
 
-                        self.set_parent_for_vid(&vid, Some(&sender))?;
+                        self.set_parent_for_vid(&vid, Some(sender.clone()))?;
                         self.add_nested_relation(&sender, &vid, thread_id)?;
-                        self.set_relation_for_vid(&connect_to_vid, Some(&vid))?;
-                        self.set_relation_for_vid(&vid, Some(&connect_to_vid))?;
+                        self.set_relation_for_vid(&connect_to_vid, Some(vid.clone()))?;
+                        self.set_relation_for_vid(&vid, Some(connect_to_vid))?;
 
                         Ok(ReceivedTspMessage::AcceptRelationship {
                             sender,
@@ -851,7 +855,7 @@ impl Store {
                 thread_id,
                 outstanding_nested_thread_ids: Default::default(),
             },
-            sender,
+            sender.to_string(),
         )?;
 
         Ok((transport, tsp_message))
@@ -926,8 +930,8 @@ impl Store {
         thread_id: Digest,
     ) -> Result<((Url, Vec<u8>), OwnedVid), Error> {
         let nested_vid = self.make_propositioning_vid(parent_sender)?;
-        self.set_relation_for_vid(nested_vid.identifier(), Some(nested_receiver))?;
-        self.set_relation_for_vid(nested_receiver, Some(nested_vid.identifier()))?;
+        self.set_relation_for_vid(nested_vid.identifier(), Some(nested_receiver.to_string()))?;
+        self.set_relation_for_vid(nested_receiver, Some(nested_vid.identifier().to_string()))?;
 
         let receiver_vid = self.get_vid(nested_receiver)?;
         let parent_receiver = receiver_vid
@@ -1013,7 +1017,7 @@ impl Store {
 
         let vid = OwnedVid::new_did_peer(transport);
         self.add_private_vid(vid.clone())?;
-        self.set_parent_for_vid(vid.identifier(), Some(parent_vid))?;
+        self.set_parent_for_vid(vid.identifier(), Some(parent_vid.to_string()))?;
 
         Ok(vid)
     }
@@ -1440,11 +1444,11 @@ mod test {
         d_store.add_verified_vid(mailbox_c.clone()).unwrap();
 
         a_store
-            .set_relation_for_vid(b.identifier(), Some(nette_a.identifier()))
+            .set_relation_for_vid(b.identifier(), Some(nette_a.identifier().into()))
             .unwrap();
 
         a_store
-            .set_relation_for_vid(sneaky_d.identifier(), Some(sneaky_a.identifier()))
+            .set_relation_for_vid(sneaky_d.identifier(), Some(sneaky_a.identifier().into()))
             .unwrap();
 
         a_store
@@ -1455,11 +1459,11 @@ mod test {
             .unwrap();
 
         b_store
-            .set_relation_for_vid(c.identifier(), Some(b.identifier()))
+            .set_relation_for_vid(c.identifier(), Some(b.identifier().into()))
             .unwrap();
 
         c_store
-            .set_relation_for_vid(mailbox_c.identifier(), Some(nette_d.identifier()))
+            .set_relation_for_vid(mailbox_c.identifier(), Some(nette_d.identifier().into()))
             .unwrap();
 
         let hello_world = b"hello world";
@@ -1558,19 +1562,19 @@ mod test {
         b_store.add_verified_vid(nested_a.clone()).unwrap();
 
         a_store
-            .set_parent_for_vid(nested_b.identifier(), Some(b.identifier()))
+            .set_parent_for_vid(nested_b.identifier(), Some(b.identifier().into()))
             .unwrap();
 
         a_store
-            .set_relation_for_vid(nested_b.identifier(), Some(nested_a.identifier()))
+            .set_relation_for_vid(nested_b.identifier(), Some(nested_a.identifier().into()))
             .unwrap();
 
         a_store
-            .set_parent_for_vid(nested_a.identifier(), Some(a.identifier()))
+            .set_parent_for_vid(nested_a.identifier(), Some(a.identifier().into()))
             .unwrap();
 
         b_store
-            .set_parent_for_vid(nested_a.identifier(), Some(a.identifier()))
+            .set_parent_for_vid(nested_a.identifier(), Some(a.identifier().into()))
             .unwrap();
 
         let hello_world = b"hello world";

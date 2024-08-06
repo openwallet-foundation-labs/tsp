@@ -60,7 +60,11 @@ impl AsyncStore {
     }
 
     /// Adds a relation to an already existing vid, making it a nested Vid
-    pub fn set_relation_for_vid(&self, vid: &str, relation_vid: Option<&str>) -> Result<(), Error> {
+    pub fn set_relation_for_vid(
+        &self,
+        vid: &str,
+        relation_vid: Option<String>,
+    ) -> Result<(), Error> {
         self.inner.set_relation_for_vid(vid, relation_vid)
     }
 
@@ -70,7 +74,7 @@ impl AsyncStore {
     }
 
     /// Sets the parent for a VID. This is used to create a nested message.
-    pub fn set_parent_for_vid(&self, vid: &str, parent: Option<&str>) -> Result<(), Error> {
+    pub fn set_parent_for_vid(&self, vid: &str, parent: Option<String>) -> Result<(), Error> {
         self.inner.set_parent_for_vid(vid, parent)
     }
 

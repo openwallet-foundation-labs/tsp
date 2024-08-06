@@ -138,7 +138,7 @@ async fn main() {
 
         db.set_relation_for_vid(
             &format!("did:web:did.{domain}:user:q"),
-            Some(&format!("did:web:did.{domain}:user:p")),
+            Some(format!("did:web:did.{domain}:user:p")),
         )
         .unwrap();
 
@@ -160,7 +160,7 @@ async fn main() {
             .unwrap();
         db.set_relation_for_vid(
             &format!("did:web:did.{domain}:user:q"),
-            Some(&format!("did:web:did.{domain}:user:b")),
+            Some(format!("did:web:did.{domain}:user:b")),
         )
         .unwrap();
 

@@ -275,7 +275,7 @@ async fn run() -> Result<(), Error> {
                 aliases.insert(alias.clone(), vid.clone());
             }
 
-            vid_database.set_relation_for_vid(&vid, sender.as_deref())?;
+            vid_database.set_relation_for_vid(&vid, sender)?;
 
             write_database(&vault, &vid_database, aliases).await?;
 
@@ -346,7 +346,7 @@ async fn run() -> Result<(), Error> {
             let vid = aliases.get(&vid).unwrap_or(&vid);
             let other_vid = aliases.get(&other_vid).unwrap_or(&other_vid);
 
-            vid_database.set_parent_for_vid(vid, Some(other_vid))?;
+            vid_database.set_parent_for_vid(vid, Some(other_vid.to_string()))?;
 
             info!("{vid} is now a child of {other_vid}");
 
@@ -376,7 +376,7 @@ async fn run() -> Result<(), Error> {
             let vid = aliases.get(&vid).cloned().unwrap_or(vid);
             let other_vid = aliases.get(&other_vid).cloned().unwrap_or(other_vid);
 
-            vid_database.set_relation_for_vid(&vid, Some(&other_vid))?;
+            vid_database.set_relation_for_vid(&vid, Some(other_vid.clone()))?;
             write_database(&vault, &vid_database, aliases).await?;
 
             info!("{vid} has relation to {other_vid}");

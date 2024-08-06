@@ -61,7 +61,7 @@ impl Store {
         relation_vid: Option<String>,
     ) -> Result<(), Error> {
         self.0
-            .set_relation_for_vid(&vid, relation_vid.as_deref())
+            .set_relation_for_vid(&vid, relation_vid)
             .map_err(Error)
     }
 

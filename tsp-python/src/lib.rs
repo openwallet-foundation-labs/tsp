@@ -36,7 +36,7 @@ impl Store {
 
     fn set_relation_for_vid(&self, vid: String, relation_vid: Option<String>) -> PyResult<()> {
         self.0
-            .set_relation_for_vid(&vid, relation_vid.as_deref())
+            .set_relation_for_vid(&vid, relation_vid)
             .map_err(py_exception)
     }
 
