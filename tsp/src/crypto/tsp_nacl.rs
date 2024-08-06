@@ -53,12 +53,10 @@ pub(crate) fn seal(
         },
         Payload::AcceptNestedRelationship {
             ref thread_id,
-            vid,
-            connect_to_vid,
+            inner,
         } => crate::cesr::Payload::NestedRelationAffirm {
             reply: thread_id,
-            new_vid: vid,
-            connect_to_vid,
+            message: inner,
         },
         Payload::NewIdentifier {
             ref thread_id,
@@ -190,14 +188,9 @@ pub(crate) fn open<'a>(
             }
         }
         crate::cesr::Payload::NestedRelationAffirm {
-            new_vid,
-            connect_to_vid,
+            message: inner,
             reply: &thread_id,
-        } => Payload::AcceptNestedRelationship {
-            vid: new_vid,
-            connect_to_vid,
-            thread_id,
-        },
+        } => Payload::AcceptNestedRelationship { inner, thread_id },
         crate::cesr::Payload::NewIdentifierProposal {
             thread_id: &thread_id,
             new_vid,
