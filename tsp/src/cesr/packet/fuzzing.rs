@@ -48,6 +48,12 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
 
         let variant = Variants::arbitrary(u)?;
 
+        let digest = if Arbitrary::arbitrary(u)? {
+            Digest::Sha2_256
+        } else {
+            Digest::Blake2b256
+        };
+
         use arbitrary::Arbitrary;
         let payload = match variant {
             Variants::GenericMessage => Payload::GenericMessage(Arbitrary::arbitrary(u)?),
@@ -59,23 +65,27 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
                 nonce: Nonce(Arbitrary::arbitrary(u)?),
                 hops: Arbitrary::arbitrary(u)?,
             },
-            Variants::DirectRelationAffirm => Payload::DirectRelationAffirm { reply: &DIGEST },
+            Variants::DirectRelationAffirm => Payload::DirectRelationAffirm {
+                reply: digest(&DIGEST),
+            },
             Variants::NestedRelationProposal => Payload::NestedRelationProposal {
                 nonce: Nonce(Arbitrary::arbitrary(u)?),
                 message: Arbitrary::arbitrary(u)?,
             },
             Variants::NestedRelationAffirm => Payload::NestedRelationAffirm {
-                reply: &DIGEST,
+                reply: digest(&DIGEST),
                 message: Arbitrary::arbitrary(u)?,
             },
             Variants::NewIdentifierProposal => Payload::NewIdentifierProposal {
-                thread_id: &DIGEST,
+                thread_id: digest(&DIGEST),
                 new_vid: Arbitrary::arbitrary(u)?,
             },
             Variants::RelationshipReferral => Payload::RelationshipReferral {
                 referred_vid: Arbitrary::arbitrary(u)?,
             },
-            Variants::RelationshipCancel => Payload::RelationshipCancel { reply: &DIGEST },
+            Variants::RelationshipCancel => Payload::RelationshipCancel {
+                reply: digest(&DIGEST),
+            },
         };
 
         Ok(Wrapper(payload))
