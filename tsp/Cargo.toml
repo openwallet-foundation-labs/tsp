@@ -87,4 +87,4 @@ features = ["js"]
 [dev-dependencies]
 serial_test = { version = "3.0" }
 arbitrary = { workspace = true }
-wasm-bindgen-test = "0.3"
+wasm-bindgen-test = "0.3.0"

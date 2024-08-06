@@ -49,18 +49,17 @@ aries-askar = { git = "https://github.com/marlonbaeten/aries-askar", branch = "c
 ] }
 # logging
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", default-features = false, features = [
+tracing-subscriber = { version = "0.3.1", default-features = false, features = [
     "fmt",
     "ansi",
     "env-filter",
     "tracing-log",
 ] }
 # transport
-tokio-tungstenite = { version = "0.23", default-features = false, features = [
+tokio-tungstenite = { version = "0.21", default-features = false, features = [
     "rustls-tls-native-roots",
     "stream",
     "connect",
-    "url",
 ] }
 tokio-util = { version = "0.7", default-features = false, features = ["codec"] }
 rustls = "0.23"
@@ -70,7 +69,7 @@ rustls-native-certs = "0.7"
 rustls-pemfile = "2.1"
 quinn = "0.11"
 # resolve
-reqwest = { version = "0.12", default-features = false, features = [
+reqwest = { version = "0.12.3", default-features = false, features = [
     "rustls-tls-native-roots",
     "json",
     "stream",
@@ -81,7 +80,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 # serialize
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
-serde_with = { version = "3.8", features = ["base64"] }
+serde_with = { version = "3.8.1", features = ["base64"] }
 bs58 = "0.5"
 # fuzzing
 arbitrary = { version = "1.0", features = ["derive"] }
