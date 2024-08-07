@@ -42,7 +42,9 @@ pub(crate) fn seal(
             hops: route.unwrap_or_else(Vec::new),
         },
         Payload::AcceptRelationship { ref thread_id } => {
-            crate::cesr::Payload::DirectRelationAffirm { reply: thread_id }
+            crate::cesr::Payload::DirectRelationAffirm {
+                reply: crate::cesr::Digest::Blake2b256(thread_id),
+            }
         }
         Payload::RequestNestedRelationship {
             inner,
@@ -55,19 +57,22 @@ pub(crate) fn seal(
             ref thread_id,
             inner,
         } => crate::cesr::Payload::NestedRelationAffirm {
-            reply: thread_id,
+            reply: crate::cesr::Digest::Blake2b256(thread_id),
             message: inner,
         },
         Payload::NewIdentifier {
             ref thread_id,
             new_vid,
-        } => crate::cesr::Payload::NewIdentifierProposal { thread_id, new_vid },
+        } => crate::cesr::Payload::NewIdentifierProposal {
+            thread_id: crate::cesr::Digest::Blake2b256(thread_id),
+            new_vid,
+        },
         Payload::Referral { referred_vid } => {
             crate::cesr::Payload::RelationshipReferral { referred_vid }
         }
-        Payload::CancelRelationship { ref thread_id } => {
-            crate::cesr::Payload::RelationshipCancel { reply: thread_id }
-        }
+        Payload::CancelRelationship { ref thread_id } => crate::cesr::Payload::RelationshipCancel {
+            reply: crate::cesr::Digest::Blake2b256(thread_id),
+        },
         Payload::NestedMessage(data) => crate::cesr::Payload::NestedMessage(data),
         Payload::RoutedMessage(hops, data) => crate::cesr::Payload::RoutedMessage(hops, data),
     };
@@ -87,7 +92,7 @@ pub(crate) fn seal(
 
     // hash the raw bytes of the plaintext before encryption
     if let Some(digest) = digest {
-        *digest = crate::crypto::sha256(&cesr_message)
+        *digest = crate::crypto::blake2b256(&cesr_message)
     }
 
     let sender_secret_key = SecretKey::from_bytes(**sender.decryption_key());
@@ -154,7 +159,7 @@ pub(crate) fn open<'a>(
 
     receiver_box.decrypt_in_place_detached(nonce.into(), &[], ciphertext, tag.into())?;
 
-    let thread_id = crate::crypto::sha256(ciphertext);
+    let thread_id = crate::crypto::blake2b256(ciphertext);
 
     #[allow(unused_variables)]
     let DecodedPayload {
@@ -178,9 +183,9 @@ pub(crate) fn open<'a>(
             route: if hops.is_empty() { None } else { Some(hops) },
             thread_id,
         },
-        crate::cesr::Payload::DirectRelationAffirm { reply: &thread_id } => {
-            Payload::AcceptRelationship { thread_id }
-        }
+        crate::cesr::Payload::DirectRelationAffirm { reply } => Payload::AcceptRelationship {
+            thread_id: *reply.as_bytes(),
+        },
         crate::cesr::Payload::NestedRelationProposal { message, .. } => {
             Payload::RequestNestedRelationship {
                 inner: message,
@@ -189,18 +194,23 @@ pub(crate) fn open<'a>(
         }
         crate::cesr::Payload::NestedRelationAffirm {
             message: inner,
-            reply: &thread_id,
-        } => Payload::AcceptNestedRelationship { inner, thread_id },
-        crate::cesr::Payload::NewIdentifierProposal {
-            thread_id: &thread_id,
-            new_vid,
-        } => Payload::NewIdentifier { thread_id, new_vid },
+            reply,
+        } => Payload::AcceptNestedRelationship {
+            inner,
+            thread_id: *reply.as_bytes(),
+        },
+        crate::cesr::Payload::NewIdentifierProposal { thread_id, new_vid } => {
+            Payload::NewIdentifier {
+                thread_id: *thread_id.as_bytes(),
+                new_vid,
+            }
+        }
         crate::cesr::Payload::RelationshipReferral { referred_vid } => {
             Payload::Referral { referred_vid }
         }
-        crate::cesr::Payload::RelationshipCancel {
-            reply: &thread_id, ..
-        } => Payload::CancelRelationship { thread_id },
+        crate::cesr::Payload::RelationshipCancel { reply, .. } => Payload::CancelRelationship {
+            thread_id: *reply.as_bytes(),
+        },
         crate::cesr::Payload::NestedMessage(data) => Payload::NestedMessage(data),
         crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data as _),
     };

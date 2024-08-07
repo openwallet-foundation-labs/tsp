@@ -2,6 +2,8 @@ use crate::definitions::{
     Digest, NonConfidentialData, Payload, PrivateKeyData, PrivateSigningKeyData, PrivateVid,
     PublicKeyData, PublicVerificationKeyData, TSPMessage, VerifiedVid,
 };
+#[cfg(feature = "nacl")]
+pub use digest::blake2b256;
 pub use digest::sha256;
 use rand::rngs::OsRng;
 

@@ -17,7 +17,7 @@ essr = []
 strict = []
 fuzzing = ["dep:arbitrary"]
 demo = []
-nacl = ["dep:crypto_box", "essr"]
+nacl = ["dep:crypto_box", "dep:blake2", "dep:typenum", "essr"]
 pq = ["dep:hpke_pq", "essr"]
 async = [
     "resolve",
@@ -52,6 +52,8 @@ hpke = { workspace = true }
 hpke_pq = { workspace = true, optional = true }
 rand = { workspace = true }
 sha2 = { workspace = true }
+blake2 = { workspace = true, optional = true }
+typenum = { workspace = true, optional = true }
 crypto_box = { workspace = true, optional = true }
 # async
 aries-askar = { workspace = true, optional = true }

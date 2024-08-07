@@ -55,7 +55,9 @@ where
             hops: route.unwrap_or_else(Vec::new),
         },
         Payload::AcceptRelationship { ref thread_id } => {
-            crate::cesr::Payload::DirectRelationAffirm { reply: thread_id }
+            crate::cesr::Payload::DirectRelationAffirm {
+                reply: crate::cesr::Digest::Sha2_256(thread_id),
+            }
         }
         Payload::RequestNestedRelationship {
             inner,
@@ -68,18 +70,21 @@ where
             ref thread_id,
             inner,
         } => crate::cesr::Payload::NestedRelationAffirm {
-            reply: thread_id,
+            reply: crate::cesr::Digest::Sha2_256(thread_id),
             message: inner,
         },
-        Payload::CancelRelationship { ref thread_id } => {
-            crate::cesr::Payload::RelationshipCancel { reply: thread_id }
-        }
+        Payload::CancelRelationship { ref thread_id } => crate::cesr::Payload::RelationshipCancel {
+            reply: crate::cesr::Digest::Sha2_256(thread_id),
+        },
         Payload::NestedMessage(data) => crate::cesr::Payload::NestedMessage(data),
         Payload::RoutedMessage(hops, data) => crate::cesr::Payload::RoutedMessage(hops, data),
         Payload::NewIdentifier {
             ref thread_id,
             new_vid,
-        } => crate::cesr::Payload::NewIdentifierProposal { thread_id, new_vid },
+        } => crate::cesr::Payload::NewIdentifierProposal {
+            thread_id: crate::cesr::Digest::Sha2_256(thread_id),
+            new_vid,
+        },
         Payload::Referral { referred_vid } => {
             crate::cesr::Payload::RelationshipReferral { referred_vid }
         }
@@ -242,28 +247,29 @@ where
             route: if hops.is_empty() { None } else { Some(hops) },
             thread_id,
         },
-        crate::cesr::Payload::DirectRelationAffirm { reply: &thread_id } => {
-            Payload::AcceptRelationship { thread_id }
-        }
+        crate::cesr::Payload::DirectRelationAffirm { reply } => Payload::AcceptRelationship {
+            thread_id: *reply.as_bytes(),
+        },
         crate::cesr::Payload::NestedRelationProposal { message: inner, .. } => {
             Payload::RequestNestedRelationship { inner, thread_id }
         }
-        crate::cesr::Payload::NestedRelationAffirm {
-            message,
-            reply: &thread_id,
-        } => Payload::AcceptNestedRelationship {
-            inner: message,
-            thread_id,
+        crate::cesr::Payload::NestedRelationAffirm { message, reply } => {
+            Payload::AcceptNestedRelationship {
+                inner: message,
+                thread_id: *reply.as_bytes(),
+            }
+        }
+        crate::cesr::Payload::RelationshipCancel { reply, .. } => Payload::CancelRelationship {
+            thread_id: *reply.as_bytes(),
         },
-        crate::cesr::Payload::RelationshipCancel {
-            reply: &thread_id, ..
-        } => Payload::CancelRelationship { thread_id },
         crate::cesr::Payload::NestedMessage(data) => Payload::NestedMessage(data),
         crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data as _),
-        crate::cesr::Payload::NewIdentifierProposal {
-            thread_id: &thread_id,
-            new_vid,
-        } => Payload::NewIdentifier { thread_id, new_vid },
+        crate::cesr::Payload::NewIdentifierProposal { thread_id, new_vid } => {
+            Payload::NewIdentifier {
+                thread_id: *thread_id.as_bytes(),
+                new_vid,
+            }
+        }
         crate::cesr::Payload::RelationshipReferral { referred_vid } => {
             Payload::Referral { referred_vid }
         }
