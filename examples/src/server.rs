@@ -336,6 +336,17 @@ fn open_message(message: &[u8], payload: Option<&[u8]>) -> Option<serde_json::Va
         "nonconfidentialData": parts.nonconfidential_data.map(|v| format_part("Non-confidential data", &v, None)),
         "ciphertext": parts.ciphertext.map(|v| format_part("Ciphertext", &v, payload)),
         "signature": format_part("Signature", &parts.signature, None),
+        "cryptoType": match parts.crypto_type {
+            tsp::cesr::CryptoType::Plaintext => "Plain text",
+            tsp::cesr::CryptoType::HpkeAuth => "HPKE Auth",
+            tsp::cesr::CryptoType::HpkeEssr => "HPKE ESSR",
+            tsp::cesr::CryptoType::NaclAuth => "NaCl Auth",
+            tsp::cesr::CryptoType::NaclEssr => "NaCl ESSR",
+        },
+        "signatureType": match parts.signature_type {
+            tsp::cesr::SignatureType::NoSignature => "No Signature",
+            tsp::cesr::SignatureType::Ed25519 => "Ed25519",
+        }
     }))
 }
 

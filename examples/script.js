@@ -150,12 +150,16 @@ function renderMessage(message) {
             ? '<span class="badge bg-success float-end">verified</span>'
             : '<span class="badge bg-danger float-end">unverified</span>'
           ) : ''}
+          ${(part === 'sender' || part === 'signature')
+            ? `<span style="margin-right: 0.375rem;" class="badge text-bg-secondary float-end">
+                ${part === "sender" ? message.cryptoType : message.signatureType}
+              </span>` : ''}
           <span class="text-muted d-block">${message[part].title}:</span>
-          ${message[part].plain ? `<span class="d-block">${message[part].plain}</span>`: ''}
+          ${message[part].plain ? `<span class="d-block">${message[part].plain}</span>` : ''}
           <span class="message-part d-block">CESR selector: ${message[part].prefix}</span>
           <span class="message-part d-block" style="color:${colors[index]}">${message[part].data}</span>
           ${part === 'sender' && !message.ciphertext.plain 
-          ? '<button class="btn btn-outline-primary mt-2 verify">Verify sender</span>': ''}
+            ? '<button class="btn btn-outline-primary mt-2 verify">Verify sender</span>' : ''}
         </li>
       ` : '').join('\n')}
     </ul>

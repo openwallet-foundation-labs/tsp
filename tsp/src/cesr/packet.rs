@@ -822,7 +822,7 @@ impl<'a> Part<'a> {
 }
 
 /// Describes the CESR-encoded parts of a TSP message
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct MessageParts<'a> {
     pub prefix: Part<'a>,
     pub sender: Part<'a>,
@@ -830,11 +830,14 @@ pub struct MessageParts<'a> {
     pub nonconfidential_data: Option<Part<'a>>,
     pub ciphertext: Option<Part<'a>>,
     pub signature: Part<'a>,
+    pub crypto_type: CryptoType,
+    pub signature_type: SignatureType,
 }
 
 /// Decode a CESR-encoded message into its CESR-encoded parts
 pub fn open_message_into_parts(data: &[u8]) -> Result<MessageParts, DecodeError> {
-    let (mut pos, _, _) = detected_tsp_header_size_and_confidentiality(&mut (data as &[u8]))?;
+    let (mut pos, crypto_type, signature_type) =
+        detected_tsp_header_size_and_confidentiality(&mut (data as &[u8]))?;
 
     let prefix = Part {
         prefix: &data[..pos],
@@ -861,6 +864,8 @@ pub fn open_message_into_parts(data: &[u8]) -> Result<MessageParts, DecodeError>
         nonconfidential_data,
         ciphertext,
         signature,
+        crypto_type,
+        signature_type,
     })
 }
 
