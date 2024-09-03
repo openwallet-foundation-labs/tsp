@@ -6,13 +6,11 @@ pub enum CryptoError {
     Decode(#[from] crate::cesr::error::DecodeError),
     #[cfg(feature = "pq")]
     #[error("encryption or decryption failed: {0}")]
-    Cryptographic(#[from] hpke_pq::HpkeError),
-    #[cfg(all(not(feature = "nacl"), not(feature = "pq")))]
+    CryptographicHpkePq(#[from] hpke_pq::HpkeError),
     #[error("encryption or decryption failed: {0}")]
-    Cryptographic(#[from] hpke::HpkeError),
-    #[cfg(feature = "nacl")]
+    CryptographicHpke(#[from] hpke::HpkeError),
     #[error("encryption or decryption failed")]
-    Cryptographic(#[from] crypto_box::aead::Error),
+    CryptographicNacl(#[from] crypto_box::aead::Error),
     #[error("could not verify signature: {0}")]
     Verify(#[from] ed25519_dalek::ed25519::Error),
     #[error("unexpected recipient")]
