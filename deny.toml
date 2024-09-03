@@ -20,3 +20,8 @@ allow-git = [
     "https://github.com/marlonbaeten/rust-hpke",
     "https://github.com/marlonbaeten/aries-askar",
 ]
+
+[advisories]
+ignore = [
+   { id="RUSTSEC-2024-0363", reason = "we cannot upgrade away from this without breaking compatibility with aries-askar" },
+]
