@@ -78,13 +78,7 @@ impl Vault {
                 let decryption_key = LocalKey::from_secret_bytes(KeyAlg::X25519, private.as_ref())?;
                 let decryption_key_name = format!("{id}#decryption-key");
                 if let Err(e) = conn
-                    .insert_key(
-                        &decryption_key_name,
-                        &decryption_key,
-                        None,
-                        None,
-                        None,
-                    )
+                    .insert_key(&decryption_key_name, &decryption_key, None, None, None)
                     .await
                 {
                     if e.kind() != ErrorKind::Duplicate {
@@ -97,13 +91,7 @@ impl Vault {
                 LocalKey::from_public_bytes(KeyAlg::Ed25519, export.public_sigkey.as_ref())?;
             let verification_key_name = format!("{id}#verification-key");
             if let Err(e) = conn
-                .insert_key(
-                    &verification_key_name,
-                    &verification_key,
-                    None,
-                    None,
-                    None,
-                )
+                .insert_key(&verification_key_name, &verification_key, None, None, None)
                 .await
             {
                 if e.kind() != ErrorKind::Duplicate {
@@ -115,13 +103,7 @@ impl Vault {
                 LocalKey::from_public_bytes(KeyAlg::X25519, export.public_enckey.as_ref())?;
             let encryption_key_name = format!("{id}#encryption-key");
             if let Err(e) = conn
-                .insert_key(
-                    &encryption_key_name,
-                    &encryption_key,
-                    None,
-                    None,
-                    None,
-                )
+                .insert_key(&encryption_key_name, &encryption_key, None, None, None)
                 .await
             {
                 if e.kind() != ErrorKind::Duplicate {
