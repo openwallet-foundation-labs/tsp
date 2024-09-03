@@ -23,10 +23,11 @@ class AliceBob(unittest.TestCase):
         received = self.store.open_message(sealed)
 
         match received:
-            case GenericMessage(sender, _, received_message, message_type):
+            case GenericMessage(sender, _, received_message, crypto_type, signature_type):
                 self.assertEqual(sender, self.alice.identifier())
                 self.assertEqual(received_message, message)
-                self.assertEqual(message_type, MessageType.SignedAndEncrypted)
+                self.assertNotEqual(crypto_type, CryptoType.Plaintext)
+                self.assertNotEqual(signature_type, SignatureType.NoSignature)
 
             case other:
                 self.fail(f"unexpected message type {other}")
@@ -182,11 +183,12 @@ class AliceBob(unittest.TestCase):
         received = d_store.open_message(sealed)
 
         match received:
-            case GenericMessage(sender, nonconfidential_data, message, message_type):
+            case GenericMessage(sender, nonconfidential_data, message, crypto_type, signature_type):
                 self.assertEqual(sender, sneaky_a.identifier())
                 self.assertEqual(nonconfidential_data, None)
                 self.assertEqual(message, hello_world)
-                self.assertEqual(message_type, MessageType.SignedAndEncrypted)
+                self.assertNotEqual(crypto_type, CryptoType.Plaintext)
+                self.assertNotEqual(signature_type, SignatureType.NoSignature)
 
             case other:
                 self.fail(f"unexpected message type {other}")
@@ -254,10 +256,11 @@ class AliceBob(unittest.TestCase):
         received = b_store.open_message(sealed)
 
         match received:
-            case GenericMessage(sender, _, received_message, message_type):
+            case GenericMessage(sender, _, received_message, crypto_type, signature_type):
                 self.assertEqual(sender, nested_a.identifier())
                 self.assertEqual(received_message, hello_world)
-                self.assertEqual(message_type, MessageType.SignedAndEncrypted)
+                self.assertNotEqual(crypto_type, CryptoType.Plaintext)
+                self.assertNotEqual(signature_type, SignatureType.NoSignature)
 
             case other:
                 self.fail(f"unexpected message type {other}")

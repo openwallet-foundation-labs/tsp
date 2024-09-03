@@ -1,7 +1,7 @@
 const assert = require('assert');
 
 const tsp = require('./tsp');
-const { Store, OwnedVid, MessageType, GenericMessage, RequestRelationship, AcceptRelationship, CancelRelationship, ForwardRequest} = tsp;
+const { Store, OwnedVid, CryptoType, SignatureType, GenericMessage, RequestRelationship, AcceptRelationship, CancelRelationship, ForwardRequest} = tsp;
 
 function new_vid() {
     return OwnedVid.new_did_peer("tcp://127.0.0.1:1337");
@@ -29,11 +29,12 @@ describe('tsp node tests', function() {
         let received = store.open_message(sealed);
 
         if (received instanceof GenericMessage) {
-            const { sender, message: messageBytes, message_type } = received;
+            const { sender, message: messageBytes, crypto_type, signature_type } = received;
             assert.strictEqual(sender, alice_identifier, "Sender does not match Alice's identifier");
             let receivedMessage = String.fromCharCode.apply(null, messageBytes);
             assert.strictEqual(receivedMessage, message, "Received message does not match");
-            assert.strictEqual(message_type, MessageType.SignedAndEncrypted, "Message type does not match SignedAndEncrypted");
+            assert.notStrictEqual(crypto_type, CryptoType.Plaintext, "Crypto type should not be Plaintext");
+            assert.notStrictEqual(signature_type, SignatureType.NoSignature, "Signature type should not be NoSignature");
         } else {
             assert.fail(`Unexpected message type: ${received}`);
         }
@@ -205,11 +206,12 @@ describe('tsp node tests', function() {
 
                 // Check the final received message in d_store
                 if (received instanceof GenericMessage) {
-                    const { sender, nonconfidential_data: _, message: messageBytes, message_type } = received;
+                    const { sender, nonconfidential_data: _, message: messageBytes, crypto_type, signature_type } = received;
                     assert.strictEqual(sender, sneaky_a.identifier());
                     message = String.fromCharCode.apply(null, messageBytes);
                     assert.strictEqual(message, hello_world, "Received message does not match");
-                    assert.strictEqual(message_type, MessageType.SignedAndEncrypted, "Message type does not match SignedAndEncrypted");
+                    assert.notStrictEqual(crypto_type, CryptoType.Plaintext, "Crypto type should not be Plaintext");
+                    assert.notStrictEqual(signature_type, SignatureType.NoSignature, "Signature type should not be NoSignature");
                 } else {
                     assert.fail(`Unexpected message type in d_store: ${received.type}`);
                 }
@@ -279,14 +281,15 @@ describe('tsp node tests', function() {
 
                         // Pattern match for GenericMessage in received message
                         if (received_3 instanceof GenericMessage) {
-                            let { sender, nonconfidential_data, message: messageBytes, message_type } = received_3;
+                            let { sender, nonconfidential_data, message: messageBytes, crypto_type, signature_type } = received_3;
 
                             // Assertions for GenericMessage
                             assert.strictEqual(sender, nested_vid_1);
                             assert.strictEqual(nonconfidential_data, null);
                             message = String.fromCharCode.apply(null, messageBytes);
                             assert.strictEqual(message, hello_world, "Received message does not match");
-                            assert.strictEqual(message_type, MessageType.SignedAndEncrypted);
+                            assert.notStrictEqual(crypto_type, CryptoType.Plaintext, "Crypto type should not be Plaintext");
+                            assert.notStrictEqual(signature_type, SignatureType.NoSignature, "Signature type should not be NoSignature");
                         } else {
                             throw new Error("Unexpected message type");
                         }

@@ -1,7 +1,4 @@
-use crate::{
-    definitions::MessageType::{Signed, SignedAndEncrypted},
-    AsyncStore, OwnedVid, VerifiedVid,
-};
+use crate::{AsyncStore, OwnedVid, VerifiedVid};
 use futures::StreamExt;
 
 #[tokio::test]
@@ -48,12 +45,18 @@ async fn test_direct_mode() {
     // receive a message
     let crate::definitions::ReceivedTspMessage::GenericMessage {
         message,
-        message_type: SignedAndEncrypted,
+        message_type,
         ..
     } = bobs_messages.next().await.unwrap().unwrap()
     else {
         panic!("bob did not receive a generic message")
     };
+
+    assert_ne!(message_type.crypto_type, crate::cesr::CryptoType::Plaintext);
+    assert_ne!(
+        message_type.signature_type,
+        crate::cesr::SignatureType::NoSignature
+    );
 
     assert_eq!(message, b"hello world");
 }
@@ -104,12 +107,18 @@ async fn test_large_messages() {
         // receive a message
         let crate::definitions::ReceivedTspMessage::GenericMessage {
             message,
-            message_type: SignedAndEncrypted,
+            message_type,
             ..
         } = bobs_messages.next().await.unwrap().unwrap()
         else {
             panic!("bob did not receive a generic message")
         };
+
+        assert_ne!(message_type.crypto_type, crate::cesr::CryptoType::Plaintext);
+        assert_ne!(
+            message_type.signature_type,
+            crate::cesr::SignatureType::NoSignature
+        );
 
         assert_eq!(sent_message.as_bytes(), message);
     }
@@ -158,12 +167,18 @@ async fn test_anycast() {
     // receive a message
     let crate::definitions::ReceivedTspMessage::GenericMessage {
         message,
-        message_type: Signed,
+        message_type,
         ..
     } = bobs_messages.next().await.unwrap().unwrap()
     else {
         panic!("bob did not receive a broadcast message")
     };
+
+    assert_eq!(message_type.crypto_type, crate::cesr::CryptoType::Plaintext);
+    assert_ne!(
+        message_type.signature_type,
+        crate::cesr::SignatureType::NoSignature
+    );
 
     assert_eq!(message, b"hello world");
 }
@@ -244,12 +259,18 @@ async fn test_nested_mode() {
     // receive message using inner vid
     let crate::definitions::ReceivedTspMessage::GenericMessage {
         message,
-        message_type: SignedAndEncrypted,
+        message_type,
         ..
     } = bobs_inner_messages.next().await.unwrap().unwrap()
     else {
         panic!("bob did not receive a generic message inner")
     };
+
+    assert_ne!(message_type.crypto_type, crate::cesr::CryptoType::Plaintext);
+    assert_ne!(
+        message_type.signature_type,
+        crate::cesr::SignatureType::NoSignature
+    );
 
     assert_eq!(&message, b"hello nested world");
 }
@@ -424,12 +445,18 @@ async fn test_routed_mode() {
     let crate::definitions::ReceivedTspMessage::GenericMessage {
         sender,
         message,
-        message_type: SignedAndEncrypted,
+        message_type,
         ..
     } = alice_messages.next().await.unwrap().unwrap()
     else {
         panic!("alice did not receive message");
     };
+
+    assert_ne!(message_type.crypto_type, crate::cesr::CryptoType::Plaintext);
+    assert_ne!(
+        message_type.signature_type,
+        crate::cesr::SignatureType::NoSignature
+    );
 
     assert_eq!(sender, "did:web:did.tsp-test.org:user:alice");
     assert_eq!(message, b"hello self (via bob)");

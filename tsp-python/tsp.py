@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 import tsp_python
-from tsp_python import OwnedVid, ReceivedTspMessageVariant, FlatReceivedTspMessage, MessageType
+from tsp_python import OwnedVid, ReceivedTspMessageVariant, FlatReceivedTspMessage, CryptoType, SignatureType
 
 class Store:
     inner: tsp_python.Store
@@ -51,7 +51,7 @@ class ReceivedTspMessage:
     def from_flat(msg: FlatReceivedTspMessage):
         match msg.variant:
             case ReceivedTspMessageVariant.GenericMessage:
-                return GenericMessage(msg.sender, msg.nonconfidential_data, bytes(msg.message), msg.message_type)
+                return GenericMessage(msg.sender, msg.nonconfidential_data, bytes(msg.message), msg.crypto_type, msg.signature_type)
 
             case ReceivedTspMessageVariant.RequestRelationship:
                 return RequestRelationship(msg.sender, msg.route, msg.nested_vid, msg.thread_id)
@@ -76,7 +76,8 @@ class GenericMessage(ReceivedTspMessage):
     sender: str
     nonconfidential_data: str
     message: str
-    message_type: str
+    crypto_type: str
+    signature_type: str
 
 @dataclass
 class AcceptRelationship(ReceivedTspMessage):

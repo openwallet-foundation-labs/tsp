@@ -68,6 +68,8 @@ pub fn seal_and_hash(
 pub type MessageContents<'a> = (
     Option<NonConfidentialData<'a>>,
     Payload<'a, &'a [u8], &'a mut [u8]>,
+    crate::cesr::CryptoType,
+    crate::cesr::SignatureType,
 );
 
 /// Decode a CESR Authentic Confidential Message, verify the signature and decrypt its contents
@@ -96,7 +98,14 @@ pub fn sign(
 pub fn verify<'a>(
     sender: &dyn VerifiedVid,
     tsp_message: &'a mut [u8],
-) -> Result<&'a [u8], CryptoError> {
+) -> Result<
+    (
+        &'a [u8],
+        crate::cesr::CryptoType,
+        crate::cesr::SignatureType,
+    ),
+    CryptoError,
+> {
     nonconfidential::verify(sender, tsp_message)
 }
 
@@ -184,7 +193,7 @@ mod tests {
         )
         .unwrap();
 
-        let (received_nonconfidential_data, received_secret_message) =
+        let (received_nonconfidential_data, received_secret_message, _, _) =
             open(&alice, &bob, &mut message).unwrap();
 
         assert_eq!(received_nonconfidential_data.unwrap(), nonconfidential_data);

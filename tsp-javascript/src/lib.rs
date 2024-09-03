@@ -442,9 +442,19 @@ impl From<&tsp::ReceivedTspMessage> for ReceivedTspMessageVariant {
 
 #[wasm_bindgen]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum MessageType {
-    Signed,
-    SignedAndEncrypted,
+pub enum CryptoType {
+    Plaintext = 0,
+    HpkeAuth = 1,
+    HpkeEssr = 2,
+    NaclAuth = 3,
+    NaclEssr = 4,
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum SignatureType {
+    NoSignature = 0,
+    Ed25519 = 1,
 }
 
 #[wasm_bindgen(inspectable)]
@@ -454,7 +464,8 @@ pub struct FlatReceivedTspMessage {
     sender: Option<String>,
     nonconfidential_data: Option<Option<Vec<u8>>>,
     message: Option<Vec<u8>>,
-    pub message_type: Option<MessageType>,
+    pub crypto_type: Option<CryptoType>,
+    pub signature_type: Option<SignatureType>,
     route: Option<Option<Vec<Vec<u8>>>>,
     nested_vid: Option<Option<String>>,
     thread_id: Option<Vec<u8>>,
@@ -555,7 +566,8 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
             sender: None,
             nonconfidential_data: None,
             message: None,
-            message_type: None,
+            crypto_type: None,
+            signature_type: None,
             route: None,
             nested_vid: None,
             thread_id: None,
@@ -577,11 +589,16 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
                 this.sender = Some(sender);
                 this.nonconfidential_data = Some(nonconfidential_data);
                 this.message = Some(message);
-                this.message_type = match message_type {
-                    tsp::definitions::MessageType::Signed => Some(MessageType::Signed),
-                    tsp::definitions::MessageType::SignedAndEncrypted => {
-                        Some(MessageType::SignedAndEncrypted)
-                    }
+                this.crypto_type = match message_type.crypto_type {
+                    tsp::cesr::CryptoType::Plaintext => Some(CryptoType::Plaintext),
+                    tsp::cesr::CryptoType::HpkeAuth => Some(CryptoType::HpkeAuth),
+                    tsp::cesr::CryptoType::HpkeEssr => Some(CryptoType::HpkeEssr),
+                    tsp::cesr::CryptoType::NaclAuth => Some(CryptoType::NaclAuth),
+                    tsp::cesr::CryptoType::NaclEssr => Some(CryptoType::NaclEssr),
+                };
+                this.signature_type = match message_type.signature_type {
+                    tsp::cesr::SignatureType::NoSignature => Some(SignatureType::NoSignature),
+                    tsp::cesr::SignatureType::Ed25519 => Some(SignatureType::Ed25519),
                 };
             }
             tsp::ReceivedTspMessage::RequestRelationship {

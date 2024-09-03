@@ -37,7 +37,14 @@ pub fn sign(
 pub fn verify<'a>(
     sender: &dyn VerifiedVid,
     tsp_message: &'a mut [u8],
-) -> Result<&'a [u8], CryptoError> {
+) -> Result<
+    (
+        &'a [u8],
+        crate::cesr::CryptoType,
+        crate::cesr::SignatureType,
+    ),
+    CryptoError,
+> {
     let view = crate::cesr::decode_envelope(tsp_message)?;
 
     // verify outer signature
@@ -51,8 +58,8 @@ pub fn verify<'a>(
         raw_header: _,
         envelope:
             Envelope {
-                crypto_type: _,
-                signature_type: _,
+                crypto_type,
+                signature_type,
                 sender: _,
                 receiver: _,
                 nonconfidential_data: Some(nonconfidential_data),
@@ -65,5 +72,5 @@ pub fn verify<'a>(
         return Err(CryptoError::MissingCiphertext);
     };
 
-    Ok(nonconfidential_data)
+    Ok((nonconfidential_data, crypto_type, signature_type))
 }

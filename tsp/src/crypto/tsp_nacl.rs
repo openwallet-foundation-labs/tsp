@@ -215,7 +215,12 @@ pub(crate) fn open<'a>(
         crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data as _),
     };
 
-    Ok((envelope.nonconfidential_data, secret_payload))
+    Ok((
+        envelope.nonconfidential_data,
+        secret_payload,
+        envelope.crypto_type,
+        envelope.signature_type,
+    ))
 }
 
 /// Generate N random bytes using the provided RNG

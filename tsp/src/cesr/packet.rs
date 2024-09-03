@@ -149,7 +149,7 @@ impl CryptoType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[repr(u8)]
 pub enum SignatureType {
     NoSignature = 0,
