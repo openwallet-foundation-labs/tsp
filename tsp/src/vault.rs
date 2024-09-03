@@ -65,7 +65,7 @@ impl Vault {
                 let signing_key_name = format!("{id}#signing-key");
 
                 if let Err(e) = conn
-                    .insert_key(&signing_key_name, &signing_key, None, None, None, None)
+                    .insert_key(&signing_key_name, &signing_key, None, None, None)
                     .await
                 {
                     if e.kind() != ErrorKind::Duplicate {
@@ -81,7 +81,6 @@ impl Vault {
                     .insert_key(
                         &decryption_key_name,
                         &decryption_key,
-                        None,
                         None,
                         None,
                         None,
@@ -104,7 +103,6 @@ impl Vault {
                     None,
                     None,
                     None,
-                    None,
                 )
                 .await
             {
@@ -120,7 +118,6 @@ impl Vault {
                 .insert_key(
                     &encryption_key_name,
                     &encryption_key,
-                    None,
                     None,
                     None,
                     None,

@@ -46,9 +46,7 @@ tokio = { version = "1.0", default-features = false, features = [
     "net",
     "macros",
 ] }
-aries-askar = { git = "https://github.com/marlonbaeten/aries-askar", branch = "ciborium", default-features = false, features = [
-    "sqlite",
-] }
+aries-askar = { version = "0.3.1", default-features = false, features = [ "sqlite" ] }
 # logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.1", default-features = false, features = [

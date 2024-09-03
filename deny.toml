@@ -15,13 +15,8 @@ crate = "ring"
 expression = "ISC AND OpenSSL AND MIT"
 license-files = [ { path = "LICENSE", hash = 0xbd0eed23 } ]
 
-[sources]
-allow-git = [
-    "https://github.com/marlonbaeten/rust-hpke",
-    "https://github.com/marlonbaeten/aries-askar",
-]
-
 [advisories]
 ignore = [
-   { id="RUSTSEC-2024-0363", reason = "we cannot upgrade away from this without breaking compatibility with aries-askar" },
+   { id="RUSTSEC-2024-0363", reason = "introduced by aries-askar, on which we are dependent; migrate away from sqlx 0.7" },
+   { id="RUSTSEC-2021-0127", reason = "introduced by aries-askar, on which we are dependent; serde_cbor can be replaced by ciborium" },
 ]
