@@ -123,6 +123,22 @@ const updateIdentities = async () => {
   }
 };
 
+/**
+ * Add a span to an element with text contents
+ * @param {HTMLElement} parent
+ * @param {string} text
+ * @param {string?} classes optional space-separated CSS classes to apply
+ * @param {{string: string}?} style optional CSS styles to apply
+ * @return {HTMLSpanElement}
+ */
+function addSpan(parent, text, classes, style) {
+  const span = document.createElement('span');
+  span.textContent = text;
+  if (classes) span.classList.add(...classes.split(' '));
+  if (style) Object.assign(span.style, style);
+  parent.appendChild(span);
+}
+
 // render a TSP message with debug information
 function renderMessage(message) {
   const card = document.createElement('div');
@@ -136,34 +152,52 @@ function renderMessage(message) {
     <div class="card-body">
       <span class="float-end">${(new Date()).toISOString().slice(0, 19).replace('T', ' ')}</span>
       <h5 class="card-title">Message</h5>
-      <p class="card-text">
-        ${parts.map((part, index) =>
-          message[part] ? `<span class="message-part" style="color:${colors[index]}">${message[part].data}</span>` : ''
-        ).join('')}
-      </p>
+      <p class="card-text"></p>
     </div>
-    <ul class="list-group list-group-flush">
-      ${parts.map((part, index) => message[part] ? `
-        <li class="list-group-item">
-          ${(part === 'sender' || part === 'signature') ? (
-            message.ciphertext.plain 
-            ? '<span class="badge bg-success float-end">verified</span>'
-            : '<span class="badge bg-danger float-end">unverified</span>'
-          ) : ''}
-          ${(part === 'sender' || part === 'signature')
-            ? `<span style="margin-right: 0.375rem;" class="badge text-bg-secondary float-end">
-                ${part === "sender" ? message.cryptoType : message.signatureType}
-              </span>` : ''}
-          <span class="text-muted d-block">${message[part].title}:</span>
-          ${message[part].plain ? `<span class="d-block">${message[part].plain}</span>` : ''}
-          <span class="message-part d-block">CESR selector: ${message[part].prefix}</span>
-          <span class="message-part d-block" style="color:${colors[index]}">${message[part].data}</span>
-          ${part === 'sender' && !message.ciphertext.plain 
-            ? '<button class="btn btn-outline-primary mt-2 verify">Verify sender</span>' : ''}
-        </li>
-      ` : '').join('\n')}
-    </ul>
+    <ul class="list-group list-group-flush"></ul>
   </div>`;
+
+  const messageParts = card.querySelector('p.card-text');
+  parts.forEach((part, index) => {
+    if (message[part]) {
+      addSpan(messageParts, message[part].data, 'message-part', { 'color': colors[index] });
+    }
+  });
+
+  const partsList = card.querySelector('ul');
+  parts.forEach((part, index) => {
+    if (!message[part]) return;
+
+    const li = document.createElement('li');
+    li.classList.add('list-group-item');
+
+    if (part === 'sender' || part === 'signature') {
+      if (message.ciphertext.plain) {
+        addSpan(li, 'Verified', 'badge bg-success float-end');
+      } else {
+        addSpan(li, 'Unverified', 'badge bg-danger float-end');
+      }
+      addSpan(li, part === 'sender' ? message.cryptoType : message.signatureType, 'badge text-bg-secondary float-end', { 'margin-right': '0.375rem' });
+    }
+
+    addSpan(li, message[part].title, 'text-muted d-block');
+
+    if (message[part].plain) {
+      addSpan(li, message[part].plain, 'd-block');
+    }
+
+    addSpan(li, `CESR selector: ${message[part].prefix}`, 'message-part d-block');
+    addSpan(li, message[part].data, 'message-part d-block', { 'color': colors[index] });
+
+    if (part === 'sender' && !message.ciphertext.plain) {
+      const button = document.createElement('button');
+      button.classList.add('btn', 'btn-outline-primary', 'mt-2', 'verify');
+      button.textContent = 'Verify sender';
+      li.appendChild(button);
+    }
+
+    partsList.appendChild(li);
+  });
 
   const verifySender = card.querySelector('.verify');
   if (verifySender) {
@@ -177,7 +211,7 @@ function renderMessage(message) {
           card.parentNode.removeChild(card);
         }
 
-        setTimeout(() => {  
+        setTimeout(() => {
           ws.send(JSON.stringify({
             sender: message.sender.plain,
             receiver: message.receiver.plain,
