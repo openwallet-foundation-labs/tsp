@@ -116,7 +116,7 @@ pub fn open<'a>(
         CryptoType::NaclAuth | CryptoType::NaclEssr => {
             tsp_nacl::open(receiver, sender, raw_header, envelope, ciphertext)
         }
-        CryptoType::Plaintext => Err(CryptoError::MissingCiphertext), // TODO: better error code?
+        CryptoType::Plaintext => Err(CryptoError::MissingCiphertext),
     }
 }
 
