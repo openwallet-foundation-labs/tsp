@@ -106,20 +106,23 @@ const updateIdentities = async () => {
 
   // listen for messages on websocket
   if (!ws) {
-    const proto = window.location.protocol === 'http:' ? 'ws' : 'wss';
-    ws = new WebSocket(`${proto}://${window.location.host}/receive-messages`);
-    ws.addEventListener('message', (event) => {
-      const message = JSON.parse(event.data);
-      const messagesContainer =
-        document.querySelector('.received-messages');
-      messagesContainer.appendChild(renderMessage(message));
-    });
-    ws.addEventListener('open', () => {
-      Object.values(identities).forEach((identity) => {
-        ws.send(JSON.stringify(identity));
-        registered.push(identity.id);
+    function connectWS() {
+      const proto = window.location.protocol === 'http:' ? 'ws' : 'wss';
+      ws = new WebSocket(`${proto}://${window.location.host}/receive-messages`);
+      ws.addEventListener('message', (event) => {
+        const message = JSON.parse(event.data);
+        const messagesContainer = document.querySelector('.received-messages');
+        messagesContainer.appendChild(renderMessage(message));
       });
-    });
+      ws.addEventListener('open', () => {
+        Object.values(identities).forEach((identity) => {
+          ws.send(JSON.stringify(identity));
+          registered.push(identity.id);
+        });
+      });
+      ws.addEventListener('close', connectWS);
+    }
+    connectWS();
   }
 };
 
