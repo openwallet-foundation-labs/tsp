@@ -1,3 +1,4 @@
+use crate::definitions::MessageType;
 use crate::definitions::{
     Digest, NonConfidentialData, Payload, PrivateKeyData, PrivateSigningKeyData, PrivateVid,
     PublicKeyData, PublicVerificationKeyData, TSPMessage, VerifiedVid,
@@ -132,14 +133,7 @@ pub fn sign(
 pub fn verify<'a>(
     sender: &dyn VerifiedVid,
     tsp_message: &'a mut [u8],
-) -> Result<
-    (
-        &'a [u8],
-        crate::cesr::CryptoType,
-        crate::cesr::SignatureType,
-    ),
-    CryptoError,
-> {
+) -> Result<(&'a [u8], MessageType), CryptoError> {
     nonconfidential::verify(sender, tsp_message)
 }
 

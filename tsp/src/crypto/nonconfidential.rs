@@ -1,6 +1,6 @@
 use crate::{
     cesr::{CryptoType, DecodedEnvelope, Envelope, SignatureType},
-    definitions::{PrivateVid, TSPMessage, VerifiedVid},
+    definitions::{MessageType, PrivateVid, TSPMessage, VerifiedVid},
 };
 use ed25519_dalek::ed25519::signature::Signer;
 
@@ -37,14 +37,7 @@ pub fn sign(
 pub fn verify<'a>(
     sender: &dyn VerifiedVid,
     tsp_message: &'a mut [u8],
-) -> Result<
-    (
-        &'a [u8],
-        crate::cesr::CryptoType,
-        crate::cesr::SignatureType,
-    ),
-    CryptoError,
-> {
+) -> Result<(&'a [u8], MessageType), CryptoError> {
     let view = crate::cesr::decode_envelope(tsp_message)?;
 
     // verify outer signature
@@ -72,5 +65,11 @@ pub fn verify<'a>(
         return Err(CryptoError::MissingCiphertext);
     };
 
-    Ok((nonconfidential_data, crypto_type, signature_type))
+    Ok((
+        nonconfidential_data,
+        MessageType {
+            crypto_type,
+            signature_type,
+        },
+    ))
 }

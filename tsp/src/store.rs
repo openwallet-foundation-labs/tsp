@@ -778,17 +778,13 @@ impl Store {
                     return Err(Error::UnverifiedVid(sender.to_string()));
                 };
 
-                let (message, crypto_type, signature_type) =
-                    crate::crypto::verify(&*sender_vid, message)?;
+                let (message, message_type) = crate::crypto::verify(&*sender_vid, message)?;
 
                 Ok(ReceivedTspMessage::GenericMessage {
                     sender,
                     nonconfidential_data: None,
                     message,
-                    message_type: MessageType {
-                        crypto_type,
-                        signature_type,
-                    },
+                    message_type,
                 })
             }
         }
