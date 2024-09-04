@@ -1,16 +1,24 @@
 use crate::{
-    cesr::{CryptoType, DecodedEnvelope, DecodedPayload, SignatureType},
-    definitions::{NonConfidentialData, Payload, PrivateVid, TSPMessage, VerifiedVid},
+    cesr::{CryptoType, DecodedPayload, Envelope},
+    definitions::{Payload, PrivateVid, VerifiedVid},
 };
-use crypto_box::{
-    aead::{AeadCore, AeadInPlace, OsRng},
-    ChaChaBox, PublicKey, SecretKey,
+use crypto_box::{aead::AeadInPlace, ChaChaBox, PublicKey, SecretKey};
+
+#[cfg(feature = "nacl")]
+use crate::{
+    cesr::SignatureType,
+    definitions::{NonConfidentialData, TSPMessage},
 };
+#[cfg(feature = "nacl")]
+use crypto_box::aead::{AeadCore, OsRng};
+#[cfg(feature = "nacl")]
 use ed25519_dalek::Signer;
+#[cfg(feature = "nacl")]
 use rand::{rngs::StdRng, SeedableRng};
 
 use super::{CryptoError, MessageContents};
 
+#[cfg(feature = "nacl")]
 pub(crate) fn seal(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
@@ -123,33 +131,10 @@ pub(crate) fn seal(
 pub(crate) fn open<'a>(
     receiver: &dyn PrivateVid,
     sender: &dyn VerifiedVid,
-    tsp_message: &'a mut [u8],
+    _raw_header: &'a [u8],
+    envelope: Envelope<'a, &[u8]>,
+    ciphertext: &'a mut [u8],
 ) -> Result<MessageContents<'a>, CryptoError> {
-    let view = crate::cesr::decode_envelope(tsp_message)?;
-
-    // verify outer signature
-    let verification_challenge = view.as_challenge();
-    let signature = ed25519_dalek::Signature::from(verification_challenge.signature);
-    let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(sender.verifying_key())?;
-    verifying_key.verify_strict(verification_challenge.signed_data, &signature)?;
-
-    // decode envelope
-    let DecodedEnvelope {
-        raw_header: _data,
-        envelope,
-        ciphertext: Some(ciphertext),
-    } = view
-        .into_opened::<&[u8]>()
-        .map_err(|_| crate::cesr::error::DecodeError::VidError)?
-    else {
-        return Err(CryptoError::MissingCiphertext);
-    };
-
-    // verify the message was intended for the specified receiver
-    if envelope.receiver != Some(receiver.identifier().as_bytes()) {
-        return Err(CryptoError::UnexpectedRecipient);
-    }
-
     let (ciphertext, footer) = ciphertext.split_at_mut(ciphertext.len() - 16 - 24);
     let (tag, nonce) = footer.split_at(16);
 
@@ -167,14 +152,15 @@ pub(crate) fn open<'a>(
         sender_identity,
     } = crate::cesr::decode_payload(ciphertext)?;
 
-    #[cfg(feature = "essr")]
-    match sender_identity {
-        Some(id) => {
-            if id != sender.identifier().as_bytes() {
-                return Err(CryptoError::UnexpectedSender);
+    if envelope.crypto_type == CryptoType::NaclEssr {
+        match sender_identity {
+            Some(id) => {
+                if id != sender.identifier().as_bytes() {
+                    return Err(CryptoError::UnexpectedSender);
+                }
             }
+            None => return Err(CryptoError::MissingSender),
         }
-        None => return Err(CryptoError::MissingSender),
     }
 
     let secret_payload = match payload {
@@ -215,10 +201,16 @@ pub(crate) fn open<'a>(
         crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data as _),
     };
 
-    Ok((envelope.nonconfidential_data, secret_payload))
+    Ok((
+        envelope.nonconfidential_data,
+        secret_payload,
+        envelope.crypto_type,
+        envelope.signature_type,
+    ))
 }
 
 /// Generate N random bytes using the provided RNG
+#[cfg(feature = "nacl")]
 fn fresh_nonce(csprng: &mut (impl rand::RngCore + rand::CryptoRng)) -> crate::cesr::Nonce {
     crate::cesr::Nonce::generate(|dst| csprng.fill_bytes(dst))
 }

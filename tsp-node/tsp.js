@@ -1,10 +1,18 @@
 const wasm = require('tsp-javascript');
 const { OwnedVid } = wasm;
 
-const MessageType = {
-    Signed: 0, 
-    SignedAndEncrypted: 1, 
+const CryptoType = {
+    Plaintext: 0,
+    HpkeAuth: 1,
+    HpkeEssr: 2,
+    NaclAuth: 3,
+    NaclEssr: 4,
 };
+
+const SignatureType = {
+    NoSignature: 0,
+    Ed25519: 1,
+}
 
 class Store {
     constructor() {
@@ -169,7 +177,8 @@ class ForwardRequest extends ReceivedTspMessage {
 }
 
 module.exports = {
-    MessageType,
+    CryptoType,
+    SignatureType,
     Store,
     OwnedVid,
     ReceivedTspMessage,

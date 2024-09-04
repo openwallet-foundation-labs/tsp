@@ -8,6 +8,9 @@ homepage.workspace = true
 publish.workspace = true
 rust-version.workspace = true
 
+[features]
+nacl = ["tsp/nacl"]
+
 [[bin]]
 name = "create-did-web"
 path = "src/create-did-web.rs"

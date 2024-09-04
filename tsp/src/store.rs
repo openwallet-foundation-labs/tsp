@@ -480,7 +480,7 @@ impl Store {
             return Err(CryptoError::UnexpectedRecipient.into());
         };
 
-        let (_, payload) = crate::crypto::open(&*receiver, &*sender, message)?;
+        let (_, payload, _, _) = crate::crypto::open(&*receiver, &*sender, message)?;
 
         let (next_hop, path, inner_message) = match payload {
             Payload::RoutedMessage(hops, inner_message) => {
@@ -583,7 +583,7 @@ impl Store {
                     return Err(Error::UnverifiedSource(sender));
                 };
 
-                let (nonconfidential_data, payload) =
+                let (nonconfidential_data, payload, crypto_type, signature_type) =
                     crate::crypto::open(&*intended_receiver, &*sender_vid, message)?;
 
                 match payload {
@@ -591,7 +591,10 @@ impl Store {
                         sender,
                         nonconfidential_data,
                         message,
-                        message_type: MessageType::SignedAndEncrypted,
+                        message_type: MessageType {
+                            crypto_type,
+                            signature_type,
+                        },
                     }),
                     Payload::NestedMessage(inner) => {
                         // in case the inner vid isn't recognized (which can realistically happen in Routed mode),
@@ -609,14 +612,20 @@ impl Store {
 
                         let mut received_message = self.open_message(inner)?;
 
+                        // if inner message was not encrypted, but outer message was encrypted by the same sender,
+                        // then inner message was also sufficiently encrypted
                         if let ReceivedTspMessage::GenericMessage {
-                            message_type: ref mut message_type @ MessageType::Signed,
+                            message_type:
+                                ref mut message_type @ MessageType {
+                                    crypto_type: crate::cesr::CryptoType::Plaintext,
+                                    signature_type: _,
+                                },
                             sender: ref inner_sender,
                             ..
                         } = received_message
                         {
                             if self.get_vid(inner_sender)?.get_parent_vid() == Some(&sender) {
-                                *message_type = MessageType::SignedAndEncrypted;
+                                message_type.crypto_type = crypto_type;
                             }
                         }
 
@@ -769,13 +778,13 @@ impl Store {
                     return Err(Error::UnverifiedVid(sender.to_string()));
                 };
 
-                let message = crate::crypto::verify(&*sender_vid, message)?;
+                let (message, message_type) = crate::crypto::verify(&*sender_vid, message)?;
 
                 Ok(ReceivedTspMessage::GenericMessage {
                     sender,
                     nonconfidential_data: None,
                     message,
-                    message_type: MessageType::Signed,
+                    message_type,
                 })
             }
         }
@@ -1129,7 +1138,7 @@ impl Store {
 mod test {
     use wasm_bindgen_test::wasm_bindgen_test;
 
-    use crate::{definitions::MessageType, OwnedVid, ReceivedTspMessage, Store, VerifiedVid};
+    use crate::{OwnedVid, ReceivedTspMessage, Store, VerifiedVid};
 
     fn new_vid() -> OwnedVid {
         OwnedVid::new_did_peer("tcp://127.0.0.1:1337".parse().unwrap())
@@ -1201,7 +1210,11 @@ mod test {
         {
             assert_eq!(sender, alice.identifier());
             assert_eq!(received_message, message);
-            assert_eq!(message_type, MessageType::SignedAndEncrypted);
+            assert_ne!(message_type.crypto_type, crate::cesr::CryptoType::Plaintext);
+            assert_ne!(
+                message_type.signature_type,
+                crate::cesr::SignatureType::NoSignature
+            );
         } else {
             panic!("unexpected message type");
         }
@@ -1530,7 +1543,11 @@ mod test {
         assert_eq!(sender, sneaky_a.identifier());
         assert!(nonconfidential_data.is_none());
         assert_eq!(message, hello_world);
-        assert_eq!(message_type, MessageType::SignedAndEncrypted);
+        assert_ne!(message_type.crypto_type, crate::cesr::CryptoType::Plaintext);
+        assert_ne!(
+            message_type.signature_type,
+            crate::cesr::SignatureType::NoSignature
+        );
     }
 
     #[test]
@@ -1599,7 +1616,11 @@ mod test {
         assert_eq!(sender, nested_a.identifier());
         assert!(nonconfidential_data.is_none());
         assert_eq!(message, hello_world);
-        assert_eq!(message_type, MessageType::SignedAndEncrypted);
+        assert_ne!(message_type.crypto_type, crate::cesr::CryptoType::Plaintext);
+        assert_ne!(
+            message_type.signature_type,
+            crate::cesr::SignatureType::NoSignature
+        );
     }
 
     #[cfg(not(feature = "pq"))]
@@ -1729,6 +1750,10 @@ mod test {
         assert_eq!(sender, nested_a.identifier());
         assert!(nonconfidential_data.is_none());
         assert_eq!(message, hello_world);
-        assert_eq!(message_type, MessageType::SignedAndEncrypted);
+        assert_ne!(message_type.crypto_type, crate::cesr::CryptoType::Plaintext);
+        assert_ne!(
+            message_type.signature_type,
+            crate::cesr::SignatureType::NoSignature
+        );
     }
 }

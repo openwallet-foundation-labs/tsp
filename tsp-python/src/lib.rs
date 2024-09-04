@@ -5,7 +5,8 @@ fn tsp_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Store>()?;
     m.add_class::<OwnedVid>()?;
 
-    m.add_class::<MessageType>()?;
+    m.add_class::<CryptoType>()?;
+    m.add_class::<SignatureType>()?;
     m.add_class::<ReceivedTspMessageVariant>()?;
     m.add_class::<FlatReceivedTspMessage>()?;
 
@@ -237,9 +238,19 @@ impl From<&tsp::ReceivedTspMessage> for ReceivedTspMessageVariant {
 
 #[pyclass]
 #[derive(Debug, Clone, Copy)]
-enum MessageType {
-    Signed,
-    SignedAndEncrypted,
+pub enum CryptoType {
+    Plaintext = 0,
+    HpkeAuth = 1,
+    HpkeEssr = 2,
+    NaclAuth = 3,
+    NaclEssr = 4,
+}
+
+#[pyclass]
+#[derive(Debug, Clone, Copy)]
+pub enum SignatureType {
+    NoSignature = 0,
+    Ed25519 = 1,
 }
 
 #[pyclass]
@@ -254,7 +265,9 @@ struct FlatReceivedTspMessage {
     #[pyo3(get, set)]
     message: Option<Vec<u8>>,
     #[pyo3(get, set)]
-    message_type: Option<MessageType>,
+    crypto_type: Option<CryptoType>,
+    #[pyo3(get, set)]
+    signature_type: Option<SignatureType>,
     #[pyo3(get, set)]
     route: Option<Option<Vec<Vec<u8>>>>,
     #[pyo3(get, set)]
@@ -291,7 +304,8 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
             sender: None,
             nonconfidential_data: None,
             message: None,
-            message_type: None,
+            crypto_type: None,
+            signature_type: None,
             route: None,
             nested_vid: None,
             thread_id: None,
@@ -313,11 +327,16 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
                 this.sender = Some(sender);
                 this.nonconfidential_data = Some(nonconfidential_data);
                 this.message = Some(message);
-                this.message_type = match message_type {
-                    tsp::definitions::MessageType::Signed => Some(MessageType::Signed),
-                    tsp::definitions::MessageType::SignedAndEncrypted => {
-                        Some(MessageType::SignedAndEncrypted)
-                    }
+                this.crypto_type = match message_type.crypto_type {
+                    tsp::cesr::CryptoType::Plaintext => Some(CryptoType::Plaintext),
+                    tsp::cesr::CryptoType::HpkeAuth => Some(CryptoType::HpkeAuth),
+                    tsp::cesr::CryptoType::HpkeEssr => Some(CryptoType::HpkeEssr),
+                    tsp::cesr::CryptoType::NaclAuth => Some(CryptoType::NaclAuth),
+                    tsp::cesr::CryptoType::NaclEssr => Some(CryptoType::NaclEssr),
+                };
+                this.signature_type = match message_type.signature_type {
+                    tsp::cesr::SignatureType::NoSignature => Some(SignatureType::NoSignature),
+                    tsp::cesr::SignatureType::Ed25519 => Some(SignatureType::Ed25519),
                 };
             }
             tsp::ReceivedTspMessage::RequestRelationship {

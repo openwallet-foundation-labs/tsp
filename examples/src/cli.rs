@@ -447,13 +447,23 @@ async fn run() -> Result<(), Error> {
                             message,
                             message_type,
                         } => {
-                            use tsp::definitions::MessageType;
-                            let status = match message_type {
-                                MessageType::Signed => "NON-CONFIDENTIAL",
-                                MessageType::SignedAndEncrypted => "confidential",
+                            let status = match message_type.crypto_type {
+                                tsp::cesr::CryptoType::Plaintext => "NON-CONFIDENTIAL",
+                                _ => "confidential",
+                            };
+                            let crypto_type = match message_type.crypto_type {
+                                tsp::cesr::CryptoType::Plaintext => "Plain text",
+                                tsp::cesr::CryptoType::HpkeAuth => "HPKE Auth",
+                                tsp::cesr::CryptoType::HpkeEssr => "HPKE ESSR",
+                                tsp::cesr::CryptoType::NaclAuth => "NaCl Auth",
+                                tsp::cesr::CryptoType::NaclEssr => "NaCl ESSR",
+                            };
+                            let signature_type = match message_type.signature_type {
+                                tsp::cesr::SignatureType::NoSignature => "no signature",
+                                tsp::cesr::SignatureType::Ed25519 => "Ed25519 signature",
                             };
                             info!(
-                                "received {status} message ({} bytes) from {}",
+                                "received {status} message ({} bytes) from {} ({crypto_type}, {signature_type})",
                                 message.len(),
                                 sender,
                             );

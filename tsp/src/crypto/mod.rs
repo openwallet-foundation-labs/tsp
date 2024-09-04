@@ -1,8 +1,9 @@
+use crate::definitions::MessageType;
 use crate::definitions::{
     Digest, NonConfidentialData, Payload, PrivateKeyData, PrivateSigningKeyData, PrivateVid,
     PublicKeyData, PublicVerificationKeyData, TSPMessage, VerifiedVid,
 };
-#[cfg(feature = "nacl")]
+
 pub use digest::blake2b256;
 pub use digest::sha256;
 use rand::rngs::OsRng;
@@ -11,21 +12,22 @@ mod digest;
 pub mod error;
 mod nonconfidential;
 
-#[cfg(feature = "nacl")]
-mod tsp_nacl;
-
-#[cfg(not(feature = "nacl"))]
 mod tsp_hpke;
+#[cfg(not(feature = "pq"))]
+mod tsp_nacl;
 
 pub use error::CryptoError;
 
-#[cfg(all(not(feature = "nacl"), not(feature = "pq")))]
+#[cfg(not(feature = "pq"))]
+use crate::cesr::CryptoType;
+
+#[cfg(not(feature = "pq"))]
 pub type Aead = hpke::aead::ChaCha20Poly1305;
 
-#[cfg(all(not(feature = "nacl"), not(feature = "pq")))]
+#[cfg(not(feature = "pq"))]
 pub type Kdf = hpke::kdf::HkdfSha256;
 
-#[cfg(all(not(feature = "nacl"), not(feature = "pq")))]
+#[cfg(not(feature = "pq"))]
 pub type Kem = hpke::kem::X25519HkdfSha256;
 
 #[cfg(feature = "pq")]
@@ -68,6 +70,8 @@ pub fn seal_and_hash(
 pub type MessageContents<'a> = (
     Option<NonConfidentialData<'a>>,
     Payload<'a, &'a [u8], &'a mut [u8]>,
+    crate::cesr::CryptoType,
+    crate::cesr::SignatureType,
 );
 
 /// Decode a CESR Authentic Confidential Message, verify the signature and decrypt its contents
@@ -76,11 +80,44 @@ pub fn open<'a>(
     sender: &dyn VerifiedVid,
     tsp_message: &'a mut [u8],
 ) -> Result<MessageContents<'a>, CryptoError> {
-    #[cfg(not(feature = "nacl"))]
-    return tsp_hpke::open::<Aead, Kdf, Kem>(receiver, sender, tsp_message);
+    let view = crate::cesr::decode_envelope(tsp_message)?;
 
-    #[cfg(feature = "nacl")]
-    return tsp_nacl::open(receiver, sender, tsp_message);
+    // verify outer signature
+    let verification_challenge = view.as_challenge();
+    let signature = ed25519_dalek::Signature::from(verification_challenge.signature);
+    let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(sender.verifying_key())?;
+    verifying_key.verify_strict(verification_challenge.signed_data, &signature)?;
+
+    // decode envelope
+    let crate::cesr::DecodedEnvelope {
+        raw_header,
+        envelope,
+        ciphertext: Some(ciphertext),
+    } = view
+        .into_opened::<&[u8]>()
+        .map_err(|_| crate::cesr::error::DecodeError::VidError)?
+    else {
+        return Err(CryptoError::MissingCiphertext);
+    };
+
+    // verify the message was intended for the specified receiver
+    if envelope.receiver != Some(receiver.identifier().as_bytes()) {
+        return Err(CryptoError::UnexpectedRecipient);
+    }
+
+    #[cfg(feature = "pq")]
+    return tsp_hpke::open::<Aead, Kdf, Kem>(receiver, sender, raw_header, envelope, ciphertext);
+
+    #[cfg(not(feature = "pq"))]
+    match envelope.crypto_type {
+        CryptoType::HpkeAuth | CryptoType::HpkeEssr => {
+            tsp_hpke::open::<Aead, Kdf, Kem>(receiver, sender, raw_header, envelope, ciphertext)
+        }
+        CryptoType::NaclAuth | CryptoType::NaclEssr => {
+            tsp_nacl::open(receiver, sender, raw_header, envelope, ciphertext)
+        }
+        CryptoType::Plaintext => Err(CryptoError::MissingCiphertext),
+    }
 }
 
 /// Construct and sign a non-confidential TSP message
@@ -96,7 +133,7 @@ pub fn sign(
 pub fn verify<'a>(
     sender: &dyn VerifiedVid,
     tsp_message: &'a mut [u8],
-) -> Result<&'a [u8], CryptoError> {
+) -> Result<(&'a [u8], MessageType), CryptoError> {
     nonconfidential::verify(sender, tsp_message)
 }
 
@@ -184,7 +221,7 @@ mod tests {
         )
         .unwrap();
 
-        let (received_nonconfidential_data, received_secret_message) =
+        let (received_nonconfidential_data, received_secret_message, _, _) =
             open(&alice, &bob, &mut message).unwrap();
 
         assert_eq!(received_nonconfidential_data.unwrap(), nonconfidential_data);
