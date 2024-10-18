@@ -5,3 +5,5 @@ Cargo.lock
 .dockerignore
 docs/book/
 data/
+node_modules/
+tdw-server/server

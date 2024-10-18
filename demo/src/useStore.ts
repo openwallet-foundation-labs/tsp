@@ -16,6 +16,8 @@ const TIMESTAMP_SERVER = {
   transport: 'https://tsp-test.org/timestamp',
 };
 
+export type DidType = 'web' | 'peer' | 'tdw';
+
 export interface Identity {
   label: string;
   vid: {
@@ -184,9 +186,9 @@ export default function useStore() {
   const store = useRef<Store>(new Store());
   const [state, dispatch] = useReducer(reducer, loadState());
 
-  const createIdentity = async (label: string, web: boolean) => {
+  const createIdentity = async (label: string, didType: DidType) => {
     try {
-      if (web) {
+      if (didType === 'web') {
         const data = new URLSearchParams();
         data.append('name', label);
         let result = await fetch('https://tsp-test.org/create-identity', {
@@ -201,13 +203,15 @@ export default function useStore() {
         const id = { label, vid: vidData };
         store.current.add_private_vid(vid.create_clone());
         dispatch({ type: 'setId', id });
-      } else {
+      } else if (didType === 'peer') {
         const vid = OwnedVid.new_did_peer(
           `https://tsp-test.org/user/${label.toLowerCase()}`
         );
         const id = { label, vid: JSON.parse(vid.to_json()) };
         store.current.add_private_vid(vid.create_clone());
         dispatch({ type: 'setId', id });
+      } else if (didType === 'tdw') {
+        alert('TODO');
       }
     } catch (e) {
       console.error(e);

@@ -1,7 +1,4 @@
-use super::{
-    did::{self, peer},
-    error::VidError,
-};
+use super::{did, error::VidError};
 use crate::Vid;
 
 #[cfg(feature = "resolve")]
@@ -11,7 +8,8 @@ pub async fn verify_vid(id: &str) -> Result<Vid, VidError> {
 
     match parts.get(0..2) {
         Some([did::SCHEME, did::web::SCHEME]) => did::web::resolve(id, parts).await,
-        Some([did::SCHEME, did::peer::SCHEME]) => peer::verify_did_peer(&parts),
+        Some([did::SCHEME, did::peer::SCHEME]) => did::peer::verify_did_peer(&parts),
+        Some([did::SCHEME, did::tdw::SCHEME]) => did::tdw::resolve(id, parts).await,
         _ => Err(VidError::InvalidVid(id.to_string())),
     }
 }
@@ -21,7 +19,7 @@ pub fn verify_vid_offline(id: &str) -> Result<Vid, VidError> {
     let parts = id.split(':').collect::<Vec<&str>>();
 
     match parts.get(0..2) {
-        Some([did::SCHEME, did::peer::SCHEME]) => peer::verify_did_peer(&parts),
+        Some([did::SCHEME, did::peer::SCHEME]) => did::peer::verify_did_peer(&parts),
         _ => Err(VidError::InvalidVid(id.to_string())),
     }
 }
