@@ -3,15 +3,16 @@ import { useDisclosure, useFocusTrap } from '@mantine/hooks';
 import { IconUserPlus } from '@tabler/icons-react';
 import { FormEvent, useState } from 'react';
 import logo from './trust-over-ip.svg';
+import { DidType } from './useStore';
 
 interface InitializeProps {
-  onClick: (name: string, web: boolean) => Promise<boolean>;
+  onClick: (name: string, didType: DidType) => Promise<boolean>;
 }
 
 export default function Initialize({ onClick }: InitializeProps) {
   const [opened, { open, close }] = useDisclosure(false);
   const [label, setLabel] = useState<string>('');
-  const [web, setWeb] = useState<boolean>(true);
+  const [didType, setDidType] = useState<DidType>('web');
   const [error, setError] = useState<string>('');
   const focusTrapRef = useFocusTrap();
 
@@ -19,7 +20,7 @@ export default function Initialize({ onClick }: InitializeProps) {
     e.preventDefault();
 
     if (label.length > 0) {
-      onClick(label, web).then((result) => {
+      onClick(label, didType).then((result) => {
         if (!result) {
           setError("This username is already taken");
         } else {
@@ -40,9 +41,13 @@ export default function Initialize({ onClick }: InitializeProps) {
         onClose={close}
         centered
         title={<strong>Create identity</strong>}
+        size="lg"
         overlayProps={{
           backgroundOpacity: 0.55,
           blur: 3,
+        }}
+        mod={{
+          miw: 500,
         }}
       >
         <form onSubmit={save} ref={focusTrapRef}>
@@ -58,10 +63,18 @@ export default function Initialize({ onClick }: InitializeProps) {
           </Input.Wrapper>
           <Flex mih={60} gap="md" justify="flex-end" align="flex-end">
             <Button
+                size="md"
+                variant="filled"
+                type="submit"
+                onClick={() => setDidType('tdw')}
+              >
+              Create did:tdw
+            </Button>
+            <Button
               size="md"
               variant="filled"
               type="submit"
-              onClick={() => setWeb(true)}
+              onClick={() => setDidType('web')}
             >
               Create did:web
             </Button>
@@ -69,7 +82,7 @@ export default function Initialize({ onClick }: InitializeProps) {
               size="md"
               variant="filled"
               type="submit"
-              onClick={() => setWeb(false)}
+              onClick={() => setDidType('peer')}
             >
               Create did:peer
             </Button>
