@@ -1,0 +1,17 @@
+{
+  "name": "tdw-server",
+  "version": "1.0.0",
+  "description": "Identity server",
+  "main": "index.js",
+  "scripts": {
+    "serve": "bun --watch ./server.ts",
+    "generate": "prisma generate"
+  },
+  "dependencies": {
+    "@digitalbazaar/ed25519-multikey": "^1.3.0",
+    "@digitalbazaar/ed25519-verification-key-2020": "^4.2.0",
+    "@digitalbazaar/x25519-key-agreement-key-2020": "^3.0.1",
+    "@prisma/client": "^5.21.1",
+    "trustdidweb-ts": "git+https://github.com/decentralized-identity/trustdidweb-ts.git"
+  }
+}

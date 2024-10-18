@@ -1,0 +1,10 @@
+services:
+  psql:
+    image: ghcr.io/tweedegolf/postgres:14
+    environment:
+      POSTGRES_USER: tsp-test
+      POSTGRES_DB: tsp-test
+      POSTGRES_HOST_AUTH_METHOD: trust
+      TZ: Europe/Amsterdam
+    ports: [ '5432:5432' ]
+    networks: [ default ]

@@ -5,3 +5,4 @@ Cargo.lock
 .dockerignore
 docs/book/
 data/
+node_modules/
