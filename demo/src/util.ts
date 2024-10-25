@@ -43,7 +43,5 @@ export function humanFileSize(size: number) {
 export function decode58btc(input: string): string {
   const buffer = base58btc.decode(input);
 
-  console.log(buffer);
-
   return bufferToBase64(buffer.slice(2));
 }

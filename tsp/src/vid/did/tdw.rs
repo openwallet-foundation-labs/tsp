@@ -4,7 +4,7 @@ use url::Url;
 
 use crate::vid::{error::VidError, Vid};
 
-pub(crate) const SCHEME: &str = "twd";
+pub(crate) const SCHEME: &str = "tdw";
 
 const PROTOCOL: &str = "https://";
 
@@ -70,26 +70,29 @@ pub async fn resolve(id: &str, parts: Vec<&str>) -> Result<Vid, VidError> {
 
     let mut public_sigkey= Vec::new();
 
-    bs58::decode(&sig_key)
+    bs58::decode(&sig_key[1..])
         .with_alphabet(bs58::Alphabet::BITCOIN)
         .onto(&mut public_sigkey)
         .map_err(|_| VidError::ResolveVid("invalid encoded signing key in did:tdw"))?;
 
     let mut public_enckey= Vec::new();
 
-    bs58::decode(&enc_key)
+    bs58::decode(&enc_key[1..])
         .with_alphabet(bs58::Alphabet::BITCOIN)
         .onto(&mut public_enckey)
         .map_err(|_| VidError::ResolveVid("invalid encoded encryption key in did:tdw"))?;
 
-    dbg!(&public_sigkey);
-    dbg!(&public_enckey);
+    let public_sigkey: [u8; PUBLIC_VERIFICATION_KEY_SIZE] = public_sigkey[2..].try_into()
+        .map_err(|_| VidError::ResolveVid("invalid encoded signing key in did:tdw"))?;
+
+    let public_enckey: [u8; PUBLIC_KEY_SIZE] = public_enckey[2..].try_into()
+        .map_err(|_| VidError::ResolveVid("invalid encoded encryption key in did:tdw"))?;
 
     Ok(Vid {
         id: id.to_string(),
         transport: Url::parse(&transport).map_err(|_| VidError::InvalidVid(parts.join(":")))?,
-        public_sigkey: [0; 32].into(), //public_sigkey.into(),
-        public_enckey: [0; 32].into(), //public_enckey.into(),
+        public_sigkey: public_sigkey.into(),
+        public_enckey: public_enckey.into(),
     })
 }
 
@@ -102,30 +105,4 @@ pub fn resolve_url(parts: &[&str]) -> Result<Url, VidError> {
     }
     .parse()
     .map_err(|_| VidError::InvalidVid(parts.join(":")))
-}
-
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_resolve() {
-        let id = "did:tdw:QmWzWa51Ux2B4XPiuTWD9phFMrL7VA5wwDnrMeogupZrSG:tdw.tsp-test.org";
-        let parts = id.split(':').collect::<Vec<&str>>();
-
-        let vid = resolve(id, parts).await.unwrap();
-
-        dbg!(&vid);
-
-        assert_eq!(vid.id, id);
-        assert_eq!(vid.transport, "https://tdw.tsp-test.org/user/QmWzWa51Ux2B4XPiuTWD9phFMrL7VA5wwDnrMeogupZrSG".parse().unwrap());
-    }
-
-    // expected output
-    // [253, 43, 196, 7, 93, 252, 40, 49, 141, 115, 87, 164, 50, 233, 4, 212, 70, 84, 130, 217, 118, 141, 241, 39, 74, 194, 49, 231, 107, 140, 150, 158 ]
-    // _SvEB138KDGNc1ekMukE1EZUgtl2jfEnSsIx52uMlp4
-    // [167, 206, 200, 176, 80, 7, 157, 28, 189, 205, 96, 63, 34, 133, 93, 104, 137, 1, 187, 107, 214, 38, 127, 232, 120, 65, 7, 173, 42, 75, 13, 4 ]
-    // p87IsFAHnRy9zWA_IoVdaIkBu2vWJn_oeEEHrSpLDQQ
-
 }

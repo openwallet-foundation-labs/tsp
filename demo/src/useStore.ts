@@ -518,9 +518,3 @@ export default function useStore() {
     ...state,
   };
 }
-
-
-console.log(decode58btc("z6MkwVXu8gmu48v5RdnztmjDqvupEBihcmw2MDD84U7fQJKo"));
-console.log(decode58btc("z3u2XNoFP7AWLExZLv8P9b9gbrD2qrEyschRVUBLfoXVJphH"));
-console.log(decode58btc("z6LSnyE8ZupVQZQYnQtRGEDZeuPzYsxeh14dHtc4TXN63ZFR"));
-console.log(decode58btc("z3weXu8f1GPFn6tQWJRymvaRoQAnhyoFfn6SfSRuDGhr94pv"));
