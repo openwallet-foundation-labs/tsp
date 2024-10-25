@@ -6,7 +6,7 @@ import {
   verify_vid,
   probe_message,
 } from '../pkg/tsp_demo';
-import { bufferToBase64, humanFileSize } from './util';
+import { bufferToBase64, decode58btc, humanFileSize } from './util';
 import ReconnectingWebSocket from 'reconnecting-websocket';
 
 const TIMESTAMP_SERVER = {
@@ -181,6 +181,8 @@ function reducer(state: State, action: Action): State {
   }
 }
 
+
+
 export default function useStore() {
   const ws = useRef<ReconnectingWebSocket | null>(null);
   const store = useRef<Store>(new Store());
@@ -211,7 +213,22 @@ export default function useStore() {
         store.current.add_private_vid(vid.create_clone());
         dispatch({ type: 'setId', id });
       } else if (didType === 'tdw') {
-        alert('TODO');
+        let result = await fetch('https://tdw.tsp-test.org/create');
+        let didDoc = await result.json();
+
+        const vidData = {
+          id: didDoc.public.did,
+          transport: `https://tsp-test.org/user/${label}`,
+          publicSigkey: decode58btc(didDoc.private.authKey.publicKeyMultibase),
+          publicEnckey: decode58btc(didDoc.private.agreementKey.publicKeyMultibase),
+          sigkey: decode58btc(didDoc.private.authKey.secretKeyMultibase),
+          enckey: decode58btc(didDoc.private.agreementKey.secretKeyMultibase),
+        };
+
+        const vid = OwnedVid.from_json(JSON.stringify(vidData));
+        const id = { label, vid: vidData };
+        store.current.add_private_vid(vid.create_clone());
+        dispatch({ type: 'setId', id });
       }
     } catch (e) {
       console.error(e);
@@ -501,3 +518,9 @@ export default function useStore() {
     ...state,
   };
 }
+
+
+console.log(decode58btc("z6MkwVXu8gmu48v5RdnztmjDqvupEBihcmw2MDD84U7fQJKo"));
+console.log(decode58btc("z3u2XNoFP7AWLExZLv8P9b9gbrD2qrEyschRVUBLfoXVJphH"));
+console.log(decode58btc("z6LSnyE8ZupVQZQYnQtRGEDZeuPzYsxeh14dHtc4TXN63ZFR"));
+console.log(decode58btc("z3weXu8f1GPFn6tQWJRymvaRoQAnhyoFfn6SfSRuDGhr94pv"));

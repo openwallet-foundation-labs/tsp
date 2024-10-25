@@ -1,4 +1,5 @@
 import { Identity } from './useStore';
+import { base58btc } from "multiformats/bases/base58";
 
 export function bufferToBase64(buffer: Uint8Array): string {
   const base64url = btoa(String.fromCodePoint(...buffer));
@@ -37,4 +38,12 @@ export function humanFileSize(size: number) {
   const value = (size / Math.pow(1024, i)).toFixed(1);
 
   return `${value} ${unit}`;
+}
+
+export function decode58btc(input: string): string {
+  const buffer = base58btc.decode(input);
+
+  console.log(buffer);
+
+  return bufferToBase64(buffer.slice(2));
 }
