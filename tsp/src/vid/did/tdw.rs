@@ -45,7 +45,7 @@ pub async fn resolve(id: &str, parts: Vec<&str>) -> Result<Vid, VidError> {
     };
 
     // At this time there is no servce/transport in the TDW document
-    let transport = format!("{PROTOCOL}{}/user/{}", parts[3], parts[2]);
+    let transport = format!("{PROTOCOL}tsp-test.org/user/{}", parts[2]);
 
     let sig_key_id = &did_document.doc.authentication[0];
     let enc_key_id = &did_document.doc.key_agreement[0];
