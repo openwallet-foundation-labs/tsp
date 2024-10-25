@@ -6,7 +6,7 @@ import {
   verify_vid,
   probe_message,
 } from '../pkg/tsp_demo';
-import { bufferToBase64, humanFileSize } from './util';
+import { bufferToBase64, decode58btc, humanFileSize } from './util';
 import ReconnectingWebSocket from 'reconnecting-websocket';
 
 const TIMESTAMP_SERVER = {
@@ -15,6 +15,8 @@ const TIMESTAMP_SERVER = {
   publicSigkey: 'HR76y6YG5BWHbj4UQsqX-5ybQPjtETiaZFa4LHWaI68',
   transport: 'https://tsp-test.org/timestamp',
 };
+
+export type DidType = 'web' | 'peer' | 'tdw';
 
 export interface Identity {
   label: string;
@@ -179,14 +181,16 @@ function reducer(state: State, action: Action): State {
   }
 }
 
+
+
 export default function useStore() {
   const ws = useRef<ReconnectingWebSocket | null>(null);
   const store = useRef<Store>(new Store());
   const [state, dispatch] = useReducer(reducer, loadState());
 
-  const createIdentity = async (label: string, web: boolean) => {
+  const createIdentity = async (label: string, didType: DidType) => {
     try {
-      if (web) {
+      if (didType === 'web') {
         const data = new URLSearchParams();
         data.append('name', label);
         let result = await fetch('https://tsp-test.org/create-identity', {
@@ -201,11 +205,28 @@ export default function useStore() {
         const id = { label, vid: vidData };
         store.current.add_private_vid(vid.create_clone());
         dispatch({ type: 'setId', id });
-      } else {
+      } else if (didType === 'peer') {
         const vid = OwnedVid.new_did_peer(
           `https://tsp-test.org/user/${label.toLowerCase()}`
         );
         const id = { label, vid: JSON.parse(vid.to_json()) };
+        store.current.add_private_vid(vid.create_clone());
+        dispatch({ type: 'setId', id });
+      } else if (didType === 'tdw') {
+        let result = await fetch('https://tdw.tsp-test.org/create');
+        let didDoc = await result.json();
+
+        const vidData = {
+          id: didDoc.public.did,
+          transport: `https://tsp-test.org/user/${label}`,
+          publicSigkey: decode58btc(didDoc.private.authKey.publicKeyMultibase),
+          publicEnckey: decode58btc(didDoc.private.agreementKey.publicKeyMultibase),
+          sigkey: decode58btc(didDoc.private.authKey.secretKeyMultibase),
+          enckey: decode58btc(didDoc.private.agreementKey.secretKeyMultibase),
+        };
+
+        const vid = OwnedVid.from_json(JSON.stringify(vidData));
+        const id = { label, vid: vidData };
         store.current.add_private_vid(vid.create_clone());
         dispatch({ type: 'setId', id });
       }
