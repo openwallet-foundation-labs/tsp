@@ -142,7 +142,7 @@ pub enum Payload<'a, Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]> = Bytes> {
     },
 }
 
-impl<'a, Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]>> Payload<'a, Bytes, MaybeMutBytes> {
+impl<Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]>> Payload<'_, Bytes, MaybeMutBytes> {
     pub fn as_bytes(&self) -> &[u8] {
         match self {
             Payload::Content(bytes) => bytes.as_ref(),
@@ -159,7 +159,7 @@ impl<'a, Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]>> Payload<'a, Bytes, Mayb
     }
 }
 
-impl<'a, Bytes: AsRef<[u8]>> fmt::Display for Payload<'a, Bytes> {
+impl<Bytes: AsRef<[u8]>> fmt::Display for Payload<'_, Bytes> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Payload::Content(bytes) => {

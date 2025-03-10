@@ -1,7 +1,7 @@
 /// Constants that determine the specific CESR types for "variable length data"
 const TSP_PLAINTEXT: u32 = (b'B' - b'A') as u32;
 const TSP_CIPHERTEXT: u32 = (b'C' - b'A') as u32;
-const TSP_DEVELOPMENT_VID: u32 = (21 << 6 | 8) << 6 | 3; // "VID"
+const TSP_DEVELOPMENT_VID: u32 = (((21 << 6) | 8) << 6) | 3; // "VID"
 
 /// Constants that determine the specific CESR types for "fixed length data"
 const TSP_TYPECODE: u32 = (b'X' - b'A') as u32;
@@ -53,7 +53,7 @@ pub enum Digest<'a> {
     Blake2b256(&'a [u8; 32]),
 }
 
-impl<'a> Digest<'a> {
+impl Digest<'_> {
     pub fn as_bytes(&self) -> &[u8; 32] {
         match self {
             Digest::Sha2_256(bytes) => bytes,
@@ -98,7 +98,7 @@ pub enum Payload<'a, Bytes, Vid> {
     RelationshipCancel { reply: Digest<'a> },
 }
 
-impl<'a, Bytes: AsRef<[u8]>, Vid: AsRef<[u8]>> Payload<'a, Bytes, Vid> {
+impl<Bytes: AsRef<[u8]>, Vid: AsRef<[u8]>> Payload<'_, Bytes, Vid> {
     pub fn calculate_size(&self, sender_identity: Option<&[u8]>) -> usize {
         struct Count(usize);
         impl<'a> std::iter::Extend<&'a u8> for Count {
