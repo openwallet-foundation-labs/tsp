@@ -587,8 +587,8 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
                 message_type,
             } => {
                 this.sender = Some(sender);
-                this.nonconfidential_data = Some(nonconfidential_data);
-                this.message = Some(message);
+                this.nonconfidential_data = Some(nonconfidential_data.map(Into::into));
+                this.message = Some(message.into());
                 this.crypto_type = match message_type.crypto_type {
                     tsp::cesr::CryptoType::Plaintext => Some(CryptoType::Plaintext),
                     tsp::cesr::CryptoType::HpkeAuth => Some(CryptoType::HpkeAuth),
@@ -638,8 +638,8 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
             } => {
                 this.sender = Some(sender);
                 this.next_hop = Some(next_hop);
-                this.route = Some(Some(route));
-                this.opaque_payload = Some(opaque_payload);
+                this.route = Some(Some(route.into_iter().map(Into::into).collect()));
+                this.opaque_payload = Some(opaque_payload.into());
             }
             #[cfg(not(target_arch = "wasm32"))]
             tsp::ReceivedTspMessage::PendingMessage { .. } => {

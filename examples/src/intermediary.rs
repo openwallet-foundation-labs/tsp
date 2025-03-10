@@ -152,7 +152,7 @@ async fn websocket_handler(
                         state.domain
                     );
 
-                    let _ = ws_send.send(Message::Binary(message)).await;
+                    let _ = ws_send.send(Message::Binary(Bytes::from(message))).await;
                 }
             }
         }

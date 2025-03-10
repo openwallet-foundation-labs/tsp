@@ -4,6 +4,7 @@ use crate::{
     store::Store,
     ExportVid, OwnedVid, PrivateVid,
 };
+use bytes::BytesMut;
 use futures::StreamExt;
 use url::Url;
 
@@ -408,7 +409,7 @@ impl AsyncStore {
     pub async fn verify_and_open(
         &mut self,
         vid: &str,
-        mut payload: Vec<u8>,
+        mut payload: BytesMut,
     ) -> Result<ReceivedTspMessage, Error> {
         self.verify_vid(vid).await?;
 

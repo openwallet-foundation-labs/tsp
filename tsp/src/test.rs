@@ -58,7 +58,7 @@ async fn test_direct_mode() {
         crate::cesr::SignatureType::NoSignature
     );
 
-    assert_eq!(message, b"hello world");
+    assert_eq!(message.iter().as_slice(), b"hello world");
 }
 
 #[tokio::test]
@@ -180,7 +180,7 @@ async fn test_anycast() {
         crate::cesr::SignatureType::NoSignature
     );
 
-    assert_eq!(message, b"hello world");
+    assert_eq!(message.iter().as_slice(), b"hello world");
 }
 
 #[tokio::test]
@@ -272,7 +272,7 @@ async fn test_nested_mode() {
         crate::cesr::SignatureType::NoSignature
     );
 
-    assert_eq!(&message, b"hello nested world");
+    assert_eq!(message.iter().as_slice(), b"hello nested world");
 }
 
 #[tokio::test]
@@ -354,7 +354,13 @@ async fn test_routed_mode() {
 
     assert_eq!(sender, "did:web:did.tsp-test.org:user:alice");
     assert_eq!(next_hop, "did:web:did.tsp-test.org:user:alice");
-    assert_eq!(route, vec![b"did:web:hidden.web:user:realbob"]);
+    assert_eq!(
+        route
+            .iter()
+            .map(|b| b.iter().as_slice())
+            .collect::<Vec<_>>(),
+        vec![b"did:web:hidden.web:user:realbob"]
+    );
 
     // let alice listen
     let mut alice_messages = alice_db
@@ -459,7 +465,7 @@ async fn test_routed_mode() {
     );
 
     assert_eq!(sender, "did:web:did.tsp-test.org:user:alice");
-    assert_eq!(message, b"hello self (via bob)");
+    assert_eq!(message.iter().as_slice(), b"hello self (via bob)");
 }
 
 #[tokio::test]
@@ -513,7 +519,10 @@ async fn attack_failures() {
             // confirm that opening the pending message also fails
             // (We cannot test this exhaustively -- but because the cryptographic material for this
             // message does not belong to the corrupted vid, it should reliably always fail)
-            assert!(bob_db.verify_and_open(&unknown_vid, payload).await.is_err());
+            assert!(bob_db
+                .verify_and_open(&unknown_vid, payload.into())
+                .await
+                .is_err());
         };
     }
 }

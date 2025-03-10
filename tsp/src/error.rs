@@ -33,7 +33,7 @@ pub enum Error {
     UnverifiedVid(String),
     #[cfg(feature = "async")]
     #[error("Error: no relation with sender {0}")]
-    UnverifiedSource(String, Option<Vec<u8>>),
+    UnverifiedSource(String, Option<bytes::BytesMut>),
     #[cfg(not(feature = "async"))]
     #[error("Error: no relation with sender {0}")]
     UnverifiedSource(String),

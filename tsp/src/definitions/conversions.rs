@@ -1,4 +1,5 @@
 use super::ReceivedTspMessage;
+use bytes::BytesMut;
 
 // Rust, there has to be a better way.
 impl<T: AsRef<[u8]>> ReceivedTspMessage<T> {
@@ -7,7 +8,7 @@ impl<T: AsRef<[u8]>> ReceivedTspMessage<T> {
     // We only offer this version as the 'public' version, since the second can be confusing
     pub fn into_owned(self) -> ReceivedTspMessage
     where
-        T: Into<Vec<u8>>,
+        T: Into<BytesMut>,
     {
         self.map(|x| x.into())
     }

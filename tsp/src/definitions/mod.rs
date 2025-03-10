@@ -1,3 +1,4 @@
+use bytes::BytesMut;
 use core::fmt;
 use std::{fmt::Debug, ops::Deref};
 use zeroize::Zeroize;
@@ -66,7 +67,7 @@ pub enum RelationshipStatus {
 }
 
 #[derive(Debug)]
-pub enum ReceivedTspMessage<Data: AsRef<[u8]> = Vec<u8>> {
+pub enum ReceivedTspMessage<Data: AsRef<[u8]> = BytesMut> {
     GenericMessage {
         sender: String,
         nonconfidential_data: Option<Data>,
@@ -89,8 +90,8 @@ pub enum ReceivedTspMessage<Data: AsRef<[u8]> = Vec<u8>> {
     ForwardRequest {
         sender: String,
         next_hop: String,
-        route: Vec<Vec<u8>>,
-        opaque_payload: Vec<u8>,
+        route: Vec<BytesMut>,
+        opaque_payload: BytesMut,
     },
     NewIdentifier {
         sender: String,
@@ -103,7 +104,7 @@ pub enum ReceivedTspMessage<Data: AsRef<[u8]> = Vec<u8>> {
     #[cfg(feature = "async")]
     PendingMessage {
         unknown_vid: String,
-        payload: Vec<u8>,
+        payload: BytesMut,
     },
 }
 

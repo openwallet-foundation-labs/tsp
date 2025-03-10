@@ -57,7 +57,7 @@
 //!         panic!("bob did not receive a generic message")
 //!     };
 //!
-//!     assert_eq!(message, b"hello world");
+//!     assert_eq!(message.iter().as_slice(), b"hello world");
 //!
 //!     Ok(())
 //! }

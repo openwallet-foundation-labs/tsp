@@ -532,7 +532,7 @@ async fn websocket_vid_handler(
         async move {
             while let Ok((_, receiver, message)) = messages_rx.recv().await {
                 if receiver == vid {
-                    let _ = ws_send.send(Message::Binary(message)).await;
+                    let _ = ws_send.send(Message::Binary(Bytes::from(message))).await;
                 }
             }
         }
@@ -556,7 +556,7 @@ async fn websocket_user_handler(
         async move {
             while let Ok((_, receiver, message)) = messages_rx.recv().await {
                 if receiver == current {
-                    let _ = ws_send.send(Message::Binary(message)).await;
+                    let _ = ws_send.send(Message::Binary(Bytes::from(message))).await;
                 }
             }
         }
@@ -612,7 +612,7 @@ async fn websocket(stream: WebSocket, state: Arc<AppState>) {
             };
 
             if sender
-                .send(Message::Text(decoded.to_string()))
+                .send(Message::Text(decoded.to_string().into()))
                 .await
                 .is_err()
             {

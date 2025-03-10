@@ -1,4 +1,5 @@
 use base64ct::{Base64Unpadded, Base64UrlUnpadded, Encoding};
+use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -434,8 +435,8 @@ async fn run() -> Result<(), Error> {
             enum Action {
                 Nothing,
                 Verify(String),
-                VerifyAndOpen(String, Vec<u8>),
-                Forward(String, Vec<Vec<u8>>, Vec<u8>),
+                VerifyAndOpen(String, BytesMut),
+                Forward(String, Vec<BytesMut>, BytesMut),
             }
 
             while let Some(Ok(message)) = messages.next().await {

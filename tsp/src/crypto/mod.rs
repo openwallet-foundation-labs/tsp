@@ -3,10 +3,10 @@ use crate::definitions::{
     Digest, NonConfidentialData, Payload, PrivateKeyData, PrivateSigningKeyData, PrivateVid,
     PublicKeyData, PublicVerificationKeyData, TSPMessage, VerifiedVid,
 };
+use ed25519_dalek::ed25519::signature::rand_core::OsRng;
 
 pub use digest::blake2b256;
 pub use digest::sha256;
-use rand::rngs::OsRng;
 
 mod digest;
 pub mod error;

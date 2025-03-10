@@ -1,4 +1,5 @@
 use async_stream::stream;
+use bytes::BytesMut;
 use futures::StreamExt;
 use tokio::{io::AsyncWriteExt, net::TcpListener};
 use tokio_util::codec::{BytesCodec, Framed};
@@ -35,7 +36,7 @@ pub(crate) async fn send_message(tsp_message: &[u8], url: &Url) -> Result<(), Tr
 /// Listens on the specified transport port and yields messages as they arrive
 pub(crate) async fn receive_messages(
     address: &Url,
-) -> Result<TSPStream<Vec<u8>, TransportError>, TransportError> {
+) -> Result<TSPStream<BytesMut, TransportError>, TransportError> {
     let addresses = address
         .socket_addrs(|| None)
         .map_err(|_| TransportError::InvalidTransportAddress(address.to_string()))?;
@@ -53,7 +54,7 @@ pub(crate) async fn receive_messages(
             let mut messages = Framed::new(stream, BytesCodec::new());
 
             while let Some(m) = messages.next().await {
-                yield m.map(|m| m.to_vec()).map_err(|e| TransportError::Connection(addr.to_string(), e));
+                yield m.map_err(|e| TransportError::Connection(addr.to_string(), e));
             }
         }
     }))
@@ -75,6 +76,6 @@ mod test {
         send_message(message, &url).await.unwrap();
         let received_message = incoming_stream.next().await.unwrap().unwrap();
 
-        assert_eq!(message, received_message.as_slice());
+        assert_eq!(message, received_message.iter().as_slice());
     }
 }
