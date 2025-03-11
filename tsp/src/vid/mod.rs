@@ -1,9 +1,9 @@
 use crate::{
+    RelationshipStatus,
     definitions::{
         PrivateKeyData, PrivateSigningKeyData, PrivateVid, PublicKeyData,
         PublicVerificationKeyData, VerifiedVid,
     },
-    RelationshipStatus,
 };
 
 #[cfg(feature = "serialize")]

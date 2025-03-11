@@ -1,13 +1,13 @@
 use crate::{
+    Error, ExportVid, RelationshipStatus,
     definitions::{
         PRIVATE_KEY_SIZE, PRIVATE_SIGNING_KEY_SIZE, PUBLIC_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE,
     },
-    Error, ExportVid, RelationshipStatus,
 };
 use aries_askar::{
+    ErrorKind, StoreKeyMethod,
     entry::EntryOperation,
     kms::{KeyAlg, LocalKey},
-    ErrorKind, StoreKeyMethod,
 };
 use serde::{Deserialize, Serialize};
 

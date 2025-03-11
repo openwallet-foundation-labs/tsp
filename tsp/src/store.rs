@@ -1,4 +1,5 @@
 use crate::{
+    ExportVid, OwnedVid,
     cesr::EnvelopeType,
     crypto::CryptoError,
     definitions::{
@@ -6,8 +7,7 @@ use crate::{
         VerifiedVid,
     },
     error::Error,
-    vid::{resolve::verify_vid_offline, VidError},
-    ExportVid, OwnedVid,
+    vid::{VidError, resolve::verify_vid_offline},
 };
 use bytes::{Bytes, BytesMut};
 use std::{
@@ -678,7 +678,7 @@ impl Store {
                                 RelationshipStatus::_Controlled => {
                                     return Err(Error::Relationship(
                                         "you cannot cancel a relationship with yourself".into(),
-                                    ))
+                                    ));
                                 }
                                 RelationshipStatus::Unrelated => {}
                             }
@@ -884,7 +884,7 @@ impl Store {
             RelationshipStatus::Bidirectional { thread_id, .. } => thread_id,
             RelationshipStatus::Unidirectional { thread_id } => thread_id,
             RelationshipStatus::_Controlled | RelationshipStatus::Unrelated => {
-                return Err(Error::Relationship("no relationship to cancel".into()))
+                return Err(Error::Relationship("no relationship to cancel".into()));
             }
         };
 

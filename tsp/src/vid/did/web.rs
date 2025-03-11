@@ -1,10 +1,10 @@
-use crate::definitions::{VerifiedVid, PUBLIC_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE};
+use crate::definitions::{PUBLIC_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE, VerifiedVid};
 use base64ct::{Base64UrlUnpadded, Encoding};
 use serde::Deserialize;
 use serde_json::json;
 use url::Url;
 
-use crate::vid::{error::VidError, OwnedVid, Vid};
+use crate::vid::{OwnedVid, Vid, error::VidError};
 
 pub(crate) const SCHEME: &str = "web";
 
@@ -166,7 +166,7 @@ pub fn resolve_document(did_document: DidDocument, target_id: &str) -> Result<Vi
         None => {
             return Err(VidError::ResolveVid(
                 "No transport found in the DID document",
-            ))
+            ));
         }
     };
 
@@ -277,8 +277,8 @@ mod tests {
     #[wasm_bindgen_test]
     fn test_resolve_document() {
         use crate::{
-            vid::did::web::{resolve_document, DidDocument},
             VerifiedVid,
+            vid::did::web::{DidDocument, resolve_document},
         };
 
         let alice_did_doc = include_str!(concat!(

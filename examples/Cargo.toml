@@ -37,3 +37,4 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 bytes = { workspace = true }
 url = { workspace = true}
+rustls = { workspace = true }

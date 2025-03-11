@@ -2,8 +2,8 @@ use async_stream::stream;
 use bytes::{Bytes, BytesMut};
 use once_cell::sync::Lazy;
 use quinn::{
-    crypto::rustls::{QuicClientConfig, QuicServerConfig},
     ClientConfig, Endpoint,
+    crypto::rustls::{QuicClientConfig, QuicServerConfig},
 };
 use std::{
     net::{Ipv4Addr, Ipv6Addr, SocketAddr},

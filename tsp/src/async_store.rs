@@ -1,8 +1,8 @@
 use crate::{
+    ExportVid, OwnedVid, PrivateVid,
     definitions::{Digest, ReceivedTspMessage, TSPStream, VerifiedVid},
     error::Error,
     store::Store,
-    ExportVid, OwnedVid, PrivateVid,
 };
 use bytes::BytesMut;
 use futures::StreamExt;

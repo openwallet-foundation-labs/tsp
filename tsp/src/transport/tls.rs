@@ -2,7 +2,7 @@ use async_stream::stream;
 use bytes::{Bytes, BytesMut};
 use futures::StreamExt;
 use once_cell::sync::Lazy;
-use rustls::{crypto::CryptoProvider, ClientConfig, RootCertStore};
+use rustls::{ClientConfig, RootCertStore, crypto::CryptoProvider};
 use rustls_pki_types::ServerName;
 use std::sync::Arc;
 use tokio::{io::AsyncWriteExt, net::TcpListener, sync::mpsc};

@@ -12,4 +12,3 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = { version = "0.24.0" }
 tsp.workspace = true
-tokio.workspace = true

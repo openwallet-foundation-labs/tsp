@@ -1,4 +1,4 @@
-use crate::{definitions::VerifiedVid, vid::error::VidError, Vid};
+use crate::{Vid, definitions::VerifiedVid, vid::error::VidError};
 use base64ct::{Base64UrlUnpadded, Encoding};
 use serde_json::json;
 use url::Url;

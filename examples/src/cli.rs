@@ -2,13 +2,14 @@ use base64ct::{Base64Unpadded, Base64UrlUnpadded, Encoding};
 use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use futures::StreamExt;
+use rustls::crypto::CryptoProvider;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 use tokio::io::AsyncReadExt;
 use tracing::{info, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp::{
-    cesr::Part, AsyncStore, Error, ExportVid, OwnedVid, ReceivedTspMessage, Vault, VerifiedVid,
+    AsyncStore, Error, ExportVid, OwnedVid, ReceivedTspMessage, Vault, VerifiedVid, cesr::Part,
 };
 
 #[derive(Debug, Parser)]
@@ -263,6 +264,9 @@ async fn run() -> Result<(), Error> {
         )
         .init();
 
+    CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider())
+        .expect("Failed to install crypto provider");
+
     let (vault, mut vid_database, mut aliases) =
         read_database(&args.database, &args.password).await?;
     let server: String = args.server;
@@ -495,14 +499,18 @@ async fn run() -> Result<(), Error> {
                             nested_vid: Some(vid),
                         } => {
                             let thread_id = Base64Unpadded::encode_string(&thread_id);
-                            info!("received nested relationship request from '{vid}' (new identity for {sender}), thread-id '{thread_id}'");
+                            info!(
+                                "received nested relationship request from '{vid}' (new identity for {sender}), thread-id '{thread_id}'"
+                            );
                             println!("{vid}\t{thread_id}");
                         }
                         ReceivedTspMessage::AcceptRelationship {
                             sender,
                             nested_vid: Some(vid),
                         } => {
-                            info!("received accept nested relationship from '{vid}' (new identity for {sender})");
+                            info!(
+                                "received accept nested relationship from '{vid}' (new identity for {sender})"
+                            );
                             println!("{vid}");
                         }
                         ReceivedTspMessage::CancelRelationship { sender } => {
@@ -514,7 +522,10 @@ async fn run() -> Result<(), Error> {
                             next_hop,
                             opaque_payload,
                         } => {
-                            info!("messaging forwarding request from {sender} to {next_hop} ({} hops)", route.len());
+                            info!(
+                                "messaging forwarding request from {sender} to {next_hop} ({} hops)",
+                                route.len()
+                            );
                             if args.yes
                                 || prompt("do you want to forward this message?".to_string())
                             {
@@ -626,9 +637,9 @@ async fn run() -> Result<(), Error> {
                 {
                     Ok(vid) => {
                         tracing::info!(
-			    "sent a nested relationship request to {receiver_vid} with new identity '{}'",
-			    vid.identifier()
-                    );
+                            "sent a nested relationship request to {receiver_vid} with new identity '{}'",
+                            vid.identifier()
+                        );
                         println!("{}", vid.identifier());
                     }
                     Err(e) => {
@@ -668,9 +679,9 @@ async fn run() -> Result<(), Error> {
                 {
                     Ok(vid) => {
                         tracing::info!(
-			    "formed a nested relationship with {receiver_vid} with new identity '{}'",
-			    vid.identifier()
-			);
+                            "formed a nested relationship with {receiver_vid} with new identity '{}'",
+                            vid.identifier()
+                        );
                     }
                     Err(e) => {
                         tracing::error!(

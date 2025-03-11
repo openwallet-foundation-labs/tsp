@@ -5,14 +5,14 @@ exclude = ["demo"]
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/openwallet-foundation-labs/tsp"
 homepage = "https://github.com/openwallet-foundation-labs/tsp"
 readme = "./README.md"
 description = "Rust implementation of the Trust Spanning Protocol"
 publish = false
-rust-version = "1.77"
+rust-version = "1.85"
 
 [workspace.dependencies]
 # generic

@@ -519,10 +519,12 @@ async fn attack_failures() {
             // confirm that opening the pending message also fails
             // (We cannot test this exhaustively -- but because the cryptographic material for this
             // message does not belong to the corrupted vid, it should reliably always fail)
-            assert!(bob_db
-                .verify_and_open(&unknown_vid, payload.into())
-                .await
-                .is_err());
+            assert!(
+                bob_db
+                    .verify_and_open(&unknown_vid, payload.into())
+                    .await
+                    .is_err()
+            );
         };
     }
 }
