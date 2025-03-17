@@ -919,23 +919,6 @@ pub fn decode_tsp_message<'a, Vid: TryFrom<&'a [u8]>>(
 where
     <Vid as TryFrom<&'a [u8]>>::Error: std::fmt::Debug,
 {
-    // let (
-    //     DecodedEnvelope {
-    //         envelope:
-    //         Envelope {
-    //             sender,
-    //             receiver,
-    //             nonconfidential_data,
-    //         },
-    //         ciphertext,
-    //         ..
-    //     },
-    //     VerificationChallenge {
-    //         signed_data,
-    //         signature,
-    //     },
-    // ) = ;
-
     let CipherView {
         data,
         sender,

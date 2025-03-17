@@ -47,7 +47,7 @@ tokio = { version = "1.0", default-features = false, features = [
     "net",
     "macros",
 ] }
-aries-askar = { version = "0.4.0", default-features = false, features = [ "sqlite" ] }
+aries-askar = { version = "0.4.0", default-features = false, features = ["sqlite"] }
 # logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.1", default-features = false, features = [
@@ -69,7 +69,7 @@ tokio-rustls = "0.26"
 rustls-pki-types = "1.7"
 rustls-native-certs = "0.8.1"
 rustls-pemfile = "2.1"
-quinn = "0.11"
+quinn = { version = "0.11", default-features = false, features = ["log", "runtime-tokio", "rustls-aws-lc-rs"] }
 # resolve
 reqwest = { version = "0.12.12", default-features = false, features = [
     "rustls-tls-native-roots",
