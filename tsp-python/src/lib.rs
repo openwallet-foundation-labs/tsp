@@ -35,6 +35,7 @@ impl Store {
         self.0.add_verified_vid(vid.0).map_err(py_exception)
     }
 
+    #[pyo3(signature = (vid, relation_vid=None))]
     fn set_relation_for_vid(&self, vid: String, relation_vid: Option<String>) -> PyResult<()> {
         self.0
             .set_relation_for_vid(&vid, relation_vid.as_deref())
@@ -208,8 +209,8 @@ impl Store {
     }
 }
 
-#[pyclass]
-#[derive(Debug, Clone, Copy)]
+#[pyclass(eq, eq_int)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum ReceivedTspMessageVariant {
     GenericMessage,
     RequestRelationship,
@@ -236,8 +237,8 @@ impl From<&tsp::ReceivedTspMessage> for ReceivedTspMessageVariant {
     }
 }
 
-#[pyclass]
-#[derive(Debug, Clone, Copy)]
+#[pyclass(eq, eq_int)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CryptoType {
     Plaintext = 0,
     HpkeAuth = 1,
@@ -246,8 +247,8 @@ pub enum CryptoType {
     NaclEssr = 4,
 }
 
-#[pyclass]
-#[derive(Debug, Clone, Copy)]
+#[pyclass(eq, eq_int)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SignatureType {
     NoSignature = 0,
     Ed25519 = 1,
