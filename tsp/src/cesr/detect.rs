@@ -14,6 +14,7 @@ pub fn to_binary(data: &mut [u8]) -> Option<&[u8]> {
 mod test {
     use super::to_binary;
     use base64ct::{Base64UrlUnpadded, Encoding};
+    use wasm_bindgen_test::wasm_bindgen_test;
 
     #[test]
     #[wasm_bindgen_test]
@@ -23,7 +24,7 @@ mod test {
         assert_eq!(to_binary(&mut binary.clone()).unwrap(), binary);
         assert_eq!(to_binary(&mut base64.clone()).unwrap(), binary);
 
-        assert!(to_binary(b"AAAA").is_none());
-        assert!(to_binary([0, 0, 0]).is_none());
+        assert!(to_binary(&mut b"AAAA".to_vec()).is_none());
+        assert!(to_binary(&mut [0, 0, 0]).is_none());
     }
 }

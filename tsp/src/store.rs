@@ -1,4 +1,5 @@
 use crate::{
+    ExportVid, OwnedVid,
     cesr::EnvelopeType,
     crypto::CryptoError,
     definitions::{
@@ -6,9 +7,11 @@ use crate::{
         VerifiedVid,
     },
     error::Error,
-    vid::{resolve::verify_vid_offline, VidError},
-    ExportVid, OwnedVid,
+    vid::{VidError, resolve::verify_vid_offline},
 };
+#[cfg(feature = "async")]
+use bytes::Bytes;
+use bytes::BytesMut;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
@@ -554,7 +557,7 @@ impl Store {
         })
     }
 
-    /// Decode an encrypted `message``, which has to be addressed to one of the VIDs in `receivers`, and has to have
+    /// Decode an encrypted `message`, which has to be addressed to one of the VIDs in `receivers`, and has to have
     /// `verified_vids` as one of the senders.
     pub fn open_message<'a>(
         &self,
@@ -606,7 +609,7 @@ impl Store {
                             return Err(Error::UnverifiedSource(
                                 inner_vid.to_owned(),
                                 #[cfg(feature = "async")]
-                                Some(inner.to_vec()),
+                                Some(Bytes::from(inner.to_vec()).into()),
                             ));
                         }
 
@@ -637,8 +640,11 @@ impl Store {
                         Ok(ReceivedTspMessage::ForwardRequest {
                             sender,
                             next_hop: next_hop.to_string(),
-                            route: hops[1..].iter().map(|x| x.to_vec()).collect(),
-                            opaque_payload: message.to_owned(),
+                            route: hops[1..]
+                                .iter()
+                                .map(|x| BytesMut::from_iter(x.iter()))
+                                .collect(),
+                            opaque_payload: BytesMut::from_iter(message.iter()),
                         })
                     }
                     Payload::RequestRelationship { route, thread_id } => {
@@ -674,7 +680,7 @@ impl Store {
                                 RelationshipStatus::_Controlled => {
                                     return Err(Error::Relationship(
                                         "you cannot cancel a relationship with yourself".into(),
-                                    ))
+                                    ));
                                 }
                                 RelationshipStatus::Unrelated => {}
                             }
@@ -880,7 +886,7 @@ impl Store {
             RelationshipStatus::Bidirectional { thread_id, .. } => thread_id,
             RelationshipStatus::Unidirectional { thread_id } => thread_id,
             RelationshipStatus::_Controlled | RelationshipStatus::Unrelated => {
-                return Err(Error::Relationship("no relationship to cancel".into()))
+                return Err(Error::Relationship("no relationship to cancel".into()));
             }
         };
 
@@ -1502,7 +1508,7 @@ mod test {
         let (_url, mut sealed) = b_store
             .forward_routed_message(
                 &next_hop,
-                route.iter().map(|s| s.as_slice()).collect(),
+                route.iter().map(|s| s.iter().as_slice()).collect(),
                 &opaque_payload,
             )
             .unwrap();
@@ -1523,7 +1529,7 @@ mod test {
         let (_url, mut sealed) = c_store
             .forward_routed_message(
                 &next_hop,
-                route.iter().map(|s| s.as_slice()).collect(),
+                route.iter().map(|s| s.iter().as_slice()).collect(),
                 &opaque_payload,
             )
             .unwrap();

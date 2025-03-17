@@ -1,13 +1,13 @@
 use axum::{
+    Form, Json, Router,
     body::Bytes,
     extract::{
-        ws::{Message, WebSocket},
         DefaultBodyLimit, Path, State, WebSocketUpgrade,
+        ws::{Message, WebSocket},
     },
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
-    Form, Json, Router,
 };
 use base64ct::{Base64UrlUnpadded, Encoding};
 use core::time;
@@ -20,12 +20,12 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{RwLock, broadcast};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp::{
+    AsyncStore, Store,
     definitions::{Payload, VerifiedVid},
     vid::{OwnedVid, Vid},
-    AsyncStore, Store,
 };
 
 use crate::intermediary::start_intermediary;
@@ -111,10 +111,10 @@ async fn main() {
         .route("/create-identity", post(create_identity))
         .route("/verify-vid", post(verify_vid))
         .route("/add-vid", post(add_vid))
-        .route("/user/:name/did.json", get(get_did_doc))
-        .route("/vid/:vid", get(websocket_vid_handler))
-        .route("/user/:user", get(websocket_user_handler))
-        .route("/user/:user", post(route_message))
+        .route("/user/{name}/did.json", get(get_did_doc))
+        .route("/vid/{vid}", get(websocket_vid_handler))
+        .route("/user/{user}", get(websocket_user_handler))
+        .route("/user/{user}", post(route_message))
         .route("/sign-timestamp", post(sign_timestamp))
         .route("/send-message", post(send_message))
         .route("/receive-messages", get(websocket_handler))
@@ -532,7 +532,7 @@ async fn websocket_vid_handler(
         async move {
             while let Ok((_, receiver, message)) = messages_rx.recv().await {
                 if receiver == vid {
-                    let _ = ws_send.send(Message::Binary(message)).await;
+                    let _ = ws_send.send(Message::Binary(Bytes::from(message))).await;
                 }
             }
         }
@@ -556,7 +556,7 @@ async fn websocket_user_handler(
         async move {
             while let Ok((_, receiver, message)) = messages_rx.recv().await {
                 if receiver == current {
-                    let _ = ws_send.send(Message::Binary(message)).await;
+                    let _ = ws_send.send(Message::Binary(Bytes::from(message))).await;
                 }
             }
         }
@@ -612,7 +612,7 @@ async fn websocket(stream: WebSocket, state: Arc<AppState>) {
             };
 
             if sender
-                .send(Message::Text(decoded.to_string()))
+                .send(Message::Text(decoded.to_string().into()))
                 .await
                 .is_err()
             {

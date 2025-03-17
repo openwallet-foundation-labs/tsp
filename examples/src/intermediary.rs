@@ -1,10 +1,10 @@
 use axum::{
+    Router,
     body::Bytes,
-    extract::{ws::Message, Path, State, WebSocketUpgrade},
+    extract::{Path, State, WebSocketUpgrade, ws::Message},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
     routing::{get, post},
-    Router,
 };
 use futures::{sink::SinkExt, stream::StreamExt};
 use std::{
@@ -36,7 +36,10 @@ pub(crate) async fn start_intermediary(
     // Compose the routes
     let app = Router::new()
         .route("/", get(index))
-        .route("/transport/:name", post(new_message).get(websocket_handler))
+        .route(
+            "/transport/{name}",
+            post(new_message).get(websocket_handler),
+        )
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
@@ -152,7 +155,7 @@ async fn websocket_handler(
                         state.domain
                     );
 
-                    let _ = ws_send.send(Message::Binary(message)).await;
+                    let _ = ws_send.send(Message::Binary(Bytes::from(message))).await;
                 }
             }
         }

@@ -10,8 +10,8 @@ fn decode_fixed_data_index<const N: usize>(
 
     let word = match hdr_bytes {
         1 => bits(identifier, 6) << 18,
-        2 => D0 << 18 | bits(identifier, 6) << 12,
-        3 => D1 << 18 | bits(identifier, 18),
+        2 => (D0 << 18) | (bits(identifier, 6) << 12),
+        3 => (D1 << 18) | bits(identifier, 18),
         _ => unreachable!("unsigned integer arithmetic is broken"),
     };
 
@@ -67,7 +67,7 @@ pub fn decode_variable_data_index(
 
     match selector {
         D4 | D5 | D6 => {
-            found_id = input >> 12 & mask(6);
+            found_id = (input >> 12) & mask(6);
             size = input & mask(12);
         }
         D7 | D8 | D9 => {
@@ -129,12 +129,12 @@ pub fn decode_indexed_data<'a, const N: usize>(
     match hdr_bytes {
         1 => panic!("an indexed type can only have 0 or 2 lead bytes"),
         2 => {
-            index = input >> 12 & mask(6);
-            word = bits(identifier, 6) << 18 | bits(index, 6) << 12;
+            index = (input >> 12) & mask(6);
+            word = (bits(identifier, 6) << 18) | (bits(index, 6) << 12);
         }
         3 => {
             index = input & mask(12);
-            word = D0 << 18 | bits(identifier, 6) << 12 | bits(index, 12);
+            word = (D0 << 18) | (bits(identifier, 6) << 12) | bits(index, 12);
         }
         _ => unreachable!("unsigned integer arithmetic is broken"),
     };
@@ -157,7 +157,7 @@ pub fn decode_count(identifier: u16, stream: &mut &[u8]) -> Option<u16> {
     let word = extract_triplet(stream.get(0..=2)?.try_into().unwrap());
     let index = word & mask(12);
 
-    let expected = DASH << 18 | bits(identifier, 6) << 12 | bits(index, 12);
+    let expected = (DASH << 18) | (bits(identifier, 6) << 12) | bits(index, 12);
     if word == expected {
         *stream = &stream[3..];
 
@@ -183,9 +183,9 @@ pub fn decode_genus(
     (major, minor, patch): (u8, u8, u8),
     stream: &mut &[u8],
 ) -> Option<()> {
-    let version = bits(major, 6) << 12 | bits(minor, 6) << 6 | bits(patch, 6);
-    let word1 = DASH << 18 | DASH << 12 | bits(genus[0], 6) << 6 | bits(genus[1], 6);
-    let word2 = bits(genus[2], 6) << 18 | version;
+    let version = (bits(major, 6) << 12) | (bits(minor, 6) << 6) | bits(patch, 6);
+    let word1 = (DASH << 18) | (DASH << 12) | (bits(genus[0], 6) << 6) | bits(genus[1], 6);
+    let word2 = (bits(genus[2], 6) << 18) | version;
 
     (extract_triplet(stream.get(0..3)?.try_into().unwrap()) == word1).then_some(())?;
     (extract_triplet(stream.get(3..6)?.try_into().unwrap()) == word2).then_some(())?;

@@ -43,6 +43,7 @@ jobs:
         with:
           command: check
           arguments: --workspace
+          rust-version: '1.85'
 
   check-wasm32:
     runs-on: ubuntu-22.04
@@ -53,7 +54,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: '22'
       - name: Install wasm-pack
         run: cargo install wasm-pack
       - name: Run tests with wasm-pack

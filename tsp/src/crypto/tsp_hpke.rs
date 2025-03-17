@@ -12,20 +12,20 @@ use crate::{
 #[cfg(not(feature = "nacl"))]
 use ed25519_dalek::Signer;
 #[cfg(not(feature = "nacl"))]
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng};
 
 #[cfg(not(feature = "pq"))]
 use hpke::{
-    aead, kdf, kem, single_shot_open_in_place_detached, Deserializable, OpModeR, Serializable,
+    Deserializable, OpModeR, Serializable, aead, kdf, kem, single_shot_open_in_place_detached,
 };
 
 #[cfg(all(not(feature = "nacl"), not(feature = "pq")))]
-use hpke::{single_shot_seal_in_place_detached, OpModeS};
+use hpke::{OpModeS, single_shot_seal_in_place_detached};
 
 #[cfg(feature = "pq")]
 use hpke_pq::{
-    aead, kdf, kem, single_shot_open_in_place_detached, single_shot_seal_in_place_detached,
-    Deserializable, OpModeR, OpModeS, Serializable,
+    Deserializable, OpModeR, OpModeS, Serializable, aead, kdf, kem,
+    single_shot_open_in_place_detached, single_shot_seal_in_place_detached,
 };
 
 use super::{CryptoError, MessageContents};

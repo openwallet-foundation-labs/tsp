@@ -1,5 +1,6 @@
 use crate::definitions::TSPStream;
 use async_stream::stream;
+use bytes::BytesMut;
 use futures::StreamExt;
 use url::Url;
 
@@ -27,7 +28,7 @@ pub(crate) async fn send_message(tsp_message: &[u8], url: &Url) -> Result<(), Tr
 
 pub(crate) async fn receive_messages(
     address: &Url,
-) -> Result<TSPStream<Vec<u8>, TransportError>, TransportError> {
+) -> Result<TSPStream<BytesMut, TransportError>, TransportError> {
     let mut ws_address = address.clone();
 
     match address.scheme() {
@@ -37,7 +38,7 @@ pub(crate) async fn receive_messages(
     }
     .map_err(|_| TransportError::InvalidTransportScheme(address.scheme().to_owned()))?;
 
-    let ws_stream = match tokio_tungstenite::connect_async(&ws_address).await {
+    let ws_stream = match tokio_tungstenite::connect_async(ws_address.as_str()).await {
         Ok((stream, _)) => stream,
         Err(e) => return Err(TransportError::Websocket(ws_address.to_string(), e)),
     };
@@ -48,12 +49,13 @@ pub(crate) async fn receive_messages(
         while let Some(Ok(msg)) = receiver.next().await {
             match msg {
                 tokio_tungstenite::tungstenite::Message::Binary(b) => {
-                    yield Ok(b);
+                    yield Ok(b.into());
                 }
                 m => {
                     yield Err(TransportError::InvalidMessageReceived(
                         m
                             .into_text()
+                            .map(|m| m.to_string())
                             .map_err(|_| TransportError::InvalidMessageReceived("invalid UTF8 character encountered".to_string()))?
                     ));
                 }

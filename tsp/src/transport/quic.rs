@@ -1,8 +1,9 @@
 use async_stream::stream;
+use bytes::{Bytes, BytesMut};
 use once_cell::sync::Lazy;
 use quinn::{
-    crypto::rustls::{QuicClientConfig, QuicServerConfig},
     ClientConfig, Endpoint,
+    crypto::rustls::{QuicClientConfig, QuicServerConfig},
 };
 use std::{
     net::{Ipv4Addr, Ipv6Addr, SocketAddr},
@@ -91,7 +92,7 @@ pub(crate) async fn send_message(tsp_message: &[u8], url: &Url) -> Result<(), Tr
 /// combines them in a single stream. It uses an internal queue of 16 messages.
 pub(crate) async fn receive_messages(
     address: &Url,
-) -> Result<TSPStream<Vec<u8>, TransportError>, TransportError> {
+) -> Result<TSPStream<BytesMut, TransportError>, TransportError> {
     let addresses = address
         .socket_addrs(|| None)
         .map_err(|_| TransportError::InvalidTransportAddress(address.to_string()))?;
@@ -157,7 +158,7 @@ pub(crate) async fn receive_messages(
 
     Ok(Box::pin(stream! {
         while let Some(item) = rx.recv().await {
-            yield item;
+            yield item.map(Bytes::from).map(BytesMut::from);
         }
     }))
 }
@@ -178,6 +179,6 @@ mod tests {
 
         let received_message = incoming_stream.next().await.unwrap().unwrap();
 
-        assert_eq!(message, received_message.as_slice());
+        assert_eq!(message, received_message.iter().as_slice());
     }
 }

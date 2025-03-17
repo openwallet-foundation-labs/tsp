@@ -1,7 +1,7 @@
 /// Constants that determine the specific CESR types for "variable length data"
 const TSP_PLAINTEXT: u32 = (b'B' - b'A') as u32;
 const TSP_CIPHERTEXT: u32 = (b'C' - b'A') as u32;
-const TSP_DEVELOPMENT_VID: u32 = (21 << 6 | 8) << 6 | 3; // "VID"
+const TSP_DEVELOPMENT_VID: u32 = (((21 << 6) | 8) << 6) | 3; // "VID"
 
 /// Constants that determine the specific CESR types for "fixed length data"
 const TSP_TYPECODE: u32 = (b'X' - b'A') as u32;
@@ -39,6 +39,7 @@ use super::{
     encode::{encode_count, encode_fixed_data},
     error::{DecodeError, EncodeError},
 };
+use std::fmt::Debug;
 
 /// A type to enforce that a random nonce contains enough bits of security
 /// (128bits via a birthday attack -> 256bits needed)
@@ -53,7 +54,7 @@ pub enum Digest<'a> {
     Blake2b256(&'a [u8; 32]),
 }
 
-impl<'a> Digest<'a> {
+impl Digest<'_> {
     pub fn as_bytes(&self) -> &[u8; 32] {
         match self {
             Digest::Sha2_256(bytes) => bytes,
@@ -63,9 +64,9 @@ impl<'a> Digest<'a> {
 }
 
 impl Nonce {
-    pub fn generate(gen: impl FnOnce(&mut [u8; 32])) -> Nonce {
+    pub fn generate(g: impl FnOnce(&mut [u8; 32])) -> Nonce {
         let mut bytes = Default::default();
-        gen(&mut bytes);
+        g(&mut bytes);
 
         Nonce(bytes)
     }
@@ -98,7 +99,7 @@ pub enum Payload<'a, Bytes, Vid> {
     RelationshipCancel { reply: Digest<'a> },
 }
 
-impl<'a, Bytes: AsRef<[u8]>, Vid: AsRef<[u8]>> Payload<'a, Bytes, Vid> {
+impl<Bytes: AsRef<[u8]>, Vid: AsRef<[u8]>> Payload<'_, Bytes, Vid> {
     pub fn calculate_size(&self, sender_identity: Option<&[u8]>) -> usize {
         struct Count(usize);
         impl<'a> std::iter::Extend<&'a u8> for Count {
@@ -892,9 +893,11 @@ pub fn encode_tsp_message<Vid: AsRef<[u8]>>(
     encrypt: impl FnOnce(&Vid, Vec<u8>) -> Vec<u8>,
     sign: impl FnOnce(&Vid, &[u8]) -> Signature,
 ) -> Result<Vec<u8>, EncodeError> {
-    let mut cesr = encode_envelope_vec(Envelope {
+    let mut cesr = encode_ets_envelope_vec(Envelope {
+        crypto_type: CryptoType::HpkeAuth,
+        signature_type: SignatureType::Ed25519,
         sender,
-        receiver,
+        receiver: Some(receiver),
         nonconfidential_data,
     })?;
 
@@ -909,42 +912,52 @@ pub fn encode_tsp_message<Vid: AsRef<[u8]>>(
 /// A convenience interface which illustrates decoding as a single operation
 #[cfg(all(feature = "demo", test))]
 pub fn decode_tsp_message<'a, Vid: TryFrom<&'a [u8]>>(
-    data: &'a [u8],
+    data: &'a mut [u8],
     decrypt: impl FnOnce(&Vid, &[u8]) -> Vec<u8>,
     verify: impl FnOnce(&[u8], &Vid, &Signature) -> bool,
-) -> Result<Message<Vid, Vec<u8>>, DecodeError> {
-    let (
-        DecodedEnvelope {
-            envelope:
-                Envelope {
-                    sender,
-                    receiver,
-                    nonconfidential_data,
-                },
-            ciphertext,
-            ..
-        },
-        VerificationChallenge {
-            signed_data,
-            signature,
-        },
-    ) = decode_envelope(data)?;
-
-    if !verify(signed_data, &sender, signature) {
-        return Err(DecodeError::SignatureError);
-    }
-
-    let decrypted = decrypt(&receiver, ciphertext);
-
-    // This illustrates a challenge: unless decryption happens in place, either a needless
-    // allocation or at the very least moving the contents of the payload around must occur.
-    let Payload::GenericMessage(message) = decode_payload(&decrypted)?;
-    let message = Payload::GenericMessage(message.to_owned());
-
-    Ok(Message {
+) -> Result<Message<'a, Vid, Vec<u8>>, DecodeError>
+where
+    <Vid as TryFrom<&'a [u8]>>::Error: std::fmt::Debug,
+{
+    let CipherView {
+        data,
         sender,
         receiver,
         nonconfidential_data,
+        signature,
+        signed_data,
+        ciphertext,
+        ..
+    } = decode_envelope(data)?;
+
+    if !verify(
+        &data[signed_data],
+        &data[sender.clone()].try_into().unwrap(),
+        signature,
+    ) {
+        return Err(DecodeError::SignatureError);
+    }
+
+    let mut decrypted = decrypt(
+        &data[receiver.clone().unwrap()].try_into().unwrap(),
+        &data[ciphertext.unwrap()],
+    );
+
+    // This illustrates a challenge: unless decryption happens in place, either a needless
+    // allocation or at the very least moving the contents of the payload around must occur.
+    let DecodedPayload {
+        payload: Payload::GenericMessage(message),
+        ..
+    } = decode_payload(&mut decrypted)?
+    else {
+        panic!("Expected GenericMessage");
+    };
+    let message = Payload::GenericMessage(message.to_owned());
+
+    Ok(Message {
+        sender: data[sender].try_into().unwrap(),
+        receiver: data[receiver.unwrap()].try_into().unwrap(),
+        nonconfidential_data: nonconfidential_data.map(|ncd| data[ncd].try_into().unwrap()),
         message,
     })
 }
@@ -1159,7 +1172,7 @@ mod test {
         let sender = b"Alister".as_slice();
         let receiver = b"Bobbi".as_slice();
         let payload = b"Hello TSP!";
-        let data = encode_tsp_message(
+        let mut data = encode_tsp_message(
             Message {
                 sender,
                 receiver,
@@ -1172,7 +1185,7 @@ mod test {
         .unwrap();
 
         let tsp = decode_tsp_message(
-            &data,
+            &mut data,
             |_: &&[u8], x| x.to_vec(),
             |_, _, sig| sig == &[5u8; 64],
         )
@@ -1181,7 +1194,9 @@ mod test {
         assert_eq!(tsp.sender, b"Alister".as_slice());
         assert_eq!(tsp.receiver, b"Bobbi");
 
-        let Payload::GenericMessage(content) = tsp.message;
+        let Payload::GenericMessage(content) = tsp.message else {
+            panic!("Expected Payload::GenericMessage");
+        };
         assert_eq!(&content[..], b"Hello TSP!");
     }
 

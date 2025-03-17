@@ -1,3 +1,4 @@
+use bytes::BytesMut;
 use core::fmt;
 use std::{fmt::Debug, ops::Deref};
 use zeroize::Zeroize;
@@ -66,7 +67,7 @@ pub enum RelationshipStatus {
 }
 
 #[derive(Debug)]
-pub enum ReceivedTspMessage<Data: AsRef<[u8]> = Vec<u8>> {
+pub enum ReceivedTspMessage<Data: AsRef<[u8]> = BytesMut> {
     GenericMessage {
         sender: String,
         nonconfidential_data: Option<Data>,
@@ -89,8 +90,8 @@ pub enum ReceivedTspMessage<Data: AsRef<[u8]> = Vec<u8>> {
     ForwardRequest {
         sender: String,
         next_hop: String,
-        route: Vec<Vec<u8>>,
-        opaque_payload: Vec<u8>,
+        route: Vec<BytesMut>,
+        opaque_payload: BytesMut,
     },
     NewIdentifier {
         sender: String,
@@ -103,7 +104,7 @@ pub enum ReceivedTspMessage<Data: AsRef<[u8]> = Vec<u8>> {
     #[cfg(feature = "async")]
     PendingMessage {
         unknown_vid: String,
-        payload: Vec<u8>,
+        payload: BytesMut,
     },
 }
 
@@ -141,7 +142,7 @@ pub enum Payload<'a, Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]> = Bytes> {
     },
 }
 
-impl<'a, Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]>> Payload<'a, Bytes, MaybeMutBytes> {
+impl<Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]>> Payload<'_, Bytes, MaybeMutBytes> {
     pub fn as_bytes(&self) -> &[u8] {
         match self {
             Payload::Content(bytes) => bytes.as_ref(),
@@ -158,7 +159,7 @@ impl<'a, Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]>> Payload<'a, Bytes, Mayb
     }
 }
 
-impl<'a, Bytes: AsRef<[u8]>> fmt::Display for Payload<'a, Bytes> {
+impl<Bytes: AsRef<[u8]>> fmt::Display for Payload<'_, Bytes> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Payload::Content(bytes) => {
