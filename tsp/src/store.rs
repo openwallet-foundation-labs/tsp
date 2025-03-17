@@ -9,7 +9,9 @@ use crate::{
     error::Error,
     vid::{VidError, resolve::verify_vid_offline},
 };
-use bytes::{Bytes, BytesMut};
+#[cfg(feature = "async")]
+use bytes::Bytes;
+use bytes::BytesMut;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
