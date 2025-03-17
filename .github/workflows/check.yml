@@ -43,6 +43,7 @@ jobs:
         with:
           command: check
           arguments: --workspace
+          rust-version: '1.85'
 
   check-wasm32:
     runs-on: ubuntu-22.04

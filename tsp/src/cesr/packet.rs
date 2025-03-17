@@ -965,7 +965,8 @@ where
     let DecodedPayload {
         payload: Payload::GenericMessage(message),
         ..
-    } = decode_payload(&mut decrypted)? else {
+    } = decode_payload(&mut decrypted)?
+    else {
         panic!("Expected GenericMessage");
     };
     let message = Payload::GenericMessage(message.to_owned());
