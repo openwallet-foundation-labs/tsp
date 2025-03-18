@@ -8,4 +8,6 @@
     - [Usage](./cli/usage.md)
     - [Nested mode](./cli/nested.md)
     - [Routed mode](./cli/routed.md)
+- [Benchmark](benchmark.md)
+- [Custom VIDs](custom-vids.md)
 - [Planning](planning.md)
