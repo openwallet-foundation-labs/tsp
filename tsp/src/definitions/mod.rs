@@ -192,6 +192,7 @@ impl<Bytes: AsRef<[u8]>> fmt::Display for Payload<'_, Bytes> {
     }
 }
 
+// ANCHOR: custom-vid-mbBook
 pub trait VerifiedVid: Send + Sync {
     /// A identifier of the Vid as bytes (for inclusion in TSP packets)
     fn identifier(&self) -> &str;
@@ -213,6 +214,7 @@ pub trait PrivateVid: VerifiedVid + Send + Sync {
     /// The PRIVATE key used to sign data
     fn signing_key(&self) -> &PrivateSigningKeyData;
 }
+// ANCHOR_END: custom-vid-mbBook
 
 impl Debug for PrivateKeyData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
