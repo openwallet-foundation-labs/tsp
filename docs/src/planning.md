@@ -1,4 +1,5 @@
 # Second Six Milestones, Teaspoon Project (2025)
+
 ```mermaid
 gantt
     title Milestones 2025
@@ -6,7 +7,7 @@ gantt
     section Milestone 1
         Public Testbed: m1, 2025-02-28, 30d
     section Milestone 2
-        did#colon;webvh: m2, after m1, 30d 
+        did#colon;webvh: m2, after m1, 30d
     section Milestone 3
         TAM AI agent: m3, after m2, 30d
     section Milestone 4
@@ -16,6 +17,42 @@ gantt
     section Milestone 6
         Finalization: m6, after m5, 30d
 ```
+
+M1:
+
+* Create a public testbed and publish code that allows individuals to easily set up test environments
+* Create and improve existing automated test cases
+* Revise and merge documentation from different sources
+* Release the first version (v0.8)
+
+M2:
+
+* Adopt code to the new TSP revision (except Post Quantum support)
+* Integrate TSP with the first application protocol, such as MQTT or MCP (Model Context Protocol) for the TAM AI agent
+* Release a "deployment ready" v0.9 version
+
+M3:
+
+* Finalize the TSP-SDK interface and validate that it works with various application protocols to be implemented.
+* Add support for Post Quantum Cryptography
+* Release a v0.91 version
+
+M4:
+
+* Support selected applications such as the TAM AI agent, Matrix, PFC, ...
+* Release a v0.92 version
+
+M5:
+
+* VCX-TSP (DIDComm over TSP experimentation)
+* Release a v0.93 version
+
+M6:
+
+* Finalize packaging of the TSP SDK and all supported example applications
+* Conduct security review, performance evaluation, systematic test benchmarks
+* Complete & publish all documentation
+* Release a v0.95 version
 
 # First Six Milestones (2024)
 
@@ -64,7 +101,8 @@ M1:
   Set up a testing framework.
 * Implement the (subset of) CESR encoding/decoding necessary for at least direct mode.
 * Implementation of basic SDK and simple README docs.
-* Make the GitHub repo public. Enable and support external software reviews and bug reports/fixes in the open-source repos.
+* Make the GitHub repo public. Enable and support external software reviews and bug reports/fixes in the open-source
+  repos.
 
 M2:
 
