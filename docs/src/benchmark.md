@@ -53,13 +53,13 @@ samply record -- target/release/benchmark # or whatever your binary is called
 
 ![tsp-seal-open](flamegraph.png)
 
-The flamegraph shows the call stack on the y axis, and relative time spent in a particular function on the x axis. We can see that the call stack starts at `start`, and eventually gets to our `benchmark::main` function.
+The flamegraph shows the call stack on the y-axis, and relative time spent in a particular function on the x-axis. We can see that the call stack starts at `start`, and eventually gets to our `benchmark::main` function.
 
-We observe that all time is spent in dependencies, and this makes sense for the operations that be benchmark here. The `tsp` crate itself is just a thin wrapper around the dependencies, and does not introduce (significant) overhead.
+We observe that all time is spent in dependencies, and this makes sense for the operations that we benchmark here. The `tsp` crate itself is just a thin wrapper around the dependencies, and does not introduce (significant) overhead.
 
 ---
 
-in terms of throughput, we can do some rough math with this binary
+In terms of throughput, we can do some rough math with this binary:
 
 ```
 > hyperfine target/release/benchmark
@@ -68,7 +68,7 @@ Benchmark #1: target/release/benchmark
   Range (min … max):   354.1 ms … 372.7 ms    10 runs
 ```
 
-so, 1024 seals and opens (that based on the flamegraph take roughly equal time) takes 360ms. Per second that means `(1000 / 360) * 1024 = 2844` seals and opens, or roughly 5600 seals or opens per second.
+So, 1024 seals and opens (that based on the flamegraph take roughly equal time) takes 360ms. Per second that means `(1000 / 360) * 1024 = 2844` seals and opens, or roughly 5600 seals or opens per second.
 
 Conclusions
 -----------
