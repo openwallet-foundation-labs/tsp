@@ -8,9 +8,9 @@ Codes used by TSP that are already in the CESR draft:
 | Code | Description        | Code Length | Count Length | Total Length |
 |------|--------------------|-------------|--------------|--------------|
 | I    | SHA-256 Digest     |             | 1            | 44           |
-| F    | Blake2b256 Digest	 |             | 1            | 44           |
+| F    | Blake2b256 Digest	|             | 1            | 44           |
 | 0A   | 128 bit Nonce      |             | 2            | 24           |
-| 0B   | Ed25519 signature	 |             | 2            | 88           |
+| 0B   | Ed25519 signature	|             | 2            | 88           |
 
 Fixed-length codes introduced by TSP:
 
@@ -54,7 +54,7 @@ Framing codes introduces by TSP:
 
 TSP Message format
 ------------------
-A encrypted TSP message is encoded as:
+An encrypted TSP message is encoded as:
 
 	<ETS-ENVELOPE> <TSP-CIPHERTEXT> <SIGNATURE> 
 

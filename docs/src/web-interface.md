@@ -23,11 +23,11 @@ The transport used for this demo is HTTPS and web sockets (WSS). The server
 
 To get started, create an identity:
 
-- In the top left corner enter an username, e.g. `alice`
+- In the top left corner enter a username, e.g. `alice`
 - Press "Create test VID"
 
 In the list of identities on the left your VID with the corresponding
-key material wil be shown. This identity will also be stored in the local
+key material will be shown. This identity will also be stored in the local
 storage of your browser. The next time you visit this page it will be
 loaded automatically.
 
@@ -54,7 +54,7 @@ is restarted, which happens at least once a week.
 
 Enter a full VID in the field "Resolve and verify VID" and push the button.
 For example `did:web:tsp-test.org:user:bob`.
-The resolved and verified VID wil be displayed in the identities column.
+The resolved and verified VID will be displayed in the "Identities" column.
 
 ## Sending / receiving messages
 
