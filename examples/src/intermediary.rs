@@ -29,6 +29,7 @@ struct Config {
     // DID server domain (e.g. "tsp-test.org")
     did_domain: String,
     /// The port on which intermediary will be hosted
+    #[serde(default = "default_port")]
     port: u16,
     /// This server's Private VID
     piv: OwnedVid,
@@ -41,6 +42,11 @@ struct Config {
     /// Setup relation from this VIDs on startup, for final drop off in route (in reverse direction)
     #[serde(default)]
     relate_from: Option<String>,
+}
+
+/// Default port, as exposed by Docker container
+fn default_port() -> u16 {
+    3001
 }
 
 struct IntermediaryState {

@@ -1,6 +1,5 @@
 {
   "did_domain": "did.tsp-test.org",
-  "port": 3002,
   "piv": {
     "enckey": "xebQtrRD05cx0IhX8goq1fMU1KHebtxU_l0xXWU7QRI",
     "id": "did:web:did.tsp-test.org:user:q",
