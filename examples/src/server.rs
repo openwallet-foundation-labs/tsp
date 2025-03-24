@@ -23,16 +23,12 @@ use std::{
 use tokio::sync::{RwLock, broadcast};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp::{
-    AsyncStore, Store,
+    Store,
     definitions::{Payload, VerifiedVid},
     vid::{OwnedVid, Vid},
 };
 
-use crate::intermediary::start_intermediary;
-
-mod intermediary;
-
-const DOMAIN: &str = "tsp-test.org";
+const DOMAIN: &str = "localhost:3000";
 
 /// Identity struct, used to store the DID document and VID of a user
 #[derive(Debug, Serialize, Deserialize)]
@@ -123,51 +119,6 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
-
-    tokio::task::spawn(async {
-        let domain = DOMAIN.replace(":", "%3A");
-        let mut db = AsyncStore::new();
-        let piv: OwnedVid = serde_json::from_str(include_str!("../test/p.json")).unwrap();
-        db.add_private_vid(piv).unwrap();
-        db.verify_vid(&format!("did:web:did.{domain}:user:q"))
-            .await
-            .unwrap();
-        db.verify_vid(&format!("did:web:did.{domain}:user:a"))
-            .await
-            .unwrap();
-
-        db.set_relation_for_vid(
-            &format!("did:web:did.{domain}:user:q"),
-            Some(&format!("did:web:did.{domain}:user:p")),
-        )
-        .unwrap();
-
-        if let Err(e) = start_intermediary(&format!("p.{domain}"), 3001, db).await {
-            eprintln!("error starting intermediary: {:?}", e);
-        }
-    });
-
-    tokio::task::spawn(async {
-        let domain = DOMAIN.replace(":", "%3A");
-        let mut db = AsyncStore::new();
-        let piv: OwnedVid = serde_json::from_str(include_str!("../test/q.json")).unwrap();
-        db.add_private_vid(piv).unwrap();
-        db.verify_vid(&format!("did:web:did.{domain}:user:p"))
-            .await
-            .unwrap();
-        db.verify_vid(&format!("did:web:did.{domain}:user:b"))
-            .await
-            .unwrap();
-        db.set_relation_for_vid(
-            &format!("did:web:did.{domain}:user:q"),
-            Some(&format!("did:web:did.{domain}:user:b")),
-        )
-        .unwrap();
-
-        if let Err(e) = start_intermediary(&format!("q.{domain}"), 3002, db).await {
-            eprintln!("error starting intermediary: {:?}", e);
-        }
-    });
 
     axum::serve(listener, app).await.unwrap();
 }

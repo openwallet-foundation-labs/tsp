@@ -1,8 +1,0 @@
-{
-  "enckey": "RRehECMxycxBriIau0Gvz2UGyDG7KrMFV2mFG8uV3bI",
-  "id": "did:web:did.tsp-test.org:user:p",
-  "publicEnckey": "W0KcpY5Sa1jQ2-UIqbzIqyvSp6QaZqsHVq9jeFkR_H0",
-  "publicSigkey": "v_QoFe2_OsVLnxlEmPBKVlXhcnOKg1n6UBtExEPkbR8",
-  "sigkey": "IJwK3g1Ue6sk33TqYt6SVsCIP906cnuIX1wbfpZsGOA",
-  "transport": "https://p.tsp-test.org/transport/p"
-}
