@@ -2,7 +2,7 @@
 
 To try out TSP in nested mode, the command line interface can be used. A nested relationship can be set up by
 exchanging relationship messages (the preferred way), but it can also be tested by manually
-setting up identifiers, having both sides explicitly verify each others identities
+setting up identifiers, having both sides explicitly verify each other’s identities
 and establishing a relationship between those identifiers.
 
 ## Nested mode (using relationship control messages)

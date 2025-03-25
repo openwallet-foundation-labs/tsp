@@ -11,7 +11,6 @@ use aries_askar::{
 };
 use serde::{Deserialize, Serialize};
 
-#[allow(dead_code)]
 pub struct Vault {
     inner: aries_askar::Store,
     url: String,
@@ -27,7 +26,6 @@ pub(crate) struct Metadata {
     tunnel: Option<Box<[String]>>,
 }
 
-#[allow(dead_code)]
 impl Vault {
     pub async fn new_sqlite(name: &str, password: &[u8]) -> Result<Self, Error> {
         let pass_key = aries_askar::Store::new_raw_key(Some(password))?;

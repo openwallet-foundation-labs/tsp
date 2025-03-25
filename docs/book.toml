@@ -8,11 +8,7 @@ title = "Rust TSP Guides"
 [rust]
 edition = "2024"
 
-[preprocessor.mermaid]
-command = "mdbook-mermaid"
-
 [output.html]
-additional-js = ["mermaid.min.js", "mermaid-init.js"]
 git-repository-url = "https://github.com/openwallet-foundation-labs/tsp/tree/main/docs"
 hash-files = true
 cname = "docs.teaspoon.world"

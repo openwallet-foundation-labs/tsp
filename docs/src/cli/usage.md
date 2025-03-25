@@ -8,8 +8,8 @@ in a SQLite file in the current directory.
 <div class="warning">
 The TSP command is used as an example and 'playground' to explore TSP, and as an
 example for programmers on how to use the SDK to build TSP applications. It does not
-expose all the functionality of the TSP SDK (e.g. TLS or QUICK transport), neither
-should it used to build production appliations.
+expose all the functionality of the TSP SDK (e.g., TLS or QUICK transport), neither
+should it used to build production applications.
 </div>
 
 To create a test `did:web` identity run the following command:

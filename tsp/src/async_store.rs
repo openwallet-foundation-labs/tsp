@@ -8,7 +8,8 @@ use bytes::BytesMut;
 use futures::StreamExt;
 use url::Url;
 
-/// Holds private ands verified VIDs
+/// Holds private and verified VIDs
+///
 /// A Store contains verified VIDs, our relationship status to them,
 /// as well as the private VIDs that this application has control over.
 ///
@@ -60,12 +61,12 @@ impl AsyncStore {
         self.inner.import(vids)
     }
 
-    /// Adds a relation to an already existing vid, making it a nested Vid
+    /// Adds a relation to an already existing VID, making it a nested VID
     pub fn set_relation_for_vid(&self, vid: &str, relation_vid: Option<&str>) -> Result<(), Error> {
         self.inner.set_relation_for_vid(vid, relation_vid)
     }
 
-    /// Adds a route to an already existing vid, making it a nested Vid
+    /// Adds a route to an already existing VID, making it a nested VID
     pub fn set_route_for_vid(&self, vid: &str, route: &[&str]) -> Result<(), Error> {
         self.inner.set_route_for_vid(vid, route)
     }
@@ -88,7 +89,7 @@ impl AsyncStore {
         self.inner.add_private_vid(private_vid)
     }
 
-    /// Remove a VID from the database
+    /// Remove a VID from the [`AsyncStore`]
     pub fn forget_vid(&self, vid: &str) -> Result<(), Error> {
         self.inner.forget_vid(vid)
     }
@@ -98,7 +99,7 @@ impl AsyncStore {
         self.inner.add_verified_vid(verified_vid)
     }
 
-    /// Check whether the [PrivateVid] identified by `vid` exists inthe database
+    /// Check whether the [PrivateVid] identified by `vid` exists in the database
     pub fn has_private_vid(&self, vid: &str) -> Result<bool, Error> {
         self.inner.has_private_vid(vid)
     }
@@ -113,7 +114,7 @@ impl AsyncStore {
     }
 
     /// Send a TSP message given earlier resolved VIDs
-    /// Encodes, encrypts, signs and sends a TSP message
+    /// Encodes, encrypts, signs, and sends a TSP message
     ///
     /// # Arguments
     ///
@@ -130,7 +131,7 @@ impl AsyncStore {
     /// #[tokio::main]
     /// async fn main() {
     ///     let mut db = AsyncStore::new();
-    ///     let private_vid = OwnedVid::from_file(format!("../examples/test/bob.json")).await.unwrap();
+    ///     let private_vid = OwnedVid::from_file("../examples/test/bob.json").await.unwrap();
     ///     db.add_private_vid(private_vid).unwrap();
     ///     db.verify_vid("did:web:did.tsp-test.org:user:alice").await.unwrap();
     ///
@@ -159,7 +160,7 @@ impl AsyncStore {
     }
 
     /// Request a direct relationship with a resolved VID using the TSP
-    /// Encodes the control message, encrypts, signs and sends a TSP message
+    /// Encodes the control message, encrypts, signs, and sends a TSP message
     ///
     /// # Arguments
     ///
@@ -174,7 +175,7 @@ impl AsyncStore {
     /// #[tokio::main]
     /// async fn main() {
     ///     let mut db = AsyncStore::new();
-    ///     let private_vid = OwnedVid::from_file(format!("../examples/test/bob.json")).await.unwrap();
+    ///     let private_vid = OwnedVid::from_file("../examples/test/bob.json").await.unwrap();
     ///     db.add_private_vid(private_vid).unwrap();
     ///     db.verify_vid("did:web:did.tsp-test.org:user:alice").await.unwrap();
     ///
@@ -203,7 +204,7 @@ impl AsyncStore {
 
     /// Accept a direct relationship between the resolved VIDs identifier by `sender` and `receiver`.
     /// `thread_id` must be the same as the one that was present in the relationship request.
-    /// Encodes the control message, encrypts, signs and sends a TSP message
+    /// Encodes the control message, encrypts, signs, and sends a TSP message
     pub async fn send_relationship_accept(
         &self,
         sender: &str,
@@ -223,7 +224,7 @@ impl AsyncStore {
     }
 
     /// Cancels a direct relationship between the resolved `sender` and `receiver` VIDs.
-    /// Encodes the control message, encrypts, signs and sends a TSP message
+    /// Encodes the control message, encrypts, signs, and sends a TSP message
     pub async fn send_relationship_cancel(
         &self,
         sender: &str,
@@ -294,7 +295,7 @@ impl AsyncStore {
     /// Accept a nested relationship with the (nested) VID identified by `nested_receiver`.
     /// Generate a new nested VID that will have `parent_sender` as its parent.
     /// `thread_id` must be the same as the one that was present in the relationship request.
-    /// Encodes the control message, encrypts, signs and sends a TSP message
+    /// Encodes the control message, encrypts, signs, and sends a TSP message
     pub async fn send_nested_relationship_accept(
         &self,
         parent_sender: &str,
@@ -314,7 +315,7 @@ impl AsyncStore {
         Ok(vid)
     }
 
-    /// Receive, open and forward a TSP message
+    /// Receive, open, and forward a TSP message
     /// This method is used by intermediary nodes to receive a TSP message,
     /// open it and forward it to the next hop.
     pub async fn route_message(
@@ -330,7 +331,8 @@ impl AsyncStore {
         Ok(transport)
     }
 
-    /// Pass along a in-transit routed TSP `opaque_message` that is not meant for us, given earlier resolved VIDs.
+    /// Pass along an in-transit routed TSP `opaque_message`
+    /// that is not meant for us, given earlier resolved VIDs.
     /// The message is routed through the route that has been established with `receiver`.
     pub async fn forward_routed_message(
         &self,
@@ -349,8 +351,8 @@ impl AsyncStore {
         Ok(transport)
     }
 
-    /// Decode an encrypted `message``, which has to be addressed to one of the VIDs in `receivers`, and has to have
-    /// `verified_vids` as one of the senders.
+    /// Decode an encrypted `message`, which has to be addressed to one of the VIDs in `receivers`,
+    /// and has to have `verified_vids` as one of the senders.
     pub fn open_message<'a>(
         &self,
         message: &'a mut [u8],
@@ -385,7 +387,7 @@ impl AsyncStore {
         })))
     }
 
-    /// Send TSP broadcast message to the specified VIDs
+    /// Send a TSP broadcast message to the specified VIDs
     pub async fn send_anycast(
         &self,
         sender: &str,
@@ -403,9 +405,9 @@ impl AsyncStore {
         Ok(())
     }
 
-    /// Process the payload from a  'PendingMessage' by resolving the unknown vid and retrying
-    /// This takes a Vec as a payload; for a borrowing version the `as_inner()` version can be used; usually after
-    /// unpacking a TSP message you can't or need to do anything with it anyway.
+    /// Process the payload from a 'PendingMessage' by resolving the unknown vid and retrying
+    /// This takes a Vec as a payload; for a borrowing version the `as_inner()` version can be used;
+    /// usually after unpacking a TSP message, you can't or need to do anything with it anyway.
     pub async fn verify_and_open(
         &mut self,
         vid: &str,

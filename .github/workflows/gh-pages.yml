@@ -31,8 +31,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install mdBook
         run: cargo install mdbook
-      - name: Install mermaid preprocessor
-        run: cargo install mdbook-mermaid
       - name: Setup Pages
         id: pages
         uses: actions/configure-pages@v5
