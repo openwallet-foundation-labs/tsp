@@ -34,7 +34,7 @@ impl VidContext {
         self.parent_vid = parent_vid.map(|r| r.to_string());
     }
 
-    /// Set the relation VID for this VID. The relation VID wil be used as
+    /// Set the relation VID for this VID. The relation VID will be used as
     /// sender VID when sending messages to this VID
     fn set_relation_vid(&mut self, relation_vid: Option<&str>) {
         self.relation_vid = relation_vid.map(|r| r.to_string());
@@ -74,9 +74,10 @@ impl VidContext {
     }
 }
 
-/// Holds private ands verified VIDs
-/// A Store contains verified vid's, our relationship status to them,
-/// as well as the private vid's that this application has control over.
+/// Holds private and verified VIDs
+///
+/// A Store contains verified VIDs, our relationship status to them,
+/// as well as the private VIDs that this application has control over.
 ///
 /// The struct is the primary interface to the VID database, in a synchronous
 /// context (when no async runtime is available).
@@ -172,7 +173,7 @@ impl Store {
         Ok(())
     }
 
-    /// Remove a VID from the database
+    /// Remove a VID from the [`Store`]
     pub fn forget_vid(&self, vid: &str) -> Result<(), Error> {
         self.vids.write()?.remove(vid);
 
@@ -188,7 +189,9 @@ impl Store {
         })
     }
 
-    /// Adds a relation to an already existing vid
+    /// Set the relation VID for the VID.
+    ///
+    /// The relation VID will be used as sender VID when sending messages to this VID.
     pub fn set_relation_for_vid(&self, vid: &str, relation_vid: Option<&str>) -> Result<(), Error> {
         self.modify_vid(vid, |resolved| {
             resolved.set_relation_vid(relation_vid);
@@ -239,7 +242,7 @@ impl Store {
         })
     }
 
-    /// Adds a route to an already existing vid, making it a nested Vid
+    /// Adds a route to an already existing VID, making it a nested VID
     pub fn set_route_for_vid(
         &self,
         vid: &str,
@@ -284,7 +287,7 @@ impl Store {
         }
     }
 
-    /// Retrieve the [Vid] identified by `vid` from the database, if it exists.
+    /// Retrieve the [VerifiedVid] identified by `vid` from the database if it exists.
     pub(crate) fn get_verified_vid(&self, vid: &str) -> Result<Arc<dyn VerifiedVid>, Error> {
         Ok(self.get_vid(vid)?.vid)
     }
@@ -298,10 +301,10 @@ impl Store {
     }
 
     /// Seal a TSP message.
-    /// The message is encrypted, encoded and signed using the key material
+    /// The message is encrypted, encoded, and signed using the key material
     /// of the sender and receiver, specified by their VIDs.
     ///
-    /// Note that the the corresponsing VIDs should first be added and configured
+    /// Note that the corresponding VIDs should first be added and configured
     /// using this store.
     pub fn seal_message(
         &self,

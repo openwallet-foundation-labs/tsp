@@ -1,3 +1,5 @@
+#![deny(rustdoc::broken_intra_doc_links)]
+
 //! # Trust Spanning Protocol
 //!
 //! The Trust Spanning Protocol (TSP) is a protocol for secure communication

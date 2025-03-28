@@ -15,9 +15,9 @@ the CESR encoding of messages and for testing purposes.
 
 ## CLI
 
-See the [command line interface](./web-interface.md) guide to get started
+See the [command line interface](./cli/index.md) guide to get started
 with the _test_ CLI for TSP.
-The TSP CLI is an example application of Rust TSP that helps testing
-the direct, nested and routed mode of TSP.
-There is some support infrastructure deployed on tsp-test.org in order
+The TSP CLI is an example application of Rust TSP that helps to test
+the direct, nested, and routed mode of TSP.
+There is some support infrastructure deployed on [tsp-test.org](https://tsp-test.org) in order
 to get started quickly.

@@ -80,8 +80,8 @@ encryption scheme\
 Specifying an encryption scheme in an "S" envelope is technically an error (since there will be no ciphertext anyway)
 
 signature scheme\
-0 - Unsigned (Reserved for future use)\
-1 - Ed25519
+0 — Unsigned (Reserved for future use)\
+1 — Ed25519
 
 A `TSP-CIPHERTEXT` must, after successful decryption, have one of the two encodings:
 
@@ -103,11 +103,3 @@ payload, which currently are:
 | 1.4          | NEW_REFER_REL      | `<DIGEST>` `<VID>`                                                                                                                                                                 |
 | 1.5          | 3P_REFER_REL       | `<VID>`                                                                                                                                                                            |
 | 1.255        | REL_CANCEL         | `<DIGEST>`                                                                                                                                                                         |
-
-QUESTIONS FOR THE SPEC
-----------------------
-
-* Do we really need a CESR frame indicator to differentiate `S` envelopes from `ETS` envelopes?
-
-* How do parties decide which `DIGEST` to use for creating the "thread-id"? (An initiating party has no way of
-  communicating what digest it wants to use, and it's inefficient to use all possible hash functions at this stage)

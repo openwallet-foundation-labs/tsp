@@ -6,16 +6,15 @@ A short demo of the web interface:
 
 ## Overview
 
-Go to https://tsp-test.org/
+Go to [https://tsp-test.org/](https://tsp-test.org/)
 
 This interface allows us to create VIDs and send and receive messages.
 
 The VID type used for this demo is `did:web`. When a new identity
 is created, the corresponding `did.json` document is published on the same
-domain (tsp-test.org).
+domain ([https://tsp-test.org/user/{username}/did.json](https://tsp-test.org/)).
 
-The transport used for this demo is HTTPS and web sockets (WSS). The server
-(tsp-test.org) also acts as a transport backbone. 
+The transport used for this demo is HTTPS and web sockets (WSS). The server also acts as a transport backbone. 
 
 ## Getting started
 
@@ -26,22 +25,22 @@ To get started, create an identity:
 - In the top left corner enter a username, e.g. `alice`
 - Press "Create test VID"
 
-In the list of identities on the left your VID with the corresponding
+In the list of identities on the left, your VID with the corresponding
 key material will be shown. This identity will also be stored in the local
-storage of your browser. The next time you visit this page it will be
+storage of your browser. The next time you visit this page, it will be
 loaded automatically.
 
 ## Resolve and verify a VID
 
-To resolve a vid follow the instructions below.
+To resolve a VID, follow the instructions below.
 
 Note that only VIDs of the type `did:web` or `did:peer` are supported.
 
 In order to be able to resolve a VID you could open the web interface
 in an "Incognito" browser window and create a new VID. You should use
-"Incognito" to prevent the identities in your local storage to be overwritten.
+"Incognito" to prevent the identities in your local storage from being overwritten.
 This way you can have a window for a sender and a window for a receiver 
-identity en test sending messages from one to the other.
+identity and test sending messages from one to the other.
 
 Note that this will also work over the internet,
 sending messages from one device to the other.

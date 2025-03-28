@@ -7,7 +7,7 @@ To get started with the CLI, first install Rust. See [https://www.rust-lang.org/
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-After Rust is installed you should be able to run cargo:
+After Rust is installed, you should be able to run cargo:
 
 ```sh
 cargo version
