@@ -13,8 +13,7 @@ What verification means depends on the type of VID.
 
 ## Traits
 
-The `Store` accepts any private or verified VID that implements
-The `PrivateVid` and `VerifiedVid` traits, respectively.
+The `Store` accepts any private or verified VID that implements the `PrivateVid` and `VerifiedVid` traits, respectively.
 Each of these traits defines methods to get the VID string itself and methods to get the key material:
 
 ```rust
