@@ -1,3 +1,6 @@
+#[cfg(feature = "use_local_certificate")]
+use std::io::Read;
+
 use crate::definitions::{PUBLIC_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE, VerifiedVid};
 use base64ct::{Base64UrlUnpadded, Encoding};
 use serde::Deserialize;
@@ -75,7 +78,27 @@ pub async fn resolve(id: &str, parts: Vec<&str>) -> Result<Vid, VidError> {
     {
         let url = resolve_url(&parts)?;
 
-        let response = reqwest::get(url.as_ref())
+        let client = reqwest::Client::builder();
+
+        #[cfg(feature = "use_local_certificate")]
+        let cert = {
+            tracing::warn!("Using local root CA! (should only be used for local testing)");
+            let mut buf = Vec::new();
+            std::fs::File::open("./test/root-ca.pem")
+                .unwrap()
+                .read_to_end(&mut buf)
+                .unwrap();
+            reqwest::Certificate::from_pem(&buf).unwrap()
+        };
+
+        #[cfg(feature = "use_local_certificate")]
+        let client = client.add_root_certificate(cert);
+
+        let response = client
+            .build()
+            .map_err(|e| VidError::Http("Client build error".to_string(), e))?
+            .get(url.as_ref())
+            .send()
             .await
             .map_err(|e| VidError::Http(url.to_string(), e))?;
 
@@ -93,9 +116,15 @@ pub async fn resolve(id: &str, parts: Vec<&str>) -> Result<Vid, VidError> {
 
 pub fn resolve_url(parts: &[&str]) -> Result<Url, VidError> {
     match parts {
-        ["did", "web", domain] => format!("{PROTOCOL}{domain}/{DEFAULT_PATH}/{DOCUMENT}"),
+        ["did", "web", domain] => format!(
+            "{PROTOCOL}{}/{DEFAULT_PATH}/{DOCUMENT}",
+            domain.replace("%3A", ":")
+        ),
         ["did", "web", domain, "user", username] => {
-            format!("{PROTOCOL}{domain}/user/{username}/{DOCUMENT}")
+            format!(
+                "{PROTOCOL}{}/user/{username}/{DOCUMENT}",
+                domain.replace("%3A", ":")
+            )
         }
         _ => return Err(VidError::InvalidVid(parts.join(":"))),
     }

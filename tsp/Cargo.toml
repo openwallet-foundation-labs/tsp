@@ -37,6 +37,7 @@ async = [
 ]
 resolve = ["serialize", "dep:reqwest"]
 serialize = ["dep:serde", "dep:serde_with"]
+use_local_certificate = []
 
 [dependencies]
 # generic
@@ -64,7 +65,7 @@ tokio = { workspace = true, optional = true }
 # transports
 tokio-tungstenite = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
-bytes = {workspace = true}
+bytes = { workspace = true }
 rustls = { workspace = true, optional = true }
 tokio-rustls = { workspace = true, optional = true }
 rustls-pki-types = { workspace = true, optional = true }
