@@ -8,50 +8,30 @@ use axum::{
 };
 use clap::Parser;
 use futures::{sink::SinkExt, stream::StreamExt};
-use std::{
-    io::Read,
-    sync::{Arc, RwLock},
-};
+use reqwest::header;
+use std::sync::{Arc, RwLock};
 use tokio::sync::broadcast;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use tsp::{AsyncStore, OwnedVid, VerifiedVid};
+use tsp::{AsyncStore, OwnedVid, vid::vid_to_did_document};
+use url::Url;
 
 #[derive(Debug, Parser)]
 #[command(name = "demo-intermediary")]
 #[command(about = "Host a TSP intermediary server", long_about = None)]
 struct Cli {
-    #[arg(index = 1, help = "Path to this server's config JSON file")]
-    config: String,
-}
-
-#[derive(serde::Deserialize)]
-struct Config {
-    // DID server domain (e.g. "tsp-test.org")
-    did_domain: String,
-    /// The port on which intermediary will be hosted
-    #[serde(default = "default_port")]
+    #[arg(
+        short,
+        long,
+        default_value_t = 3001,
+        help = "The port on which intermediary will be hosted (default is 3001)"
+    )]
     port: u16,
-    /// This server's Private VID
-    piv: OwnedVid,
-    /// VIDs to verify on startup
-    #[serde(default)]
-    verify_vids: Vec<String>,
-    /// Setup relations towards these VIDs on startup, for forwarding messages
-    #[serde(default)]
-    relate_to: Vec<String>,
-    /// Setup relation from this VIDs on startup, for final drop off in route (in reverse direction)
-    #[serde(default)]
-    relate_from: Option<String>,
-}
-
-/// Default port, as exposed by Docker container
-fn default_port() -> u16 {
-    3001
+    #[arg(index = 1, help = "e.g. \"p.teaspoon.world\" or \"localhost:3001\"")]
+    domain: String,
 }
 
 struct IntermediaryState {
     domain: String,
-    did_domain: String,
     db: AsyncStore,
     tx: broadcast::Sender<(String, Vec<u8>)>,
     log: RwLock<Vec<String>>,
@@ -73,37 +53,18 @@ async fn main() {
 
     let args = Cli::parse();
 
-    let mut file = std::fs::File::open(args.config).unwrap();
-    let mut file_data = String::new();
-    file.read_to_string(&mut file_data).unwrap();
-    let config: Config = serde_json::from_str(&file_data).unwrap();
+    // Generate PIV
+    let did = format!("did:web:{}", args.domain.replace(":", "%3A"));
+    let transport =
+        Url::parse(format!("https://{}/transport/{did}", args.domain).as_str()).unwrap();
+    let private_vid = OwnedVid::bind(did, transport);
+    let did_doc = vid_to_did_document(private_vid.vid()).to_string();
 
-    let did_domain = config.did_domain.replace(":", "%3A");
-
-    let mut db = AsyncStore::new();
-
-    let piv = config.piv;
-    let domain = piv.vid().endpoint().host_str().unwrap().replace(":", "%3A");
-    let id = piv.vid().identifier().to_owned();
-
-    db.add_private_vid(piv).unwrap();
-
-    for vid in config.verify_vids {
-        tracing::info!("verifying {vid}");
-        db.verify_vid(&vid).await.unwrap();
-    }
-
-    for vid in config.relate_to {
-        db.set_relation_for_vid(&vid, Some(&id)).unwrap();
-    }
-
-    if let Some(vid) = config.relate_from {
-        db.set_relation_for_vid(&id, Some(&vid)).unwrap();
-    }
+    let db = AsyncStore::new();
+    db.add_private_vid(private_vid).unwrap();
 
     let state = Arc::new(IntermediaryState {
-        domain: domain.to_owned(),
-        did_domain,
+        domain: args.domain.to_owned(),
         db,
         tx: broadcast::channel(100).0,
         log: RwLock::new(vec![]),
@@ -112,16 +73,21 @@ async fn main() {
     // Compose the routes
     let app = Router::new()
         .route("/", get(index))
+        .route("/transport/{did}", post(new_message).get(websocket_handler))
         .route(
-            "/transport/{name}",
-            post(new_message).get(websocket_handler),
+            "/.well-known/did.json",
+            get(async || ([(header::CONTENT_TYPE, "application/json")], did_doc)),
         )
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind(("0.0.0.0", config.port))
+    let listener = tokio::net::TcpListener::bind(("0.0.0.0", args.port))
         .await
         .unwrap();
-    tracing::info!("intermediary {domain} listening on port {}", config.port);
+    tracing::info!(
+        "intermediary {} listening on port {}",
+        args.domain,
+        args.port
+    );
 
     axum::serve(listener, app).await.unwrap();
 }
@@ -142,10 +108,10 @@ async fn index(State(state): State<Arc<IntermediaryState>>) -> Html<String> {
 
 async fn new_message(
     State(state): State<Arc<IntermediaryState>>,
-    Path(name): Path<String>,
+    Path(did): Path<String>,
     body: Bytes,
 ) -> Response {
-    tracing::debug!("{} received message intended for {name}", state.domain);
+    tracing::debug!("{} received message intended for {did}", state.domain);
 
     let Ok((sender, Some(receiver))) = tsp::cesr::get_sender_receiver(&body) else {
         tracing::error!(
@@ -168,7 +134,7 @@ async fn new_message(
 
     if let Ok(true) = state.db.has_private_vid(receiver) {
         let log = format!(
-            "routing message from {sender} to {receiver}, {} bytes",
+            "Routing message from <code>{sender}</code> to <code>{receiver}</code>, {} bytes",
             message.len()
         );
         tracing::info!("{log}");
@@ -176,7 +142,7 @@ async fn new_message(
 
         match state.db.route_message(sender, receiver, &mut message).await {
             Ok(url) => {
-                let log = format!("sent message to {url}",);
+                let log = format!("Sent message to <code>{url}</code>",);
                 tracing::info!("{log}");
                 state.log.write().unwrap().push(log);
             }
@@ -188,7 +154,7 @@ async fn new_message(
         }
     } else {
         let log = format!(
-            "forwarding message from {sender} to {receiver}, {} bytes",
+            "Forwarding message from  <code>{sender}</code> to <code>{receiver}</code>, {} bytes",
             message.len()
         );
         tracing::info!("{log}");
@@ -207,22 +173,17 @@ async fn new_message(
 async fn websocket_handler(
     ws: WebSocketUpgrade,
     State(state): State<Arc<IntermediaryState>>,
-    Path(name): Path<String>,
+    Path(did): Path<String>,
 ) -> impl IntoResponse {
+    tracing::info!("{} listening for messages intended for {did}", state.domain);
     let mut messages_rx = state.tx.subscribe();
-    let vid = format!("did:web:{}:user:{name}", state.did_domain);
-
-    tracing::info!(
-        "{} listening for messages intended for {name} ({vid})",
-        state.domain
-    );
 
     ws.on_upgrade(|socket| {
         let (mut ws_send, _) = socket.split();
 
         async move {
             while let Ok((receiver, message)) = messages_rx.recv().await {
-                if receiver == vid {
+                if receiver == did {
                     tracing::debug!(
                         "{} forwarding message to {receiver}, {} bytes",
                         message.len(),
