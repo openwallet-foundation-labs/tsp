@@ -260,7 +260,7 @@ pub fn create_did_web(
     domain: &str,
     transport: &str,
 ) -> (serde_json::Value, serde_json::Value, OwnedVid) {
-    let did = format!("did:web:{domain}:user:{name}");
+    let did = format!("did:web:{}:user:{name}", domain.replace(":", "%3A"));
     let private_vid = OwnedVid::bind(did, Url::parse(transport).unwrap());
     let private_doc = serde_json::to_value(&private_vid).unwrap();
     let did_doc = vid_to_did_document(private_vid.vid());

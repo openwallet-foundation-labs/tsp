@@ -1,3 +1,5 @@
+use axum::http::Method;
+use axum::response::Redirect;
 use axum::{
     Form, Json, Router,
     body::Bytes,
@@ -10,17 +12,21 @@ use axum::{
     routing::{get, post},
 };
 use base64ct::{Base64UrlUnpadded, Encoding};
+use clap::Parser;
 use core::time;
 use futures::{sink::SinkExt, stream::StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::net::SocketAddrV4;
 use std::{
     collections::HashMap,
     str::from_utf8,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
+use tokio::signal;
 use tokio::sync::{RwLock, broadcast};
+use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp::{
     Store,
@@ -28,7 +34,17 @@ use tsp::{
     vid::{OwnedVid, Vid},
 };
 
-const DOMAIN: &str = "localhost:3000";
+#[derive(Debug, Parser)]
+#[command(name = "demo-server")]
+#[command(about = "Host a TSP demo server", long_about = None)]
+struct Cli {
+    #[arg(short, long, default_value_t = 3000, help = "The port to listen on")]
+    port: u16,
+    #[arg(short, long, help = "the URL of the DID support system to use")]
+    did_server: String,
+    #[arg(index = 1, help = "e.g. \"teaspoon.world\" or \"localhost:3000\"")]
+    domain: String,
+}
 
 /// Identity struct, used to store the DID document and VID of a user
 #[derive(Debug, Serialize, Deserialize)]
@@ -71,6 +87,8 @@ fn verify_name(name: &str) -> bool {
 
 /// Application state, used to store the identities and the broadcast channel
 struct AppState {
+    domain: String,
+    did_server: String,
     timestamp_server: Store,
     tx: broadcast::Sender<(String, String, Vec<u8>)>,
 }
@@ -90,15 +108,26 @@ async fn main() {
         )
         .init();
 
+    let args = Cli::parse();
+
     let timestamp_server = Store::new();
     let piv: OwnedVid =
         serde_json::from_str(include_str!("../test/timestamp-server/piv.json")).unwrap();
     timestamp_server.add_private_vid(piv).unwrap();
 
     let state = Arc::new(AppState {
+        domain: args.domain,
+        did_server: args.did_server,
         timestamp_server,
         tx: broadcast::channel(100).0,
     });
+
+    let cors = CorsLayer::new()
+        // allow `GET` and `POST` when accessing the resource
+        .allow_methods([Method::GET, Method::POST])
+        .allow_headers(Any)
+        // allow requests from any origin
+        .allow_origin(Any);
 
     // Compose the routes
     let app = Router::new()
@@ -107,7 +136,6 @@ async fn main() {
         .route("/create-identity", post(create_identity))
         .route("/verify-vid", post(verify_vid))
         .route("/add-vid", post(add_vid))
-        .route("/user/{name}/did.json", get(get_did_doc))
         .route("/vid/{vid}", get(websocket_vid_handler))
         .route("/user/{user}", get(websocket_user_handler))
         .route("/user/{user}", post(route_message))
@@ -115,12 +143,37 @@ async fn main() {
         .route("/send-message", post(send_message))
         .route("/receive-messages", get(websocket_handler))
         .layer(DefaultBodyLimit::max(50 * 1024 * 1024))
+        .layer(cors)
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    let addr = SocketAddrV4::new("0.0.0.0".parse().unwrap(), args.port);
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
 
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .unwrap();
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
 }
 
 #[cfg(debug_assertions)]
@@ -149,39 +202,9 @@ async fn script() -> impl IntoResponse {
     )
 }
 
-#[derive(Deserialize, Debug)]
-struct CreateIdentityInput {
-    name: String,
-}
-
 /// Create a new identity (private VID)
-async fn create_identity(Form(form): Form<CreateIdentityInput>) -> Response {
-    if !verify_name(&form.name) {
-        return (StatusCode::BAD_REQUEST, "invalid name").into_response();
-    }
-
-    let (did_doc, _, private_vid) = tsp::vid::create_did_web(
-        &form.name,
-        DOMAIN,
-        &format!("https://{DOMAIN}/user/{}", form.name),
-    );
-
-    let key = private_vid.identifier();
-
-    if let Err(e) = write_id(Identity {
-        did_doc: did_doc.clone(),
-        vid: private_vid.vid().clone(),
-    })
-    .await
-    {
-        tracing::error!("error writing identity {key}: {e}");
-
-        return (StatusCode::INTERNAL_SERVER_ERROR, "error writing identity").into_response();
-    }
-
-    tracing::debug!("created identity {key}");
-
-    Json(private_vid).into_response()
+async fn create_identity(State(state): State<Arc<AppState>>) -> Response {
+    Redirect::temporary(format!("{}/create-identity", &state.did_server).as_str()).into_response()
 }
 
 #[derive(Deserialize, Debug)]
@@ -191,25 +214,29 @@ struct ResolveVidInput {
 
 /// Resolve and verify a VID to JSON encoded key material
 async fn verify_vid(Form(form): Form<ResolveVidInput>) -> Response {
-    let name = form.vid.split(':').next_back().unwrap_or_default();
-
-    if !verify_name(name) {
-        return (StatusCode::BAD_REQUEST, "invalid name").into_response();
-    }
-
-    // local state lookup
-    if let Ok(identity) = read_id(&form.vid).await {
-        return Json(&identity.vid).into_response();
-    }
+    // let name = form.vid.split(':').next_back().unwrap_or_default();
+    //
+    // if !verify_name(name) {
+    //     return (StatusCode::BAD_REQUEST, "invalid name").into_response();
+    // }
+    //
+    // // local state lookup
+    // if let Ok(identity) = read_id(&form.vid).await {
+    //     return Json(&identity.vid).into_response();
+    // }
 
     // remote lookup
     let vid = tsp::vid::verify_vid(&form.vid).await.ok();
 
-    tracing::debug!("verified VID {}", form.vid);
-
     match vid {
-        Some(vid) => Json(&vid).into_response(),
-        None => (StatusCode::BAD_REQUEST, "invalid vid").into_response(),
+        Some(vid) => {
+            tracing::debug!("verified VID {}", form.vid);
+            Json(&vid).into_response()
+        }
+        None => {
+            tracing::debug!("could not find VID {}", form.vid);
+            (StatusCode::BAD_REQUEST, "invalid vid").into_response()
+        }
     }
 }
 
@@ -237,28 +264,6 @@ async fn add_vid(Json(vid): Json<Vid>) -> Response {
     tracing::debug!("added VID {}", vid.identifier());
 
     Json(&vid).into_response()
-}
-
-/// Get the DID document of a user
-async fn get_did_doc(Path(name): Path<String>) -> Response {
-    if !verify_name(&name) {
-        return (StatusCode::BAD_REQUEST, "invalid name").into_response();
-    }
-
-    let key = format!("did:web:{}:user:{name}", DOMAIN.replace(":", "%3A"));
-
-    match read_id(&key).await {
-        Ok(identity) => {
-            tracing::debug!("served did.json for {key}");
-
-            Json(identity.did_doc.clone()).into_response()
-        }
-        Err(e) => {
-            tracing::error!("{key} not found: {e}");
-
-            (StatusCode::NOT_FOUND, "no user found").into_response()
-        }
-    }
 }
 
 /// Format CESR-encoded message parts to descriptive JSON
@@ -373,7 +378,7 @@ async fn sign_timestamp(
         .seal_message(
             &format!(
                 "did:web:did.{}:user:timestamp-server",
-                DOMAIN.replace(":", "%3A")
+                state.domain.replace(":", "%3A")
             ),
             receiver,
             Some(&bytes),
@@ -497,7 +502,7 @@ async fn websocket_user_handler(
     Path(name): Path<String>,
 ) -> impl IntoResponse {
     let mut messages_rx = state.tx.subscribe();
-    let current = format!("https://{DOMAIN}/user/{name}");
+    let current = format!("https://{}/user/{name}", state.domain);
 
     tracing::debug!("new websocket connection for {current}");
 

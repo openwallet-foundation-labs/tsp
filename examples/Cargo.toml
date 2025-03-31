@@ -27,6 +27,10 @@ path = "src/server.rs"
 name = "demo-intermediary"
 path = "src/intermediary.rs"
 
+[[bin]]
+name = "did-web"
+path = "src/did-web.rs"
+
 [dependencies]
 tsp = { path = "../tsp", features = ["async"] }
 axum = { workspace = true }
@@ -42,3 +46,4 @@ tracing-subscriber = { workspace = true }
 bytes = { workspace = true }
 url = { workspace = true }
 rustls = { workspace = true }
+tower-http = { workspace = true }
