@@ -3,7 +3,7 @@ run-name: "Deploy ${{ github.ref_name }} to Google Cloud Run"
 
 on:
   push:
-    branches: [ "main", "auto-deploy" ]
+    branches: [ "main" ]
   workflow_dispatch:
 
 permissions:
