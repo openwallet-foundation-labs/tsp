@@ -6,7 +6,7 @@ use rustls::crypto::CryptoProvider;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 use tokio::io::AsyncReadExt;
-use tracing::{info, trace};
+use tracing::{error, info, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp::{
     AsyncStore, Error, ExportVid, OwnedVid, ReceivedTspMessage, Vault, VerifiedVid, cesr::Part,
@@ -630,22 +630,23 @@ async fn run() -> Result<(), Error> {
             let sender_vid = aliases.get(&sender_vid).unwrap_or(&sender_vid);
             let receiver_vid = aliases.get(&receiver_vid).unwrap_or(&receiver_vid);
 
+            // Setup receive stream before sending the request
+            let mut messages = vid_database.receive(sender_vid).await?;
+
             if nested {
                 match vid_database
                     .send_nested_relationship_request(sender_vid, receiver_vid)
                     .await
                 {
                     Ok(vid) => {
-                        tracing::info!(
+                        info!(
                             "sent a nested relationship request to {receiver_vid} with new identity '{}'",
                             vid.identifier()
                         );
                         println!("{}", vid.identifier());
                     }
                     Err(e) => {
-                        tracing::error!(
-                            "error sending message from {sender_vid} to {receiver_vid}: {e}"
-                        );
+                        error!("error sending message from {sender_vid} to {receiver_vid}: {e}");
                         return Ok(());
                     }
                 }
@@ -657,7 +658,44 @@ async fn run() -> Result<(), Error> {
                 return Ok(());
             }
 
-            info!("sent control message from {sender_vid} to {receiver_vid}",);
+            info!(
+                "sent relationship request from {sender_vid} to {receiver_vid}, waiting for response...",
+            );
+
+            // Give user some feedback for what messages it receives
+            // The actual logic for handling the relationship happens internally in the `open_message` function
+            while let Some(Ok(message)) = messages.next().await {
+                match message {
+                    ReceivedTspMessage::GenericMessage { sender, .. } => {
+                        info!("received generic message from {sender}")
+                    }
+                    ReceivedTspMessage::RequestRelationship { sender, .. } => {
+                        info!("received relationship request from {sender}")
+                    }
+                    ReceivedTspMessage::AcceptRelationship { sender, .. } => {
+                        info!("received accept relationship from {sender}");
+                        break;
+                    }
+                    ReceivedTspMessage::CancelRelationship { sender } => {
+                        info!("received cancel relationship from {sender}");
+                        break;
+                    }
+                    ReceivedTspMessage::ForwardRequest { sender, .. } => {
+                        info!("received forward request from {sender}")
+                    }
+                    ReceivedTspMessage::NewIdentifier { sender, new_vid } => {
+                        info!("received new identifier for {sender}: {new_vid}")
+                    }
+                    ReceivedTspMessage::Referral {
+                        sender,
+                        referred_vid,
+                    } => info!("received referral from {sender} for {referred_vid}"),
+                    ReceivedTspMessage::PendingMessage { unknown_vid, .. } => {
+                        info!("received pending message from {unknown_vid}")
+                    }
+                }
+            }
+
             write_database(&vault, &vid_database, aliases.clone()).await?;
         }
         Commands::Accept {

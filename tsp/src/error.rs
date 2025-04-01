@@ -21,9 +21,9 @@ pub enum Error {
     Storage(#[from] aries_askar::Error),
     #[error("Error decoding persisted state: {0}")]
     DecodeState(&'static str),
-    #[error("Error: {0}")]
+    #[error("Invalid Route Error: {0}")]
     InvalidRoute(String),
-    #[error("Error: {0}")]
+    #[error("Relationship Error: {0}")]
     Relationship(String),
     #[error("Error: missing private vid {0}")]
     MissingPrivateVid(String),

@@ -9,10 +9,13 @@ use axum::{
 use clap::Parser;
 use futures::{sink::SinkExt, stream::StreamExt};
 use reqwest::header;
-use std::sync::{Arc, RwLock};
-use tokio::sync::broadcast;
+use std::{
+    collections::VecDeque,
+    sync::{Arc, RwLock},
+};
+use tokio::sync::{Mutex, broadcast};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use tsp::{AsyncStore, OwnedVid, vid::vid_to_did_document};
+use tsp::{AsyncStore, OwnedVid, definitions::Digest, vid::vid_to_did_document};
 use url::Url;
 
 #[derive(Debug, Parser)]
@@ -32,10 +35,13 @@ struct Cli {
 
 struct IntermediaryState {
     domain: String,
-    db: AsyncStore,
+    did: String,
+    db: Mutex<AsyncStore>,
     tx: broadcast::Sender<(String, Vec<u8>)>,
-    log: RwLock<Vec<String>>,
+    log: RwLock<VecDeque<String>>,
 }
+
+const MAX_LOG_LEN: usize = 10;
 
 #[tokio::main]
 async fn main() {
@@ -57,7 +63,7 @@ async fn main() {
     let did = format!("did:web:{}", args.domain.replace(":", "%3A"));
     let transport =
         Url::parse(format!("https://{}/transport/{did}", args.domain).as_str()).unwrap();
-    let private_vid = OwnedVid::bind(did, transport);
+    let private_vid = OwnedVid::bind(did.clone(), transport);
     let did_doc = vid_to_did_document(private_vid.vid()).to_string();
 
     let db = AsyncStore::new();
@@ -65,9 +71,10 @@ async fn main() {
 
     let state = Arc::new(IntermediaryState {
         domain: args.domain.to_owned(),
-        db,
+        did,
+        db: Mutex::new(db),
         tx: broadcast::channel(100).0,
-        log: RwLock::new(vec![]),
+        log: RwLock::new(VecDeque::with_capacity(MAX_LOG_LEN)),
     });
 
     // Compose the routes
@@ -94,13 +101,17 @@ async fn main() {
 
 async fn index(State(state): State<Arc<IntermediaryState>>) -> Html<String> {
     let mut html = include_str!("../intermediary.html").to_string();
-    html = html.replace("[[TITLE]]", &format!("Log {}", state.domain));
+    html = html.replace("[[DOMAIN]]", &state.domain);
+    html = html.replace("[[DID]]", &state.did);
 
     let log = state.log.read().unwrap();
     if log.is_empty() {
         html = html.replace("[[LOG]]", "<i>The log is empty</i>");
     } else {
-        html = html.replace("[[LOG]]", &format!("<li>{}</li>", log.join("</li><li>")));
+        let text: Vec<String> = log.iter().map(|line| format!(
+            "<div class=\"card container text-bg-light my-3\"><div class=\"card-body\">{line}</div></div>"
+        )).collect();
+        html = html.replace("[[LOG]]", &text.join(""));
     }
 
     Html(html)
@@ -108,11 +119,9 @@ async fn index(State(state): State<Arc<IntermediaryState>>) -> Html<String> {
 
 async fn new_message(
     State(state): State<Arc<IntermediaryState>>,
-    Path(did): Path<String>,
+    Path(_did): Path<String>,
     body: Bytes,
 ) -> Response {
-    tracing::debug!("{} received message intended for {did}", state.domain);
-
     let Ok((sender, Some(receiver))) = tsp::cesr::get_sender_receiver(&body) else {
         tracing::error!(
             "{} encountered invalid message, receiver missing",
@@ -132,39 +141,122 @@ async fn new_message(
 
     let mut message: Vec<u8> = body.to_vec();
 
-    if let Ok(true) = state.db.has_private_vid(receiver) {
-        let log = format!(
-            "Routing message from <code>{sender}</code> to <code>{receiver}</code>, {} bytes",
-            message.len()
-        );
-        tracing::info!("{log}");
-        state.log.write().unwrap().push(log);
+    let mut db = state.db.lock().await;
 
-        match state.db.route_message(sender, receiver, &mut message).await {
-            Ok(url) => {
-                let log = format!("Sent message to <code>{url}</code>",);
-                tracing::info!("{log}");
-                state.log.write().unwrap().push(log);
+    if let Ok(true) = db.has_private_vid(receiver) {
+        tracing::debug!("verifying VID {sender} for {receiver}");
+        if let Err(e) = db.verify_vid(sender).await {
+            tracing::error!("error verifying VID {sender}: {e}");
+            return (StatusCode::BAD_REQUEST, "error verifying VID").into_response();
+        }
+
+        let handle_relationship_request = async |sender: String,
+                                                 route: Option<Vec<Vec<u8>>>,
+                                                 nested_vid: Option<String>,
+                                                 thread_id: Digest|
+               -> Result<(), tsp::Error> {
+            if let Some(nested_vid) = nested_vid {
+                db.send_nested_relationship_accept(receiver, &nested_vid, thread_id)
+                    .await
+                    .map(|_| ())
+            } else {
+                let route: Option<Vec<&str>> = route.as_ref().map(|vec| {
+                    vec.iter()
+                        .map(|vid| std::str::from_utf8(vid).unwrap())
+                        .collect()
+                });
+                db.send_relationship_accept(receiver, &sender, thread_id, route.as_deref())
+                    .await
             }
-            Err(e) => {
-                tracing::error!("error routing message: {e}");
+        };
 
-                return (StatusCode::BAD_REQUEST, "error routing message").into_response();
+        match db.open_message(&mut message) {
+            Err(e) => {
+                tracing::error!("received opening message from {sender}: {e}")
+            }
+            Ok(tsp::ReceivedTspMessage::GenericMessage { sender, .. }) => {
+                tracing::error!("received generic message from {sender}")
+            }
+            Ok(tsp::ReceivedTspMessage::RequestRelationship {
+                sender,
+                route,
+                nested_vid,
+                thread_id,
+            }) => {
+                if let Err(e) =
+                    handle_relationship_request(sender.clone(), route, nested_vid, thread_id).await
+                {
+                    let log = e.to_string();
+                    tracing::error!("{log}");
+                    state.log.write().unwrap().push_front(log);
+
+                    state.log.write().unwrap().truncate(MAX_LOG_LEN);
+                    return (StatusCode::BAD_REQUEST, "error accepting relationship")
+                        .into_response();
+                }
+
+                let log = format!("Accepted relationship request from <code>{sender}</code>");
+                tracing::info!("{log}");
+                state.log.write().unwrap().push_front(log);
+            }
+            Ok(tsp::ReceivedTspMessage::AcceptRelationship { sender, .. }) => {
+                tracing::error!("accept relationship message from {sender}")
+            }
+            Ok(tsp::ReceivedTspMessage::CancelRelationship { sender }) => {
+                tracing::error!("cancel relationship message from {sender}")
+            }
+            Ok(tsp::ReceivedTspMessage::ForwardRequest {
+                sender,
+                next_hop,
+                route,
+                opaque_payload,
+            }) => {
+                match db
+                    .forward_routed_message(&next_hop, route, &opaque_payload)
+                    .await
+                {
+                    Ok(url) => {
+                        let log = format!(
+                            "Forwarded message from <code>{sender}</code> to <code>{url}</code>",
+                        );
+                        tracing::info!("{log}");
+                        state.log.write().unwrap().push_front(log);
+                    }
+                    Err(e) => {
+                        let log = e.to_string();
+                        tracing::error!("{log}");
+                        state.log.write().unwrap().push_front(log);
+
+                        state.log.write().unwrap().truncate(MAX_LOG_LEN);
+                        return (StatusCode::BAD_REQUEST, "error forwarding message")
+                            .into_response();
+                    }
+                }
+            }
+            Ok(tsp::ReceivedTspMessage::NewIdentifier { sender, new_vid }) => {
+                tracing::error!("new identifier message from {sender}: {new_vid}")
+            }
+            Ok(tsp::ReceivedTspMessage::Referral {
+                sender,
+                referred_vid,
+            }) => tracing::error!("referral from {sender}: {referred_vid}"),
+            Ok(tsp::ReceivedTspMessage::PendingMessage { unknown_vid, .. }) => {
+                tracing::error!("pending message message from unknown VID {unknown_vid}")
             }
         }
     } else {
         let log = format!(
-            "Forwarding message from  <code>{sender}</code> to <code>{receiver}</code>, {} bytes",
+            "Forwarding message from  <code>{sender}</code> to <code>{receiver}</code> via WebSockets ({} bytes)",
             message.len()
         );
         tracing::info!("{log}");
-        state.log.write().unwrap().push(log);
+        state.log.write().unwrap().push_front(log);
 
         // insert message in queue
         let _ = state.tx.send((receiver.to_owned(), message));
     }
 
-    state.log.write().unwrap().truncate(10);
+    state.log.write().unwrap().truncate(MAX_LOG_LEN);
 
     StatusCode::OK.into_response()
 }

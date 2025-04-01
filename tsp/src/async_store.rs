@@ -315,22 +315,6 @@ impl AsyncStore {
         Ok(vid)
     }
 
-    /// Receive, open, and forward a TSP message
-    /// This method is used by intermediary nodes to receive a TSP message,
-    /// open it and forward it to the next hop.
-    pub async fn route_message(
-        &self,
-        sender: &str,
-        receiver: &str,
-        message: &mut [u8],
-    ) -> Result<Url, Error> {
-        let (transport, message) = self.inner.route_message(sender, receiver, message)?;
-
-        crate::transport::send_message(&transport, &message).await?;
-
-        Ok(transport)
-    }
-
     /// Pass along an in-transit routed TSP `opaque_message`
     /// that is not meant for us, given earlier resolved VIDs.
     /// The message is routed through the route that has been established with `receiver`.
