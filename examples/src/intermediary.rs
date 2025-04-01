@@ -211,6 +211,21 @@ async fn new_message(
                 route,
                 opaque_payload,
             }) => {
+                tracing::debug!("verifying VID next hop {next_hop}");
+                if let Err(e) = db.verify_vid(&next_hop).await {
+                    tracing::error!("error verifying VID {next_hop}: {e}");
+                    return (StatusCode::BAD_REQUEST, "error verifying next hop VID")
+                        .into_response();
+                }
+                if let Err(e) = db.set_relation_for_vid(&next_hop, Some(receiver)) {
+                    tracing::error!("error setting relation with {next_hop}: {e}");
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        "error setting relation with next hop",
+                    )
+                        .into_response();
+                }
+
                 match db
                     .forward_routed_message(&next_hop, route, &opaque_payload)
                     .await

@@ -11,10 +11,6 @@ randuser() {
     head -c4 /dev/urandom | shasum | head -c8
 }
 
-# run the intermediary server with:
-#
-#    cargo run --bin demo-intermediary -- --port 3011 localhost:3001
-
 echo "---- cleanup the database"
 rm -f a.sqlite b.sqlite q.sqlite
 
