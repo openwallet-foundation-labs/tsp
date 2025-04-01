@@ -19,6 +19,13 @@ struct Cli {
     #[arg(short, long, default_value_t = 3000, help = "The port to listen on")]
     port: u16,
     #[arg(
+        short,
+        long,
+        default_value = "https://localhost:3001/user",
+        help = "The base path of the transport for new DIDs"
+    )]
+    transport: String,
+    #[arg(
         index = 1,
         help = "e.g. \"did-web.teaspoon.world\" or \"localhost:3000\""
     )]
@@ -27,6 +34,7 @@ struct Cli {
 
 #[derive(Clone)]
 struct AppState {
+    transport: String,
     domain: String,
 }
 
@@ -46,6 +54,7 @@ async fn main() {
 
     let args = Cli::parse();
     let state = AppState {
+        transport: args.transport,
         domain: args.domain,
     };
 
@@ -59,6 +68,7 @@ async fn main() {
     // Compose the routes
     let app = Router::new()
         .route("/create-identity", post(create_identity))
+        .route("/add-vid", post(add_vid))
         .route("/user/{name}/did.json", get(get_did_doc))
         .layer(DefaultBodyLimit::max(50 * 1024 * 1024))
         .layer(cors)
@@ -111,7 +121,7 @@ async fn create_identity(
     let (did_doc, _, private_vid) = tsp::vid::create_did_web(
         &form.name,
         &state.domain,
-        &format!("https://{}/user/{}", &state.domain, form.name),
+        &format!("{}/{}", &state.transport, form.name),
     );
 
     let key = private_vid.identifier();
@@ -152,6 +162,32 @@ async fn get_did_doc(State(state): State<AppState>, Path(name): Path<String>) ->
             (StatusCode::NOT_FOUND, "no user found").into_response()
         }
     }
+}
+
+/// Add did document to the local state
+async fn add_vid(Json(vid): Json<Vid>) -> Response {
+    let name = vid.identifier().split(':').last().unwrap_or_default();
+
+    if !verify_name(name) {
+        return (StatusCode::BAD_REQUEST, "invalid name").into_response();
+    }
+
+    let did_doc = tsp::vid::vid_to_did_document(&vid);
+
+    if let Err(e) = write_id(Identity {
+        did_doc,
+        vid: vid.clone(),
+    })
+    .await
+    {
+        tracing::error!("error writing identity {}: {e}", vid.identifier());
+
+        return (StatusCode::INTERNAL_SERVER_ERROR, "error writing identity").into_response();
+    }
+
+    tracing::debug!("added VID {}", vid.identifier());
+
+    Json(&vid).into_response()
 }
 
 async fn read_id(vid: &str) -> Result<Identity, Box<dyn std::error::Error>> {

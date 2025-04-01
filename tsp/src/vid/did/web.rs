@@ -83,12 +83,8 @@ pub async fn resolve(id: &str, parts: Vec<&str>) -> Result<Vid, VidError> {
         #[cfg(feature = "use_local_certificate")]
         let cert = {
             tracing::warn!("Using local root CA! (should only be used for local testing)");
-            let mut buf = Vec::new();
-            std::fs::File::open("./test/root-ca.pem")
+            reqwest::Certificate::from_pem(include_bytes!("../../../../examples/test/root-ca.pem"))
                 .unwrap()
-                .read_to_end(&mut buf)
-                .unwrap();
-            reqwest::Certificate::from_pem(&buf).unwrap()
         };
 
         #[cfg(feature = "use_local_certificate")]

@@ -1,0 +1,32 @@
+services:
+  server:
+    build:
+      context: .
+      target: server
+      args:
+        FEATURE_FLAGS: use_local_certificate
+    command: ["localhost:3000", "--port", "3010", "--did-server", "https://localhost:3001"]
+    network_mode: host
+
+  server-ssl-proxy:
+    image: node
+    volumes:
+      - "./examples/test:/test:ro"
+    command: ["npx", "--yes", "local-ssl-proxy", "--source", "3000", "--target", "3010", "--cert", "/test/localhost.pem", "--key", "/test/localhost-key.pem"]
+    network_mode: host
+
+  did-server:
+    build:
+      context: .
+      target: did-web
+      args:
+        FEATURE_FLAGS: use_local_certificate
+    command: [ "localhost:3001", "--port", "3011", "--transport", "https://localhost:3000" ]
+    network_mode: host
+
+  did-server-ssl-proxy:
+    image: node
+    volumes:
+      - "./examples/test:/test:ro"
+    command: ["npx", "--yes", "local-ssl-proxy", "--source", "3001", "--target", "3011", "--cert", "/test/localhost.pem", "--key", "/test/localhost-key.pem"]
+    network_mode: host

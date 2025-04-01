@@ -6,10 +6,10 @@ use rustls::crypto::CryptoProvider;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 use tokio::io::AsyncReadExt;
-use tracing::{error, info, trace};
+use tracing::{error, debug, info, trace, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp::{
-    AsyncStore, Error, ExportVid, OwnedVid, ReceivedTspMessage, Vault, VerifiedVid, cesr::Part,
+    AsyncStore, Error, ExportVid, OwnedVid, ReceivedTspMessage, Vault, VerifiedVid, Vid, cesr::Part,
 };
 
 #[derive(Debug, Parser)]
@@ -33,6 +33,8 @@ struct Cli {
         help = "Test server domain"
     )]
     server: String,
+    #[arg(long, default_value = "tsp-test.org", help = "Test server domain")]
+    did_server: String,
     #[arg(short, long)]
     verbose: bool,
     #[arg(short, long, help = "Always answer yes to any prompts")]
@@ -64,6 +66,8 @@ enum Commands {
         username: String,
         #[arg(short, long)]
         alias: Option<String>,
+        #[arg(long)]
+        skip_cert_validation: bool,
     },
     CreatePeer {
         alias: String,
@@ -142,9 +146,9 @@ enum Commands {
     Refer {
         #[arg(short, long, required = true)]
         sender_vid: String,
-        #[arg(short, long, required = true)]
+        #[arg(long, required = true)]
         receiver_vid: String,
-        #[arg(short, long, required = true)]
+        #[arg(long, required = true)]
         referred_vid: String,
     },
     #[command(arg_required_else_help = true, about = "publish a new own identity")]
@@ -276,6 +280,7 @@ async fn run() -> Result<(), Error> {
     let (vault, mut vid_database, mut aliases) =
         read_database(&args.database, &args.password).await?;
     let server: String = args.server;
+    let did_server = args.did_server;
 
     match args.command {
         Commands::Verify { vid, alias, sender } => {
@@ -300,28 +305,44 @@ async fn run() -> Result<(), Error> {
 
             print!("{vid}");
         }
-        Commands::Create { username, alias } => {
-            let did = format!("did:web:{}:user:{username}", server.replace(":", "%3A"));
+        Commands::Create {
+            username,
+            alias,
+            skip_cert_validation,
+        } => {
+            let did = format!("did:web:{}:user:{username}", did_server.replace(":", "%3A"));
 
             if let Some(alias) = alias {
                 aliases.insert(alias.clone(), did.clone());
                 info!("added alias {alias} -> {did}");
             }
 
-            let url = format!("https://{server}/user/{username}");
-            let transport = url::Url::parse(&url).unwrap();
+            let transport = url::Url::parse(&format!("https://{server}/vid/{did}")).unwrap();
 
             let private_vid = OwnedVid::bind(&did, transport);
             info!("created identity {}", private_vid.identifier());
 
-            reqwest::Client::new()
-                .post(format!("https://{server}/add-vid"))
+            let mut client = reqwest::ClientBuilder::new();
+
+            if skip_cert_validation {
+                warn!("Skipping certificate validation");
+                client = client.danger_accept_invalid_certs(true);
+            }
+
+            let _: Vid = client
+                .build()
+                .unwrap()
+                .post(format!("https://{did_server}/add-vid"))
                 .json(&private_vid)
                 .send()
                 .await
-                .expect("Could not publish VID on server");
+                .inspect(|r| debug!("DID server responded with status code {}", r.status()))
+                .expect("Could not publish VID on server")
+                .json()
+                .await
+                .expect("Not a JSON response");
 
-            trace!("published DID document to {url}/did.json");
+            trace!("published DID document for {did}");
 
             vid_database.add_private_vid(private_vid.clone())?;
             write_database(&vault, &vid_database, aliases).await?;
@@ -449,7 +470,12 @@ async fn run() -> Result<(), Error> {
                 Forward(String, Vec<BytesMut>, BytesMut),
             }
 
-            while let Some(Ok(message)) = messages.next().await {
+            while let Some(message) = messages.next().await {
+                trace!("Received message: {message:?}");
+                let message = match message {
+                    Ok(m) => m,
+                    Err(_) => break,
+                };
                 let handle_message = |message: ReceivedTspMessage| {
                     match message {
                         ReceivedTspMessage::GenericMessage {

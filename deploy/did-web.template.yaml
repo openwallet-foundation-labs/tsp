@@ -21,7 +21,7 @@ spec:
       containers:
         - name: demo-server
           image: us-central1-docker.pkg.dev/teaspoon-world-demo/tsp/openwallet-foundation-labs/tsp/demo-server:${TAG}
-          args: [ "${DOMAIN}", "--did-server", "${DID_SERVER}" ]
+#          args: [ ${DOMAIN} ]
           ports:
             - name: http1
               containerPort: 3000

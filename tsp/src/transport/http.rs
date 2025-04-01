@@ -4,10 +4,14 @@ use bytes::BytesMut;
 use futures::StreamExt;
 use url::Url;
 
+use super::TransportError;
+use rustls_pki_types::CertificateDer;
+use rustls_pki_types::pem::PemObject;
 #[cfg(feature = "use_local_certificate")]
 use std::io::Read;
-
-use super::TransportError;
+use std::sync::Arc;
+use tokio_tungstenite::Connector;
+use tracing::warn;
 
 pub(crate) const SCHEME_HTTP: &str = "http";
 pub(crate) const SCHEME_HTTPS: &str = "https";
@@ -58,7 +62,30 @@ pub(crate) async fn receive_messages(
     }
     .map_err(|_| TransportError::InvalidTransportScheme(address.scheme().to_owned()))?;
 
-    let ws_stream = match tokio_tungstenite::connect_async(ws_address.as_str()).await {
+    #[allow(unused)]
+    let mut connector = None;
+    #[cfg(feature = "use_local_certificate")]
+    {
+        warn!("Using local root CA (should only be used for local testing)");
+        let cert = include_bytes!("../../../examples/test/root-ca.pem");
+        let mut store = rustls::RootCertStore::empty();
+        store.add_parsable_certificates([CertificateDer::from_pem_slice(cert).unwrap()]);
+        let rustls_client = Arc::new(
+            rustls::ClientConfig::builder()
+                .with_root_certificates(store)
+                .with_no_client_auth(),
+        );
+        connector = Some(Connector::Rustls(rustls_client));
+    }
+
+    let ws_stream = match tokio_tungstenite::connect_async_tls_with_config(
+        ws_address.as_str(),
+        None,
+        false,
+        connector,
+    )
+    .await
+    {
         Ok((stream, _)) => stream,
         Err(e) => return Err(TransportError::Websocket(ws_address.to_string(), e)),
     };

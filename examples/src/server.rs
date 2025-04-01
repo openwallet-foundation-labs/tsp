@@ -27,6 +27,7 @@ use std::{
 use tokio::signal;
 use tokio::sync::{RwLock, broadcast};
 use tower_http::cors::{Any, CorsLayer};
+use tracing::log::trace;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp::{
     Store,
@@ -135,7 +136,6 @@ async fn main() {
         .route("/script.js", get(script))
         .route("/create-identity", post(create_identity))
         .route("/verify-vid", post(verify_vid))
-        .route("/add-vid", post(add_vid))
         .route("/vid/{vid}", get(websocket_vid_handler))
         .route("/user/{user}", get(websocket_user_handler))
         .route("/user/{user}", post(route_message))
@@ -238,32 +238,6 @@ async fn verify_vid(Form(form): Form<ResolveVidInput>) -> Response {
             (StatusCode::BAD_REQUEST, "invalid vid").into_response()
         }
     }
-}
-
-/// Add did document to the local state
-async fn add_vid(Json(vid): Json<Vid>) -> Response {
-    let name = vid.identifier().split(':').next_back().unwrap_or_default();
-
-    if !verify_name(name) {
-        return (StatusCode::BAD_REQUEST, "invalid name").into_response();
-    }
-
-    let did_doc = tsp::vid::vid_to_did_document(&vid);
-
-    if let Err(e) = write_id(Identity {
-        did_doc,
-        vid: vid.clone(),
-    })
-    .await
-    {
-        tracing::error!("error writing identity {}: {e}", vid.identifier());
-
-        return (StatusCode::INTERNAL_SERVER_ERROR, "error writing identity").into_response();
-    }
-
-    tracing::debug!("added VID {}", vid.identifier());
-
-    Json(&vid).into_response()
 }
 
 /// Format CESR-encoded message parts to descriptive JSON
@@ -478,6 +452,7 @@ async fn websocket_vid_handler(
     State(state): State<Arc<AppState>>,
     Path(vid): Path<String>,
 ) -> impl IntoResponse {
+    // let vid = vid
     let mut messages_rx = state.tx.subscribe();
 
     tracing::debug!("new websocket connection for {vid}");
@@ -487,7 +462,7 @@ async fn websocket_vid_handler(
 
         async move {
             while let Ok((_, receiver, message)) = messages_rx.recv().await {
-                if receiver == vid {
+                if receiver.replace("%3A", ":") == vid {
                     let _ = ws_send.send(Message::Binary(Bytes::from(message))).await;
                 }
             }
