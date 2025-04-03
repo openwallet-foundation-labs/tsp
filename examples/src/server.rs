@@ -42,7 +42,7 @@ async fn write_id(id: Identity) -> Result<(), Box<dyn std::error::Error>> {
         .vid
         .identifier()
         .split(':')
-        .last()
+        .next_back()
         .ok_or("invalid name")?;
     let did = serde_json::to_string_pretty(&id)?;
     let path = format!("data/{name}.json");
@@ -57,7 +57,7 @@ async fn write_id(id: Identity) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn read_id(vid: &str) -> Result<Identity, Box<dyn std::error::Error>> {
-    let name = vid.split(':').last().ok_or("invalid name")?;
+    let name = vid.split(':').next_back().ok_or("invalid name")?;
     let path = format!("data/{name}.json");
     let did = tokio::fs::read_to_string(path).await?;
     let id = serde_json::from_str(&did)?;
@@ -191,7 +191,7 @@ struct ResolveVidInput {
 
 /// Resolve and verify a VID to JSON encoded key material
 async fn verify_vid(Form(form): Form<ResolveVidInput>) -> Response {
-    let name = form.vid.split(':').last().unwrap_or_default();
+    let name = form.vid.split(':').next_back().unwrap_or_default();
 
     if !verify_name(name) {
         return (StatusCode::BAD_REQUEST, "invalid name").into_response();
@@ -215,7 +215,7 @@ async fn verify_vid(Form(form): Form<ResolveVidInput>) -> Response {
 
 /// Add did document to the local state
 async fn add_vid(Json(vid): Json<Vid>) -> Response {
-    let name = vid.identifier().split(':').last().unwrap_or_default();
+    let name = vid.identifier().split(':').next_back().unwrap_or_default();
 
     if !verify_name(name) {
         return (StatusCode::BAD_REQUEST, "invalid name").into_response();
