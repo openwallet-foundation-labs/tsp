@@ -15,7 +15,7 @@ use std::{
 };
 use tokio::sync::{Mutex, broadcast};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use tsp::{AsyncStore, OwnedVid, definitions::Digest, vid::vid_to_did_document};
+use tsp::{AsyncStore, OwnedVid, VerifiedVid, definitions::Digest, vid::vid_to_did_document};
 use url::Url;
 
 #[derive(Debug, Parser)]
@@ -156,9 +156,15 @@ async fn new_message(
                                                  thread_id: Digest|
                -> Result<(), tsp::Error> {
             if let Some(nested_vid) = nested_vid {
-                db.send_nested_relationship_accept(receiver, &nested_vid, thread_id)
-                    .await
-                    .map(|_| ())
+                let my_new_nested_vid = db
+                    .send_nested_relationship_accept(receiver, &nested_vid, thread_id)
+                    .await?;
+                tracing::debug!(
+                    "Created nested {} for {nested_vid}",
+                    my_new_nested_vid.vid().identifier()
+                );
+
+                Ok(())
             } else {
                 let route: Option<Vec<&str>> = route.as_ref().map(|vec| {
                     vec.iter()
@@ -211,19 +217,24 @@ async fn new_message(
                 route,
                 opaque_payload,
             }) => {
-                tracing::debug!("verifying VID next hop {next_hop}");
-                if let Err(e) = db.verify_vid(&next_hop).await {
-                    tracing::error!("error verifying VID {next_hop}: {e}");
-                    return (StatusCode::BAD_REQUEST, "error verifying next hop VID")
-                        .into_response();
-                }
-                if let Err(e) = db.set_relation_for_vid(&next_hop, Some(receiver)) {
-                    tracing::error!("error setting relation with {next_hop}: {e}");
-                    return (
-                        StatusCode::BAD_REQUEST,
-                        "error setting relation with next hop",
-                    )
-                        .into_response();
+                if route.is_empty() {
+                    tracing::debug!("don't need to verify yourself");
+                } else {
+                    tracing::debug!("verifying VID next hop {next_hop}");
+                    if let Err(e) = db.verify_vid(&next_hop).await {
+                        tracing::error!("error verifying VID {next_hop}: {e}");
+                        return (StatusCode::BAD_REQUEST, "error verifying next hop VID")
+                            .into_response();
+                    }
+
+                    if let Err(e) = db.set_relation_for_vid(&next_hop, Some(receiver)) {
+                        tracing::error!("error setting relation with {next_hop}: {e}");
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            "error setting relation with next hop",
+                        )
+                            .into_response();
+                    }
                 }
 
                 match db

@@ -672,8 +672,14 @@ async fn run() -> Result<(), Error> {
                     ReceivedTspMessage::RequestRelationship { sender, .. } => {
                         info!("received relationship request from {sender}")
                     }
-                    ReceivedTspMessage::AcceptRelationship { sender, .. } => {
-                        info!("received accept relationship from {sender}");
+                    ReceivedTspMessage::AcceptRelationship { sender, nested_vid } => {
+                        info!(
+                            "received accept relationship from {sender} (nested_vid: {})",
+                            nested_vid.clone().unwrap_or("none".to_string())
+                        );
+                        if let Some(nested_vid) = nested_vid {
+                            println!("{}", nested_vid);
+                        }
                         break;
                     }
                     ReceivedTspMessage::CancelRelationship { sender } => {
