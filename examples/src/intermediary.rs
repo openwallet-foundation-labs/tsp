@@ -189,8 +189,13 @@ async fn new_message(
                 nested_vid,
                 thread_id,
             }) => {
-                if let Err(e) =
-                    handle_relationship_request(sender.clone(), route, nested_vid, thread_id).await
+                if let Err(e) = handle_relationship_request(
+                    sender.clone(),
+                    route,
+                    nested_vid.clone(),
+                    thread_id,
+                )
+                .await
                 {
                     let log = e.to_string();
                     tracing::error!("{log}");
@@ -201,7 +206,13 @@ async fn new_message(
                         .into_response();
                 }
 
-                let log = format!("Accepted relationship request from <code>{sender}</code>");
+                let log = if let Some(nested_vid) = nested_vid {
+                    format!(
+                        "Accepted nested relationship request from <code>{sender}</code> with nested VID <code>{nested_vid}</code>"
+                    )
+                } else {
+                    format!("Accepted relationship request from <code>{sender}</code>")
+                };
                 tracing::info!("{log}");
                 state.log.write().unwrap().push_front(log);
             }
