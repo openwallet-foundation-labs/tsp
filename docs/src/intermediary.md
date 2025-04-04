@@ -18,8 +18,8 @@ when no public address can be exposed, behind a firewall.
 
 We host two demo intermediaries publicly for testing:
 
-- [Intermediary P](https://demo-intermediary-p-797284806017.us-central1.run.app/): `did:web:demo-intermediary-p-797284806017.us-central1.run.app`
-- [Intermediary Q](https://demo-intermediary-q-797284806017.us-central1.run.app/): `did:web:demo-intermediary-p-797284806017.us-central1.run.app`
+- [Intermediary P](https://p.teaspoon.world/): `did:web:p.teaspoon.world`
+- [Intermediary Q](https://q.teaspoon.world/): `did:web:q.teaspoon.world`
 
 These two intermediaries both run the `examples/src/intermediary.rs` server.
 

@@ -3,8 +3,8 @@
 # this scripts sends a routed message from a -> p -> q -> q2 -> b
 # where p and q run using the intermediary server on Google Cloud:
 #
-# https://demo-intermediary-p-797284806017.us-central1.run.app/
-# https://demo-intermediary-q-797284806017.us-central1.run.app/
+# https://p.teaspoon.world/
+# https://q.teaspoon.world/
 
 cargo install --path .
 
@@ -22,8 +22,8 @@ for entity in a b; do
 	tsp --database "${entity%%[0-9]*}" create --alias $entity `randuser`
 done
 DID_A=$(tsp --database a print a)
-DID_P="did:web:demo-intermediary-p-797284806017.us-central1.run.app"
-DID_Q="did:web:demo-intermediary-q-797284806017.us-central1.run.app"
+DID_P="did:web:p.teaspoon.world"
+DID_Q="did:web:q.teaspoon.world"
 DID_B=$(tsp --database b print b)
 
 wait
