@@ -13,8 +13,30 @@
         <h2>Intermediary [[DOMAIN]]</h2>
         <div class="my-2">DID: <code>[[DID]]</code></div>
         <h4>Event log</h4>
-        [[LOG]]
+        <div id="event-log"></div>
     </div>
+
+    <script>
+        const logs = [[LOG_JSON]];
+        const log_container = document.getElementById("event-log");
+
+        function renderLog(log) {
+            let date = new Date(log.timestamp * 1000);
+
+            let div = document.createElement("div");
+            div.classList.add("card", "text-bg-light", "my-3");
+            div.innerHTML = `
+                <div class="card-body">${log.text}</div>
+                <div class="card-footer text-end fw-light small">${date.toLocaleString()}</div>
+            `;
+            return div;
+        }
+
+        // initialize log
+        for (log of logs) {
+            log_container.append(renderLog(log));
+        }
+    </script>
 </body>
 
 </html>

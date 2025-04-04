@@ -9,6 +9,7 @@ use axum::{
 use clap::Parser;
 use futures::{sink::SinkExt, stream::StreamExt};
 use reqwest::header;
+use serde::Serialize;
 use std::{
     collections::VecDeque,
     sync::{Arc, RwLock},
@@ -38,7 +39,41 @@ struct IntermediaryState {
     did: String,
     db: Mutex<AsyncStore>,
     tx: broadcast::Sender<(String, Vec<u8>)>,
-    log: RwLock<VecDeque<String>>,
+    log: RwLock<VecDeque<LogEntry>>,
+}
+
+#[derive(Serialize)]
+struct LogEntry {
+    text: String,
+    timestamp: u64,
+}
+
+impl LogEntry {
+    fn new(text: String) -> LogEntry {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        LogEntry { text, timestamp }
+    }
+}
+
+impl IntermediaryState {
+    /// Add an entry to the event log on the website
+    fn log(&self, text: String) {
+        tracing::info!("{text}");
+        let mut log = self.log.write().unwrap();
+        log.push_front(LogEntry::new(text));
+        log.truncate(MAX_LOG_LEN);
+    }
+
+    /// Add an error entry to the event log on the website
+    fn log_error(&self, text: String) {
+        tracing::error!("{text}");
+        let mut log = self.log.write().unwrap();
+        log.push_front(LogEntry::new(text));
+        log.truncate(MAX_LOG_LEN);
+    }
 }
 
 const MAX_LOG_LEN: usize = 10;
@@ -105,14 +140,8 @@ async fn index(State(state): State<Arc<IntermediaryState>>) -> Html<String> {
     html = html.replace("[[DID]]", &state.did);
 
     let log = state.log.read().unwrap();
-    if log.is_empty() {
-        html = html.replace("[[LOG]]", "<i>The log is empty</i>");
-    } else {
-        let text: Vec<String> = log.iter().map(|line| format!(
-            "<div class=\"card container text-bg-light my-3\"><div class=\"card-body\">{line}</div></div>"
-        )).collect();
-        html = html.replace("[[LOG]]", &text.join(""));
-    }
+    let serialized_log = serde_json::to_string(&log.iter().collect::<Vec<_>>()).unwrap();
+    html = html.replace("[[LOG_JSON]]", &serialized_log);
 
     Html(html)
 }
@@ -197,24 +226,18 @@ async fn new_message(
                 )
                 .await
                 {
-                    let log = e.to_string();
-                    tracing::error!("{log}");
-                    state.log.write().unwrap().push_front(log);
-
-                    state.log.write().unwrap().truncate(MAX_LOG_LEN);
+                    state.log_error(e.to_string());
                     return (StatusCode::BAD_REQUEST, "error accepting relationship")
                         .into_response();
                 }
 
-                let log = if let Some(nested_vid) = nested_vid {
+                state.log(if let Some(nested_vid) = nested_vid {
                     format!(
                         "Accepted nested relationship request from <code>{sender}</code> with nested VID <code>{nested_vid}</code>"
                     )
                 } else {
                     format!("Accepted relationship request from <code>{sender}</code>")
-                };
-                tracing::info!("{log}");
-                state.log.write().unwrap().push_front(log);
+                });
             }
             Ok(tsp::ReceivedTspMessage::AcceptRelationship { sender, .. }) => {
                 tracing::error!("accept relationship message from {sender}")
@@ -253,18 +276,12 @@ async fn new_message(
                     .await
                 {
                     Ok(url) => {
-                        let log = format!(
+                        state.log(format!(
                             "Forwarded message from <code>{sender}</code> to <code>{url}</code>",
-                        );
-                        tracing::info!("{log}");
-                        state.log.write().unwrap().push_front(log);
+                        ));
                     }
                     Err(e) => {
-                        let log = e.to_string();
-                        tracing::error!("{log}");
-                        state.log.write().unwrap().push_front(log);
-
-                        state.log.write().unwrap().truncate(MAX_LOG_LEN);
+                        state.log_error(e.to_string());
                         return (StatusCode::BAD_REQUEST, "error forwarding message")
                             .into_response();
                     }
@@ -282,18 +299,13 @@ async fn new_message(
             }
         }
     } else {
-        let log = format!(
+        state.log(format!(
             "Forwarding message from  <code>{sender}</code> to <code>{receiver}</code> via WebSockets ({} bytes)",
             message.len()
-        );
-        tracing::info!("{log}");
-        state.log.write().unwrap().push_front(log);
-
+        ));
         // insert message in queue
         let _ = state.tx.send((receiver.to_owned(), message));
     }
-
-    state.log.write().unwrap().truncate(MAX_LOG_LEN);
 
     StatusCode::OK.into_response()
 }
