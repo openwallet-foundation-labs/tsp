@@ -242,10 +242,10 @@ async fn new_message(
 
                 state.log(if let Some(nested_vid) = nested_vid {
                     format!(
-                        "Accepted nested relationship request from <code>{sender}</code> with nested VID <code>{nested_vid}</code>"
+                        "Accepted nested relationship request from {sender} with nested VID {nested_vid}"
                     )
                 } else {
-                    format!("Accepted relationship request from <code>{sender}</code>")
+                    format!("Accepted relationship request from {sender}")
                 });
             }
             Ok(tsp::ReceivedTspMessage::AcceptRelationship { sender, .. }) => {
@@ -285,9 +285,7 @@ async fn new_message(
                     .await
                 {
                     Ok(url) => {
-                        state.log(format!(
-                            "Forwarded message from <code>{sender}</code> to <code>{url}</code>",
-                        ));
+                        state.log(format!("Forwarded message from {sender} to {url}",));
                     }
                     Err(e) => {
                         state.log_error(e.to_string());
@@ -309,7 +307,7 @@ async fn new_message(
         }
     } else {
         state.log(format!(
-            "Forwarding message from  <code>{sender}</code> to <code>{receiver}</code> via WebSockets ({} bytes)",
+            "Forwarding message from  {sender} to {receiver} via WebSockets ({} bytes)",
             message.len()
         ));
         // insert message in queue

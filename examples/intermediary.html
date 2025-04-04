@@ -22,11 +22,12 @@
 
         function renderLog(log) {
             let date = new Date(log.timestamp * 1000);
+            let text = log.text.replace(/\b(did:\S+)|(https|http|tcp):\/\/\S+\b/g, m => `<code>${m}</code>`);
 
             let div = document.createElement("div");
             div.classList.add("card", "text-bg-light", "my-3");
             div.innerHTML = `
-                <div class="card-body">${log.text}</div>
+                <div class="card-body">${text}</div>
                 <div class="card-footer text-end fw-light small">${date.toLocaleString()}</div>
             `;
             return div;
