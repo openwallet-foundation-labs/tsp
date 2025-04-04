@@ -38,11 +38,16 @@
             log_container.append(renderLog(log));
         }
 
-        const socket = new WebSocket("wss://[[DOMAIN]]/logs");
-        socket.addEventListener("message", (event) => {
-            let log = JSON.parse(event.data);
-            log_container.prepend(renderLog(log));
-        });
+        function connectWebSocket() {
+            const socket = new WebSocket("wss://[[DOMAIN]]/logs");
+            socket.addEventListener("message", (event) => {
+                let log = JSON.parse(event.data);
+                log_container.prepend(renderLog(log));
+            });
+            socket.addEventListener('close', connectWebSocket);
+        }
+
+        connectWebSocket();
     </script>
 </body>
 
