@@ -36,6 +36,12 @@
         for (log of logs) {
             log_container.append(renderLog(log));
         }
+
+        const socket = new WebSocket("wss://[[DOMAIN]]/logs");
+        socket.addEventListener("message", (event) => {
+            let log = JSON.parse(event.data);
+            log_container.prepend(renderLog(log));
+        });
     </script>
 </body>
 

@@ -38,11 +38,12 @@ struct IntermediaryState {
     domain: String,
     did: String,
     db: Mutex<AsyncStore>,
-    tx: broadcast::Sender<(String, Vec<u8>)>,
+    message_tx: broadcast::Sender<(String, Vec<u8>)>,
     log: RwLock<VecDeque<LogEntry>>,
+    log_tx: broadcast::Sender<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct LogEntry {
     text: String,
     timestamp: u64,
@@ -59,20 +60,26 @@ impl LogEntry {
 }
 
 impl IntermediaryState {
+    fn internal_log(&self, text: String) {
+        let mut log = self.log.write().unwrap();
+        let entry = LogEntry::new(text);
+        log.push_front(entry.clone());
+        log.truncate(MAX_LOG_LEN);
+
+        let json = serde_json::to_string(&entry).unwrap();
+        let _ = self.log_tx.send(json);
+    }
+
     /// Add an entry to the event log on the website
     fn log(&self, text: String) {
         tracing::info!("{text}");
-        let mut log = self.log.write().unwrap();
-        log.push_front(LogEntry::new(text));
-        log.truncate(MAX_LOG_LEN);
+        self.internal_log(text);
     }
 
     /// Add an error entry to the event log on the website
     fn log_error(&self, text: String) {
         tracing::error!("{text}");
-        let mut log = self.log.write().unwrap();
-        log.push_front(LogEntry::new(text));
-        log.truncate(MAX_LOG_LEN);
+        self.internal_log(text);
     }
 }
 
@@ -108,8 +115,9 @@ async fn main() {
         domain: args.domain.to_owned(),
         did,
         db: Mutex::new(db),
-        tx: broadcast::channel(100).0,
+        message_tx: broadcast::channel(100).0,
         log: RwLock::new(VecDeque::with_capacity(MAX_LOG_LEN)),
+        log_tx: broadcast::channel(100).0,
     });
 
     // Compose the routes
@@ -120,6 +128,7 @@ async fn main() {
             "/.well-known/did.json",
             get(async || ([(header::CONTENT_TYPE, "application/json")], did_doc)),
         )
+        .route("/logs", get(log_websocket_handler))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", args.port))
@@ -304,7 +313,7 @@ async fn new_message(
             message.len()
         ));
         // insert message in queue
-        let _ = state.tx.send((receiver.to_owned(), message));
+        let _ = state.message_tx.send((receiver.to_owned(), message));
     }
 
     StatusCode::OK.into_response()
@@ -317,7 +326,7 @@ async fn websocket_handler(
     Path(did): Path<String>,
 ) -> impl IntoResponse {
     tracing::info!("{} listening for messages intended for {did}", state.domain);
-    let mut messages_rx = state.tx.subscribe();
+    let mut messages_rx = state.message_tx.subscribe();
 
     ws.on_upgrade(|socket| {
         let (mut ws_send, _) = socket.split();
@@ -333,6 +342,24 @@ async fn websocket_handler(
 
                     let _ = ws_send.send(Message::Binary(Bytes::from(message))).await;
                 }
+            }
+        }
+    })
+}
+
+/// Handle incoming websocket connections for users viewing the web interface
+async fn log_websocket_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<IntermediaryState>>,
+) -> impl IntoResponse {
+    let mut logs_rx = state.log_tx.subscribe();
+
+    ws.on_upgrade(|socket| {
+        let (mut ws_send, _) = socket.split();
+
+        async move {
+            while let Ok(log) = logs_rx.recv().await {
+                let _ = ws_send.send(Message::Text(log.into())).await;
             }
         }
     })
