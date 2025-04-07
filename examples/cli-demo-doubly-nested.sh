@@ -23,23 +23,21 @@ tsp --database marlon verify --alias marc "$DID_MARC"
 echo "---- establish an outer relation"
 sleep 0.2 && tsp --database marlon request -s marlon -r marc &
 read -d '\t' marlon thread_id <<< $(tsp --yes --database marc receive --one marc)
-
-sleep 0.2 && tsp --database marc accept -s marc -r "$marlon" --thread-id "$thread_id" &
-tsp --database marlon receive --one marlon
+sleep 1 && tsp --database marc accept -s marc -r "$marlon" --thread-id "$thread_id"
 
 echo "---- establish a nested relationship"
-sleep 0.2 && tsp --database marlon request --nested -s marlon -r marc &
-read -d '\t' nested_marlon thread_id <<< $(tsp --database marc receive --one marc)
-
-sleep 0.2 && tsp --database marc accept --nested -s marc -r "$nested_marlon" --thread-id "$thread_id" &
-nested_marc=$(tsp --database marlon receive --one marlon)
+(
+    read -d '\t' nested_marlon thread_id <<< $(tsp --database marc receive --one marc)
+    sleep 1 && tsp --database marc accept --nested -s marc -r "$nested_marlon" --thread-id "$thread_id"
+) &
+sleep 2 && read -d '' nested_marlon nested_marc <<< $(tsp --database marlon request --nested -s marlon -r marc)
 
 echo "---- establish a twice-nested relationship"
-sleep 0.2 && tsp --database marlon request --nested -s "$nested_marlon" -r "$nested_marc" &
-read -d '\t' nested_nested_marlon thread_id <<< $(tsp --database marc receive --one marc)
-
-sleep 0.2 && tsp --database marc accept --nested -s "$nested_marc" -r "$nested_nested_marlon" --thread-id "$thread_id" &
-nested_nested_marc=$(tsp --database marlon receive --one marlon)
+(
+    read -d '\t' nested_nested_marlon thread_id <<< $(tsp --database marc receive --one marc)
+    sleep 1 && tsp --database marc accept --nested -s "$nested_marc" -r "$nested_nested_marlon" --thread-id "$thread_id"
+) &
+sleep 2 && read -d '' nested_nested_marlon nested_nested_marc <<< $(tsp --database marlon request --nested -s "$nested_marlon" -r "$nested_marc" -p "$marlon")
 
 echo "---- send and process a twice-nested message"
 echo Sender: "$nested_nested_marlon"

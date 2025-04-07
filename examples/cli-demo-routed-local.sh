@@ -3,10 +3,12 @@
 # this scripts sends a routed message from a -> p -> q -> q2 -> b
 # where p and q run using the intermediary server
 
-# here the intermediaries also need to use the feature "use_local__certificate":
+# here the intermediaries also need to use the feature "use_local_certificate":
 #
 #    cargo run --features tsp/use_local_certificate --bin demo-intermediary -- --port 3011 localhost:3001
 #    cargo run --features tsp/use_local_certificate --bin demo-intermediary -- --port 3012 localhost:3002
+#
+# (you should run these in separate terminals, together with the SSL proxy)
 
 cargo install --path . --features tsp/use_local_certificate
 
