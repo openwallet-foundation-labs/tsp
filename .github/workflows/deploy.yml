@@ -81,6 +81,7 @@ jobs:
           export TAG="${{ env.tag }}"
           export SERVICE="demo-server"
           export DID_SERVER="https://did-server-797284806017.us-central1.run.app"
+          export DOMAIN="demo.teaspoon.world"
           envsubst < deploy/server.template.yaml > server.yaml
       - name: Create DID server declaration
         run: |-

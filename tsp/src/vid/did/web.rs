@@ -1,6 +1,3 @@
-#[cfg(feature = "use_local_certificate")]
-use std::io::Read;
-
 use crate::definitions::{PUBLIC_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE, VerifiedVid};
 use base64ct::{Base64UrlUnpadded, Encoding};
 use serde::Deserialize;

@@ -53,15 +53,6 @@ struct Identity {
     vid: Vid,
 }
 
-async fn read_id(vid: &str) -> Result<Identity, Box<dyn std::error::Error>> {
-    let name = vid.split(':').next_back().ok_or("invalid name")?;
-    let path = format!("data/{name}.json");
-    let did = tokio::fs::read_to_string(path).await?;
-    let id = serde_json::from_str(&did)?;
-
-    Ok(id)
-}
-
 /// Application state, used to store the identities and the broadcast channel
 struct AppState {
     domain: String,
@@ -112,7 +103,6 @@ async fn main() {
         .route("/script.js", get(script))
         .route("/create-identity", post(create_identity))
         .route("/verify-vid", post(verify_vid))
-        .route("/vid/{vid}", get(websocket_vid_handler))
         .route("/user/{user}", get(websocket_user_handler))
         .route("/user/{user}", post(route_message))
         .route("/sign-timestamp", post(sign_timestamp))
@@ -353,12 +343,10 @@ async fn route_message(State(state): State<Arc<AppState>>, body: Bytes) -> Respo
 
     // translate received identifier into the transport; either because it is a
     // known user or because it is a did:peer. note that this allows "snooping" messages
-    // that are not intended for you --- but that will allow to build interesting demo cases
+    // that are not intended for you --- but that will allow building interesting demo cases
     // since the unintended recipient cannot read the message: the security of TSP is not based
     // on security of the transport layer.
-    let receiver = if let Ok(receiver) = read_id(&receiver).await {
-        receiver.vid.endpoint().to_string()
-    } else if let Ok(vid) = tsp::vid::resolve::verify_vid_offline(&receiver) {
+    if let Ok(vid) = tsp::vid::resolve::verify_vid(&receiver).await {
         vid.endpoint().to_string()
     } else {
         return (StatusCode::BAD_REQUEST, "unknown receiver").into_response();
@@ -423,12 +411,11 @@ async fn send_message(
 }
 
 /// Handle incoming websocket connections for vid
-async fn websocket_vid_handler(
+async fn websocket_user_handler(
     ws: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,
     Path(vid): Path<String>,
 ) -> impl IntoResponse {
-    // let vid = vid
     let mut messages_rx = state.tx.subscribe();
 
     tracing::debug!("new websocket connection for {vid}");
@@ -439,30 +426,6 @@ async fn websocket_vid_handler(
         async move {
             while let Ok((_, receiver, message)) = messages_rx.recv().await {
                 if receiver.replace("%3A", ":") == vid {
-                    let _ = ws_send.send(Message::Binary(Bytes::from(message))).await;
-                }
-            }
-        }
-    })
-}
-
-/// Handle incoming websocket connections for user
-async fn websocket_user_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<Arc<AppState>>,
-    Path(name): Path<String>,
-) -> impl IntoResponse {
-    let mut messages_rx = state.tx.subscribe();
-    let current = format!("https://{}/user/{name}", state.domain);
-
-    tracing::debug!("new websocket connection for {current}");
-
-    ws.on_upgrade(|socket| {
-        let (mut ws_send, _) = socket.split();
-
-        async move {
-            while let Ok((_, receiver, message)) = messages_rx.recv().await {
-                if receiver == current {
                     let _ = ws_send.send(Message::Binary(Bytes::from(message))).await;
                 }
             }
@@ -557,5 +520,5 @@ async fn websocket(stream: WebSocket, state: Arc<AppState>) {
     tokio::select! {
         _ = (&mut send_task) => recv_task.abort(),
         _ = (&mut recv_task) => send_task.abort(),
-    };
+    }
 }

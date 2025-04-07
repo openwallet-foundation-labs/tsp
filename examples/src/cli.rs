@@ -311,7 +311,7 @@ async fn run() -> Result<(), Error> {
                 info!("added alias {alias} -> {did}");
             }
 
-            let transport = url::Url::parse(&format!("https://{server}/vid/{did}")).unwrap();
+            let transport = url::Url::parse(&format!("https://{server}/user/{did}")).unwrap();
 
             let private_vid = OwnedVid::bind(&did, transport);
             info!("created identity {}", private_vid.identifier());
