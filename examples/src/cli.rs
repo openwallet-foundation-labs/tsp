@@ -6,7 +6,7 @@ use rustls::crypto::CryptoProvider;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 use tokio::io::AsyncReadExt;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp::{
     AsyncStore, Error, ExportVid, OwnedVid, ReceivedTspMessage, Vault, VerifiedVid, Vid, cesr::Part,
@@ -29,11 +29,11 @@ struct Cli {
     #[arg(
         short,
         long,
-        default_value = "tsp-test.org",
+        default_value = "demo.teaspoon.world",
         help = "Test server domain"
     )]
     server: String,
-    #[arg(long, default_value = "tsp-test.org", help = "Test server domain")]
+    #[arg(long, default_value = "did.teaspoon.world", help = "DID server domain")]
     did_server: String,
     #[arg(short, long)]
     verbose: bool,
@@ -66,8 +66,6 @@ enum Commands {
         username: String,
         #[arg(short, long)]
         alias: Option<String>,
-        #[arg(long)]
-        skip_cert_validation: bool,
     },
     CreatePeer {
         alias: String,
@@ -305,11 +303,7 @@ async fn run() -> Result<(), Error> {
 
             print!("{vid}");
         }
-        Commands::Create {
-            username,
-            alias,
-            skip_cert_validation,
-        } => {
+        Commands::Create { username, alias } => {
             let did = format!("did:web:{}:user:{username}", did_server.replace(":", "%3A"));
 
             if let Some(alias) = alias {
@@ -322,11 +316,15 @@ async fn run() -> Result<(), Error> {
             let private_vid = OwnedVid::bind(&did, transport);
             info!("created identity {}", private_vid.identifier());
 
+            #[allow(unused_mut)]
             let mut client = reqwest::ClientBuilder::new();
 
-            if skip_cert_validation {
-                warn!("Skipping certificate validation");
-                client = client.danger_accept_invalid_certs(true);
+            #[cfg(feature = "use_local_certificate")]
+            {
+                tracing::warn!("Using local certificate, use only for testing!");
+                let cert = include_bytes!("../test/root-ca.pem");
+                let cert = reqwest::tls::Certificate::from_pem(cert).unwrap();
+                client = client.add_root_certificate(cert);
             }
 
             let _: Vid = client

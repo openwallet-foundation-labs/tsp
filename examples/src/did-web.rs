@@ -21,14 +21,11 @@ struct Cli {
     #[arg(
         short,
         long,
-        default_value = "https://localhost:3001/user",
+        default_value = "https://did.teaspoon.world/user",
         help = "The base path of the transport for new DIDs"
     )]
     transport: String,
-    #[arg(
-        index = 1,
-        help = "e.g. \"did-web.teaspoon.world\" or \"localhost:3000\""
-    )]
+    #[arg(index = 1, help = "e.g. \"did.teaspoon.world\" or \"localhost:3000\"")]
     domain: String,
 }
 

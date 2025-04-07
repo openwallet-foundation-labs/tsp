@@ -44,6 +44,14 @@ jobs:
           target: server
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Build and push did-web-server
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          tags: "ghcr.io/openwallet-foundation-labs/tsp/did-web-server:${{ env.tag }}"
+          target: did-web
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   deploy-intermediaries:
     name: "Deploy to Google Cloud Run"
@@ -74,6 +82,13 @@ jobs:
           export SERVICE="demo-server"
           export DID_SERVER="did.teaspoon.world"
           envsubst < deploy/server.template.yaml > server.yaml
+      - name: Create DID server declaration
+        run: |-
+          export TAG="${{ env.tag }}"
+          export SERVICE="did-server"
+          export TRANSPORT="demo.teaspoon.world"
+          export DOMAIN="did.teaspoon.world"
+          envsubst < deploy/did-web.template.yaml > did-server.yaml
       - name: Deploy intermediary p
         uses: 'google-github-actions/deploy-cloudrun@v2'
         with:
@@ -89,3 +104,8 @@ jobs:
         with:
           project_id: 'teaspoon-world-demo'
           metadata: "server.yaml"
+      - name: Deploy did web server
+        uses: 'google-github-actions/deploy-cloudrun@v2'
+        with:
+          project_id: 'teaspoon-world-demo'
+          metadata: "did-server.yaml"
