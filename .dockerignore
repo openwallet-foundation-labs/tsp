@@ -1,0 +1,12 @@
+gha-creds-*.json
+.github/
+.cargo/
+.git/
+demo/
+docs/
+target/
+venv/
+README.md
+LICENSE
+deploy/
+Dockerfile

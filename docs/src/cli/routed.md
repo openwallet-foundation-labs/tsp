@@ -1,7 +1,9 @@
 # Routed mode
 
-Like nested mode, routed mode can be set up by exchanging relationship messages between every hop in the node (for the most
-part), or more manually. In this document we will assume a setup with four nodes: a sender `a`, receiver `b`, and two intermediaries `p` and `q`.
+Like nested mode, routed mode can be set up by exchanging relationship messages between every hop in the node (for the most part), or more manually. Here, we will assume a setup with four nodes: a sender `a`, receiver `b`, and two intermediaries `p` and `q`.
+
+In this document, we will use the CLI to simulate intermediaries. We also have a stand-alone example [intermediary server](../intermediary.md), which we will discuss in the next chapter.
+
 
 ## Routed mode (semi-automated set up)
 
@@ -10,7 +12,7 @@ To set up routed mode, the four nodes need to establish bidirectional outer rela
 been formed.
 
 What is special about routed mode, is that the final hop node `q`, needs to have a special VID (say `q2`) that is dedicated to sending
-messages to the final recipient `b`. This can be achieve in two ways:
+messages to the final recipient `b`. This can be achieved in two ways:
 
 * Establishing a nested relationship between `q` and `b`, and then using the inner VID for `q` as the final hop. Nested relationships always have a "relation vid".
 * Explicitly creating a separate public identity for the node `q` that is verified by `b` and has `b` as its "relation vid":

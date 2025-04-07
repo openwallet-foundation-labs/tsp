@@ -274,7 +274,7 @@ impl Store {
         }
     }
 
-    /// Check whether the [PrivateVid] identified by `vid` exists inthe database
+    /// Check whether the [PrivateVid] identified by `vid` exists in the database
     pub fn has_private_vid(&self, vid: &str) -> Result<bool, Error> {
         Ok(self.get_private_vid(vid).is_ok())
     }
@@ -469,40 +469,6 @@ impl Store {
         let path = hop_list[1..].iter().map(|x| x.as_bytes()).collect();
 
         Ok((next_hop, path))
-    }
-
-    /// Receive, open and forward a TSP message
-    pub fn route_message(
-        &self,
-        sender: &str,
-        receiver: &str,
-        message: &mut [u8],
-    ) -> Result<(Url, Vec<u8>), Error> {
-        let Ok(sender) = self.get_verified_vid(sender) else {
-            return Err(Error::UnverifiedVid(sender.to_string()));
-        };
-
-        let Ok(receiver) = self.get_private_vid(receiver) else {
-            return Err(CryptoError::UnexpectedRecipient.into());
-        };
-
-        let (_, payload, _, _) = crate::crypto::open(&*receiver, &*sender, message)?;
-
-        let (next_hop, path, inner_message) = match payload {
-            Payload::RoutedMessage(hops, inner_message) => {
-                let next_hop = std::str::from_utf8(hops[0])?;
-
-                (next_hop, hops[1..].into(), inner_message)
-            }
-            _ => {
-                return Err(Error::InvalidRoute(format!(
-                    "expected a routed message, got {:?}",
-                    payload
-                )));
-            }
-        };
-
-        self.forward_routed_message(next_hop, path, inner_message)
     }
 
     /// Pass along a in-transit routed TSP `opaque_message` that is not meant for us, given earlier resolved VIDs.
@@ -799,7 +765,7 @@ impl Store {
         }
     }
 
-    /// Make relationship request messages. The receiver vid has to be a publically discoverable Vid.
+    /// Make relationship request messages. The receiver vid has to be a publicly discoverable Vid.
     pub fn make_relationship_request(
         &self,
         sender: &str,
@@ -1070,7 +1036,9 @@ impl Store {
         };
 
         if thread_id != digest {
-            return Err(Error::Relationship(other_vid.into()));
+            return Err(Error::Relationship(
+                "thread_id does not match digest".to_string(),
+            ));
         }
 
         context.relation_vid = Some(my_vid.to_string());
