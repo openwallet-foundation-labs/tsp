@@ -23,7 +23,7 @@ We host two demo intermediaries publicly for testing:
 
 These two intermediaries both run the `examples/src/intermediary.rs` server.
 
-The `cli-demo-routed-external-pq.sh` script in the `examples/` directory creates two local end-points A and B, and then sends a message from A to B via the public intermediaries P and Q. To do this, it first sets up relations between A and P and between B and Q. Additionally, for the final drop-off to work, B creates a nested relation between B and Q, resulting into two nested DIDs B2 and Q2. The final route of the message from A then becomes `P,Q,Q2`, where Q2 will drop off the message at B2
+The `cli-demo-routed-external.sh` script in the `examples/` directory creates two local end-points A and B, and then sends a message from A to B via the public intermediaries P and Q. To do this, it first sets up relations between A and P and between B and Q. Additionally, for the final drop-off to work, B creates a nested relation between B and Q, resulting into two nested DIDs B2 and Q2. The final route of the message from A then becomes `P,Q,Q2`, where Q2 will drop off the message at B2
 
 ### Running demo intermediaries locally
 
@@ -40,9 +40,9 @@ cargo run --features tsp/use_local_certificate --bin demo-intermediary -- --port
 cargo run --features tsp/use_local_certificate --bin demo-intermediary -- --port 3012 localhost:3002
 ```
 
-This runs the intermediaries on http://localhost:3011/ and http://localhost:3012/. The SSL proxy makes these accessible via HTTPS at https://localhost:3001/ and https://localhost:3002/, so DIDs we should use are `did:web:localhost%3A3001` for P and `did:web:localhost%3A3002` for Q.
+This runs the intermediaries on <http://localhost:3011/> and <http://localhost:3012/>. The SSL proxy makes these accessible via HTTPS at <https://localhost:3001/> and <https://localhost:3002/>, so DIDs we should use are `did:web:localhost%3A3001` for P and `did:web:localhost%3A3002` for Q.
 
-The `cli-demo-routed-local-pq.sh` script in the `examples/` directory creates two local end-points A and B, and sends a message from A to B via the local intermediaries P and Q. This works the same as the demo using our publicly accessible intermediaries.
+The `cli-demo-routed-local.sh` script in the `examples/` directory creates two local end-points A and B, and sends a message from A to B via the local intermediaries P and Q. This works the same as the demo using our publicly accessible intermediaries.
 
 ## TSP library usage for intermediaries
 
