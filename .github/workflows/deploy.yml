@@ -80,14 +80,14 @@ jobs:
         run: |-
           export TAG="${{ env.tag }}"
           export SERVICE="demo-server"
-          export DID_SERVER="did.teaspoon.world"
+          export DID_SERVER="https://did-server-797284806017.us-central1.run.app"
           envsubst < deploy/server.template.yaml > server.yaml
       - name: Create DID server declaration
         run: |-
           export TAG="${{ env.tag }}"
           export SERVICE="did-server"
-          export TRANSPORT="demo.teaspoon.world"
-          export DOMAIN="did.teaspoon.world"
+          export TRANSPORT="https://demo.teaspoon.world"
+          export DOMAIN="did-server-797284806017.us-central1.run.app"
           envsubst < deploy/did-web.template.yaml > did-server.yaml
       - name: Deploy intermediary p
         uses: 'google-github-actions/deploy-cloudrun@v2'
