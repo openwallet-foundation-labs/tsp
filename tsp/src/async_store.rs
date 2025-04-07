@@ -363,7 +363,10 @@ impl AsyncStore {
                                 payload: opaque_data.unwrap_or(m),
                             })
                         }
-                        maybe_message => maybe_message.map(|msg| msg.into_owned()),
+                        maybe_message => maybe_message.map(|msg| msg.into_owned()).map_err(|e| {
+                            tracing::error!("{}", e);
+                            e
+                        }),
                     },
                     Err(e) => Err(e.into()),
                 }

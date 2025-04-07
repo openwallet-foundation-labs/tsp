@@ -113,6 +113,12 @@ enum Commands {
         receiver_vid: String,
         #[arg(long)]
         nested: bool,
+        #[arg(
+            short,
+            long,
+            help = "parent VID of the sender, used to listen for a response"
+        )]
+        parent_vid: Option<String>,
     },
     #[command(arg_required_else_help = true, about = "accept a relationship")]
     Accept {
@@ -626,13 +632,17 @@ async fn run() -> Result<(), Error> {
             sender_vid,
             receiver_vid,
             nested,
+            parent_vid,
         } => {
             let sender_vid = aliases.get(&sender_vid).unwrap_or(&sender_vid);
             let receiver_vid = aliases.get(&receiver_vid).unwrap_or(&receiver_vid);
 
             // Setup receive stream before sending the request
-            let mut messages = vid_database.receive(sender_vid).await?;
+            let listener_vid = parent_vid.unwrap_or(sender_vid.clone());
+            let listener_vid = aliases.get(&listener_vid).unwrap_or(&listener_vid);
+            let mut messages = vid_database.receive(listener_vid).await?;
 
+            tracing::debug!("sending request...");
             if nested {
                 match vid_database
                     .send_nested_relationship_request(sender_vid, receiver_vid)

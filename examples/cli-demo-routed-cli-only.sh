@@ -58,10 +58,8 @@ tsp --database a verify --alias p "$DID_P"
 
 sleep 2 && tsp --database a request -s a -r p &
 read -d '\t' vid thread_id <<< $(tsp --yes --database p receive --one p)
-
 tsp --database p set-alias a "$vid"
-sleep 2 && tsp --database p accept -s p -r a --thread-id "$thread_id" &
-tsp --database a receive --one a
+sleep 2 && tsp --database p accept -s p -r a --thread-id "$thread_id"
 
 echo "---- establish outer relation p<->q"
 tsp --database q verify --alias p "$DID_P"
@@ -69,9 +67,7 @@ tsp --database q verify --alias p "$DID_P"
 sleep 2 && tsp --database q request -s q -r p &
 read -d '\t' vid thread_id <<< $(tsp --yes --database p receive --one p)
 tsp --database p set-alias q "$vid"
-
-sleep 2 && tsp --database p accept -s p -r q --thread-id "$thread_id" &
-tsp --database q receive --one q
+sleep 2 && tsp --database p accept -s p -r q --thread-id "$thread_id"
 
 if [ "$Q2" ]; then
     echo "---- establish outer relation q2<->b"
@@ -80,9 +76,7 @@ if [ "$Q2" ]; then
     sleep 2 && tsp --database b request -s b -r q2 &
     read -d '\t' vid thread_id <<< $(tsp --yes --database q receive --one q2)
     tsp --database q set-alias b "$vid"
-
-    sleep 2 && tsp --database q accept -s q2 -r b --thread-id "$thread_id" &
-    tsp --database b receive --one b
+    sleep 2 && tsp --database q accept -s q2 -r b --thread-id "$thread_id"
 
     tsp --database q set-relation q2 b
 else
@@ -92,17 +86,14 @@ else
     sleep 2 && tsp --database b request -s b -r q &
     read -d '\t' vid thread_id <<< $(tsp --yes --database q receive --one q)
     tsp --database q set-alias b "$vid"
-
-    sleep 2 && tsp --database q accept -s q -r b --thread-id "$thread_id" &
-    tsp --database b receive --one b
+    sleep 2 && tsp --database q accept -s q -r b --thread-id "$thread_id"
 
     echo "---- establish nested relation q<->b"
-
-    sleep 2 && tsp --database b request --nested -s b -r q > /dev/null &
-    read -d '\t' nested_b thread_id <<< $(tsp --database q receive --one q)
-
-    sleep 2 && tsp --database q accept --nested -s q -r "$nested_b" --thread-id "$thread_id" > /tmp/vid &
-    DID_Q2=$(tsp --database b receive --one b)
+    (
+        read -d '\t' nested_b thread_id <<< $(tsp --database q receive --one q)
+        sleep 1 && tsp --database q accept --nested -s q -r "$nested_b" --thread-id "$thread_id"
+    ) &
+    sleep 2 && read -d '' DID_B2 DID_Q2 <<< $(tsp --database b request --nested -s b -r q)
 fi
 
 echo "---- setup the route"

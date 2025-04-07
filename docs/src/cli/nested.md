@@ -18,7 +18,7 @@ We use the same __alice__ and __bob__ example as in the previous chapter.
 First, __alice__ will have to learn about __bob__'s existence:
 
 ```sh
-> tsp -d alice verify bob did:web:tsp-test.org:user:bob
+> tsp -d alice verify --alias bob did:web:tsp-test.org:user:bob
  INFO tsp: did:web:tsp-test.org:user:bob is verified and added to the database alice
 ```
 Then she can send a relationship request message. This requires __bob__ to be listening as
@@ -26,18 +26,18 @@ shown in the previous chapter (i.e. running `tsp -d bob receive` in a separate w
 ```sh
 > tsp -d alice request --sender-vid did:web:tsp-test.org:user:alice --receiver-vid did:web:tsp-test.org:user:bob
  INFO tsp::async_store: sending message to https://tsp-test.org/user/bob
- INFO tsp: sent control message from did:web:tsp-test.org:user:alice to did:web:tsp-test.org:user:bob
+ INFO tsp: sent relationship request from did:web:tsp-test.org:user:alice to did:web:tsp-test.org:user:bob, waiting for response...
 ```
 
 On __bob__'s side, we will see:
 ```sh
-> tsp -d bob receive --one
+> tsp -d bob receive --one did:web:tsp-test.org:user:bob
  INFO tsp: message involving unknown party did:web:tsp-test.org:user:alice
 do you want to read a message from 'did:web:tsp-test.org:user:alice'? [y/n] y
  INFO tsp: received relationship request from did:web:tsp-test.org:user:alice, thread-id 'JZla6+N6FP/In7ywOp8yQD2GfXemCn1e4b6tFVWaLxg'
 ```
 
-Notice how a thread-id was generated, we need this to confirm the relationship.  This can be done by sending a relationship acceptance message (this requires alice to be listening):
+Notice how a thread-id was generated, we need this to confirm the relationship.  This can be done by sending a relationship acceptance message (this requires __alice__ to be listening, which the CLI does automatically after sending a relationship request):
 
 ```sh
 > tsp -d bob accept --sender-vid did:web:tsp-test.org:user:bob --receiver-vid did:web:tsp-test.org:user:alice --thread-id 'JZla6+N6FP/In7ywOp8yQD2GfXemCn1e4b6tFVWaLxg'
@@ -80,7 +80,6 @@ Instead of the `did:peer`, __bob__ could also have used __alice__'s outer VID he
 how a new VID was also generated for __bob__. On __alice__'s side, this will look as follows:
 
 ```sh
-> tsp -d alice receive --one
  INFO tsp: received accept nested relationship from 'did:peer:2.Vz6MuvAXTdNjiSV4DkbMUXAzShqiL2wvFNf2Dg4mr34JkQqk6.Ez6LbyVXwzoVNbRVm7X1Bpa4BqM5Aa5QYXyT4j6iRCxJAo4Fc.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0' (new identity for did:web:tsp-test.org:user:bob)
 ```
 
