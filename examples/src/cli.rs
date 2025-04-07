@@ -6,7 +6,7 @@ use rustls::crypto::CryptoProvider;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 use tokio::io::AsyncReadExt;
-use tracing::{error, debug, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp::{
     AsyncStore, Error, ExportVid, OwnedVid, ReceivedTspMessage, Vault, VerifiedVid, Vid, cesr::Part,

@@ -5,13 +5,13 @@ use futures::StreamExt;
 use url::Url;
 
 use super::TransportError;
-use rustls_pki_types::CertificateDer;
-use rustls_pki_types::pem::PemObject;
 #[cfg(feature = "use_local_certificate")]
-use std::io::Read;
-use std::sync::Arc;
-use tokio_tungstenite::Connector;
-use tracing::warn;
+use {
+    rustls_pki_types::{CertificateDer, pem::PemObject},
+    std::sync::Arc,
+    tokio_tungstenite::Connector,
+    tracing::warn,
+};
 
 pub(crate) const SCHEME_HTTP: &str = "http";
 pub(crate) const SCHEME_HTTPS: &str = "https";
@@ -24,13 +24,9 @@ pub(crate) async fn send_message(tsp_message: &[u8], url: &Url) -> Result<(), Tr
 
     #[cfg(feature = "use_local_certificate")]
     let cert = {
-        tracing::warn!("Using local root CA! (should only be used for local testing)");
-        let mut buf = Vec::new();
-        std::fs::File::open("./test/root-ca.pem")
-            .unwrap()
-            .read_to_end(&mut buf)
-            .unwrap();
-        reqwest::Certificate::from_pem(&buf).unwrap()
+        warn!("Using local root CA! (should only be used for local testing)");
+        let cert = include_bytes!("../../../examples/test/root-ca.pem");
+        reqwest::Certificate::from_pem(cert).unwrap()
     };
 
     #[cfg(feature = "use_local_certificate")]

@@ -27,7 +27,6 @@ use std::{
 use tokio::signal;
 use tokio::sync::{RwLock, broadcast};
 use tower_http::cors::{Any, CorsLayer};
-use tracing::log::trace;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp::{
     Store,
@@ -54,25 +53,6 @@ struct Identity {
     vid: Vid,
 }
 
-async fn write_id(id: Identity) -> Result<(), Box<dyn std::error::Error>> {
-    let name = id
-        .vid
-        .identifier()
-        .split(':')
-        .next_back()
-        .ok_or("invalid name")?;
-    let did = serde_json::to_string_pretty(&id)?;
-    let path = format!("data/{name}.json");
-
-    if std::path::Path::new(&path).exists() {
-        return Err("identity already exists".into());
-    }
-
-    tokio::fs::write(path, did).await?;
-
-    Ok(())
-}
-
 async fn read_id(vid: &str) -> Result<Identity, Box<dyn std::error::Error>> {
     let name = vid.split(':').next_back().ok_or("invalid name")?;
     let path = format!("data/{name}.json");
@@ -80,10 +60,6 @@ async fn read_id(vid: &str) -> Result<Identity, Box<dyn std::error::Error>> {
     let id = serde_json::from_str(&did)?;
 
     Ok(id)
-}
-
-fn verify_name(name: &str) -> bool {
-    !name.is_empty() && name.len() < 64 && name.chars().all(|c| c.is_alphanumeric())
 }
 
 /// Application state, used to store the identities and the broadcast channel
