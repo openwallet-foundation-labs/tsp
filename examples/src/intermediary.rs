@@ -334,11 +334,14 @@ async fn websocket_handler(
                 if receiver == did {
                     tracing::debug!(
                         "{} forwarding message to {receiver}, {} bytes",
-                        message.len(),
-                        state.domain
+                        state.domain,
+                        message.len()
                     );
 
-                    let _ = ws_send.send(Message::Binary(Bytes::from(message))).await;
+                    let a = ws_send.send(Message::Binary(Bytes::from(message))).await;
+                    if let Err(e) = a {
+                        tracing::error!("Could not send via WS: {e}");
+                    }
                 }
             }
         }

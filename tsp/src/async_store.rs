@@ -352,6 +352,9 @@ impl AsyncStore {
         let mut transport = receiver.endpoint().clone();
         let path = transport.path().replace("[vid_placeholder]", vid);
         transport.set_path(&path);
+
+        tracing::trace!("Listening for {vid} to {transport}");
+
         let messages = crate::transport::receive_messages(&transport).await?;
 
         let db = self.inner.clone();
