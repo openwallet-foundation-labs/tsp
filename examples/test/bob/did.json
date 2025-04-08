@@ -1,0 +1,44 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/did/v1",
+    "https://w3id.org/security/suites/jws-2020/v1"
+  ],
+  "authentication": [
+    "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob#verification-key"
+  ],
+  "id": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
+  "keyAgreement": [
+    "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob#encryption-key"
+  ],
+  "service": [
+    {
+      "id": "#tsp-transport",
+      "serviceEndpoint": "tcp://127.0.0.1:13372",
+      "type": "TSPTransport"
+    }
+  ],
+  "verificationMethod": [
+    {
+      "controller": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
+      "id": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob#verification-key",
+      "publicKeyJwk": {
+        "crv": "Ed25519",
+        "kty": "OKP",
+        "use": "sig",
+        "x": "NBcP690uVtoJChxvBCxZyy2inI-R24G3aNBWOKwU5lI"
+      },
+      "type": "JsonWebKey2020"
+    },
+    {
+      "controller": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
+      "id": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob#encryption-key",
+      "publicKeyJwk": {
+        "crv": "X25519",
+        "kty": "OKP",
+        "use": "enc",
+        "x": "QFn5SXupDgBTtzkGc2W3MvoSCHjd8uUD0dapfEXqET4"
+      },
+      "type": "JsonWebKey2020"
+    }
+  ]
+}
