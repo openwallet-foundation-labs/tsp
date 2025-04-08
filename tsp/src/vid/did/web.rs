@@ -62,7 +62,7 @@ pub async fn resolve(id: &str, parts: Vec<&str>) -> Result<Vid, VidError> {
     {
         let did_doc = std::fs::read_to_string(format!(
             "../examples/test/{}/did.json",
-            parts.get(4).unwrap_or(&"invalid")
+            parts.last().unwrap_or(&"invalid")
         ))
         .map_err(|_| VidError::ResolveVid("JSON not found in test dir"))?;
 
@@ -292,7 +292,7 @@ mod tests {
         );
 
         assert!(resolve_did_string("did:web:example%20.com").is_err());
-        assert!(resolve_did_string("did:web:example.com:user:user:user").is_err());
+        assert!(resolve_did_string("did:web:example.com:user:user:user").is_ok());
     }
 
     #[cfg(not(feature = "pq"))]
