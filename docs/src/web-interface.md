@@ -6,13 +6,12 @@ A short demo of the web interface:
 
 ## Overview
 
-Go to [https://tsp-test.org/](https://tsp-test.org/)
+Go to <https://demo.teaspoon.world/>
 
 This interface allows us to create VIDs and send and receive messages.
 
 The VID type used for this demo is `did:web`. When a new identity
-is created, the corresponding `did.json` document is published on the same
-domain ([https://tsp-test.org/user/{username}/did.json](https://tsp-test.org/)).
+is created, the corresponding `did.json` document is published on the DID support server (<https://did.teaspoon.world/user/{username}/did.json>).
 
 The transport used for this demo is HTTPS and web sockets (WSS). The server also acts as a transport backbone. 
 
@@ -46,13 +45,13 @@ Note that this will also work over the internet,
 sending messages from one device to the other.
 
 <div class="warning">
-The demo server on tsp-test.org should not be used in a production use of TSP. In particular
+The demo server on <demo.teaspoon.world> should not be used in a production use of TSP. In particular
 there are no guarantees about persistent storage. Generated VIDs might only persist until the server
 is restarted, which happens at least once a week.
 </div>
 
 Enter a full VID in the field "Resolve and verify VID" and push the button.
-For example `did:web:tsp-test.org:user:bob`.
+For example `did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:a`.
 The resolved and verified VID will be displayed in the "Identities" column.
 
 ## Sending / receiving messages
@@ -61,9 +60,9 @@ Use the "Send message" for to send messages. The "Sender" and "Receiver" fields
 must be filled in with fully qualified VIDs, that exist in the "Identities"
 column. 
 
-For example, we could fill in `did:web:tsp-test.org:user:alice` as sender and
-`did:web:tsp-test.org:user:bob` as receiver if we have the private VID for
-`did:web:tsp-test.org:user:alice` and the Public VID for `did:web:tsp-test.org:user:bob`.
+For example, we could fill in `did:web:did.teaspoon.world:user:alice` as sender and
+`did:web:did.teaspoon.world:user:bob` as receiver if we have the private VID for
+`did:web:did.teaspoon.world:user:alice` and the Public VID for `did:web:did.teaspoon.world:user:bob`.
 
 The contents in the "Non-confidential data" will be added to the TSP unencrypted.
 The contents of the field "Message" will always be encrypted.

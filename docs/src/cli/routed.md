@@ -22,7 +22,7 @@ messages to the final recipient `b`. This can be achieved in two ways:
   > tsp -d q set-relation q2 b
   ```
 
-When this set up is done, all these is needed to send a routed message from `a` to `b` is to set up a route.
+When this set up is done, the only thing left to send a routed message from `a` to `b`, is to set up a route.
 
 ```sh
 tsp -d a set-route b VID-FOR-P,VID-FOR-Q,VID-FOR-Q2
@@ -38,9 +38,9 @@ echo "Routed Hello" | tsp -d a send --sender-vid a --receiver-vid b
 ## Routed mode (manual set up)
 
 Routed mode is a bit more involved than direct or nested mode. We need to
-setup correctly configured intermediary servers.
+set up correctly configured intermediary servers.
 
-In this example we use preconfigured identities and intermediaries from `tsp-test.org` instead of using the 
+In this example we use preconfigured identities and intermediaries from `teaspoon.world` instead of using the 
 TSP CLI itself for the intermediaries.
 
 We will use intermediaries `p` and `q` to send a message from `a` to `b`.
@@ -96,7 +96,7 @@ and verify the VIDs for the intermediary servers `p` and `q`:
 
 ```sh
 tsp -d b.json print b | xargs tsp -d a.json verify --alias b
-tsp -d b.json verify did:web:did.tsp-test.org:user:q --alias q
+tsp -d b.json verify did:web:q.teaspoon.world --alias q
 ```
 
 Verify the VIDs for the intermediaries and the endpoint.
@@ -105,9 +105,9 @@ messages to the passed VID. This is equivalent with an extra call to the `set-re
 command.
 
 ```sh
-tsp -d a.json verify did:web:did.tsp-test.org:user:p --alias p --sender a
-tsp -d a.json verify did:web:did.tsp-test.org:user:b --alias b --sender a
-tsp -d a.json verify did:web:did.tsp-test.org:user:q --alias q
+tsp -d a.json verify did:web:p.teaspoon.world --alias p --sender a
+tsp -d a.json verify did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:b --alias b --sender a
+tsp -d a.json verify did:web:q.teaspoon.world --alias q
 tsp -d a.json set-route b p,q,q
 ```
 
@@ -135,7 +135,7 @@ echo "Hi b" | tsp --pretty-print -d a.json send -s a -r b
 
 Output:
 ```
- INFO tsp::async_store: sending message to https://p.tsp-test.org/transport/p
+ INFO tsp::async_store: sending message to https://p.teaspoon.world/transport/did:web:p.teaspoon.world
 CESR-encoded message:
 -EABXAAA9VIDAAALAAAZGlkOndlYjpkaWQudHNwLXRlc3Qub3JnOnVzZXI6YQ9VIDAAALAAAZGlkOn
 dlYjpkaWQudHNwLXRlc3Qub3JnOnVzZXI6cA4CB2WE2d08bhGjkJJUg3la1JbsK7apfaOSxH-otajv
@@ -156,5 +156,4 @@ TSP message.
 ## Debug intermediaries
 
 The example intermediary servers `p` and `q` maintain a brief log of recent messages,
-see [https://p.tsp-test.org/](https://p.tsp-test.org/) and [https://q.tsp-test.org/](https://q.tsp-test.org/)
-after sending a routed message.
+see <https://p.teaspoon.world/> and <https://q.teaspoon.world/> after sending a routed message.
