@@ -144,7 +144,7 @@ enum Commands {
     Refer {
         #[arg(short, long, required = true)]
         sender_vid: String,
-        #[arg(long, required = true)]
+        #[arg(short, long, required = true)]
         receiver_vid: String,
         #[arg(long, required = true)]
         referred_vid: String,
@@ -311,7 +311,7 @@ async fn run() -> Result<(), Error> {
                 info!("added alias {alias} -> {did}");
             }
 
-            let transport = url::Url::parse(&format!("https://{server}/user/{did}")).unwrap();
+            let transport = url::Url::parse(&format!("https://{server}/user/{}", did.replace("%", "%25"))).unwrap();
 
             let private_vid = OwnedVid::bind(&did, transport);
             info!("created identity {}", private_vid.identifier());

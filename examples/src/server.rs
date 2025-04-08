@@ -180,18 +180,6 @@ struct ResolveVidInput {
 
 /// Resolve and verify a VID to JSON encoded key material
 async fn verify_vid(Form(form): Form<ResolveVidInput>) -> Response {
-    // let name = form.vid.split(':').next_back().unwrap_or_default();
-    //
-    // if !verify_name(name) {
-    //     return (StatusCode::BAD_REQUEST, "invalid name").into_response();
-    // }
-    //
-    // // local state lookup
-    // if let Ok(identity) = read_id(&form.vid).await {
-    //     return Json(&identity.vid).into_response();
-    // }
-
-    // remote lookup
     let vid = tsp::vid::verify_vid(&form.vid).await.ok();
 
     match vid {
@@ -425,7 +413,7 @@ async fn websocket_user_handler(
 
         async move {
             while let Ok((_, receiver, message)) = messages_rx.recv().await {
-                if receiver.replace("%3A", ":") == vid {
+                if receiver == vid {
                     let _ = ws_send.send(Message::Binary(Bytes::from(message))).await;
                 }
             }
