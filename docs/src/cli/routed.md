@@ -40,8 +40,7 @@ echo "Routed Hello" | tsp -d a send --sender-vid a --receiver-vid b
 Routed mode is a bit more involved than direct or nested mode. We need to
 set up correctly configured intermediary servers.
 
-In this example we use preconfigured identities and intermediaries from `teaspoon.world` instead of using the 
-TSP CLI itself for the intermediaries.
+In this example we use preconfigured identities and intermediaries from `teaspoon.world` instead of using the TSP CLI itself for the intermediaries.
 
 We will use intermediaries `p` and `q` to send a message from `a` to `b`.
 The key material for these can be found in the Rust TSP repository.
@@ -63,74 +62,81 @@ Overview:
 └────────────────┘   └────────────────┘
 ```
 
-## Download key material for `a` and `b`:
+## Set up sender and receiver identities
+
+Download key material for `a` and `b`:
 
 ```sh
 curl -s https://raw.githubusercontent.com/openwallet-foundation-labs/tsp/main/examples/test/a/piv.json > identity-a.json
 curl -s https://raw.githubusercontent.com/openwallet-foundation-labs/tsp/main/examples/test/b/piv.json > identity-b.json
 ```
 
-## Configuration
-
-Create a new identity (and database) for `a` based on the downloaded file using the
-`create-from-file` command:
+Create a new identity (and database) for `a` based on the downloaded file using the `create-from-file` command:
 
 ```sh
-tsp -d a.json create-from-file --alias a ./identity-a.json
+tsp -d a create-from-file --alias a ./identity-a.json
 ```
 
-We also initialize `b`:
+And we also initialize `b`:
 
 ```sh
-tsp -d b.json create-from-file --alias b ./identity-b.json
+tsp -d b create-from-file --alias b ./identity-b.json
 ```
 
-Resolve and verify the VID for `a` in the database for `b`:
+## Introduce the nodes to each other
 
+The sender `a` resolves and verifies the receiver `b`:
 ```sh
-tsp -d a.json print a | xargs tsp -d b.json verify --alias a
+tsp -d b print b | xargs tsp -d a verify --alias b
 ```
 
-Resolve and verify the VID for `b` in the database for `a`,
-and verify the VIDs for the intermediary servers `p` and `q`:
-
+The sender `a` also resolves and verifies the first intermediary `p`, and requests a relationship with this intermediary:
 ```sh
-tsp -d b.json print b | xargs tsp -d a.json verify --alias b
-tsp -d b.json verify did:web:q.teaspoon.world --alias q
+tsp -d a verify did:web:p.teaspoon.world --alias p
+tsp -d a request -s a -r p
 ```
 
-Verify the VIDs for the intermediaries and the endpoint.
-Passing the `--sender` argument configures which sender VID is used when sending
-messages to the passed VID. This is equivalent with an extra call to the `set-relation`
-command.
+Our public demo intermediaries are configured to accept all incoming relationship requests.
 
+> Note that instead of requesting a relationship with `p`, `a` could also only set the relationship for itself, as for this example only one-way communication from `a` to `p` is needed.
+> Passing the `--sender` argument configures which sender VID is used when sending messages to the passed VID. This is equivalent with an extra call to the `set-relation` command.
+> So, instead of the previous two commands, you could also do the following instead:
+> ```
+> tsp -d a verify did:web:p.teaspoon.world --alias p --sender a
+> ```
+
+The receiver `b` resolves and verifies the second intermediary `q`, and requests a relationship with this second intermediary:
 ```sh
-tsp -d a.json verify did:web:p.teaspoon.world --alias p --sender a
-tsp -d a.json verify did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:b --alias b --sender a
-tsp -d a.json verify did:web:q.teaspoon.world --alias q
-tsp -d a.json set-route b p,q,q
+tsp -d b verify did:web:q.teaspoon.world --alias q
+tsp -d b request -s b -r q
 ```
 
-The `set-route` command configures the route for the VID aliased by `b`.
-Note that the last hop in the route, `q`, in practice should be VID that the intermediary
-only uses to communicate with the receiver (`b`). For the sake of simplicity
-we configured the intermediary `q` with a VID that is also configured as the
-sender VID when communication with the VID of `b`.
+In order for the final drop-off to work, `b` needs to set up a nested relation with `q`, otherwise `q` would have no way of knowing were to deliver the message to in the last hop. The following command will read the nested DIDs into the bash environment variables `DID_B2` and `DID_Q2`:
+```sh
+read -d '' DID_B2 DID_Q2 <<< $(tsp -d b request --nested -s b -r q)
+echo "DID_B2=$DID_B2"
+echo "DID_Q2=$DID_Q2"
+```
 
 ## Send a message
+
+Now that we have set up all the relations between the nodes, we can configure the route for messages that are to be delivered from `a` to `b`. We will route these messages via `p` to `q`, and then `q2` will drop it off at `b`:
+```sh
+tsp -d a set-route b "p,did:web:q.teaspoon.world,$DID_Q2"
+```
 
 Sending the routed message is trivial, now we have configured the relations and route.
 
 Let `b` listen for one message:
 
 ```sh
-tsp -d b.json receive --one b
+tsp -d b receive --one b
 ```
 
 Let `a` sent a message:
 
 ```sh
-echo "Hi b" | tsp --pretty-print -d a.json send -s a -r b
+echo "Hi b" | tsp --pretty-print -d a send -s a -r b
 ```
 
 Output:
@@ -153,7 +159,11 @@ sd_mGJp4hkMz_P9-R04we14TOl-v8dvCuOjcp_UIDrB-vjeAwqzyNBw
 Note that the message is longer than a direct mode message, since the ciphertext contains another
 TSP message.
 
+The `cli-demo-routed-external.sh` script in the `examples/` folder performs all the previously described steps automatically, but using random usernames for easy testing. 
+
 ## Debug intermediaries
 
-The example intermediary servers `p` and `q` maintain a brief log of recent messages,
+The example intermediary servers `p` and `q` maintain a brief log of recent events,
 see <https://p.teaspoon.world/> and <https://q.teaspoon.world/> after sending a routed message.
+
+See also the documentation for [intermediary servers](../intermediary.md).

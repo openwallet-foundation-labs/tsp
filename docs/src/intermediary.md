@@ -18,12 +18,14 @@ when no public address can be exposed, behind a firewall.
 
 We host two demo intermediaries publicly for testing:
 
-- [Intermediary P](https://p.teaspoon.world/): `did:web:p.teaspoon.world`
-- [Intermediary Q](https://q.teaspoon.world/): `did:web:q.teaspoon.world`
+- [Intermediary P](https://p.teaspoon.world/), which has the identifier `did:web:p.teaspoon.world`
+- [Intermediary Q](https://q.teaspoon.world/), which has the identifier `did:web:q.teaspoon.world`
 
-These two intermediaries both run the `examples/src/intermediary.rs` server.
+These two instances both run the `examples/src/intermediary.rs` server.
 
-The `cli-demo-routed-external.sh` script in the `examples/` directory creates two local end-points A and B, and then sends a message from A to B via the public intermediaries P and Q. To do this, it first sets up relations between A and P and between B and Q. Additionally, for the final drop-off to work, B creates a nested relation between B and Q, resulting into two nested DIDs B2 and Q2. The final route of the message from A then becomes `P,Q,Q2`, where Q2 will drop off the message at B2
+The `cli-demo-routed-external.sh` script in the `examples/` directory creates two local end-points A and B, and then sends a message from A to B via the public intermediaries P and Q. To do this, it first sets up relations between A and P and between B and Q. Additionally, for the final drop-off to work, B creates a nested relation between B and Q, resulting into two nested DIDs B2 and Q2. The final route of the message from A then becomes `P,Q,Q2`, where Q2 will drop off the message at B2.
+
+For a step-by-step example of how you can send a message over the intermediaries using the CLI, see the documentation page about [routed mode](./cli/routed.md).
 
 ### Running demo intermediaries locally
 

@@ -51,7 +51,8 @@ is restarted, which happens at least once a week.
 </div>
 
 Enter a full VID in the field "Resolve and verify VID" and push the button.
-For example `did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:a`.
+For example, user `bob` might have identifier `did:web:did.teaspoon.world:user:bob`.
+You can also verify identifiers from other external DID Web servers. For example, the identifier `did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:a` points to [this did.json](https://raw.githubusercontent.com/openwallet-foundation-labs/tsp/refs/heads/main/examples/test/a/did.json) in the TSP GitHub repository and can also be verified by the demo server.
 The resolved and verified VID will be displayed in the "Identities" column.
 
 ## Sending / receiving messages
