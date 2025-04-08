@@ -17,11 +17,11 @@ spec:
         run.googleapis.com/startup-cpu-boost: 'true'
     spec:
       containerConcurrency: 80
-      timeoutSeconds: 300
+      timeoutSeconds: 2
       containers:
-        - name: demo-server
-          image: us-central1-docker.pkg.dev/teaspoon-world-demo/tsp/openwallet-foundation-labs/tsp/demo-server:${TAG}
-          args: [ "${DOMAIN}", "--did-server", "${DID_SERVER}" ]
+        - name: did-web-server
+          image: us-central1-docker.pkg.dev/teaspoon-world-demo/tsp/openwallet-foundation-labs/tsp/did-web-server:${TAG}
+          args: [ "--transport", "${TRANSPORT}", "${DOMAIN}" ]
           ports:
             - name: http1
               containerPort: 3000

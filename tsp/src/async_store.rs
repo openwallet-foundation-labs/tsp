@@ -349,7 +349,10 @@ impl AsyncStore {
     /// The returned channel contains a maximum of 16 messages
     pub async fn receive(&self, vid: &str) -> Result<TSPStream<ReceivedTspMessage, Error>, Error> {
         let receiver = self.inner.get_private_vid(vid)?;
-        let messages = crate::transport::receive_messages(receiver.endpoint()).await?;
+        let mut transport = receiver.endpoint().clone();
+        let path = transport.path().replace("[vid_placeholder]", vid);
+        transport.set_path(&path);
+        let messages = crate::transport::receive_messages(&transport).await?;
 
         let db = self.inner.clone();
         Ok(Box::pin(messages.then(move |message| {

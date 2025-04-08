@@ -1,0 +1,64 @@
+services:
+  server:
+    build:
+      context: .
+      target: server
+      args:
+        FEATURE_FLAGS: use_local_certificate
+    command: ["localhost:3000", "--port", "3010", "--did-server", "https://localhost:3001"]
+    network_mode: host
+
+  server-ssl-proxy:
+    image: node
+    volumes:
+      - "./examples/test:/test:ro"
+    command: ["npx", "--yes", "local-ssl-proxy", "--source", "3000", "--target", "3010", "--cert", "/test/localhost.pem", "--key", "/test/localhost-key.pem"]
+    network_mode: host
+
+  intermediary-p:
+    build:
+      context: .
+      target: intermediary
+      args:
+        FEATURE_FLAGS: use_local_certificate
+    command: [ "--port", "3011", "localhost:3001" ]
+    network_mode: host
+
+  intermediary-p-ssl-proxy:
+    image: node
+    volumes:
+      - "./examples/test:/test:ro"
+    command: [ "npx", "--yes", "local-ssl-proxy", "--source", "3001", "--target", "3011", "--cert", "/test/localhost.pem", "--key", "/test/localhost-key.pem" ]
+    network_mode: host
+
+  intermediary-q:
+    build:
+      context: .
+      target: intermediary
+      args:
+        FEATURE_FLAGS: use_local_certificate
+    command: [ "--port", "3012", "localhost:3002" ]
+    network_mode: host
+
+  intermediary-q-ssl-proxy:
+    image: node
+    volumes:
+      - "./examples/test:/test:ro"
+    command: [ "npx", "--yes", "local-ssl-proxy", "--source", "3002", "--target", "3012", "--cert", "/test/localhost.pem", "--key", "/test/localhost-key.pem" ]
+    network_mode: host
+
+  did-server:
+    build:
+      context: .
+      target: did-web
+      args:
+        FEATURE_FLAGS: use_local_certificate
+    command: [ "localhost:3003", "--port", "3013", "--transport", "https://localhost:3000" ]
+    network_mode: host
+
+  did-server-ssl-proxy:
+    image: node
+    volumes:
+      - "./examples/test:/test:ro"
+    command: ["npx", "--yes", "local-ssl-proxy", "--source", "3003", "--target", "3013", "--cert", "/test/localhost.pem", "--key", "/test/localhost-key.pem"]
+    network_mode: host

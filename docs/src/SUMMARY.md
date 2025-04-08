@@ -8,6 +8,7 @@
   - [Nested mode](./cli/nested.md)
   - [Routed mode](./cli/routed.md)
 - [Intermediary server](./intermediary.md)
+- [Hosting](hosting.md)
 
 # Developers
 - [TSP Protocol Design Overview](./design-overview.md)

@@ -1,6 +1,3 @@
-#[cfg(feature = "use_local_certificate")]
-use std::io::Read;
-
 use crate::definitions::{PUBLIC_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE, VerifiedVid};
 use base64ct::{Base64UrlUnpadded, Encoding};
 use serde::Deserialize;
@@ -65,7 +62,7 @@ pub async fn resolve(id: &str, parts: Vec<&str>) -> Result<Vid, VidError> {
     {
         let did_doc = std::fs::read_to_string(format!(
             "../examples/test/{}/did.json",
-            parts.get(4).unwrap_or(&"invalid")
+            parts.last().unwrap_or(&"invalid")
         ))
         .map_err(|_| VidError::ResolveVid("JSON not found in test dir"))?;
 
@@ -83,12 +80,8 @@ pub async fn resolve(id: &str, parts: Vec<&str>) -> Result<Vid, VidError> {
         #[cfg(feature = "use_local_certificate")]
         let cert = {
             tracing::warn!("Using local root CA! (should only be used for local testing)");
-            let mut buf = Vec::new();
-            std::fs::File::open("./test/root-ca.pem")
+            reqwest::Certificate::from_pem(include_bytes!("../../../../examples/test/root-ca.pem"))
                 .unwrap()
-                .read_to_end(&mut buf)
-                .unwrap();
-            reqwest::Certificate::from_pem(&buf).unwrap()
         };
 
         #[cfg(feature = "use_local_certificate")]
@@ -260,7 +253,7 @@ pub fn create_did_web(
     domain: &str,
     transport: &str,
 ) -> (serde_json::Value, serde_json::Value, OwnedVid) {
-    let did = format!("did:web:{domain}:user:{name}");
+    let did = format!("did:web:{}:user:{name}", domain.replace(":", "%3A"));
     let private_vid = OwnedVid::bind(did, Url::parse(transport).unwrap());
     let private_doc = serde_json::to_value(&private_vid).unwrap();
     let did_doc = vid_to_did_document(private_vid.vid());
@@ -299,7 +292,7 @@ mod tests {
         );
 
         assert!(resolve_did_string("did:web:example%20.com").is_err());
-        assert!(resolve_did_string("did:web:example.com:user:user:user").is_err());
+        assert!(resolve_did_string("did:web:example.com:user:user:user").is_ok());
     }
 
     #[cfg(not(feature = "pq"))]
