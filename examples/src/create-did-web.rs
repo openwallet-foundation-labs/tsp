@@ -19,7 +19,7 @@ fn main() {
     .unwrap();
 
     fs::write(
-        format!("examples/test/{name}.json"),
+        format!("examples/test/{name}-piv.json"),
         serde_json::to_string_pretty(&private_doc).unwrap(),
     )
     .unwrap();

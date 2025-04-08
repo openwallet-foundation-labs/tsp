@@ -92,7 +92,7 @@ async fn main() {
 
     let timestamp_server = Store::new();
     let piv: OwnedVid =
-        serde_json::from_str(include_str!("../test/timestamp-server.json")).unwrap();
+        serde_json::from_str(include_str!("../test/timestamp-server/piv.json")).unwrap();
     timestamp_server.add_private_vid(piv).unwrap();
 
     let state = Arc::new(AppState {

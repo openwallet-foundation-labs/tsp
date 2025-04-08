@@ -1,0 +1,44 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/did/v1",
+    "https://w3id.org/security/suites/jws-2020/v1"
+  ],
+  "authentication": [
+    "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice#verification-key"
+  ],
+  "id": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
+  "keyAgreement": [
+    "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice#encryption-key"
+  ],
+  "service": [
+    {
+      "id": "#tsp-transport",
+      "serviceEndpoint": "tcp://127.0.0.1:13371",
+      "type": "TSPTransport"
+    }
+  ],
+  "verificationMethod": [
+    {
+      "controller": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
+      "id": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice#verification-key",
+      "publicKeyJwk": {
+        "crv": "Ed25519",
+        "kty": "OKP",
+        "use": "sig",
+        "x": "7dUAj8TdKRfQwSkUqa3dyCMr8AhggYRAv2RuMZ514sE"
+      },
+      "type": "JsonWebKey2020"
+    },
+    {
+      "controller": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
+      "id": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice#encryption-key",
+      "publicKeyJwk": {
+        "crv": "X25519",
+        "kty": "OKP",
+        "use": "enc",
+        "x": "y-FbCCEodGckHNDqCVOcIyf9uESpaepAVRewGxmt_QU"
+      },
+      "type": "JsonWebKey2020"
+    }
+  ]
+}

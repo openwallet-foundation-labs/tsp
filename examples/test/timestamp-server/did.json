@@ -1,0 +1,44 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/did/v1",
+    "https://w3id.org/security/suites/jws-2020/v1"
+  ],
+  "authentication": [
+    "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:timestamp-server#verification-key"
+  ],
+  "id": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:timestamp-server",
+  "keyAgreement": [
+    "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:timestamp-server#encryption-key"
+  ],
+  "service": [
+    {
+      "id": "#tsp-transport",
+      "serviceEndpoint": "https://demo.teaspoon.world/timestamp",
+      "type": "TSPTransport"
+    }
+  ],
+  "verificationMethod": [
+    {
+      "controller": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:timestamp-server",
+      "id": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:timestamp-server#verification-key",
+      "publicKeyJwk": {
+        "crv": "Ed25519",
+        "kty": "OKP",
+        "use": "sig",
+        "x": "HR76y6YG5BWHbj4UQsqX-5ybQPjtETiaZFa4LHWaI68"
+      },
+      "type": "JsonWebKey2020"
+    },
+    {
+      "controller": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:timestamp-server",
+      "id": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:timestamp-server#encryption-key",
+      "publicKeyJwk": {
+        "crv": "X25519",
+        "kty": "OKP",
+        "use": "enc",
+        "x": "2SOeMndN9z4oArm7Vu7D7ZGnkbsAXZ2DO-GUAfBd_Bo"
+      },
+      "type": "JsonWebKey2020"
+    }
+  ]
+}

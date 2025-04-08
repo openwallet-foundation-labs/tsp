@@ -1,8 +1,8 @@
 {
   "enckey": "qWKm6_U5jbkb0TF4GneXuzLwKnUxy5eCV_kG9f4ID5Y",
-  "id": "did:web:did.tsp-test.org:user:b",
+  "id": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:b",
   "publicEnckey": "JY_sQu1c8LJq6aTR9TlUMdNDf6xEzqkZeuJH6berxFk",
   "publicSigkey": "EAA90CN5qEnTUXyNpPRmVsME2Qyxjj_KlRbP2DcXrF4",
   "sigkey": "Njjnf2yI8emviRODMAOkZ-I_VqXfvK3nFosEueCdRec",
-  "transport": "https://q.tsp-test.org/transport/b"
+  "transport": "https://q.teaspoon.world/transport/did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:b"
 }

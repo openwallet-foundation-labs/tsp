@@ -64,7 +64,7 @@ pub async fn resolve(id: &str, parts: Vec<&str>) -> Result<Vid, VidError> {
     #[cfg(test)]
     {
         let did_doc = std::fs::read_to_string(format!(
-            "../examples/test/{}-did.json",
+            "../examples/test/{}/did.json",
             parts.get(4).unwrap_or(&"invalid")
         ))
         .map_err(|_| VidError::ResolveVid("JSON not found in test dir"))?;
@@ -120,10 +120,11 @@ pub fn resolve_url(parts: &[&str]) -> Result<Url, VidError> {
             "{PROTOCOL}{}/{DEFAULT_PATH}/{DOCUMENT}",
             domain.replace("%3A", ":")
         ),
-        ["did", "web", domain, "user", username] => {
+        ["did", "web", domain, path @ ..] => {
             format!(
-                "{PROTOCOL}{}/user/{username}/{DOCUMENT}",
-                domain.replace("%3A", ":")
+                "{PROTOCOL}{}/{}/{DOCUMENT}",
+                domain.replace("%3A", ":"),
+                path.join("/")
             )
         }
         _ => return Err(VidError::InvalidVid(parts.join(":"))),
@@ -312,28 +313,34 @@ mod tests {
 
         let alice_did_doc = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../examples/test/alice-did.json"
+            "/../examples/test/alice/did.json"
         ));
         let alice_did_doc: DidDocument = serde_json::from_str(alice_did_doc).unwrap();
 
-        let alice = resolve_document(alice_did_doc, "did:web:did.tsp-test.org:user:alice");
+        let alice = resolve_document(
+            alice_did_doc,
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
+        );
 
         assert_eq!(
             alice.unwrap().identifier(),
-            "did:web:did.tsp-test.org:user:alice"
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"
         );
 
         let bob_did_doc = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../examples/test/bob-did.json"
+            "/../examples/test/bob/did.json"
         ));
         let bob_did_doc: DidDocument = serde_json::from_str(bob_did_doc).unwrap();
 
-        let bob = resolve_document(bob_did_doc, "did:web:did.tsp-test.org:user:bob");
+        let bob = resolve_document(
+            bob_did_doc,
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
+        );
 
         assert_eq!(
             bob.unwrap().identifier(),
-            "did:web:did.tsp-test.org:user:bob"
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob"
         );
     }
 }

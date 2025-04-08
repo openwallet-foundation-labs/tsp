@@ -7,12 +7,12 @@ echo "---- cleanup databases"
 rm -f a.sqlite b.sqlite
 
 echo "---- load the sender identity"
-tsp --database a create-from-file --alias a test/a.json
+tsp --database a create-from-file --alias a test/a/piv.json
 tsp --database a create-peer a-inner
 tsp --database a set-parent a-inner a
 
 echo "---- load the receiver identity"
-tsp --database b create-from-file --alias b test/b.json
+tsp --database b create-from-file --alias b test/b/piv.json
 tsp --database b create-peer b-inner
 
 echo "---- verify sender vids"
