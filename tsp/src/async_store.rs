@@ -202,6 +202,17 @@ impl AsyncStore {
         Ok(())
     }
 
+    pub async fn make_relationship_accept(
+        &self,
+        sender: &str,
+        receiver: &str,
+        thread_id: Digest,
+        route: Option<&[&str]>,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.inner
+            .make_relationship_accept(sender, receiver, thread_id, route)
+    }
+
     /// Accept a direct relationship between the resolved VIDs identifier by `sender` and `receiver`.
     /// `thread_id` must be the same as the one that was present in the relationship request.
     /// Encodes the control message, encrypts, signs, and sends a TSP message
@@ -313,6 +324,19 @@ impl AsyncStore {
         crate::transport::send_message(&endpoint, &message).await?;
 
         Ok(vid)
+    }
+
+    pub async fn make_next_routed_message(
+        &self,
+        next_hop: &str,
+        path: Vec<impl AsRef<[u8]>>,
+        opaque_message: &[u8],
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.inner.forward_routed_message(
+            next_hop,
+            path.iter().map(|x| x.as_ref()).collect(),
+            opaque_message,
+        )
     }
 
     /// Pass along an in-transit routed TSP `opaque_message`
