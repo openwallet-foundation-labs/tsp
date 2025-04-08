@@ -120,10 +120,11 @@ pub fn resolve_url(parts: &[&str]) -> Result<Url, VidError> {
             "{PROTOCOL}{}/{DEFAULT_PATH}/{DOCUMENT}",
             domain.replace("%3A", ":")
         ),
-        ["did", "web", domain, "user", username] => {
+        ["did", "web", domain, path @ ..] => {
             format!(
-                "{PROTOCOL}{}/user/{username}/{DOCUMENT}",
-                domain.replace("%3A", ":")
+                "{PROTOCOL}{}/{}/{DOCUMENT}",
+                domain.replace("%3A", ":"),
+                path.join("/")
             )
         }
         _ => return Err(VidError::InvalidVid(parts.join(":"))),
