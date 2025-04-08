@@ -128,12 +128,18 @@ pub fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
     }
 
     match (public_sigkey, public_enckey, transport) {
-        (Some(public_sigkey), Some(public_enckey), Some(transport)) => Ok(Vid {
-            id: parts.join(":"),
-            transport,
-            public_sigkey,
-            public_enckey,
-        }),
+        (Some(public_sigkey), Some(public_enckey), Some(mut transport)) => {
+            let path = transport
+                .path()
+                .replace("[vid_placeholder]", &parts.join(":"));
+            transport.set_path(&path);
+            Ok(Vid {
+                id: parts.join(":"),
+                transport,
+                public_sigkey,
+                public_enckey,
+            })
+        }
         (None, _, _) => Err(VidError::ResolveVid("missing verification key in did:peer")),
         (_, None, _) => Err(VidError::ResolveVid("missing encryption key in did:peer")),
         (_, _, None) => Err(VidError::ResolveVid("missing transport in did:peer")),

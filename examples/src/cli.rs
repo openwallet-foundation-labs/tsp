@@ -311,7 +311,11 @@ async fn run() -> Result<(), Error> {
                 info!("added alias {alias} -> {did}");
             }
 
-            let transport = url::Url::parse(&format!("https://{server}/user/{}", did.replace("%", "%25"))).unwrap();
+            let transport = url::Url::parse(&format!(
+                "https://{server}/user/{}",
+                did.replace("%", "%25")
+            ))
+            .unwrap();
 
             let private_vid = OwnedVid::bind(&did, transport);
             info!("created identity {}", private_vid.identifier());
@@ -349,7 +353,7 @@ async fn run() -> Result<(), Error> {
             let transport = if let Some(address) = tcp {
                 url::Url::parse(&format!("tcp://{address}")).unwrap()
             } else {
-                url::Url::parse(&format!("https://{server}/user/{alias}")).unwrap()
+                url::Url::parse(&format!("https://{server}/user/[vid_placeholder]",)).unwrap()
             };
             let private_vid = OwnedVid::new_did_peer(transport);
 
