@@ -66,8 +66,8 @@ Overview:
 ## Download key material for `a` and `b`:
 
 ```sh
-curl -s https://raw.githubusercontent.com/openwallet-foundation-labs/tsp/main/examples/test/a.json > identity-a.json
-curl -s https://raw.githubusercontent.com/openwallet-foundation-labs/tsp/main/examples/test/b.json > identity-b.json
+curl -s https://raw.githubusercontent.com/openwallet-foundation-labs/tsp/main/examples/test/a/piv.json > identity-a.json
+curl -s https://raw.githubusercontent.com/openwallet-foundation-labs/tsp/main/examples/test/b/piv.json > identity-b.json
 ```
 
 ## Configuration
@@ -146,8 +146,8 @@ jvY1-qx5gmUmpG3zAS054q0YSIJWFB9t22LWp80n7HXjEKnm8WcQF4O9GmRWmYe_LR46-2JC_u9Yux
 UXnZVrnUiGAq-xK331yfRd0X58M0B2d4qRrZMjfFvBFt5CGbp3WvYvynNLOM6NA3wp2j2Dy6B1FIBs
 2rAnMfYR2wzSmwYQcbGOvRok4pdg9rI1EGPPgUKcRuoB0BA4XLvi8Yw-webwWRLW0GA7jNTfNSdmAm
 sd_mGJp4hkMz_P9-R04we14TOl-v8dvCuOjcp_UIDrB-vjeAwqzyNBw
- INFO tsp: sent message (5 bytes) from did:web:did.tsp-test.org:user:a
- to did:web:did.tsp-test.org:user:b
+ INFO tsp: sent message (5 bytes) from did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:a
+ to did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:b
 ```
 
 Note that the message is longer than a direct mode message, since the ciphertext contains another

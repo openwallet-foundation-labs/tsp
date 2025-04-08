@@ -33,22 +33,22 @@
 //! async fn main() -> Result<(), Error> {
 //!     // bob database
 //!     let mut bob_db = AsyncStore::new();
-//!     let bob_vid = OwnedVid::from_file("../examples/test/bob.json").await?;
+//!     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json").await?;
 //!     bob_db.add_private_vid(bob_vid)?;
-//!     bob_db.verify_vid("did:web:did.tsp-test.org:user:alice").await?;
+//!     bob_db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice").await?;
 //!
-//!     let mut bobs_messages = bob_db.receive("did:web:did.tsp-test.org:user:bob").await?;
+//!     let mut bobs_messages = bob_db.receive("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob").await?;
 //!
 //!     // alice database
 //!     let mut alice_db = AsyncStore::new();
-//!     let alice_vid = OwnedVid::from_file("../examples/test/alice.json").await?;
+//!     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json").await?;
 //!     alice_db.add_private_vid(alice_vid)?;
-//!     alice_db.verify_vid("did:web:did.tsp-test.org:user:bob").await?;
+//!     alice_db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob").await?;
 //!
 //!     // send a message
 //!     alice_db.send(
-//!         "did:web:did.tsp-test.org:user:alice",
-//!         "did:web:did.tsp-test.org:user:bob",
+//!         "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
+//!         "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
 //!         Some(b"extra non-confidential data"),
 //!         b"hello world",
 //!     ).await?;

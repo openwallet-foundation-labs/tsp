@@ -135,11 +135,14 @@ mod test {
 
     #[tokio::test]
     async fn deserialize() {
-        let alice = OwnedVid::from_file("../examples/test/alice.json")
+        let alice = OwnedVid::from_file("../examples/test/alice/piv.json")
             .await
             .unwrap();
 
-        assert_eq!(alice.vid().id, "did:web:did.tsp-test.org:user:alice");
+        assert_eq!(
+            alice.vid().id,
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"
+        );
         assert_eq!(alice.vid().transport.as_str(), "tcp://127.0.0.1:13371");
     }
 }

@@ -6,36 +6,36 @@ use futures::StreamExt;
 async fn test_direct_mode() {
     // bob database
     let mut bob_db = AsyncStore::new();
-    let bob_vid = OwnedVid::from_file("../examples/test/bob.json")
+    let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
     bob_db.add_private_vid(bob_vid.clone()).unwrap();
     bob_db
-        .verify_vid("did:web:did.tsp-test.org:user:alice")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice")
         .await
         .unwrap();
 
     let mut bobs_messages = bob_db
-        .receive("did:web:did.tsp-test.org:user:bob")
+        .receive("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob")
         .await
         .unwrap();
 
     // alice database
     let mut alice_db = AsyncStore::new();
-    let alice_vid = OwnedVid::from_file("../examples/test/alice.json")
+    let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
     alice_db.add_private_vid(alice_vid.clone()).unwrap();
     alice_db
-        .verify_vid("did:web:did.tsp-test.org:user:bob")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob")
         .await
         .unwrap();
 
     // send a message
     alice_db
         .send(
-            "did:web:did.tsp-test.org:user:alice",
-            "did:web:did.tsp-test.org:user:bob",
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
             Some(b"extra non-confidential data"),
             b"hello world",
         )
@@ -66,28 +66,28 @@ async fn test_direct_mode() {
 async fn test_large_messages() {
     // bob database
     let mut bob_db = AsyncStore::new();
-    let bob_vid = OwnedVid::from_file("../examples/test/bob.json")
+    let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
     bob_db.add_private_vid(bob_vid.clone()).unwrap();
     bob_db
-        .verify_vid("did:web:did.tsp-test.org:user:alice")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice")
         .await
         .unwrap();
 
     let mut bobs_messages = bob_db
-        .receive("did:web:did.tsp-test.org:user:bob")
+        .receive("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob")
         .await
         .unwrap();
 
     // alice database
     let mut alice_db = AsyncStore::new();
-    let alice_vid = OwnedVid::from_file("../examples/test/alice.json")
+    let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
     alice_db.add_private_vid(alice_vid.clone()).unwrap();
     alice_db
-        .verify_vid("did:web:did.tsp-test.org:user:bob")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob")
         .await
         .unwrap();
 
@@ -96,8 +96,8 @@ async fn test_large_messages() {
         // send a message
         alice_db
             .send(
-                "did:web:did.tsp-test.org:user:alice",
-                "did:web:did.tsp-test.org:user:bob",
+                "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
+                "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
                 None,
                 sent_message.as_bytes(),
             )
@@ -129,36 +129,36 @@ async fn test_large_messages() {
 async fn test_anycast() {
     // bob database
     let mut bob_db = AsyncStore::new();
-    let bob_vid = OwnedVid::from_file("../examples/test/bob.json")
+    let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
     bob_db.add_private_vid(bob_vid.clone()).unwrap();
     bob_db
-        .verify_vid("did:web:did.tsp-test.org:user:alice")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice")
         .await
         .unwrap();
 
     let mut bobs_messages = bob_db
-        .receive("did:web:did.tsp-test.org:user:bob")
+        .receive("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob")
         .await
         .unwrap();
 
     // alice database
     let mut alice_db = AsyncStore::new();
-    let alice_vid = OwnedVid::from_file("../examples/test/alice.json")
+    let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
     alice_db.add_private_vid(alice_vid.clone()).unwrap();
     alice_db
-        .verify_vid("did:web:did.tsp-test.org:user:bob")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob")
         .await
         .unwrap();
 
     // send a message
     alice_db
         .send_anycast(
-            "did:web:did.tsp-test.org:user:alice",
-            &["did:web:did.tsp-test.org:user:bob"],
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
+            &["did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob"],
             b"hello world",
         )
         .await
@@ -188,23 +188,23 @@ async fn test_anycast() {
 async fn test_nested_mode() {
     // bob database
     let mut bob_db = AsyncStore::new();
-    let bob_vid = OwnedVid::from_file("../examples/test/bob.json")
+    let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
     bob_db.add_private_vid(bob_vid.clone()).unwrap();
     bob_db
-        .verify_vid("did:web:did.tsp-test.org:user:alice")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice")
         .await
         .unwrap();
 
     // alice database
     let mut alice_db = AsyncStore::new();
-    let alice_vid = OwnedVid::from_file("../examples/test/alice.json")
+    let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
     alice_db.add_private_vid(alice_vid.clone()).unwrap();
     alice_db
-        .verify_vid("did:web:did.tsp-test.org:user:bob")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob")
         .await
         .unwrap();
 
@@ -279,62 +279,62 @@ async fn test_nested_mode() {
 #[serial_test::serial(tcp)]
 async fn test_routed_mode() {
     let mut bob_db = AsyncStore::new();
-    let bob_vid = OwnedVid::from_file("../examples/test/bob.json")
+    let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
     bob_db.add_private_vid(bob_vid.clone()).unwrap();
 
     let mut alice_db = AsyncStore::new();
-    let alice_vid = OwnedVid::from_file("../examples/test/alice.json")
+    let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
     alice_db.add_private_vid(alice_vid.clone()).unwrap();
 
     // inform bob about alice
     bob_db
-        .verify_vid("did:web:did.tsp-test.org:user:alice")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice")
         .await
         .unwrap();
 
     // let bob listen as an intermediary
     let mut bobs_messages = bob_db
-        .receive("did:web:did.tsp-test.org:user:bob")
+        .receive("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob")
         .await
         .unwrap();
 
     // inform alice about the nodes
     alice_db
-        .verify_vid("did:web:did.tsp-test.org:user:bob")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob")
         .await
         .unwrap();
     alice_db
         .set_route_for_vid(
-            "did:web:did.tsp-test.org:user:alice",
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
             &[
-                "did:web:did.tsp-test.org:user:bob",
-                "did:web:did.tsp-test.org:user:alice",
+                "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
+                "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
                 "did:web:hidden.web:user:realbob",
             ],
         )
         .unwrap();
     alice_db
         .set_relation_for_vid(
-            "did:web:did.tsp-test.org:user:bob",
-            Some("did:web:did.tsp-test.org:user:alice"),
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
+            Some("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"),
         )
         .unwrap();
     alice_db
         .set_relation_for_vid(
-            "did:web:did.tsp-test.org:user:alice",
-            Some("did:web:did.tsp-test.org:user:alice"),
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
+            Some("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"),
         )
         .unwrap();
 
     // let alice send a message via bob to herself
     alice_db
         .send(
-            "did:web:did.tsp-test.org:user:alice",
-            "did:web:did.tsp-test.org:user:alice",
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
             None,
             b"hello self (via bob)",
         )
@@ -352,8 +352,14 @@ async fn test_routed_mode() {
         panic!("bob did not receive a forward request")
     };
 
-    assert_eq!(sender, "did:web:did.tsp-test.org:user:alice");
-    assert_eq!(next_hop, "did:web:did.tsp-test.org:user:alice");
+    assert_eq!(
+        sender,
+        "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"
+    );
+    assert_eq!(
+        next_hop,
+        "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"
+    );
     assert_eq!(
         route
             .iter()
@@ -364,22 +370,22 @@ async fn test_routed_mode() {
 
     // let alice listen
     let mut alice_messages = alice_db
-        .receive("did:web:did.tsp-test.org:user:alice")
+        .receive("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice")
         .await
         .unwrap();
 
     // bob is going to forward to alice three times; once using an incorrect intermediary, once with a correct, and once without
     bob_db
         .set_relation_for_vid(
-            "did:web:did.tsp-test.org:user:alice",
-            Some("did:web:did.tsp-test.org:user:bob"),
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
+            Some("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob"),
         )
         .unwrap();
 
     // test1: alice doens't know "realbob"
     bob_db
         .forward_routed_message(
-            "did:web:did.tsp-test.org:user:alice",
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
             route,
             &opaque_payload,
         )
@@ -414,8 +420,8 @@ async fn test_routed_mode() {
     // test2: just use "bob"
     bob_db
         .forward_routed_message(
-            "did:web:did.tsp-test.org:user:alice",
-            vec![b"did:web:did.tsp-test.org:user:bob"],
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
+            vec![b"did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob"],
             &opaque_payload,
         )
         .await
@@ -429,20 +435,26 @@ async fn test_routed_mode() {
     else {
         panic!("alice did not receive message");
     };
-    assert_eq!(sender, "did:web:did.tsp-test.org:user:bob");
-    assert_eq!(next_hop, "did:web:did.tsp-test.org:user:bob");
+    assert_eq!(
+        sender,
+        "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob"
+    );
+    assert_eq!(
+        next_hop,
+        "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob"
+    );
     assert!(route.is_empty());
 
     // test3: alice is the recipient (using "bob" as the 'final hop')
     bob_db
         .set_relation_for_vid(
-            "did:web:did.tsp-test.org:user:bob",
-            Some("did:web:did.tsp-test.org:user:alice"),
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
+            Some("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"),
         )
         .unwrap();
     bob_db
         .forward_routed_message(
-            "did:web:did.tsp-test.org:user:bob",
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
             Vec::<&[u8]>::new(),
             &opaque_payload,
         )
@@ -464,7 +476,10 @@ async fn test_routed_mode() {
         crate::cesr::SignatureType::NoSignature
     );
 
-    assert_eq!(sender, "did:web:did.tsp-test.org:user:alice");
+    assert_eq!(
+        sender,
+        "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"
+    );
     assert_eq!(message.iter().as_slice(), b"hello self (via bob)");
 }
 
@@ -472,23 +487,25 @@ async fn test_routed_mode() {
 async fn attack_failures() {
     // bob database
     let mut bob_db = AsyncStore::new();
-    let bob_vid = OwnedVid::from_file("../examples/test/bob.json")
+    let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
     bob_db.add_private_vid(bob_vid.clone()).unwrap();
 
     bob_db
-        .verify_vid("did:web:did.tsp-test.org:user:alice")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice")
         .await
         .unwrap();
 
-    let alice = crate::vid::OwnedVid::from_file("../examples/test/alice.json")
+    let alice = crate::vid::OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
 
-    let bob = crate::vid::verify_vid("did:web:did.tsp-test.org:user:bob")
-        .await
-        .unwrap();
+    let bob = crate::vid::verify_vid(
+        "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
+    )
+    .await
+    .unwrap();
 
     let payload = b"hello world";
 
@@ -514,7 +531,10 @@ async fn attack_failures() {
             };
 
             // confirm that the sender vid has been corrupted
-            assert_ne!(unknown_vid, "did:web:did.tsp-test.org:user:alice");
+            assert_ne!(
+                unknown_vid,
+                "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"
+            );
 
             // confirm that opening the pending message also fails
             // (We cannot test this exhaustively -- but because the cryptographic material for this
@@ -529,36 +549,36 @@ async fn attack_failures() {
 async fn test_relation_forming() {
     // bob database
     let mut bob_db = AsyncStore::new();
-    let bob_vid = OwnedVid::from_file("../examples/test/bob.json")
+    let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
     bob_db.add_private_vid(bob_vid.clone()).unwrap();
     bob_db
-        .verify_vid("did:web:did.tsp-test.org:user:alice")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice")
         .await
         .unwrap();
 
     let mut bobs_messages = bob_db
-        .receive("did:web:did.tsp-test.org:user:bob")
+        .receive("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob")
         .await
         .unwrap();
 
     // alice database
     let mut alice_db = AsyncStore::new();
-    let alice_vid = OwnedVid::from_file("../examples/test/alice.json")
+    let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
     alice_db.add_private_vid(alice_vid.clone()).unwrap();
     alice_db
-        .verify_vid("did:web:did.tsp-test.org:user:bob")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob")
         .await
         .unwrap();
 
     // send a message
     alice_db
         .send_relationship_request(
-            "did:web:did.tsp-test.org:user:alice",
-            "did:web:did.tsp-test.org:user:bob",
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
             None,
         )
         .await
@@ -574,17 +594,20 @@ async fn test_relation_forming() {
 
     // let alice listen
     let mut alice_messages = alice_db
-        .receive("did:web:did.tsp-test.org:user:alice")
+        .receive("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice")
         .await
         .unwrap();
 
-    assert_eq!(sender, "did:web:did.tsp-test.org:user:alice");
+    assert_eq!(
+        sender,
+        "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"
+    );
 
     // send the reply
     bob_db
         .send_relationship_accept(
-            "did:web:did.tsp-test.org:user:bob",
-            "did:web:did.tsp-test.org:user:alice",
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
             thread_id,
             None,
         )
@@ -597,5 +620,8 @@ async fn test_relation_forming() {
         panic!("alice did not receive a relation accept")
     };
 
-    assert_eq!(sender, "did:web:did.tsp-test.org:user:bob");
+    assert_eq!(
+        sender,
+        "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob"
+    );
 }

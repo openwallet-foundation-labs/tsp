@@ -22,14 +22,14 @@ use url::Url;
 /// async fn main() {
 ///     // alice database
 ///     let mut db = AsyncStore::new();
-///     let alice_vid = OwnedVid::from_file("../examples/test/bob.json").await.unwrap();
+///     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json").await.unwrap();
 ///     db.add_private_vid(alice_vid).unwrap();
-///     db.verify_vid("did:web:did.tsp-test.org:user:bob").await.unwrap();
+///     db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob").await.unwrap();
 ///
 ///     // send a message
 ///     let result = db.send(
-///         "did:web:did.tsp-test.org:user:alice",
-///         "did:web:did.tsp-test.org:user:bob",
+///         "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
+///         "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
 ///         Some(b"extra non-confidential data"),
 ///         b"hello world",
 ///     ).await;
@@ -131,12 +131,12 @@ impl AsyncStore {
     /// #[tokio::main]
     /// async fn main() {
     ///     let mut db = AsyncStore::new();
-    ///     let private_vid = OwnedVid::from_file("../examples/test/bob.json").await.unwrap();
+    ///     let private_vid = OwnedVid::from_file("../examples/test/bob/piv.json").await.unwrap();
     ///     db.add_private_vid(private_vid).unwrap();
-    ///     db.verify_vid("did:web:did.tsp-test.org:user:alice").await.unwrap();
+    ///     db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice").await.unwrap();
     ///
-    ///     let sender = "did:web:did.tsp-test.org:user:bob";
-    ///     let receiver = "did:web:did.tsp-test.org:user:alice";
+    ///     let sender = "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob";
+    ///     let receiver = "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice";
     ///
     ///     let result = db.send(sender, receiver, None, b"hello world").await;
     /// }
@@ -175,12 +175,12 @@ impl AsyncStore {
     /// #[tokio::main]
     /// async fn main() {
     ///     let mut db = AsyncStore::new();
-    ///     let private_vid = OwnedVid::from_file("../examples/test/bob.json").await.unwrap();
+    ///     let private_vid = OwnedVid::from_file("../examples/test/bob/piv.json").await.unwrap();
     ///     db.add_private_vid(private_vid).unwrap();
-    ///     db.verify_vid("did:web:did.tsp-test.org:user:alice").await.unwrap();
+    ///     db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice").await.unwrap();
     ///
-    ///     let sender = "did:web:did.tsp-test.org:user:bob";
-    ///     let receiver = "did:web:did.tsp-test.org:user:alice";
+    ///     let sender = "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob";
+    ///     let receiver = "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice";
     ///
     ///     let result = db.send_relationship_request(sender, receiver, None).await;
     /// }
