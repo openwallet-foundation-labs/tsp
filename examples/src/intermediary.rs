@@ -78,6 +78,15 @@ impl IntermediaryState {
         tracing::error!("{text}");
         self.internal_log(text).await;
     }
+
+    async fn verify_vid(&self, vid: &str) -> Result<(), tsp::Error> {
+        let verified_vid = tsp::vid::verify_vid(vid).await?;
+
+        // Immediately releases write lock
+        self.db.write().await.add_verified_vid(verified_vid)?;
+
+        Ok(())
+    }
 }
 
 const MAX_LOG_LEN: usize = 10;
@@ -176,9 +185,12 @@ async fn new_message(
 
     let mut message: Vec<u8> = body.to_vec();
 
-    if let Ok(true) = state.db.read().await.has_private_vid(receiver) {
+    // yes, this must be a separate variable https://github.com/rust-lang/rust/issues/37612
+    let has_private_vid = state.db.read().await.has_private_vid(receiver);
+    if matches!(has_private_vid, Ok(true)) {
         tracing::debug!("verifying VID {sender} for {receiver}");
-        if let Err(e) = state.db.write().await.verify_vid(sender).await {
+
+        if let Err(e) = state.verify_vid(sender).await {
             tracing::error!("error verifying VID {sender}: {e}");
             return (StatusCode::BAD_REQUEST, "error verifying VID").into_response();
         }
@@ -189,12 +201,14 @@ async fn new_message(
                                                  thread_id: Digest|
                -> Result<(), tsp::Error> {
             if let Some(nested_vid) = nested_vid {
-                let my_new_nested_vid = state
+                let ((endpoint, message), my_new_nested_vid) = state
                     .db
                     .read()
                     .await
-                    .send_nested_relationship_accept(receiver, &nested_vid, thread_id)
-                    .await?;
+                    .make_nested_relationship_accept(receiver, &nested_vid, thread_id)?;
+
+                tsp::transport::send_message(&endpoint, &message).await?;
+
                 tracing::debug!(
                     "Created nested {} for {nested_vid}",
                     my_new_nested_vid.vid().identifier()
@@ -207,12 +221,12 @@ async fn new_message(
                         .map(|vid| std::str::from_utf8(vid).unwrap())
                         .collect()
                 });
-                let (endpoint, message) = state
-                    .db
-                    .read()
-                    .await
-                    .make_relationship_accept(receiver, &sender, thread_id, route.as_deref())
-                    .await?;
+                let (endpoint, message) = state.db.read().await.make_relationship_accept(
+                    receiver,
+                    &sender,
+                    thread_id,
+                    route.as_deref(),
+                )?;
 
                 tsp::transport::send_message(&endpoint, &message).await?;
 
@@ -220,7 +234,9 @@ async fn new_message(
             }
         };
 
-        match state.db.read().await.open_message(&mut message) {
+        // yes, this must be a separate variable https://github.com/rust-lang/rust/issues/37612
+        let res = state.db.read().await.open_message(&mut message);
+        match res {
             Err(e) => {
                 tracing::error!("received opening message from {sender}: {e}")
             }
@@ -270,7 +286,7 @@ async fn new_message(
                     tracing::debug!("don't need to verify yourself");
                 } else {
                     tracing::debug!("verifying VID next hop {next_hop}");
-                    if let Err(e) = state.db.write().await.verify_vid(&next_hop).await {
+                    if let Err(e) = state.verify_vid(&next_hop).await {
                         tracing::error!("error verifying VID {next_hop}: {e}");
                         return (StatusCode::BAD_REQUEST, "error verifying next hop VID")
                             .into_response();
@@ -291,14 +307,12 @@ async fn new_message(
                     }
                 }
 
-                let (transport, message) = match state
-                    .db
-                    .read()
-                    .await
-                    .make_next_routed_message(&next_hop, route, &opaque_payload)
-                    .await
-                {
-                    Ok((transport, message)) => (transport, message),
+                let (transport, message) = match state.db.read().await.make_next_routed_message(
+                    &next_hop,
+                    route,
+                    &opaque_payload,
+                ) {
+                    Ok(res) => res,
                     Err(e) => {
                         state.log_error(e.to_string()).await;
                         return (StatusCode::BAD_REQUEST, "error forwarding message")
