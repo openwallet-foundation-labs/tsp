@@ -141,25 +141,31 @@ echo "Hi b" | tsp --pretty-print -d a send -s a -r b
 
 Output:
 ```
- INFO tsp::async_store: sending message to https://p.teaspoon.world/transport/did:web:p.teaspoon.world
+ INFO tsp::async_store: sending message to https://p.teaspoon.world/transport/did:
+ web:p.teaspoon.world
 CESR-encoded message:
--EABXAAA9VIDAAALAAAZGlkOndlYjpkaWQudHNwLXRlc3Qub3JnOnVzZXI6YQ9VIDAAALAAAZGlkOn
-dlYjpkaWQudHNwLXRlc3Qub3JnOnVzZXI6cA4CB2WE2d08bhGjkJJUg3la1JbsK7apfaOSxH-otajv
-YveQ093-rTQWvq3kUJokCH7dT_5gbIzJdDsLxTYDu6dz4IyJhGg6JzCpqrerG5GwMaoICtJGn9wPGN
-WjJHuSzBoqdKY3OQpsGolHh03aenVrREZ0aqjn_z3cczWxBRhUiUCjtlTmbEZEMmCdqSdB50erIZd3
-Vj0-mCA0-PKSa_Ij-IsX9S1HbXtitZftxIRpSqnuEOS0doudXWWKNhehLWteUTDPnjn11JpVJmfKEE
-jvY1-qx5gmUmpG3zAS054q0YSIJWFB9t22LWp80n7HXjEKnm8WcQF4O9GmRWmYe_LR46-2JC_u9Yux
-UXnZVrnUiGAq-xK331yfRd0X58M0B2d4qRrZMjfFvBFt5CGbp3WvYvynNLOM6NA3wp2j2Dy6B1FIBs
-2rAnMfYR2wzSmwYQcbGOvRok4pdg9rI1EGPPgUKcRuoB0BA4XLvi8Yw-webwWRLW0GA7jNTfNSdmAm
-sd_mGJp4hkMz_P9-R04we14TOl-v8dvCuOjcp_UIDrB-vjeAwqzyNBw
- INFO tsp: sent message (5 bytes) from did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:a
- to did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:b
+-EABXAAAXAEB9VIDAAAdAAAZGlkOndlYjpyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tOm9wZW53YWxsZXQ
+tZm91bmRhdGlvbi1sYWJzOnRzcDptYWluOmV4YW1wbGVzOnRlc3Q6YQ7VIDAAAIZGlkOndlYjpwLnRlYXN
+wb29uLndvcmxk4CDBRPjQTLqVsN-QrMR5eVGgSO0Q6V491-GKJP7imcKJheAT1_madw21FHK49oJvINRYt
+1GZX4dtZGCC5gB1EZCLZpqQJjzeuwQavXYUFBY3z3ygNw-780r4fltOtjVG0hybe8Y5YOf4rv1U_xD-Ajm
+xbw7rOlJq7AWojJq2FbWQ6Ho2z90KUwQ8ki-hyYCE1woCDM1TAQu3Pvt8XsrRqr5TpeExIlh1Jx_vlt-rW
+Dny4nbBv7SWHEovVBT7XXtVPWpEnBiBzm2mBsJ5CZsDy-EjXVONCEadUwDwwYaU8djEYt8pBHag8IGlpVZ
+IUN2dtZyFhRKmvq7FsEcqSCpiSZR7jXiHNjghqUCBFwAIqwnAr1npW15fg7lREpiLTkcs8oSSZvmEhLaFT
+BvhnhFvCzTP-CckvhFXOsUpK7Q5u3KBRFReEQYb32CfEq44yaKRVUAVknXJmS_HBOWv-VbnbgR-8q8TL5z
+h2rOH2pGM8sQVlweWBg32JmACWzdOw2jCF17Ey4AYFQkYbiz8extJuAxg22aoE30azL-RU0I0bGW-ZCqLx
+mK8jLH_zoYZ35nTQfwZYlFfe-cbempzw9gS685RloYBSKq9kdPIsV7h3DW-vBwEP6_ttaS024F2ZW90KMq
+vQ3pRNr5pjmxWshlerIBjRcpTO7IjIYN6jU1Vg8-akcukC0J8vu8GJYZhu5n16DYAAcqQkmKmsTBD8OirJ
+FldrEVWc1F5Bu0zd3FJuYq7K5OdQgw4JFrRPUgeVNIRCsdElnQP0BAYPtmDPJDfhx_-ab02_y2yD1FrhXE
+SrBAkd6evt2M2Z2ugVyVwxTU-pVVXlcTa5p_-N05lWEZ0bdUBdR4upMUDA
+ INFO tsp: sent message (5 bytes) fromdid:web:raw.githubusercontent.com:openwallet
+ -foundation-labs:tsp:main:examples:test:a to did:web:raw.githubusercontent.com:
+ openwallet-foundation-labs:tsp:main:examples:test:b
 ```
 
 Note that the message is longer than a direct mode message, since the ciphertext contains another
 TSP message.
 
-The `cli-demo-routed-external.sh` script in the `examples/` folder performs all the previously described steps automatically, but using random usernames for easy testing. 
+The `cli-demo-routed-external.sh` script in the `examples/` folder performs all the previously described steps automatically, but using users created on the teaspoon.world DID support server for easy testing. The only difference here is thus that in the script `a` and `b` use <https://demo.teaspoon.world/> for transport, while the identities from the step-by-step tutorial above are configured to use intermediaries directly.
 
 ## Debug intermediaries
 
