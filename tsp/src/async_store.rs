@@ -202,6 +202,17 @@ impl AsyncStore {
         Ok(())
     }
 
+    pub fn make_relationship_accept(
+        &self,
+        sender: &str,
+        receiver: &str,
+        thread_id: Digest,
+        route: Option<&[&str]>,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.inner
+            .make_relationship_accept(sender, receiver, thread_id, route)
+    }
+
     /// Accept a direct relationship between the resolved VIDs identifier by `sender` and `receiver`.
     /// `thread_id` must be the same as the one that was present in the relationship request.
     /// Encodes the control message, encrypts, signs, and sends a TSP message
@@ -212,9 +223,8 @@ impl AsyncStore {
         thread_id: Digest,
         route: Option<&[&str]>,
     ) -> Result<(), Error> {
-        let (endpoint, message) = self
-            .inner
-            .make_relationship_accept(sender, receiver, thread_id, route)?;
+        let (endpoint, message) =
+            self.make_relationship_accept(sender, receiver, thread_id, route)?;
 
         tracing::info!("sending message to {endpoint}");
 
@@ -292,6 +302,16 @@ impl AsyncStore {
         Ok(vid)
     }
 
+    pub fn make_nested_relationship_accept(
+        &self,
+        parent_sender: &str,
+        nested_receiver: &str,
+        thread_id: Digest,
+    ) -> Result<((Url, Vec<u8>), OwnedVid), Error> {
+        self.inner
+            .make_nested_relationship_accept(parent_sender, nested_receiver, thread_id)
+    }
+
     /// Accept a nested relationship with the (nested) VID identified by `nested_receiver`.
     /// Generate a new nested VID that will have `parent_sender` as its parent.
     /// `thread_id` must be the same as the one that was present in the relationship request.
@@ -302,17 +322,27 @@ impl AsyncStore {
         nested_receiver: &str,
         thread_id: Digest,
     ) -> Result<OwnedVid, Error> {
-        let ((endpoint, message), vid) = self.inner.make_nested_relationship_accept(
-            parent_sender,
-            nested_receiver,
-            thread_id,
-        )?;
+        let ((endpoint, message), vid) =
+            self.make_nested_relationship_accept(parent_sender, nested_receiver, thread_id)?;
 
         tracing::info!("sending message to {endpoint}");
 
         crate::transport::send_message(&endpoint, &message).await?;
 
         Ok(vid)
+    }
+
+    pub fn make_next_routed_message(
+        &self,
+        next_hop: &str,
+        path: Vec<impl AsRef<[u8]>>,
+        opaque_message: &[u8],
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.inner.forward_routed_message(
+            next_hop,
+            path.iter().map(|x| x.as_ref()).collect(),
+            opaque_message,
+        )
     }
 
     /// Pass along an in-transit routed TSP `opaque_message`
@@ -324,11 +354,7 @@ impl AsyncStore {
         path: Vec<impl AsRef<[u8]>>,
         opaque_message: &[u8],
     ) -> Result<Url, Error> {
-        let (transport, message) = self.inner.forward_routed_message(
-            next_hop,
-            path.iter().map(|x| x.as_ref()).collect(),
-            opaque_message,
-        )?;
+        let (transport, message) = self.make_next_routed_message(next_hop, path, opaque_message)?;
 
         crate::transport::send_message(&transport, &message).await?;
 
@@ -352,6 +378,9 @@ impl AsyncStore {
         let mut transport = receiver.endpoint().clone();
         let path = transport.path().replace("[vid_placeholder]", vid);
         transport.set_path(&path);
+
+        tracing::trace!("Listening for {vid} to {transport}");
+
         let messages = crate::transport::receive_messages(&transport).await?;
 
         let db = self.inner.clone();

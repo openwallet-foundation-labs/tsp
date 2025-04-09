@@ -22,7 +22,7 @@ messages to the final recipient `b`. This can be achieved in two ways:
   > tsp -d q set-relation q2 b
   ```
 
-When this set up is done, all these is needed to send a routed message from `a` to `b` is to set up a route.
+When this set up is done, the only thing left to send a routed message from `a` to `b`, is to set up a route.
 
 ```sh
 tsp -d a set-route b VID-FOR-P,VID-FOR-Q,VID-FOR-Q2
@@ -38,10 +38,9 @@ echo "Routed Hello" | tsp -d a send --sender-vid a --receiver-vid b
 ## Routed mode (manual set up)
 
 Routed mode is a bit more involved than direct or nested mode. We need to
-setup correctly configured intermediary servers.
+set up correctly configured intermediary servers.
 
-In this example we use preconfigured identities and intermediaries from `tsp-test.org` instead of using the 
-TSP CLI itself for the intermediaries.
+In this example we use preconfigured identities and intermediaries from `teaspoon.world` instead of using the TSP CLI itself for the intermediaries.
 
 We will use intermediaries `p` and `q` to send a message from `a` to `b`.
 The key material for these can be found in the Rust TSP repository.
@@ -63,98 +62,114 @@ Overview:
 └────────────────┘   └────────────────┘
 ```
 
-## Download key material for `a` and `b`:
+## Set up sender and receiver identities
+
+Download key material for `a` and `b`:
 
 ```sh
 curl -s https://raw.githubusercontent.com/openwallet-foundation-labs/tsp/main/examples/test/a/piv.json > identity-a.json
 curl -s https://raw.githubusercontent.com/openwallet-foundation-labs/tsp/main/examples/test/b/piv.json > identity-b.json
 ```
 
-## Configuration
-
-Create a new identity (and database) for `a` based on the downloaded file using the
-`create-from-file` command:
+Create a new identity (and database) for `a` based on the downloaded file using the `create-from-file` command:
 
 ```sh
-tsp -d a.json create-from-file --alias a ./identity-a.json
+tsp -d a create-from-file --alias a ./identity-a.json
 ```
 
-We also initialize `b`:
+And we also initialize `b`:
 
 ```sh
-tsp -d b.json create-from-file --alias b ./identity-b.json
+tsp -d b create-from-file --alias b ./identity-b.json
 ```
 
-Resolve and verify the VID for `a` in the database for `b`:
+## Introduce the nodes to each other
 
+The sender `a` resolves and verifies the receiver `b`:
 ```sh
-tsp -d a.json print a | xargs tsp -d b.json verify --alias a
+tsp -d b print b | xargs tsp -d a verify --alias b
 ```
 
-Resolve and verify the VID for `b` in the database for `a`,
-and verify the VIDs for the intermediary servers `p` and `q`:
-
+The sender `a` also resolves and verifies the first intermediary `p`, and requests a relationship with this intermediary:
 ```sh
-tsp -d b.json print b | xargs tsp -d a.json verify --alias b
-tsp -d b.json verify did:web:did.tsp-test.org:user:q --alias q
+tsp -d a verify did:web:p.teaspoon.world --alias p
+tsp -d a request -s a -r p
 ```
 
-Verify the VIDs for the intermediaries and the endpoint.
-Passing the `--sender` argument configures which sender VID is used when sending
-messages to the passed VID. This is equivalent with an extra call to the `set-relation`
-command.
+Our public demo intermediaries are configured to accept all incoming relationship requests.
 
+> Note that instead of requesting a relationship with `p`, `a` could also only set the relationship for itself, as for this example only one-way communication from `a` to `p` is needed.
+> Passing the `--sender` argument configures which sender VID is used when sending messages to the passed VID. This is equivalent with an extra call to the `set-relation` command.
+> So, instead of the previous two commands, you could also do the following instead:
+> ```
+> tsp -d a verify did:web:p.teaspoon.world --alias p --sender a
+> ```
+
+The receiver `b` resolves and verifies the second intermediary `q`, and requests a relationship with this second intermediary:
 ```sh
-tsp -d a.json verify did:web:did.tsp-test.org:user:p --alias p --sender a
-tsp -d a.json verify did:web:did.tsp-test.org:user:b --alias b --sender a
-tsp -d a.json verify did:web:did.tsp-test.org:user:q --alias q
-tsp -d a.json set-route b p,q,q
+tsp -d b verify did:web:q.teaspoon.world --alias q
+tsp -d b request -s b -r q
 ```
 
-The `set-route` command configures the route for the VID aliased by `b`.
-Note that the last hop in the route, `q`, in practice should be VID that the intermediary
-only uses to communicate with the receiver (`b`). For the sake of simplicity
-we configured the intermediary `q` with a VID that is also configured as the
-sender VID when communication with the VID of `b`.
+In order for the final drop-off to work, `b` needs to set up a nested relation with `q`, otherwise `q` would have no way of knowing were to deliver the message to in the last hop. The following command will read the nested DIDs into the bash environment variables `DID_B2` and `DID_Q2`:
+```sh
+read -d '' DID_B2 DID_Q2 <<< $(tsp -d b request --nested -s b -r q)
+echo "DID_B2=$DID_B2"
+echo "DID_Q2=$DID_Q2"
+```
 
 ## Send a message
+
+Now that we have set up all the relations between the nodes, we can configure the route for messages that are to be delivered from `a` to `b`. We will route these messages via `p` to `q`, and then `q2` will drop it off at `b`:
+```sh
+tsp -d a set-route b "p,did:web:q.teaspoon.world,$DID_Q2"
+```
 
 Sending the routed message is trivial, now we have configured the relations and route.
 
 Let `b` listen for one message:
 
 ```sh
-tsp -d b.json receive --one b
+tsp -d b receive --one b
 ```
 
 Let `a` sent a message:
 
 ```sh
-echo "Hi b" | tsp --pretty-print -d a.json send -s a -r b
+echo "Hi b" | tsp --pretty-print -d a send -s a -r b
 ```
 
 Output:
 ```
- INFO tsp::async_store: sending message to https://p.tsp-test.org/transport/p
+ INFO tsp::async_store: sending message to https://p.teaspoon.world/transport/did:
+ web:p.teaspoon.world
 CESR-encoded message:
--EABXAAA9VIDAAALAAAZGlkOndlYjpkaWQudHNwLXRlc3Qub3JnOnVzZXI6YQ9VIDAAALAAAZGlkOn
-dlYjpkaWQudHNwLXRlc3Qub3JnOnVzZXI6cA4CB2WE2d08bhGjkJJUg3la1JbsK7apfaOSxH-otajv
-YveQ093-rTQWvq3kUJokCH7dT_5gbIzJdDsLxTYDu6dz4IyJhGg6JzCpqrerG5GwMaoICtJGn9wPGN
-WjJHuSzBoqdKY3OQpsGolHh03aenVrREZ0aqjn_z3cczWxBRhUiUCjtlTmbEZEMmCdqSdB50erIZd3
-Vj0-mCA0-PKSa_Ij-IsX9S1HbXtitZftxIRpSqnuEOS0doudXWWKNhehLWteUTDPnjn11JpVJmfKEE
-jvY1-qx5gmUmpG3zAS054q0YSIJWFB9t22LWp80n7HXjEKnm8WcQF4O9GmRWmYe_LR46-2JC_u9Yux
-UXnZVrnUiGAq-xK331yfRd0X58M0B2d4qRrZMjfFvBFt5CGbp3WvYvynNLOM6NA3wp2j2Dy6B1FIBs
-2rAnMfYR2wzSmwYQcbGOvRok4pdg9rI1EGPPgUKcRuoB0BA4XLvi8Yw-webwWRLW0GA7jNTfNSdmAm
-sd_mGJp4hkMz_P9-R04we14TOl-v8dvCuOjcp_UIDrB-vjeAwqzyNBw
- INFO tsp: sent message (5 bytes) from did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:a
- to did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:b
+-EABXAAAXAEB9VIDAAAdAAAZGlkOndlYjpyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tOm9wZW53YWxsZXQ
+tZm91bmRhdGlvbi1sYWJzOnRzcDptYWluOmV4YW1wbGVzOnRlc3Q6YQ7VIDAAAIZGlkOndlYjpwLnRlYXN
+wb29uLndvcmxk4CDBRPjQTLqVsN-QrMR5eVGgSO0Q6V491-GKJP7imcKJheAT1_madw21FHK49oJvINRYt
+1GZX4dtZGCC5gB1EZCLZpqQJjzeuwQavXYUFBY3z3ygNw-780r4fltOtjVG0hybe8Y5YOf4rv1U_xD-Ajm
+xbw7rOlJq7AWojJq2FbWQ6Ho2z90KUwQ8ki-hyYCE1woCDM1TAQu3Pvt8XsrRqr5TpeExIlh1Jx_vlt-rW
+Dny4nbBv7SWHEovVBT7XXtVPWpEnBiBzm2mBsJ5CZsDy-EjXVONCEadUwDwwYaU8djEYt8pBHag8IGlpVZ
+IUN2dtZyFhRKmvq7FsEcqSCpiSZR7jXiHNjghqUCBFwAIqwnAr1npW15fg7lREpiLTkcs8oSSZvmEhLaFT
+BvhnhFvCzTP-CckvhFXOsUpK7Q5u3KBRFReEQYb32CfEq44yaKRVUAVknXJmS_HBOWv-VbnbgR-8q8TL5z
+h2rOH2pGM8sQVlweWBg32JmACWzdOw2jCF17Ey4AYFQkYbiz8extJuAxg22aoE30azL-RU0I0bGW-ZCqLx
+mK8jLH_zoYZ35nTQfwZYlFfe-cbempzw9gS685RloYBSKq9kdPIsV7h3DW-vBwEP6_ttaS024F2ZW90KMq
+vQ3pRNr5pjmxWshlerIBjRcpTO7IjIYN6jU1Vg8-akcukC0J8vu8GJYZhu5n16DYAAcqQkmKmsTBD8OirJ
+FldrEVWc1F5Bu0zd3FJuYq7K5OdQgw4JFrRPUgeVNIRCsdElnQP0BAYPtmDPJDfhx_-ab02_y2yD1FrhXE
+SrBAkd6evt2M2Z2ugVyVwxTU-pVVXlcTa5p_-N05lWEZ0bdUBdR4upMUDA
+ INFO tsp: sent message (5 bytes) fromdid:web:raw.githubusercontent.com:openwallet
+ -foundation-labs:tsp:main:examples:test:a to did:web:raw.githubusercontent.com:
+ openwallet-foundation-labs:tsp:main:examples:test:b
 ```
 
 Note that the message is longer than a direct mode message, since the ciphertext contains another
 TSP message.
 
+The `cli-demo-routed-external.sh` script in the `examples/` folder performs all the previously described steps automatically, but using users created on the teaspoon.world DID support server for easy testing. The only difference here is thus that in the script `a` and `b` use <https://demo.teaspoon.world/> for transport, while the identities from the step-by-step tutorial above are configured to use intermediaries directly.
+
 ## Debug intermediaries
 
-The example intermediary servers `p` and `q` maintain a brief log of recent messages,
-see [https://p.tsp-test.org/](https://p.tsp-test.org/) and [https://q.tsp-test.org/](https://q.tsp-test.org/)
-after sending a routed message.
+The example intermediary servers `p` and `q` maintain a brief log of recent events,
+see <https://p.teaspoon.world/> and <https://q.teaspoon.world/> after sending a routed message.
+
+See also the documentation for [intermediary servers](../intermediary.md).

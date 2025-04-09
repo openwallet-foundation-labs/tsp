@@ -1,6 +1,7 @@
 # rust-tsp
 
 Prototype Rust SDK for the [Trust Spanning Protocol](https://trustoverip.github.io/tswg-tsp-specification/)
+
 ## Status
 
 This project is in its initial state. Development is ongoing and interfaces or
@@ -29,7 +30,7 @@ cargo doc --workspace --no-deps
 ```
 
 Apart from the library, there are a few example executables.
-The CLI is most usefull, see below how to install and use the CLI.
+The CLI is most useful, see below how to install and use the CLI.
 
 ## Organization of the project folder
 
@@ -42,19 +43,17 @@ The code is organizes is various directories:
   - `cesr/` provides minimalist CESR encoding/decoding support that is sufficient for generating and parsing TSP messages; to keep complexity to a minimum, we explicitly do not provide a full CESR decoder/encoder.
   - `crypto/` contains the cryptographic core:
     - generating non-confidential messages signed using Ed25519
-    - generating confidential messages encrypted using [HPKE-Auth](https://datatracker.ietf.org/doc/rfc9180/); using DHKEM(X25519, HKDF-SHA256) as asymmetric primitives and ChaCha20/Poly1305 as underlying AEAD encrypting scheme, and signed using Ed25519 to achieve **non-repudiation** (more precisely "strong receiver-unforgeability under chosen ciphertext" or [RUF-CTXT](https://eprint.iacr.org/2001/079) or [Insider-Auth](https://eprint.iacr.org/2020/1499.pdf).
+    - generating confidential messages encrypted using [HPKE-Auth](https://datatracker.ietf.org/doc/rfc9180/); using DHKEM(X25519, HKDF-SHA256) as asymmetric primitives and ChaCha20/Poly1305 as underlying AEAD encrypting scheme, and signed using Ed25519 to achieve **non-repudiation** (more precisely "strong receiver-unforgeability under chosen ciphertext" or [RUF-CTXT](https://eprint.iacr.org/2001/079) or [Insider-Auth](https://eprint.iacr.org/2020/1499.pdf)).
   - `definitions/` defines several common data structures, traits and error types that are used throughout the project.
   - `transport/` code (built using [tokio](https://tokio.rs/) foundations) for actually sending and receiving data over a transport layer.
-  - `vid/` contains code for handling _verified identifiers_ and identities. Currently only an extended form of `did:web` is supported.
+  - `vid/` contains code for handling _verified identifiers_ and identities. Currently, only an extended form of `did:web` is supported.
 
 ## Documentation
 
-The development documentation is published at https://docs.tsp-test.org/tsp/
+Documentation on TSP and how to use our example projects (CLI / web interface)
+can be found on <https://openwallet-foundation-labs.github.io/tsp/>.
 
-Documentation on how to use our example projects (CLI / web interface)
-can be found on https://book.tsp-test.org/
-
-In the future, documentation will be available at [docs.rs](https://docs.rs).
+The development documentation is available at [docs.rs](https://docs.rs/tsp-sdk/).
 
 ## Test CLI
 
@@ -69,37 +68,37 @@ cargo install --path examples/ --bin tsp
 To create an identity:
 
 ```sh
-tsp create bob
+tsp create --alias bob bob
 ```
 
 To verify a VID:
 
 ```sh
-tsp verify did:web:tsp-test.org:user:alice
+tsp verify --alias alice did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice
 ```
 
 To listen for - and receive messages:
 
 ```sh
-tsp receive --one did:web:tsp-test.org:user:bob
+tsp receive --one bob
 ```
 
 To send a message:
 
 ```sh
-echo "Hello World!" | tsp send -s did:web:tsp-test.org:user:alice -r did:web:tsp-test.org:user:bob
+echo "Hello World!" | tsp send -s alice -r bob
 ```
 
-See https://book.tsp-test.org/ for the full documentation.
+See <https://openwallet-foundation-labs.github.io/tsp/> for the full documentation.
 
 ## Implement custom VIDs
 
-See [the documentation](/docs/custom-vids.md) on how to implement custom VIDs.
+See [the documentation](/docs/src/custom-vids.md) on how to implement custom VIDs.
 
 ## Intermediary server
 
-See [the documentation](/docs/intermediary.md) on how to create / setup an intermediary server.
+See [the documentation](/docs/src/intermediary.md) on how to create / set up an intermediary server.
 
 ## Technical specification
 
-See https://hackmd.io/@2JvzP98CRBm6AyIDDz-2tw/H147MYkjp for the technical specification.
+See [the documentation](/docs/src/TSP-technical-specification.md) for the technical specification.

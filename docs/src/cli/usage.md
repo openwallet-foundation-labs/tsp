@@ -21,8 +21,10 @@ tsp create example
 Output:
 ``` 
 INFO tsp: created new database
-INFO tsp: created identity did:web:tsp-test.org:user:example
+INFO tsp: created identity did:web:did.teaspoon.world:user:example
 ```
+
+**Note:** the DIDs need to be unique. If you try to create a user that already exists on did.teaspoon.world, you will get an error.
 
 We can add an alias to a VID using the --alias argument:
 
@@ -30,7 +32,7 @@ We can add an alias to a VID using the --alias argument:
 tsp create example --alias example
 ```
 
-In subsequent commands we can type `example` instead of `did:web:tsp-test.org:user:example`.
+In subsequent commands we can type `example` instead of `did:web:did.teaspoon.world:user:example`.
 
 Every `tsp` subcommand also supports the `--verbose` or `-v` flag for a more
 verbose output:
@@ -42,32 +44,32 @@ tsp --verbose create example
 Output:
 ``` 
 TRACE tsp: opened database database.sqlite
- INFO tsp: added alias example -> did:web:tsp-test.org:user:example
- INFO tsp: created identity did:web:tsp-test.org:user:example
-TRACE tsp: published DID document to https://tsp-test.org/user/example/did.json
+ INFO tsp: added alias example -> did:web:did.teaspoon.world:user:example
+ INFO tsp: created identity did:web:did.teaspoon.world:user:example
+TRACE tsp: published DID document to https://did.teaspoon.world/user/example/did.json
 TRACE tsp: persisted database to database.sqlite
 ```
 
 ## Resolve a VID
 
-VIDs created with the `tsp` tool are published on __tsp-test.org__.
+VIDs created with the `tsp` tool are published on __did.teaspoon.world__.
 Currently Rust TSP is able to verify `did:web` and `did:peer` VIDs
 
 To resolve and verify a VID, run the following:
 
 ```sh
-tsp verify did:web:tsp-test.org:user:example
+tsp verify did:web:did.teaspoon.world:user:example
 ```
 
 Output:
 ```
- INFO tsp: did:web:tsp-test.org:user:example is verified and added to the database
+ INFO tsp: did:web:did.teaspoon.world:user:example is verified and added to the database
 ```
 
 The verify command also support the alias argument:
 
 ```sh
-tsp verify did:web:tsp-test.org:user:example --alias example
+tsp verify did:web:did.teaspoon.world:user:example --alias example
 ```
 
 ## Send a message
@@ -94,13 +96,13 @@ tsp --database bob create bob --alias bob
 Let __alice__ verify __bob__'s VID and add it to the database `alice`:
 
 ```sh
-tsp --database alice verify did:web:tsp-test.org:user:bob --alias bob
+tsp --database alice verify did:web:did.teaspoon.world:user:bob --alias bob
 ```
 
 Let __bob__ verify __alice__'s VID and add it to the database `bob`:
 
 ```sh
-tsp --database bob verify did:web:tsp-test.org:user:alice --alias alice
+tsp --database bob verify did:web:did.teaspoon.world:user:alice --alias alice
 ```
 
 Let __bob__  start listening for a message:
@@ -120,8 +122,8 @@ To send a message run the following:
 echo "Hello Bob!" | tsp --database alice send --sender-vid alice --receiver-vid bob
 ```
 
-Note that `alice` and `bob` are aliases of `did:web:tsp-test.org:user:alice`
-and `did:web:tsp-test.org:user:bob`.
+Note that `alice` and `bob` are aliases of `did:web:did.teaspoon.world:user:alice`
+and `did:web:did.teaspoon.world:user:bob`.
 
 We can also use aliases for the argument, for example:
 
@@ -137,7 +139,7 @@ tsp --database bob receive --one bob
 
 ```
  INFO tsp: listening for messages...
- INFO tsp: received message (11 bytes) from did:web:tsp-test.org:user:alice
+ INFO tsp: received message (11 bytes) from did:web:did.teaspoon.world:user:alice
 Hello Bob!
 ```
 
@@ -154,27 +156,27 @@ The TSP CLI can use two types of transport:
    but will work well across firewalls.
 
 * `tcp`, which requires a direct network connection between two instances of the TSP CLI.
-   In practice you can use this only on a local network (or the same machine, if you use different ports), but
+   In practice, you can use this only on a local network (or the same machine, if you use different ports), but
    this functionality is added to demonstrate the flexibility of having multiple transports. This transport mode
    is only available to `did:peer`. To use TCP transport, use the `--tcp address:port` flag to `tcp create-peer`.
 
 ### Pretty print messages
 
 The send command supports the `--pretty-print` argument.
-This wil output the CESR-encoded TSP mesage that is sent.
+This will output the CESR-encoded TSP message that is sent.
 
 Continuing with the __alice__ and __bob__ example:
 
 ```sh
-echo "Hello Bob!" | tsp --pretty-print -d alicen send -s alice -r bob
+echo "Hello Bob!" | tsp --pretty-print -d alice send -s alice -r bob
 ```
 
 Output:
 ```
- INFO tsp::async_store: sending message to https://tsp-test.org/user/bob
+ INFO tsp::async_store: sending message to https://demo.teaspoon.world/user/did:web:did.teaspoon.world:user:bob
 CESR-encoded message:
 -EABXAAA9VIDAAALAAAZGlkOndlYjp0c3AtdGVzdC5vcmc6dXNlcjphbGljZQ8VIDAAAKAAZGlkOndlYjp0c3AtdGVzdC5vcmc6dXNlcjpib2I4CAX7ngr3YHl2z91L-anFBYxbQhM48CT_wqrCCRNdsN5fm-oshqvwqnKDK5rLkn_kvVI8aWZ7SEhiaiB8N6e-bjInrBbhNII0BAceo-mZoSvG3MY_UEqrgzP4kpeLJJK9MdQx53c4nxKh6_jvB2DuXJ6TBNjj-lXszyTH8yDAMSioDRluucSBpPAg
- INFO tsp: sent message (11 bytes) from did:web:tsp-test.org:user:alice to did:web:tsp-test.org:user:bob
+ INFO tsp: sent message (11 bytes) from did:web:did.teaspoon.world:user:alice to did:web:did.teaspoon.world:user:bob
 ```
 
 In a terminal window supporting colors this will look like the following:

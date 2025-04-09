@@ -10,11 +10,8 @@ use clap::Parser;
 use futures::{sink::SinkExt, stream::StreamExt};
 use reqwest::header;
 use serde::Serialize;
-use std::{
-    collections::VecDeque,
-    sync::{Arc, RwLock},
-};
-use tokio::sync::{Mutex, broadcast};
+use std::{collections::VecDeque, sync::Arc};
+use tokio::sync::{RwLock, broadcast};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp::{AsyncStore, OwnedVid, VerifiedVid, definitions::Digest, vid::vid_to_did_document};
 use url::Url;
@@ -37,7 +34,7 @@ struct Cli {
 struct IntermediaryState {
     domain: String,
     did: String,
-    db: Mutex<AsyncStore>,
+    db: RwLock<AsyncStore>,
     message_tx: broadcast::Sender<(String, Vec<u8>)>,
     log: RwLock<VecDeque<LogEntry>>,
     log_tx: broadcast::Sender<String>,
@@ -60,8 +57,8 @@ impl LogEntry {
 }
 
 impl IntermediaryState {
-    fn internal_log(&self, text: String) {
-        let mut log = self.log.write().unwrap();
+    async fn internal_log(&self, text: String) {
+        let mut log = self.log.write().await;
         let entry = LogEntry::new(text);
         log.push_front(entry.clone());
         log.truncate(MAX_LOG_LEN);
@@ -71,15 +68,24 @@ impl IntermediaryState {
     }
 
     /// Add an entry to the event log on the website
-    fn log(&self, text: String) {
+    async fn log(&self, text: String) {
         tracing::info!("{text}");
-        self.internal_log(text);
+        self.internal_log(text).await;
     }
 
     /// Add an error entry to the event log on the website
-    fn log_error(&self, text: String) {
+    async fn log_error(&self, text: String) {
         tracing::error!("{text}");
-        self.internal_log(text);
+        self.internal_log(text).await;
+    }
+
+    async fn verify_vid(&self, vid: &str) -> Result<(), tsp::Error> {
+        let verified_vid = tsp::vid::verify_vid(vid).await?;
+
+        // Immediately releases write lock
+        self.db.write().await.add_verified_vid(verified_vid)?;
+
+        Ok(())
     }
 }
 
@@ -114,7 +120,7 @@ async fn main() {
     let state = Arc::new(IntermediaryState {
         domain: args.domain.to_owned(),
         did,
-        db: Mutex::new(db),
+        db: RwLock::new(db),
         message_tx: broadcast::channel(100).0,
         log: RwLock::new(VecDeque::with_capacity(MAX_LOG_LEN)),
         log_tx: broadcast::channel(100).0,
@@ -148,7 +154,7 @@ async fn index(State(state): State<Arc<IntermediaryState>>) -> Html<String> {
     html = html.replace("[[DOMAIN]]", &state.domain);
     html = html.replace("[[DID]]", &state.did);
 
-    let log = state.log.read().unwrap();
+    let log = state.log.read().await;
     let serialized_log = serde_json::to_string(&log.iter().collect::<Vec<_>>()).unwrap();
     html = html.replace("[[LOG_JSON]]", &serialized_log);
 
@@ -179,11 +185,12 @@ async fn new_message(
 
     let mut message: Vec<u8> = body.to_vec();
 
-    let mut db = state.db.lock().await;
-
-    if let Ok(true) = db.has_private_vid(receiver) {
+    // yes, this must be a separate variable https://github.com/rust-lang/rust/issues/37612
+    let has_private_vid = state.db.read().await.has_private_vid(receiver);
+    if matches!(has_private_vid, Ok(true)) {
         tracing::debug!("verifying VID {sender} for {receiver}");
-        if let Err(e) = db.verify_vid(sender).await {
+
+        if let Err(e) = state.verify_vid(sender).await {
             tracing::error!("error verifying VID {sender}: {e}");
             return (StatusCode::BAD_REQUEST, "error verifying VID").into_response();
         }
@@ -194,9 +201,14 @@ async fn new_message(
                                                  thread_id: Digest|
                -> Result<(), tsp::Error> {
             if let Some(nested_vid) = nested_vid {
-                let my_new_nested_vid = db
-                    .send_nested_relationship_accept(receiver, &nested_vid, thread_id)
-                    .await?;
+                let ((endpoint, message), my_new_nested_vid) = state
+                    .db
+                    .read()
+                    .await
+                    .make_nested_relationship_accept(receiver, &nested_vid, thread_id)?;
+
+                tsp::transport::send_message(&endpoint, &message).await?;
+
                 tracing::debug!(
                     "Created nested {} for {nested_vid}",
                     my_new_nested_vid.vid().identifier()
@@ -209,12 +221,22 @@ async fn new_message(
                         .map(|vid| std::str::from_utf8(vid).unwrap())
                         .collect()
                 });
-                db.send_relationship_accept(receiver, &sender, thread_id, route.as_deref())
-                    .await
+                let (endpoint, message) = state.db.read().await.make_relationship_accept(
+                    receiver,
+                    &sender,
+                    thread_id,
+                    route.as_deref(),
+                )?;
+
+                tsp::transport::send_message(&endpoint, &message).await?;
+
+                Ok(())
             }
         };
 
-        match db.open_message(&mut message) {
+        // yes, this must be a separate variable https://github.com/rust-lang/rust/issues/37612
+        let res = state.db.read().await.open_message(&mut message);
+        match res {
             Err(e) => {
                 tracing::error!("received opening message from {sender}: {e}")
             }
@@ -235,7 +257,7 @@ async fn new_message(
                 )
                 .await
                 {
-                    state.log_error(e.to_string());
+                    state.log_error(e.to_string()).await;
                     return (StatusCode::BAD_REQUEST, "error accepting relationship")
                         .into_response();
                 }
@@ -246,7 +268,7 @@ async fn new_message(
                     )
                 } else {
                     format!("Accepted relationship request from {sender}")
-                });
+                }).await;
             }
             Ok(tsp::ReceivedTspMessage::AcceptRelationship { sender, .. }) => {
                 tracing::error!("accept relationship message from {sender}")
@@ -264,13 +286,18 @@ async fn new_message(
                     tracing::debug!("don't need to verify yourself");
                 } else {
                     tracing::debug!("verifying VID next hop {next_hop}");
-                    if let Err(e) = db.verify_vid(&next_hop).await {
+                    if let Err(e) = state.verify_vid(&next_hop).await {
                         tracing::error!("error verifying VID {next_hop}: {e}");
                         return (StatusCode::BAD_REQUEST, "error verifying next hop VID")
                             .into_response();
                     }
 
-                    if let Err(e) = db.set_relation_for_vid(&next_hop, Some(receiver)) {
+                    if let Err(e) = state
+                        .db
+                        .read()
+                        .await
+                        .set_relation_for_vid(&next_hop, Some(receiver))
+                    {
                         tracing::error!("error setting relation with {next_hop}: {e}");
                         return (
                             StatusCode::BAD_REQUEST,
@@ -280,19 +307,30 @@ async fn new_message(
                     }
                 }
 
-                match db
-                    .forward_routed_message(&next_hop, route, &opaque_payload)
-                    .await
-                {
-                    Ok(url) => {
-                        state.log(format!("Forwarded message from {sender} to {url}",));
-                    }
+                let (transport, message) = match state.db.read().await.make_next_routed_message(
+                    &next_hop,
+                    route,
+                    &opaque_payload,
+                ) {
+                    Ok(res) => res,
                     Err(e) => {
-                        state.log_error(e.to_string());
+                        state.log_error(e.to_string()).await;
                         return (StatusCode::BAD_REQUEST, "error forwarding message")
                             .into_response();
                     }
+                };
+
+                tracing::debug!("Sending forwarded message...");
+
+                if let Err(e) = tsp::transport::send_message(&transport, &message).await {
+                    state.log_error(e.to_string()).await;
+                    return (StatusCode::BAD_REQUEST, "error sending forwarded message")
+                        .into_response();
                 }
+
+                state
+                    .log(format!("Forwarded message from {sender} to {transport}",))
+                    .await;
             }
             Ok(tsp::ReceivedTspMessage::NewIdentifier { sender, new_vid }) => {
                 tracing::error!("new identifier message from {sender}: {new_vid}")
@@ -306,10 +344,12 @@ async fn new_message(
             }
         }
     } else {
-        state.log(format!(
-            "Forwarding message from  {sender} to {receiver} via WebSockets ({} bytes)",
-            message.len()
-        ));
+        state
+            .log(format!(
+                "Forwarding message from  {sender} to {receiver} via WebSockets ({} bytes)",
+                message.len()
+            ))
+            .await;
         // insert message in queue
         let _ = state.message_tx.send((receiver.to_owned(), message));
     }
@@ -334,11 +374,14 @@ async fn websocket_handler(
                 if receiver == did {
                     tracing::debug!(
                         "{} forwarding message to {receiver}, {} bytes",
-                        message.len(),
-                        state.domain
+                        state.domain,
+                        message.len()
                     );
 
-                    let _ = ws_send.send(Message::Binary(Bytes::from(message))).await;
+                    let a = ws_send.send(Message::Binary(Bytes::from(message))).await;
+                    if let Err(e) = a {
+                        tracing::error!("Could not send via WS: {e}");
+                    }
                 }
             }
         }

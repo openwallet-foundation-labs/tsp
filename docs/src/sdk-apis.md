@@ -3,7 +3,7 @@
 The `rust-tsp` library should allow users to seal and open TSP messages. Note that the provided code is pseudo-Rust
 code;
 we abstract away from some implementation details.
-For a detailed and complete API reference, please take a look at [https://docs.tsp-test.org/](https://docs.tsp-test.org/).
+For a detailed and complete API reference, please take a look at <https://docs.rs/tsp-sdk/>.
 
 ### The VID Store
 
@@ -64,7 +64,7 @@ pub fn sign_anycast(&self, sender: &str, message: &[u8]) -> Result<Vec<u8>, Erro
 ### Managing VID's
 
 The `Store` supports the following methods to manage the VIDs. This is just an extraction of the most relevant methods;
-see the [API docs](https://docs.tsp-test.org/) for the full list.
+see the [API docs](https://docs.rs/tsp-sdk/) for the full list.
 
 ```rust
 /// Add the already resolved `verified_vid` to the database as a relationship

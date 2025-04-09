@@ -10,10 +10,10 @@ import { bufferToBase64, humanFileSize } from './util';
 import ReconnectingWebSocket from 'reconnecting-websocket';
 
 const TIMESTAMP_SERVER = {
-  id: 'did:web:did.tsp-test.org:user:timestamp-server',
+  id: 'did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:timestamp-server',
   publicEnckey: '2SOeMndN9z4oArm7Vu7D7ZGnkbsAXZ2DO-GUAfBd_Bo',
   publicSigkey: 'HR76y6YG5BWHbj4UQsqX-5ybQPjtETiaZFa4LHWaI68',
-  transport: 'https://tsp-test.org/timestamp',
+  transport: 'https://demo.teaspoon.world/timestamp',
 };
 
 export interface Identity {
@@ -43,10 +43,10 @@ export interface Contact {
 type Encoded =
   | string
   | {
-      name: string;
-      href: string;
-      size: string;
-    };
+    name: string;
+    href: string;
+    size: string;
+  };
 
 export interface Message {
   date: string;
@@ -96,14 +96,14 @@ type Action =
   | { type: 'removeContact'; index: number }
   | { type: 'removeMessage'; contactIndex: number; messageIndex: number }
   | {
-      type: 'addMessage';
-      contactVid: string;
-      message: string;
-      encoded: Encoded;
-      timestamp: number;
-      timestampSignature: string;
-      me: boolean;
-    }
+    type: 'addMessage';
+    contactVid: string;
+    message: string;
+    encoded: Encoded;
+    timestamp: number;
+    timestampSignature: string;
+    me: boolean;
+  }
   | { type: 'setId'; id: Identity }
   | { type: 'reset' };
 
@@ -189,7 +189,7 @@ export default function useStore() {
       if (web) {
         const data = new URLSearchParams();
         data.append('name', label);
-        let result = await fetch('https://tsp-test.org/create-identity', {
+        let result = await fetch('https://demo.teaspoon.world/create-identity', {
           method: 'POST',
           body: data,
           headers: {
@@ -203,7 +203,7 @@ export default function useStore() {
         dispatch({ type: 'setId', id });
       } else {
         const vid = OwnedVid.new_did_peer(
-          `https://tsp-test.org/user/${label.toLowerCase()}`
+          `https://demo.teaspoon.world/user/[vid_placeholder]`
         );
         const id = { label, vid: JSON.parse(vid.to_json()) };
         store.current.add_private_vid(vid.create_clone());
@@ -299,7 +299,7 @@ export default function useStore() {
       body
     );
     // timestamp sign
-    const signResponse = await fetch('https://tsp-test.org/sign-timestamp', {
+    const signResponse = await fetch('https://demo.teaspoon.world/sign-timestamp', {
       method: 'POST',
       body: sealed,
     });
@@ -403,7 +403,7 @@ export default function useStore() {
   useEffect(() => {
     if (state.id) {
       ws.current = new ReconnectingWebSocket(
-        `wss://tsp-test.org/vid/${state.id.vid.id}`
+        `wss://demo.teaspoon.world/user/${state.id.vid.id}`
       );
       const wsCurrent = ws.current;
       ws.current.onmessage = async (e) => {
