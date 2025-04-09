@@ -8,8 +8,9 @@ use std::{collections::HashMap, path::PathBuf};
 use tokio::io::AsyncReadExt;
 use tracing::{debug, error, info, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use tsp::{
-    AsyncStore, Error, ExportVid, OwnedVid, ReceivedTspMessage, Vault, VerifiedVid, Vid, cesr::Part,
+use tsp_sdk::{
+    AsyncStore, Error, ExportVid, OwnedVid, ReceivedTspMessage, Vault, VerifiedVid, Vid, cesr,
+    cesr::Part,
 };
 
 #[derive(Debug, Parser)]
@@ -219,7 +220,7 @@ fn color_print_part(part: Option<Part>, color: u8) {
 }
 
 fn print_message(message: &[u8]) {
-    let Ok(parts) = tsp::cesr::open_message_into_parts(message) else {
+    let Ok(parts) = tsp_sdk::cesr::open_message_into_parts(message) else {
         eprintln!("Invalid encoded message");
         return;
     };
@@ -487,19 +488,19 @@ async fn run() -> Result<(), Error> {
                             message_type,
                         } => {
                             let status = match message_type.crypto_type {
-                                tsp::cesr::CryptoType::Plaintext => "NON-CONFIDENTIAL",
+                                cesr::CryptoType::Plaintext => "NON-CONFIDENTIAL",
                                 _ => "confidential",
                             };
                             let crypto_type = match message_type.crypto_type {
-                                tsp::cesr::CryptoType::Plaintext => "Plain text",
-                                tsp::cesr::CryptoType::HpkeAuth => "HPKE Auth",
-                                tsp::cesr::CryptoType::HpkeEssr => "HPKE ESSR",
-                                tsp::cesr::CryptoType::NaclAuth => "NaCl Auth",
-                                tsp::cesr::CryptoType::NaclEssr => "NaCl ESSR",
+                                cesr::CryptoType::Plaintext => "Plain text",
+                                cesr::CryptoType::HpkeAuth => "HPKE Auth",
+                                cesr::CryptoType::HpkeEssr => "HPKE ESSR",
+                                cesr::CryptoType::NaclAuth => "NaCl Auth",
+                                cesr::CryptoType::NaclEssr => "NaCl ESSR",
                             };
                             let signature_type = match message_type.signature_type {
-                                tsp::cesr::SignatureType::NoSignature => "no signature",
-                                tsp::cesr::SignatureType::Ed25519 => "Ed25519 signature",
+                                cesr::SignatureType::NoSignature => "no signature",
+                                cesr::SignatureType::Ed25519 => "Ed25519 signature",
                             };
                             info!(
                                 "received {status} message ({} bytes) from {} ({crypto_type}, {signature_type})",

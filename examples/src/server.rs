@@ -28,8 +28,8 @@ use tokio::signal;
 use tokio::sync::{RwLock, broadcast};
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use tsp::{
-    Store,
+use tsp_sdk::{
+    Store, cesr,
     definitions::{Payload, VerifiedVid},
     vid::{OwnedVid, Vid},
 };
@@ -180,7 +180,7 @@ struct ResolveVidInput {
 
 /// Resolve and verify a VID to JSON encoded key material
 async fn verify_vid(Form(form): Form<ResolveVidInput>) -> Response {
-    let vid = tsp::vid::verify_vid(&form.vid).await.ok();
+    let vid = tsp_sdk::vid::verify_vid(&form.vid).await.ok();
 
     match vid {
         Some(vid) => {
@@ -195,7 +195,7 @@ async fn verify_vid(Form(form): Form<ResolveVidInput>) -> Response {
 }
 
 /// Format CESR-encoded message parts to descriptive JSON
-fn format_part(title: &str, part: &tsp::cesr::Part, plain: Option<&[u8]>) -> serde_json::Value {
+fn format_part(title: &str, part: &cesr::Part, plain: Option<&[u8]>) -> serde_json::Value {
     let full = [part.prefix, part.data].concat();
 
     json!({
@@ -210,7 +210,7 @@ fn format_part(title: &str, part: &tsp::cesr::Part, plain: Option<&[u8]>) -> ser
 
 /// Decode a CESR-encoded message into descriptive JSON
 fn open_message(message: &[u8], payload: Option<&[u8]>) -> Option<serde_json::Value> {
-    let parts = tsp::cesr::open_message_into_parts(message).ok()?;
+    let parts = cesr::open_message_into_parts(message).ok()?;
 
     Some(json!({
         "original": Base64UrlUnpadded::encode_string(message),
@@ -221,15 +221,15 @@ fn open_message(message: &[u8], payload: Option<&[u8]>) -> Option<serde_json::Va
         "ciphertext": parts.ciphertext.map(|v| format_part("Ciphertext", &v, payload)),
         "signature": format_part("Signature", &parts.signature, None),
         "cryptoType": match parts.crypto_type {
-            tsp::cesr::CryptoType::Plaintext => "Plain text",
-            tsp::cesr::CryptoType::HpkeAuth => "HPKE Auth",
-            tsp::cesr::CryptoType::HpkeEssr => "HPKE ESSR",
-            tsp::cesr::CryptoType::NaclAuth => "NaCl Auth",
-            tsp::cesr::CryptoType::NaclEssr => "NaCl ESSR",
+            cesr::CryptoType::Plaintext => "Plain text",
+            cesr::CryptoType::HpkeAuth => "HPKE Auth",
+            cesr::CryptoType::HpkeEssr => "HPKE ESSR",
+            cesr::CryptoType::NaclAuth => "NaCl Auth",
+            cesr::CryptoType::NaclEssr => "NaCl ESSR",
         },
         "signatureType": match parts.signature_type {
-            tsp::cesr::SignatureType::NoSignature => "No Signature",
-            tsp::cesr::SignatureType::Ed25519 => "Ed25519",
+            cesr::SignatureType::NoSignature => "No Signature",
+            cesr::SignatureType::Ed25519 => "Ed25519",
         }
     }))
 }
@@ -255,7 +255,7 @@ async fn sign_timestamp(
 ) -> Result<impl IntoResponse, Response> {
     let bytes: Vec<u8> = body.into();
     let mut header_bytes = bytes.clone();
-    let header = tsp::cesr::probe(&mut header_bytes)
+    let header = cesr::probe(&mut header_bytes)
         .map_err(|_| (StatusCode::BAD_REQUEST, "Error probing message").into_response())?;
 
     let metadata = header
@@ -293,7 +293,7 @@ async fn sign_timestamp(
 
     tracing::info!("timestamp delta ok: {delta} seconds");
 
-    let verified_vid = tsp::vid::verify_vid(receiver)
+    let verified_vid = tsp_sdk::vid::verify_vid(receiver)
         .await
         .map_err(|_| (StatusCode::BAD_REQUEST, "Error verifying vid").into_response())?;
     state
@@ -322,7 +322,7 @@ async fn sign_timestamp(
 }
 
 async fn route_message(State(state): State<Arc<AppState>>, body: Bytes) -> Response {
-    let Ok((sender, Some(receiver))) = tsp::cesr::get_sender_receiver(&body) else {
+    let Ok((sender, Some(receiver))) = cesr::get_sender_receiver(&body) else {
         return (StatusCode::BAD_REQUEST, "invalid message").into_response();
     };
 
@@ -334,7 +334,7 @@ async fn route_message(State(state): State<Arc<AppState>>, body: Bytes) -> Respo
     // that are not intended for you --- but that will allow building interesting demo cases
     // since the unintended recipient cannot read the message: the security of TSP is not based
     // on security of the transport layer.
-    if let Ok(vid) = tsp::vid::resolve::verify_vid(&receiver).await {
+    if let Ok(vid) = tsp_sdk::vid::resolve::verify_vid(&receiver).await {
         vid.endpoint().to_string()
     } else {
         return (StatusCode::BAD_REQUEST, "unknown receiver").into_response();
@@ -362,7 +362,7 @@ async fn send_message(
     State(state): State<Arc<AppState>>,
     Json(form): Json<SendMessageForm>,
 ) -> Response {
-    let result = tsp::crypto::seal(
+    let result = tsp_sdk::crypto::seal(
         &form.sender,
         &form.receiver,
         form.nonconfidential_data.as_deref().and_then(|d| {
@@ -455,7 +455,7 @@ async fn websocket(stream: WebSocket, state: Arc<AppState>) {
             // if the sender is verified, decrypt the message
             let result = if let Some(sender_vid) = incoming_senders_read.get(&sender_id) {
                 let Ok((_, payload, _, _)) =
-                    tsp::crypto::open(receiver_vid, sender_vid, &mut encrypted_message)
+                    tsp_sdk::crypto::open(receiver_vid, sender_vid, &mut encrypted_message)
                 else {
                     continue;
                 };

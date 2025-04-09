@@ -16,7 +16,7 @@ use url::Url;
 /// # Example
 ///
 /// ```rust
-/// use tsp::{AsyncStore, OwnedVid, Error, ReceivedTspMessage};
+/// use tsp_sdk::{AsyncStore, OwnedVid, Error, ReceivedTspMessage};
 ///
 /// #[tokio::main]
 /// async fn main() {
@@ -126,7 +126,7 @@ impl AsyncStore {
     /// # Example
     ///
     /// ```rust
-    /// use tsp::{AsyncStore, OwnedVid};
+    /// use tsp_sdk::{AsyncStore, OwnedVid};
     ///
     /// #[tokio::main]
     /// async fn main() {
@@ -170,7 +170,7 @@ impl AsyncStore {
     /// # Example
     ///
     /// ```rust
-    /// use tsp::{AsyncStore, OwnedVid};
+    /// use tsp_sdk::{AsyncStore, OwnedVid};
     ///
     /// #[tokio::main]
     /// async fn main() {

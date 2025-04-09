@@ -26,7 +26,7 @@
 //! The following example demonstrates how to send a message from Alice to Bob
 //!
 //! ```rust
-//! use tsp::{AsyncStore, OwnedVid, Error, ReceivedTspMessage};
+//! use tsp_sdk::{AsyncStore, OwnedVid, Error, ReceivedTspMessage};
 //! use futures::StreamExt;
 //!
 //! #[tokio::main]

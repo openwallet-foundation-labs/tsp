@@ -35,11 +35,11 @@ You can also run your own intermediaries servers on localhost. To get HTTPS to w
 npx local-ssl-proxy --config ./ssl-proxy.json
 ```
 
-We use the feature flag `tsp/use_local_certificate` to load in the certificates used by the proxy into the intermediary and the CLI. Run the following two commands in two separate terminals to start intermediaries P and Q locally:
+We use the feature flag `use_local_certificate` to load in the certificates used by the proxy into the intermediary and the CLI. Run the following two commands in two separate terminals to start intermediaries P and Q locally:
 
 ```
-cargo run --features tsp/use_local_certificate --bin demo-intermediary -- --port 3011 localhost:3001
-cargo run --features tsp/use_local_certificate --bin demo-intermediary -- --port 3012 localhost:3002
+cargo run --features use_local_certificate --bin demo-intermediary -- --port 3011 localhost:3001
+cargo run --features use_local_certificate --bin demo-intermediary -- --port 3012 localhost:3002
 ```
 
 This runs the intermediaries on <http://localhost:3011/> and <http://localhost:3012/>. The SSL proxy makes these accessible via HTTPS at <https://localhost:3001/> and <https://localhost:3002/>, so DIDs we should use are `did:web:localhost%3A3001` for P and `did:web:localhost%3A3002` for Q.

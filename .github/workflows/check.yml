@@ -30,8 +30,8 @@ jobs:
       - run: |
           cargo test
           cargo test --doc
-          cargo test --package tsp --features nacl
-          cargo test --package tsp --lib --features pq
+          cargo test --package tsp_sdk --features nacl
+          cargo test --package tsp_sdk --lib --features pq
 
   cargo-deny:
     runs-on: ubuntu-latest
@@ -58,8 +58,8 @@ jobs:
       - name: Install wasm-pack
         run: cargo install wasm-pack
       - name: Run tests with wasm-pack
-        working-directory: tsp
-        run: wasm-pack test --node -- -p tsp --no-default-features --features "resolve"
+        working-directory: tsp_sdk
+        run: wasm-pack test --node -- -p tsp_sdk --no-default-features --features "resolve"
 
   check-python:
     runs-on: ubuntu-22.04
@@ -78,14 +78,14 @@ jobs:
         run: pip install maturin
 
       - name: Create and activate virtual environment
-        working-directory: tsp-python
+        working-directory: tsp_python
         run: |
           python -m venv venv
           source venv/bin/activate
           pip install maturin
 
       - name: Build and test
-        working-directory: tsp-python
+        working-directory: tsp_python
         run: |
           source venv/bin/activate
           maturin develop
@@ -108,14 +108,14 @@ jobs:
           curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
           wasm-pack --version
       - name: Build Wasm extension
-        run: wasm-pack build --target nodejs tsp-javascript/
+        run: wasm-pack build --target nodejs tsp_javascript/
 
       - name: Install npm dependencies
-        working-directory: tsp-node/
+        working-directory: tsp_node/
         run: npm install
 
       - name: Run tests with Mocha
-        working-directory: tsp-node/
+        working-directory: tsp_node/
         run: npm test
 
   fuzz:

@@ -10,8 +10,8 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 
-[dependencies.tsp]
-path = "../tsp"
+[dependencies.tsp_sdk]
+path = "../tsp_sdk"
 features = ["fuzzing"]
 
 [[bin]]
