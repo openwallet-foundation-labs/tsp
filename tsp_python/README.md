@@ -1,4 +1,4 @@
-# tsp-python
+# tsp_python
 
 An incomplete python api that binds to rust
 
@@ -7,7 +7,7 @@ An incomplete python api that binds to rust
 _hopefully_ this works. This requires pyenv and maturin
 
 ```
-# from within tsp-python
+# from within tsp_python
 pyenv init - | source
 pyenv activate 
 maturin develop

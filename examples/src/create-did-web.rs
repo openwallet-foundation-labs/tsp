@@ -10,7 +10,8 @@ fn main() {
     let name: &str = &args[1];
     let transport: &str = &args[2];
 
-    let (did_doc, private_doc, _) = tsp::vid::create_did_web(name, "did.teaspoon.world", transport);
+    let (did_doc, private_doc, _) =
+        tsp_sdk::vid::create_did_web(name, "did.teaspoon.world", transport);
 
     fs::write(
         format!("examples/test/{name}-did.json"),

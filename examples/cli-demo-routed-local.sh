@@ -5,12 +5,12 @@
 
 # here the intermediaries also need to use the feature "use_local_certificate":
 #
-#    cargo run --features tsp/use_local_certificate --bin demo-intermediary -- --port 3011 localhost:3001
-#    cargo run --features tsp/use_local_certificate --bin demo-intermediary -- --port 3012 localhost:3002
+#    cargo run --features use_local_certificate --bin demo-intermediary -- --port 3011 localhost:3001
+#    cargo run --features use_local_certificate --bin demo-intermediary -- --port 3012 localhost:3002
 #
 # (you should run these in separate terminals, together with the SSL proxy)
 
-cargo install --path . --features tsp/use_local_certificate
+cargo install --path . --features use_local_certificate
 
 echo "---- cleanup the database"
 rm -f a.sqlite b.sqlite

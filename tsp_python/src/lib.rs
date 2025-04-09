@@ -18,13 +18,13 @@ fn py_exception<E: std::fmt::Debug>(e: E) -> PyErr {
 }
 
 #[pyclass]
-struct Store(tsp::Store);
+struct Store(tsp_sdk::Store);
 
 #[pymethods]
 impl Store {
     #[new]
     fn new() -> Self {
-        Self(tsp::Store::default())
+        Self(tsp_sdk::Store::default())
     }
 
     fn add_private_vid(&self, vid: OwnedVid) -> PyResult<()> {
@@ -222,17 +222,17 @@ enum ReceivedTspMessageVariant {
     Referral,
 }
 
-impl From<&tsp::ReceivedTspMessage> for ReceivedTspMessageVariant {
-    fn from(value: &tsp::ReceivedTspMessage) -> Self {
+impl From<&tsp_sdk::ReceivedTspMessage> for ReceivedTspMessageVariant {
+    fn from(value: &tsp_sdk::ReceivedTspMessage) -> Self {
         match value {
-            tsp::ReceivedTspMessage::GenericMessage { .. } => Self::GenericMessage,
-            tsp::ReceivedTspMessage::RequestRelationship { .. } => Self::RequestRelationship,
-            tsp::ReceivedTspMessage::AcceptRelationship { .. } => Self::AcceptRelationship,
-            tsp::ReceivedTspMessage::CancelRelationship { .. } => Self::CancelRelationship,
-            tsp::ReceivedTspMessage::ForwardRequest { .. } => Self::ForwardRequest,
-            tsp::ReceivedTspMessage::PendingMessage { .. } => Self::PendingMessage,
-            tsp::ReceivedTspMessage::NewIdentifier { .. } => Self::NewIdentifier,
-            tsp::ReceivedTspMessage::Referral { .. } => Self::Referral,
+            tsp_sdk::ReceivedTspMessage::GenericMessage { .. } => Self::GenericMessage,
+            tsp_sdk::ReceivedTspMessage::RequestRelationship { .. } => Self::RequestRelationship,
+            tsp_sdk::ReceivedTspMessage::AcceptRelationship { .. } => Self::AcceptRelationship,
+            tsp_sdk::ReceivedTspMessage::CancelRelationship { .. } => Self::CancelRelationship,
+            tsp_sdk::ReceivedTspMessage::ForwardRequest { .. } => Self::ForwardRequest,
+            tsp_sdk::ReceivedTspMessage::PendingMessage { .. } => Self::PendingMessage,
+            tsp_sdk::ReceivedTspMessage::NewIdentifier { .. } => Self::NewIdentifier,
+            tsp_sdk::ReceivedTspMessage::Referral { .. } => Self::Referral,
         }
     }
 }
@@ -296,8 +296,8 @@ impl FlatReceivedTspMessage {
     }
 }
 
-impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
-    fn from(value: tsp::ReceivedTspMessage) -> Self {
+impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
+    fn from(value: tsp_sdk::ReceivedTspMessage) -> Self {
         let variant = ReceivedTspMessageVariant::from(&value);
 
         let mut this = FlatReceivedTspMessage {
@@ -319,7 +319,7 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
         };
 
         match value {
-            tsp::ReceivedTspMessage::GenericMessage {
+            tsp_sdk::ReceivedTspMessage::GenericMessage {
                 sender,
                 nonconfidential_data,
                 message,
@@ -329,18 +329,18 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
                 this.nonconfidential_data = Some(nonconfidential_data.map(Into::into));
                 this.message = Some(message.into());
                 this.crypto_type = match message_type.crypto_type {
-                    tsp::cesr::CryptoType::Plaintext => Some(CryptoType::Plaintext),
-                    tsp::cesr::CryptoType::HpkeAuth => Some(CryptoType::HpkeAuth),
-                    tsp::cesr::CryptoType::HpkeEssr => Some(CryptoType::HpkeEssr),
-                    tsp::cesr::CryptoType::NaclAuth => Some(CryptoType::NaclAuth),
-                    tsp::cesr::CryptoType::NaclEssr => Some(CryptoType::NaclEssr),
+                    tsp_sdk::cesr::CryptoType::Plaintext => Some(CryptoType::Plaintext),
+                    tsp_sdk::cesr::CryptoType::HpkeAuth => Some(CryptoType::HpkeAuth),
+                    tsp_sdk::cesr::CryptoType::HpkeEssr => Some(CryptoType::HpkeEssr),
+                    tsp_sdk::cesr::CryptoType::NaclAuth => Some(CryptoType::NaclAuth),
+                    tsp_sdk::cesr::CryptoType::NaclEssr => Some(CryptoType::NaclEssr),
                 };
                 this.signature_type = match message_type.signature_type {
-                    tsp::cesr::SignatureType::NoSignature => Some(SignatureType::NoSignature),
-                    tsp::cesr::SignatureType::Ed25519 => Some(SignatureType::Ed25519),
+                    tsp_sdk::cesr::SignatureType::NoSignature => Some(SignatureType::NoSignature),
+                    tsp_sdk::cesr::SignatureType::Ed25519 => Some(SignatureType::Ed25519),
                 };
             }
-            tsp::ReceivedTspMessage::RequestRelationship {
+            tsp_sdk::ReceivedTspMessage::RequestRelationship {
                 sender,
                 route,
                 nested_vid,
@@ -351,25 +351,25 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
                 this.nested_vid = Some(nested_vid);
                 this.thread_id = Some(thread_id);
             }
-            tsp::ReceivedTspMessage::AcceptRelationship { sender, nested_vid } => {
+            tsp_sdk::ReceivedTspMessage::AcceptRelationship { sender, nested_vid } => {
                 this.sender = Some(sender);
                 this.nested_vid = Some(nested_vid);
             }
-            tsp::ReceivedTspMessage::CancelRelationship { sender } => {
+            tsp_sdk::ReceivedTspMessage::CancelRelationship { sender } => {
                 this.sender = Some(sender);
             }
-            tsp::ReceivedTspMessage::NewIdentifier { sender, new_vid } => {
+            tsp_sdk::ReceivedTspMessage::NewIdentifier { sender, new_vid } => {
                 this.sender = Some(sender);
                 this.new_vid = Some(new_vid);
             }
-            tsp::ReceivedTspMessage::Referral {
+            tsp_sdk::ReceivedTspMessage::Referral {
                 sender,
                 referred_vid,
             } => {
                 this.sender = Some(sender);
                 this.referred_vid = Some(referred_vid);
             }
-            tsp::ReceivedTspMessage::ForwardRequest {
+            tsp_sdk::ReceivedTspMessage::ForwardRequest {
                 sender,
                 next_hop,
                 route,
@@ -380,7 +380,7 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
                 this.route = Some(Some(route.into_iter().map(Into::into).collect()));
                 this.opaque_payload = Some(opaque_payload.into());
             }
-            tsp::ReceivedTspMessage::PendingMessage {
+            tsp_sdk::ReceivedTspMessage::PendingMessage {
                 unknown_vid,
                 payload,
             } => {
@@ -395,17 +395,17 @@ impl From<tsp::ReceivedTspMessage> for FlatReceivedTspMessage {
 
 #[pyclass]
 #[derive(Clone)]
-struct OwnedVid(tsp::OwnedVid);
+struct OwnedVid(tsp_sdk::OwnedVid);
 
 #[pymethods]
 impl OwnedVid {
     #[staticmethod]
     fn new_did_peer(url: String) -> Self {
-        OwnedVid(tsp::OwnedVid::new_did_peer(url.parse().unwrap()))
+        OwnedVid(tsp_sdk::OwnedVid::new_did_peer(url.parse().unwrap()))
     }
 
     fn identifier(&self) -> String {
-        use tsp::VerifiedVid;
+        use tsp_sdk::VerifiedVid;
         self.0.identifier().to_string()
     }
 }

@@ -10,7 +10,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "tsp-javascript": "file:../tsp-javascript/pkg"
+    "tsp-javascript": "file:../tsp_javascript/pkg"
   },
   "devDependencies": {
     "mocha": "^9.0.0"
