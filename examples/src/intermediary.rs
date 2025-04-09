@@ -13,7 +13,10 @@ use serde::Serialize;
 use std::{collections::VecDeque, sync::Arc};
 use tokio::sync::{RwLock, broadcast};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use tsp::{AsyncStore, OwnedVid, VerifiedVid, definitions::Digest, vid::vid_to_did_document};
+use tsp_sdk::{
+    AsyncStore, OwnedVid, ReceivedTspMessage, VerifiedVid, cesr, definitions::Digest, transport,
+    vid::vid_to_did_document,
+};
 use url::Url;
 
 #[derive(Debug, Parser)]
@@ -79,8 +82,8 @@ impl IntermediaryState {
         self.internal_log(text).await;
     }
 
-    async fn verify_vid(&self, vid: &str) -> Result<(), tsp::Error> {
-        let verified_vid = tsp::vid::verify_vid(vid).await?;
+    async fn verify_vid(&self, vid: &str) -> Result<(), tsp_sdk::Error> {
+        let verified_vid = tsp_sdk::vid::verify_vid(vid).await?;
 
         // Immediately releases write lock
         self.db.write().await.add_verified_vid(verified_vid)?;
@@ -166,7 +169,7 @@ async fn new_message(
     Path(_did): Path<String>,
     body: Bytes,
 ) -> Response {
-    let Ok((sender, Some(receiver))) = tsp::cesr::get_sender_receiver(&body) else {
+    let Ok((sender, Some(receiver))) = cesr::get_sender_receiver(&body) else {
         tracing::error!(
             "{} encountered invalid message, receiver missing",
             state.domain,
@@ -199,7 +202,7 @@ async fn new_message(
                                                  route: Option<Vec<Vec<u8>>>,
                                                  nested_vid: Option<String>,
                                                  thread_id: Digest|
-               -> Result<(), tsp::Error> {
+               -> Result<(), tsp_sdk::Error> {
             if let Some(nested_vid) = nested_vid {
                 let ((endpoint, message), my_new_nested_vid) = state
                     .db
@@ -207,7 +210,7 @@ async fn new_message(
                     .await
                     .make_nested_relationship_accept(receiver, &nested_vid, thread_id)?;
 
-                tsp::transport::send_message(&endpoint, &message).await?;
+                transport::send_message(&endpoint, &message).await?;
 
                 tracing::debug!(
                     "Created nested {} for {nested_vid}",
@@ -228,7 +231,7 @@ async fn new_message(
                     route.as_deref(),
                 )?;
 
-                tsp::transport::send_message(&endpoint, &message).await?;
+                transport::send_message(&endpoint, &message).await?;
 
                 Ok(())
             }
@@ -240,10 +243,10 @@ async fn new_message(
             Err(e) => {
                 tracing::error!("received opening message from {sender}: {e}")
             }
-            Ok(tsp::ReceivedTspMessage::GenericMessage { sender, .. }) => {
+            Ok(ReceivedTspMessage::GenericMessage { sender, .. }) => {
                 tracing::error!("received generic message from {sender}")
             }
-            Ok(tsp::ReceivedTspMessage::RequestRelationship {
+            Ok(ReceivedTspMessage::RequestRelationship {
                 sender,
                 route,
                 nested_vid,
@@ -270,13 +273,13 @@ async fn new_message(
                     format!("Accepted relationship request from {sender}")
                 }).await;
             }
-            Ok(tsp::ReceivedTspMessage::AcceptRelationship { sender, .. }) => {
+            Ok(ReceivedTspMessage::AcceptRelationship { sender, .. }) => {
                 tracing::error!("accept relationship message from {sender}")
             }
-            Ok(tsp::ReceivedTspMessage::CancelRelationship { sender }) => {
+            Ok(ReceivedTspMessage::CancelRelationship { sender }) => {
                 tracing::error!("cancel relationship message from {sender}")
             }
-            Ok(tsp::ReceivedTspMessage::ForwardRequest {
+            Ok(ReceivedTspMessage::ForwardRequest {
                 sender,
                 next_hop,
                 route,
@@ -322,7 +325,7 @@ async fn new_message(
 
                 tracing::debug!("Sending forwarded message...");
 
-                if let Err(e) = tsp::transport::send_message(&transport, &message).await {
+                if let Err(e) = transport::send_message(&transport, &message).await {
                     state.log_error(e.to_string()).await;
                     return (StatusCode::BAD_REQUEST, "error sending forwarded message")
                         .into_response();
@@ -332,14 +335,14 @@ async fn new_message(
                     .log(format!("Forwarded message from {sender} to {transport}",))
                     .await;
             }
-            Ok(tsp::ReceivedTspMessage::NewIdentifier { sender, new_vid }) => {
+            Ok(ReceivedTspMessage::NewIdentifier { sender, new_vid }) => {
                 tracing::error!("new identifier message from {sender}: {new_vid}")
             }
-            Ok(tsp::ReceivedTspMessage::Referral {
+            Ok(ReceivedTspMessage::Referral {
                 sender,
                 referred_vid,
             }) => tracing::error!("referral from {sender}: {referred_vid}"),
-            Ok(tsp::ReceivedTspMessage::PendingMessage { unknown_vid, .. }) => {
+            Ok(ReceivedTspMessage::PendingMessage { unknown_vid, .. }) => {
                 tracing::error!("pending message message from unknown VID {unknown_vid}")
             }
         }

@@ -10,7 +10,7 @@ use tokio::signal;
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tsp::{VerifiedVid, Vid};
+use tsp_sdk::{VerifiedVid, Vid};
 
 #[derive(Debug, Parser)]
 #[command(name = "demo-did-web")]
@@ -115,7 +115,7 @@ async fn create_identity(
         return (StatusCode::BAD_REQUEST, "invalid name").into_response();
     }
 
-    let (did_doc, _, private_vid) = tsp::vid::create_did_web(
+    let (did_doc, _, private_vid) = tsp_sdk::vid::create_did_web(
         &form.name,
         &state.domain,
         &format!("{}/{}", &state.transport, form.name),
@@ -169,7 +169,7 @@ async fn add_vid(Json(vid): Json<Vid>) -> Response {
         return (StatusCode::BAD_REQUEST, "invalid name").into_response();
     }
 
-    let did_doc = tsp::vid::vid_to_did_document(&vid);
+    let did_doc = tsp_sdk::vid::vid_to_did_document(&vid);
 
     if let Err(e) = write_id(Identity {
         did_doc,

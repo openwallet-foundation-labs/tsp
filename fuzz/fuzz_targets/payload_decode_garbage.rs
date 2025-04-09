@@ -1,14 +1,15 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
+use tsp_sdk::cesr;
 
 fuzz_target!(|data: &[u8]| {
-    match tsp::cesr::decode_payload(&mut data.to_owned()) {
+    match cesr::decode_payload(&mut data.to_owned()) {
         Ok(decoded) => {
             let mut buf = Vec::new();
-            tsp::cesr::encode_payload(&decoded.payload, None, &mut buf).unwrap();
+            cesr::encode_payload(&decoded.payload, None, &mut buf).unwrap();
 
-            let redecoded = tsp::cesr::decode_payload(&mut buf).unwrap().payload;
+            let redecoded = cesr::decode_payload(&mut buf).unwrap().payload;
             assert_eq!(decoded.payload, redecoded)
         }
         Err(_) => {

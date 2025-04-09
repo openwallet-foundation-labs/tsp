@@ -3,7 +3,7 @@ requires = ["maturin>=1.5,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "tsp-python"
+name = "tsp_python"
 requires-python = ">=3.10.0"
 classifiers = [
     "Programming Language :: Rust",
