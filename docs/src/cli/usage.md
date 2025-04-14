@@ -19,7 +19,7 @@ tsp create example
 
 Output:
 ``` 
-INFO tsp: created new database
+INFO tsp: created new wallet
 INFO tsp: created identity did:web:did.teaspoon.world:user:example
 ```
 
@@ -42,11 +42,11 @@ tsp --verbose create example
 
 Output:
 ``` 
-TRACE tsp: opened database database.sqlite
+TRACE tsp: opened wallet wallet.sqlite
  INFO tsp: added alias example -> did:web:did.teaspoon.world:user:example
  INFO tsp: created identity did:web:did.teaspoon.world:user:example
 TRACE tsp: published DID document to https://did.teaspoon.world/user/example/did.json
-TRACE tsp: persisted database to database.sqlite
+TRACE tsp: persisted wallet to wallet.sqlite
 ```
 
 ## Resolve a VID
@@ -62,7 +62,7 @@ tsp verify did:web:did.teaspoon.world:user:example
 
 Output:
 ```
- INFO tsp: did:web:did.teaspoon.world:user:example is verified and added to the database
+ INFO tsp: did:web:did.teaspoon.world:user:example is verified and added to the wallet
 ```
 
 The verify command also support the alias argument:
@@ -75,39 +75,39 @@ tsp verify did:web:did.teaspoon.world:user:example --alias example
 
 For this example we will create two identities with separate wallets - __alice__ and __bob__.
 
-You could perform the operations for alice and bob on different computers, for this example
-we will seperate them by using distinct databases.
+You could perform the operations for __alice__ and __bob__ on different computers, for this example
+we will separate them by using distinct wallets.
 
-Use the `--database` flag to specify the file name of the database.
+Use the `--wallet` flag to specify the file name of the wallet.
 
 First create the identity for __alice__:
 
 ```sh
-tsp --database alice create alice --alias alice
+tsp --wallet alice create alice --alias alice
 ```
 
 Then create the identity for __bob__:
 
 ```sh
-tsp --database bob create bob --alias bob
+tsp --wallet bob create bob --alias bob
 ```
 
-Let __alice__ verify __bob__'s VID and add it to the database `alice`:
+Let __alice__ verify __bob__'s VID and add it to the wallet `alice`:
 
 ```sh
-tsp --database alice verify did:web:did.teaspoon.world:user:bob --alias bob
+tsp --wallet alice verify did:web:did.teaspoon.world:user:bob --alias bob
 ```
 
-Let __bob__ verify __alice__'s VID and add it to the database `bob`:
+Let __bob__ verify __alice__'s VID and add it to the wallet `bob`:
 
 ```sh
-tsp --database bob verify did:web:did.teaspoon.world:user:alice --alias alice
+tsp --wallet bob verify did:web:did.teaspoon.world:user:alice --alias alice
 ```
 
 Let __bob__  start listening for a message:
 
 ```sh
-tsp --database bob receive --one bob
+tsp --wallet bob receive --one bob
 ```
 
 The `--one` argument makes the command exit when the first message is received.
@@ -118,7 +118,7 @@ a new / different terminal to send the message from __alice__.
 To send a message run the following:
 
 ```sh
-echo "Hello Bob!" | tsp --database alice send --sender-vid alice --receiver-vid bob
+echo "Hello Bob!" | tsp --wallet alice send --sender-vid alice --receiver-vid bob
 ```
 
 Note that `alice` and `bob` are aliases of `did:web:did.teaspoon.world:user:alice`
@@ -127,13 +127,13 @@ and `did:web:did.teaspoon.world:user:bob`.
 We can also use aliases for the argument, for example:
 
 ```sh
-echo "Hello Bob!" | tsp -d alice send -s alice -r bob
+echo "Hello Bob!" | tsp -w alice send -s alice -r bob
 ```
 
 In the other terminal window the message should appear:
 
 ```sh
-tsp --database bob receive --one bob
+tsp --wallet bob receive --one bob
 ```
 
 ```
@@ -167,7 +167,7 @@ This will output the CESR-encoded TSP message that is sent.
 Continuing with the __alice__ and __bob__ example:
 
 ```sh
-echo "Hello Bob!" | tsp --pretty-print -d alice send -s alice -r bob
+echo "Hello Bob!" | tsp --pretty-print -w alice send -s alice -r bob
 ```
 
 Output:

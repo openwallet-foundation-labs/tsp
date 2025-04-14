@@ -37,15 +37,31 @@ Send and receive TSP messages
 Usage: tsp [OPTIONS] <COMMAND>
 
 Commands:
-  verify   
-  create   
-  send     
-  receive  
-  help     Print this message or the help of the given subcommand(s)
+  verify            verify and add a identifier to the wallet
+  print             
+  create            create and register a did:web identifier
+  create-peer       
+  create-from-file  import an identity from a file
+  set-alias         
+  set-route         
+  set-parent        
+  set-relation      
+  send              send a message
+  receive           listen for messages
+  request           propose a relationship
+  accept            accept a relationship
+  cancel            break up a relationship
+  refer             send an identity referral
+  publish           publish a new own identity
+  help              Print this message or the help of the given subcommand(s)
 
 Options:
-  -d, --database <DATABASE>  Database file path [default: database.json]
-  -v, --verbose              
-  -p, --pretty-print         Pretty print CESR messages
-  -h, --help                 Print help
+  -w, --wallet <WALLET>          Wallet name to use [default: wallet]
+      --password <PASSWORD>      Password used to encrypt the wallet [default: unsecure]
+  -s, --server <SERVER>          Test server domain [default: demo.teaspoon.world]
+      --did-server <DID_SERVER>  DID server domain [default: did.teaspoon.world]
+  -v, --verbose                  
+  -y, --yes                      Always answer yes to any prompts
+  -p, --pretty-print             Pretty print CESR messages
+  -h, --help                     Print help
 ```

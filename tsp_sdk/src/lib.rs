@@ -31,7 +31,7 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Error> {
-//!     // bob database
+//!     // bob wallet
 //!     let mut bob_db = AsyncStore::new();
 //!     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json").await?;
 //!     bob_db.add_private_vid(bob_vid)?;
@@ -39,7 +39,7 @@
 //!
 //!     let mut bobs_messages = bob_db.receive("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob").await?;
 //!
-//!     // alice database
+//!     // alice wallet
 //!     let mut alice_db = AsyncStore::new();
 //!     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json").await?;
 //!     alice_db.add_private_vid(alice_vid)?;

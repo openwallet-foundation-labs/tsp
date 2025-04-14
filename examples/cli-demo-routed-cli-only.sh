@@ -11,7 +11,7 @@ cointoss() {
     (( $RANDOM % 2 ))
 }
 
-echo "---- cleanup the database"
+echo "---- cleanup the wallet"
 rm -f a.sqlite b.sqlite p.sqlite q.sqlite
 
 echo
@@ -27,23 +27,23 @@ fi
 for entity in a p q $Q2 b; do
     if cointoss; then
 	echo "------ $entity (identifier for ${entity%%[0-9]*}) uses did:web"
-	tsp --database "${entity%%[0-9]*}" create --alias $entity `randuser`
+	tsp --wallet "${entity%%[0-9]*}" create --alias $entity `randuser`
     else
 	if cointoss; then
 	    echo "------ $entity (identifier for ${entity%%[0-9]*}) uses did:peer with https:// transport"
-	    tsp --database "${entity%%[0-9]*}" create-peer $entity
+	    tsp --wallet "${entity%%[0-9]*}" create-peer $entity
 	else
 	    echo "------ $entity (identifier for ${entity%%[0-9]*}) uses did:peer with local transport"
 	    port=$((${port:-1024} + RANDOM % 1000))
-	    tsp --database "${entity%%[0-9]*}" create-peer --tcp localhost:$port $entity
+	    tsp --wallet "${entity%%[0-9]*}" create-peer --tcp localhost:$port $entity
 	fi
     fi
 done
-DID_A=$(tsp --database a print a)
-DID_P=$(tsp --database p print p)
-DID_Q=$(tsp --database q print q)
-[ "$Q2" ] && DID_Q2=$(tsp --database q print q2)
-DID_B=$(tsp --database b print b)
+DID_A=$(tsp --wallet a print a)
+DID_P=$(tsp --wallet p print p)
+DID_Q=$(tsp --wallet q print q)
+[ "$Q2" ] && DID_Q2=$(tsp --wallet q print q2)
+DID_B=$(tsp --wallet b print b)
 
 wait
 sleep 5
@@ -51,63 +51,63 @@ echo
 echo "==== let the nodes introduce each other"
 
 echo "---- verify the address of the receiver"
-tsp --database a verify --alias b "$DID_B"
+tsp --wallet a verify --alias b "$DID_B"
 
 echo "---- establish outer relation a<->p"
-tsp --database a verify --alias p "$DID_P"
+tsp --wallet a verify --alias p "$DID_P"
 
-sleep 2 && tsp --database a request -s a -r p &
-read -d '\t' vid thread_id <<< $(tsp --yes --database p receive --one p)
-tsp --database p set-alias a "$vid"
-sleep 2 && tsp --database p accept -s p -r a --thread-id "$thread_id"
+sleep 2 && tsp --wallet a request -s a -r p &
+read -d '\t' vid thread_id <<< $(tsp --yes --wallet p receive --one p)
+tsp --wallet p set-alias a "$vid"
+sleep 2 && tsp --wallet p accept -s p -r a --thread-id "$thread_id"
 
 echo "---- establish outer relation p<->q"
-tsp --database q verify --alias p "$DID_P"
+tsp --wallet q verify --alias p "$DID_P"
 
-sleep 2 && tsp --database q request -s q -r p &
-read -d '\t' vid thread_id <<< $(tsp --yes --database p receive --one p)
-tsp --database p set-alias q "$vid"
-sleep 2 && tsp --database p accept -s p -r q --thread-id "$thread_id"
+sleep 2 && tsp --wallet q request -s q -r p &
+read -d '\t' vid thread_id <<< $(tsp --yes --wallet p receive --one p)
+tsp --wallet p set-alias q "$vid"
+sleep 2 && tsp --wallet p accept -s p -r q --thread-id "$thread_id"
 
 if [ "$Q2" ]; then
     echo "---- establish outer relation q2<->b"
-    tsp --database b verify --alias q2 "$DID_Q2"
+    tsp --wallet b verify --alias q2 "$DID_Q2"
 
-    sleep 2 && tsp --database b request -s b -r q2 &
-    read -d '\t' vid thread_id <<< $(tsp --yes --database q receive --one q2)
-    tsp --database q set-alias b "$vid"
-    sleep 2 && tsp --database q accept -s q2 -r b --thread-id "$thread_id"
+    sleep 2 && tsp --wallet b request -s b -r q2 &
+    read -d '\t' vid thread_id <<< $(tsp --yes --wallet q receive --one q2)
+    tsp --wallet q set-alias b "$vid"
+    sleep 2 && tsp --wallet q accept -s q2 -r b --thread-id "$thread_id"
 
-    tsp --database q set-relation q2 b
+    tsp --wallet q set-relation q2 b
 else
     echo "---- establish outer relation q<->b"
-    tsp --database b verify --alias q "$DID_Q"
+    tsp --wallet b verify --alias q "$DID_Q"
 
-    sleep 2 && tsp --database b request -s b -r q &
-    read -d '\t' vid thread_id <<< $(tsp --yes --database q receive --one q)
-    tsp --database q set-alias b "$vid"
-    sleep 2 && tsp --database q accept -s q -r b --thread-id "$thread_id"
+    sleep 2 && tsp --wallet b request -s b -r q &
+    read -d '\t' vid thread_id <<< $(tsp --yes --wallet q receive --one q)
+    tsp --wallet q set-alias b "$vid"
+    sleep 2 && tsp --wallet q accept -s q -r b --thread-id "$thread_id"
 
     echo "---- establish nested relation q<->b"
     (
-        read -d '\t' nested_b thread_id <<< $(tsp --database q receive --one q)
-        sleep 1 && tsp --database q accept --nested -s q -r "$nested_b" --thread-id "$thread_id"
+        read -d '\t' nested_b thread_id <<< $(tsp --wallet q receive --one q)
+        sleep 1 && tsp --wallet q accept --nested -s q -r "$nested_b" --thread-id "$thread_id"
     ) &
-    sleep 2 && read -d '' DID_B2 DID_Q2 <<< $(tsp --database b request --nested -s b -r q)
+    sleep 2 && read -d '' DID_B2 DID_Q2 <<< $(tsp --wallet b request --nested -s b -r q)
 fi
 
 echo "---- setup the route"
-tsp --database a set-route b "p,$DID_Q,$DID_Q2"
+tsp --wallet a set-route b "p,$DID_Q,$DID_Q2"
 
 wait
 sleep 5
 echo
 echo "==== send a routed message"
 
-sleep 2 && echo -n "Indirect Message from A to B was received!" | tsp --database a send -s a -r b &
-tsp --yes --database p receive --one p &
-tsp --yes --database q receive --one q &
-tsp --yes --database b receive --one b
+sleep 2 && echo -n "Indirect Message from A to B was received!" | tsp --wallet a send -s a -r b &
+tsp --yes --wallet p receive --one p &
+tsp --yes --wallet q receive --one q &
+tsp --yes --wallet b receive --one b
 
-echo "---- cleanup databases"
+echo "---- cleanup wallets"
 rm -f a.sqlite b.sqlite p.sqlite q.sqlite

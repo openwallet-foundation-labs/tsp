@@ -79,21 +79,21 @@ impl VidContext {
 /// A Store contains verified VIDs, our relationship status to them,
 /// as well as the private VIDs that this application has control over.
 ///
-/// The struct is the primary interface to the VID database, in a synchronous
+/// The struct is the primary interface to the VID wallet, in a synchronous
 /// context (when no async runtime is available).
 #[derive(Default, Clone)]
 pub struct SecureStore {
     pub(crate) vids: Arc<RwLock<HashMap<String, VidContext>>>,
 }
 
-/// This database is used to store and resolve VIDs
+/// This wallet is used to store and resolve VIDs
 impl SecureStore {
-    /// Create a new, empty VID database
+    /// Create a new, empty VID wallet
     pub fn new() -> Self {
         Default::default()
     }
 
-    /// Export the database to serializable default types
+    /// Export the wallet to serializable default types
     pub fn export(&self) -> Result<Vec<ExportVid>, Error> {
         self.vids
             .read()?
@@ -115,7 +115,7 @@ impl SecureStore {
             .collect()
     }
 
-    /// Import the database from serializable default types
+    /// Import the wallet from serializable default types
     pub fn import(&self, vids: Vec<ExportVid>) -> Result<(), Error> {
         vids.into_iter().try_for_each(|vid| {
             self.vids.write()?.insert(
@@ -137,7 +137,7 @@ impl SecureStore {
         })
     }
 
-    /// Add the already resolved `verified_vid` to the database as a relationship
+    /// Add the already resolved `verified_vid` to the wallet as a relationship
     pub fn add_verified_vid(&self, verified_vid: impl VerifiedVid + 'static) -> Result<(), Error> {
         self.vids.write()?.insert(
             verified_vid.identifier().to_string(),
@@ -154,7 +154,7 @@ impl SecureStore {
         Ok(())
     }
 
-    /// Adds `private_vid` to the database
+    /// Adds `private_vid` to the wallet
     pub fn add_private_vid(&self, private_vid: impl PrivateVid + 'static) -> Result<(), Error> {
         let vid = Arc::new(private_vid);
 
@@ -200,7 +200,7 @@ impl SecureStore {
         })
     }
 
-    /// List all VIDs in the database
+    /// List all VIDs in the wallet
     pub fn list_vids(&self) -> Result<Vec<String>, Error> {
         Ok(self.vids.read()?.keys().cloned().collect())
     }
@@ -274,12 +274,12 @@ impl SecureStore {
         }
     }
 
-    /// Check whether the [PrivateVid] identified by `vid` exists in the database
+    /// Check whether the [PrivateVid] identified by `vid` exists in the wallet
     pub fn has_private_vid(&self, vid: &str) -> Result<bool, Error> {
         Ok(self.get_private_vid(vid).is_ok())
     }
 
-    /// Retrieve the [PrivateVid] identified by `vid` from the database, if it exists.
+    /// Retrieve the [PrivateVid] identified by `vid` from the wallet, if it exists.
     pub(crate) fn get_private_vid(&self, vid: &str) -> Result<Arc<dyn PrivateVid>, Error> {
         match self.get_vid(vid)?.private {
             Some(private) => Ok(private),
@@ -287,12 +287,12 @@ impl SecureStore {
         }
     }
 
-    /// Retrieve the [VerifiedVid] identified by `vid` from the database if it exists.
+    /// Retrieve the [VerifiedVid] identified by `vid` from the wallet if it exists.
     pub(crate) fn get_verified_vid(&self, vid: &str) -> Result<Arc<dyn VerifiedVid>, Error> {
         Ok(self.get_vid(vid)?.vid)
     }
 
-    /// Retrieve the [VidContext] identified by `vid` from the database, if it exists.
+    /// Retrieve the [VidContext] identified by `vid` from the wallet, if it exists.
     pub(super) fn get_vid(&self, vid: &str) -> Result<VidContext, Error> {
         match self.vids.read()?.get(vid) {
             Some(resolved) => Ok(resolved.clone()),

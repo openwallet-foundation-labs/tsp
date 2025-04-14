@@ -65,10 +65,10 @@ The `SecureStore` supports the following methods to manage the VIDs. This is jus
 see the [API docs](https://docs.rs/tsp-sdk/) for the full list.
 
 ```rust
-/// Add the already resolved `verified_vid` to the database as a relationship
+/// Add the already resolved `verified_vid` to the wallet as a relationship
 pub fn add_verified_vid(&self, verified_vid: impl VerifiedVid + 'static) -> Result<(), Error>;
 
-/// Adds `private_vid` to the database
+/// Adds `private_vid` to the wallet
 pub fn add_private_vid(&self, private_vid: impl PrivateVid + 'static) -> Result<(), Error>;
 
 /// Remove a VID from the Store

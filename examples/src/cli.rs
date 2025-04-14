@@ -20,12 +20,12 @@ use tsp_sdk::{
 struct Cli {
     #[command(subcommand)]
     command: Commands,
-    #[arg(short, long, default_value = "database", help = "Database name to use")]
-    database: String,
+    #[arg(short, long, default_value = "wallet", help = "Wallet name to use")]
+    wallet: String,
     #[arg(
         long,
         default_value = "unsecure",
-        help = "Password used to encrypt the database"
+        help = "Password used to encrypt the wallet"
     )]
     password: String,
     #[arg(
@@ -49,7 +49,7 @@ struct Cli {
 enum Commands {
     #[command(
         arg_required_else_help = true,
-        about = "verify and add a identifier to the database"
+        about = "verify and add a identifier to the wallet"
     )]
     Verify {
         vid: String,
@@ -165,12 +165,12 @@ enum Commands {
 type Aliases = HashMap<String, String>;
 
 #[derive(Serialize, Deserialize)]
-struct DatabaseContents {
+struct WalletContents {
     data: Vec<ExportVid>,
     aliases: Aliases,
 }
 
-async fn write_database(
+async fn write_wallet(
     vault: &AskarSqliteSecureStorage,
     db: &AsyncSecureStore,
     aliases: Aliases,
@@ -178,16 +178,16 @@ async fn write_database(
     let aliases = serde_json::to_value(&aliases).ok();
     vault.persist(db.export()?, aliases).await?;
 
-    trace!("persisted database");
+    trace!("persisted wallet");
 
     Ok(())
 }
 
-async fn read_database(
-    database_name: &str,
+async fn read_wallet(
+    wallet_name: &str,
     password: &str,
 ) -> Result<(AskarSqliteSecureStorage, AsyncSecureStore, Aliases), Error> {
-    match AskarSqliteSecureStorage::open(database_name, password.as_bytes()).await {
+    match AskarSqliteSecureStorage::open(wallet_name, password.as_bytes()).await {
         Ok(vault) => {
             let (vids, aliases) = vault.read().await?;
 
@@ -199,15 +199,15 @@ async fn read_database(
             let db = AsyncSecureStore::new();
             db.import(vids)?;
 
-            trace!("opened database {database_name}");
+            trace!("opened wallet {wallet_name}");
 
             Ok((vault, db, aliases))
         }
         Err(_) => {
-            let vault = AskarSqliteSecureStorage::new(database_name, password.as_bytes()).await?;
+            let vault = AskarSqliteSecureStorage::new(wallet_name, password.as_bytes()).await?;
 
             let db = AsyncSecureStore::new();
-            info!("created new database");
+            info!("created new wallet");
 
             Ok((vault, db, Aliases::new()))
         }
@@ -281,27 +281,26 @@ async fn run() -> Result<(), Error> {
     CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider())
         .expect("Failed to install crypto provider");
 
-    let (vault, mut vid_database, mut aliases) =
-        read_database(&args.database, &args.password).await?;
+    let (vault, mut vid_wallet, mut aliases) = read_wallet(&args.wallet, &args.password).await?;
     let server: String = args.server;
     let did_server = args.did_server;
 
     match args.command {
         Commands::Verify { vid, alias, sender } => {
-            vid_database.verify_vid(&vid).await?;
+            vid_wallet.verify_vid(&vid).await?;
             let sender = sender.map(|s| aliases.get(&s).cloned().unwrap_or(s));
 
             if let Some(alias) = alias {
                 aliases.insert(alias.clone(), vid.clone());
             }
 
-            vid_database.set_relation_for_vid(&vid, sender.as_deref())?;
+            vid_wallet.set_relation_for_vid(&vid, sender.as_deref())?;
 
-            write_database(&vault, &vid_database, aliases).await?;
+            write_wallet(&vault, &vid_wallet, aliases).await?;
 
             info!(
-                "{vid} is verified and added to the database {}",
-                &args.database
+                "{vid} is verified and added to the wallet {}",
+                &args.wallet
             );
         }
         Commands::Print { alias } => {
@@ -352,8 +351,8 @@ async fn run() -> Result<(), Error> {
 
             trace!("published DID document for {did}");
 
-            vid_database.add_private_vid(private_vid.clone())?;
-            write_database(&vault, &vid_database, aliases).await?;
+            vid_wallet.add_private_vid(private_vid.clone())?;
+            write_wallet(&vault, &vid_wallet, aliases).await?;
         }
         Commands::CreatePeer { alias, tcp } => {
             let transport = if let Some(address) = tcp {
@@ -365,20 +364,20 @@ async fn run() -> Result<(), Error> {
 
             aliases.insert(alias.clone(), private_vid.identifier().to_string());
 
-            vid_database.add_private_vid(private_vid.clone())?;
-            write_database(&vault, &vid_database, aliases).await?;
+            vid_wallet.add_private_vid(private_vid.clone())?;
+            write_wallet(&vault, &vid_wallet, aliases).await?;
 
             info!("created peer identity {}", private_vid.identifier());
         }
         Commands::CreateFromFile { file, alias } => {
             let private_vid = OwnedVid::from_file(file).await?;
-            vid_database.add_private_vid(private_vid.clone())?;
+            vid_wallet.add_private_vid(private_vid.clone())?;
 
             if let Some(alias) = alias {
                 aliases.insert(alias.clone(), private_vid.identifier().to_string());
             }
 
-            write_database(&vault, &vid_database, aliases).await?;
+            write_wallet(&vault, &vid_wallet, aliases).await?;
 
             info!("created identity from file {}", private_vid.identifier());
         }
@@ -386,16 +385,16 @@ async fn run() -> Result<(), Error> {
             let vid = aliases.get(&vid).unwrap_or(&vid);
             let other_vid = aliases.get(&other_vid).unwrap_or(&other_vid);
 
-            vid_database.set_parent_for_vid(vid, Some(other_vid))?;
+            vid_wallet.set_parent_for_vid(vid, Some(other_vid))?;
 
             info!("{vid} is now a child of {other_vid}");
 
-            write_database(&vault, &vid_database, aliases).await?;
+            write_wallet(&vault, &vid_wallet, aliases).await?;
         }
         Commands::SetAlias { vid, alias } => {
             aliases.insert(alias.clone(), vid.clone());
             info!("added alias {alias} -> {vid}");
-            write_database(&vault, &vid_database, aliases).await?;
+            write_wallet(&vault, &vid_wallet, aliases).await?;
         }
         Commands::SetRoute { vid, route } => {
             let vid = aliases.get(&vid).cloned().unwrap_or(vid);
@@ -407,8 +406,8 @@ async fn run() -> Result<(), Error> {
 
             let route_ref = route.iter().map(|s| s.as_str()).collect::<Vec<_>>();
 
-            vid_database.set_route_for_vid(&vid, &route_ref)?;
-            write_database(&vault, &vid_database, aliases).await?;
+            vid_wallet.set_route_for_vid(&vid, &route_ref)?;
+            write_wallet(&vault, &vid_wallet, aliases).await?;
 
             info!("{vid} has route {route:?}");
         }
@@ -416,8 +415,8 @@ async fn run() -> Result<(), Error> {
             let vid = aliases.get(&vid).cloned().unwrap_or(vid);
             let other_vid = aliases.get(&other_vid).cloned().unwrap_or(other_vid);
 
-            vid_database.set_relation_for_vid(&vid, Some(&other_vid))?;
-            write_database(&vault, &vid_database, aliases).await?;
+            vid_wallet.set_relation_for_vid(&vid, Some(&other_vid))?;
+            write_wallet(&vault, &vid_wallet, aliases).await?;
 
             info!("{vid} has relation to {other_vid}");
         }
@@ -437,7 +436,7 @@ async fn run() -> Result<(), Error> {
                 .await
                 .expect("Could not read message from stdin");
 
-            match vid_database
+            match vid_wallet
                 .send(sender_vid, receiver_vid, non_confidential_data, &message)
                 .await
             {
@@ -452,7 +451,7 @@ async fn run() -> Result<(), Error> {
             };
 
             if args.pretty_print {
-                let cesr_message = vid_database
+                let cesr_message = vid_wallet
                     .as_store()
                     .seal_message(sender_vid, receiver_vid, non_confidential_data, &message)?
                     .1;
@@ -466,7 +465,7 @@ async fn run() -> Result<(), Error> {
         }
         Commands::Receive { vid, one } => {
             let vid = aliases.get(&vid).cloned().unwrap_or(vid);
-            let mut messages = vid_database.receive(&vid).await?;
+            let mut messages = vid_wallet.receive(&vid).await?;
 
             info!("listening for messages...");
 
@@ -611,32 +610,32 @@ async fn run() -> Result<(), Error> {
                 match handle_message(message) {
                     Action::Nothing => {}
                     Action::VerifyAndOpen(vid, payload) => {
-                        let message = vid_database.verify_and_open(&vid, payload).await?;
+                        let message = vid_wallet.verify_and_open(&vid, payload).await?;
 
                         info!(
-                            "{vid} is verified and added to the database {}",
-                            &args.database
+                            "{vid} is verified and added to the wallet {}",
+                            &args.wallet
                         );
 
                         let _ = handle_message(message);
                     }
                     Action::Verify(vid) => {
-                        vid_database.verify_vid(&vid).await?;
+                        vid_wallet.verify_vid(&vid).await?;
 
                         info!(
-                            "{vid} is verified and added to the database {}",
-                            &args.database
+                            "{vid} is verified and added to the wallet {}",
+                            &args.wallet
                         );
                     }
                     Action::Forward(next_hop, route, payload) => {
-                        vid_database
+                        vid_wallet
                             .forward_routed_message(&next_hop, route, &payload)
                             .await?;
                         info!("forwarding to next hop: {next_hop}");
                     }
                 }
 
-                write_database(&vault, &vid_database, aliases.clone()).await?;
+                write_wallet(&vault, &vid_wallet, aliases.clone()).await?;
 
                 if one {
                     break;
@@ -650,7 +649,7 @@ async fn run() -> Result<(), Error> {
             let sender_vid = aliases.get(&sender_vid).unwrap_or(&sender_vid);
             let receiver_vid = aliases.get(&receiver_vid).unwrap_or(&receiver_vid);
 
-            if let Err(e) = vid_database
+            if let Err(e) = vid_wallet
                 .send_relationship_cancel(sender_vid, receiver_vid)
                 .await
             {
@@ -660,7 +659,7 @@ async fn run() -> Result<(), Error> {
             }
 
             info!("sent control message from {sender_vid} to {receiver_vid}",);
-            write_database(&vault, &vid_database, aliases.clone()).await?;
+            write_wallet(&vault, &vid_wallet, aliases.clone()).await?;
         }
         Commands::Request {
             sender_vid,
@@ -674,11 +673,11 @@ async fn run() -> Result<(), Error> {
             // Setup receive stream before sending the request
             let listener_vid = parent_vid.unwrap_or(sender_vid.clone());
             let listener_vid = aliases.get(&listener_vid).unwrap_or(&listener_vid);
-            let mut messages = vid_database.receive(listener_vid).await?;
+            let mut messages = vid_wallet.receive(listener_vid).await?;
 
             tracing::debug!("sending request...");
             if nested {
-                match vid_database
+                match vid_wallet
                     .send_nested_relationship_request(sender_vid, receiver_vid)
                     .await
                 {
@@ -694,7 +693,7 @@ async fn run() -> Result<(), Error> {
                         return Ok(());
                     }
                 }
-            } else if let Err(e) = vid_database
+            } else if let Err(e) = vid_wallet
                 .send_relationship_request(sender_vid, receiver_vid, None)
                 .await
             {
@@ -746,7 +745,7 @@ async fn run() -> Result<(), Error> {
                 }
             }
 
-            write_database(&vault, &vid_database, aliases.clone()).await?;
+            write_wallet(&vault, &vid_wallet, aliases.clone()).await?;
         }
         Commands::Accept {
             sender_vid,
@@ -761,7 +760,7 @@ async fn run() -> Result<(), Error> {
             Base64Unpadded::decode(&thread_id, &mut digest).unwrap();
 
             if nested {
-                match vid_database
+                match vid_wallet
                     .send_nested_relationship_accept(sender_vid, receiver_vid, digest)
                     .await
                 {
@@ -779,7 +778,7 @@ async fn run() -> Result<(), Error> {
                         return Ok(());
                     }
                 }
-            } else if let Err(e) = vid_database
+            } else if let Err(e) = vid_wallet
                 .send_relationship_accept(sender_vid, receiver_vid, digest, None)
                 .await
             {
@@ -789,7 +788,7 @@ async fn run() -> Result<(), Error> {
             }
 
             info!("sent control message from {sender_vid} to {receiver_vid}",);
-            write_database(&vault, &vid_database, aliases.clone()).await?;
+            write_wallet(&vault, &vid_wallet, aliases.clone()).await?;
         }
         Commands::Refer {
             sender_vid,
@@ -800,7 +799,7 @@ async fn run() -> Result<(), Error> {
             let receiver_vid = aliases.get(&receiver_vid).unwrap_or(&receiver_vid);
             let referred_vid = aliases.get(&referred_vid).unwrap_or(&referred_vid);
 
-            if let Err(e) = vid_database
+            if let Err(e) = vid_wallet
                 .send_relationship_referral(sender_vid, receiver_vid, referred_vid)
                 .await
             {
@@ -810,7 +809,7 @@ async fn run() -> Result<(), Error> {
             }
 
             info!("sent control message from {sender_vid} to {receiver_vid}",);
-            write_database(&vault, &vid_database, aliases.clone()).await?;
+            write_wallet(&vault, &vid_wallet, aliases.clone()).await?;
         }
         Commands::Publish {
             sender_vid,
@@ -821,7 +820,7 @@ async fn run() -> Result<(), Error> {
             let receiver_vid = aliases.get(&receiver_vid).unwrap_or(&receiver_vid);
             let new_vid = aliases.get(&new_vid).unwrap_or(&new_vid);
 
-            if let Err(e) = vid_database
+            if let Err(e) = vid_wallet
                 .send_new_identifier_notice(sender_vid, receiver_vid, new_vid)
                 .await
             {
@@ -831,7 +830,7 @@ async fn run() -> Result<(), Error> {
             }
 
             info!("sent control message from {sender_vid} to {receiver_vid}",);
-            write_database(&vault, &vid_database, aliases.clone()).await?;
+            write_wallet(&vault, &vid_wallet, aliases.clone()).await?;
         }
     }
 
