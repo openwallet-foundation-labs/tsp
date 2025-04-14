@@ -25,6 +25,6 @@ store (either `AsyncSecureStore` or the `SecureStore`).
 
 <div class="warning">
 
-**Caution:** make sure a `VerifiedVid` is always verified, i.e. we have the public keys needed to communicate with them.
+**Caution:** make sure a `VerifiedVid` is always verified. How VIDs are verified depends on the type of VID used.
 
 </div>

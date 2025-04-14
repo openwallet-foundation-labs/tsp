@@ -79,9 +79,9 @@ enum Commands {
     },
     #[command(
         arg_required_else_help = true,
-        about = "import an identity from a file"
+        about = "import an identity from a file (for demo purposes only)"
     )]
-    CreateFromFile {
+    ImportPiv {
         file: PathBuf,
         #[arg(short, long)]
         alias: Option<String>,
@@ -367,7 +367,7 @@ async fn run() -> Result<(), Error> {
 
             info!("created peer identity {}", private_vid.identifier());
         }
-        Commands::CreateFromFile { file, alias } => {
+        Commands::ImportPiv { file, alias } => {
             let private_vid = OwnedVid::from_file(file).await?;
             vid_wallet.add_private_vid(private_vid.clone())?;
 

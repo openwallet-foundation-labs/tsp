@@ -7,12 +7,12 @@ echo "---- cleanup wallets"
 rm -f a.sqlite b.sqlite
 
 echo "---- load the sender identity"
-tsp --wallet a create-from-file --alias a test/a/piv.json
+tsp --wallet a import-piv --alias a test/a/piv.json
 tsp --wallet a create-peer a-inner
 tsp --wallet a set-parent a-inner a
 
 echo "---- load the receiver identity"
-tsp --wallet b create-from-file --alias b test/b/piv.json
+tsp --wallet b import-piv --alias b test/b/piv.json
 tsp --wallet b create-peer b-inner
 
 echo "---- verify sender vids"

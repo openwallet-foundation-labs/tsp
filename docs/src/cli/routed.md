@@ -71,17 +71,19 @@ curl -s https://raw.githubusercontent.com/openwallet-foundation-labs/tsp/main/ex
 curl -s https://raw.githubusercontent.com/openwallet-foundation-labs/tsp/main/examples/test/b/piv.json > identity-b.json
 ```
 
-Create a new identity (and wallet) for `a` based on the downloaded file using the `create-from-file` command:
+Create a new identity (and wallet) for `a` based on the downloaded file using the `import-piv` command:
 
 ```sh
-tsp -w a create-from-file --alias a ./identity-a.json
+tsp -w a import-piv --alias a ./identity-a.json
 ```
 
 And we also initialize `b`:
 
 ```sh
-tsp -w b create-from-file --alias b ./identity-b.json
+tsp -w b import-piv --alias b ./identity-b.json
 ```
+
+Note that this way of importing private VIDs is only meant for demo purposes to quickly set up some identities. As these identities are publicly available from our GitHub repository, any communication done with these identities is inherently unsafe as the key pairs publicly available. In practice, you would want to create new users with their own private key pairs.
 
 ## Introduce the nodes to each other
 

@@ -37,23 +37,23 @@ Send and receive TSP messages
 Usage: tsp [OPTIONS] <COMMAND>
 
 Commands:
-  verify            verify and add a identifier to the wallet
-  print             
-  create            create and register a did:web identifier
-  create-peer       
-  create-from-file  import an identity from a file
-  set-alias         
-  set-route         
-  set-parent        
-  set-relation      
-  send              send a message
-  receive           listen for messages
-  request           propose a relationship
-  accept            accept a relationship
-  cancel            break up a relationship
-  refer             send an identity referral
-  publish           publish a new own identity
-  help              Print this message or the help of the given subcommand(s)
+  verify        verify and add a identifier to the wallet
+  print         
+  create        create and register a did:web identifier
+  create-peer   
+  import-piv    import an identity from a file (for demo purposes only)
+  set-alias     
+  set-route     
+  set-parent    
+  set-relation  
+  send          send a message
+  receive       listen for messages
+  request       propose a relationship
+  accept        accept a relationship
+  cancel        break up a relationship
+  refer         send an identity referral
+  publish       publish a new own identity
+  help          Print this message or the help of the given subcommand(s)
 
 Options:
   -w, --wallet <WALLET>          Wallet name to use [default: wallet]
