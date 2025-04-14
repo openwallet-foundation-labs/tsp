@@ -9,8 +9,9 @@ use tokio::io::AsyncReadExt;
 use tracing::{debug, error, info, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{
-    AsyncStore, Error, ExportVid, OwnedVid, ReceivedTspMessage, Vault, VerifiedVid, Vid, cesr,
-    cesr::Part,
+    AskarSqliteSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
+    SecureStorage, VerifiedVid, Vid,
+    cesr::{self, Part},
 };
 
 #[derive(Debug, Parser)]
@@ -169,7 +170,11 @@ struct DatabaseContents {
     aliases: Aliases,
 }
 
-async fn write_database(vault: &Vault, db: &AsyncStore, aliases: Aliases) -> Result<(), Error> {
+async fn write_database(
+    vault: &AskarSqliteSecureStorage,
+    db: &AsyncSecureStore,
+    aliases: Aliases,
+) -> Result<(), Error> {
     let aliases = serde_json::to_value(&aliases).ok();
     vault.persist(db.export()?, aliases).await?;
 
@@ -181,17 +186,17 @@ async fn write_database(vault: &Vault, db: &AsyncStore, aliases: Aliases) -> Res
 async fn read_database(
     database_name: &str,
     password: &str,
-) -> Result<(Vault, AsyncStore, Aliases), Error> {
-    match Vault::open_sqlite(database_name, password.as_bytes()).await {
+) -> Result<(AskarSqliteSecureStorage, AsyncSecureStore, Aliases), Error> {
+    match AskarSqliteSecureStorage::open(database_name, password.as_bytes()).await {
         Ok(vault) => {
-            let (vids, aliases) = vault.load().await?;
+            let (vids, aliases) = vault.read().await?;
 
             let aliases: Aliases = match aliases {
                 Some(aliases) => serde_json::from_value(aliases).expect("Invalid aliases"),
                 None => Aliases::new(),
             };
 
-            let db = AsyncStore::new();
+            let db = AsyncSecureStore::new();
             db.import(vids)?;
 
             trace!("opened database {database_name}");
@@ -199,9 +204,9 @@ async fn read_database(
             Ok((vault, db, aliases))
         }
         Err(_) => {
-            let vault = Vault::new_sqlite(database_name, password.as_bytes()).await?;
+            let vault = AskarSqliteSecureStorage::new(database_name, password.as_bytes()).await?;
 
-            let db = AsyncStore::new();
+            let db = AsyncSecureStore::new();
             info!("created new database");
 
             Ok((vault, db, Aliases::new()))

@@ -2,8 +2,7 @@
 
 ## Create a first identity
 
-The `tsp` command line tool will store its state using the Aries-Askar interface
-in a SQLite file in the current directory.
+The `tsp` command line tool will store its wallet encrypted using [Askar](https://github.com/openwallet-foundation/askar) in a SQLite file in the current directory. See the [custom secure storage](../custom-secure-storage.md) page for documentation about how to implement custom secure storage solutions.
 
 <div class="warning">
 The TSP command is used as an example and 'playground' to explore TSP, and as an
@@ -74,7 +73,7 @@ tsp verify did:web:did.teaspoon.world:user:example --alias example
 
 ## Send a message
 
-For this example we will create two databases and identities - __alice__ and __bob__.
+For this example we will create two identities with separate wallets - __alice__ and __bob__.
 
 You could perform the operations for alice and bob on different computers, for this example
 we will seperate them by using distinct databases.

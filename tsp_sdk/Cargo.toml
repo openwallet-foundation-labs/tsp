@@ -82,6 +82,7 @@ serde_with = { workspace = true, optional = true }
 bs58 = { workspace = true, optional = false }
 # fuzzing
 arbitrary = { workspace = true, optional = true }
+async-trait = "0.1.88"
 
 # not used directly, but we need to configure
 # the JS feature in this transitive dependency

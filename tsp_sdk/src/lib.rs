@@ -98,7 +98,7 @@ pub mod transport;
 mod async_store;
 
 #[cfg(feature = "async")]
-mod vault;
+mod secure_storage;
 
 #[cfg(not(feature = "pq"))]
 #[cfg(feature = "async")]
@@ -106,12 +106,13 @@ mod vault;
 mod test;
 
 #[cfg(feature = "async")]
-pub use async_store::AsyncStore;
+pub use async_store::AsyncSecureStore;
 
 #[cfg(feature = "async")]
-pub use vault::Vault;
+pub use secure_storage::AskarSqliteSecureStorage;
+pub use secure_storage::SecureStorage;
 
 pub use definitions::{Payload, PrivateVid, ReceivedTspMessage, RelationshipStatus, VerifiedVid};
 pub use error::Error;
-pub use store::Store;
+pub use store::SecureStore;
 pub use vid::{ExportVid, OwnedVid, Vid};

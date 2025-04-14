@@ -29,7 +29,7 @@ use tokio::sync::{RwLock, broadcast};
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{
-    Store, cesr,
+    SecureStore, cesr,
     definitions::{Payload, VerifiedVid},
     vid::{OwnedVid, Vid},
 };
@@ -57,7 +57,7 @@ struct Identity {
 struct AppState {
     domain: String,
     did_server: String,
-    timestamp_server: Store,
+    timestamp_server: SecureStore,
     tx: broadcast::Sender<(String, String, Vec<u8>)>,
 }
 
@@ -78,7 +78,7 @@ async fn main() {
 
     let args = Cli::parse();
 
-    let timestamp_server = Store::new();
+    let timestamp_server = SecureStore::new();
     let piv: OwnedVid =
         serde_json::from_str(include_str!("../test/timestamp-server/piv.json")).unwrap();
     timestamp_server.add_private_vid(piv).unwrap();

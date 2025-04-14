@@ -2,7 +2,7 @@ use crate::{
     ExportVid, OwnedVid, PrivateVid,
     definitions::{Digest, ReceivedTspMessage, TSPStream, VerifiedVid},
     error::Error,
-    store::Store,
+    store::SecureStore,
 };
 use bytes::BytesMut;
 use futures::StreamExt;
@@ -36,11 +36,11 @@ use url::Url;
 /// }
 /// ```
 #[derive(Default)]
-pub struct AsyncStore {
-    inner: Store,
+pub struct AsyncSecureStore {
+    inner: SecureStore,
 }
 
-impl AsyncStore {
+impl AsyncSecureStore {
     /// Create a new and empty store
     pub fn new() -> Self {
         Default::default()
@@ -52,7 +52,7 @@ impl AsyncStore {
     }
 
     /// Expose the inner non-async database
-    pub fn as_store(&self) -> &Store {
+    pub fn as_store(&self) -> &SecureStore {
         &self.inner
     }
 
@@ -89,7 +89,7 @@ impl AsyncStore {
         self.inner.add_private_vid(private_vid)
     }
 
-    /// Remove a VID from the [`AsyncStore`]
+    /// Remove a VID from the [`AsyncSecureStore`]
     pub fn forget_vid(&self, vid: &str) -> Result<(), Error> {
         self.inner.forget_vid(vid)
     }

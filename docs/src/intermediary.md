@@ -49,8 +49,8 @@ The `cli-demo-routed-local.sh` script in the `examples/` directory creates two l
 ## TSP library usage for intermediaries
 
 An intermediary can use the same interface as other TSP-Rust applications,
-namely the `Store` or the `AsyncStore`. Use the `AsyncStore` as a high-level
-interface, with built-in transport methods. Use the `Store` if you have different
+namely the `SecureStore` or the `AsyncSecureStore`. Use the `AsyncSecureStore` as a high-level
+interface, with built-in transport methods. Use the `SecureStore` if you have different
 or specific transportation methods and only use this crate to seal and unseal TSP messages.
 
 An intermediary basically needs to hold key material of its users and forwards/routes
@@ -60,8 +60,8 @@ key material. Populate a store to manage these identities.
 
 The primary method to route messages is `route_message`
 which takes a sender and a receiver vid (string slice) and an owned message as bytes.
-In the `AsyncStore` this method will send the resulting message immediately,
-in the `Store` it will return the new message as bytes, in which case the
+In the `AsyncSecureStore` this method will send the resulting message immediately,
+in the `SecureStore` it will return the new message as bytes, in which case the
 caller needs to send the message over a (custom) transport.
 
 Note that the sender/receiver VIDs of an incoming message get be retrieved using
