@@ -1,5 +1,6 @@
 use bytes::BytesMut;
 use core::fmt;
+use std::fmt::Display;
 use std::{fmt::Debug, ops::Deref};
 use zeroize::Zeroize;
 
@@ -64,6 +65,17 @@ pub enum RelationshipStatus {
         thread_id: Digest,
     },
     Unrelated,
+}
+
+impl Display for RelationshipStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RelationshipStatus::_Controlled => write!(f, "Controlled"),
+            RelationshipStatus::Bidirectional { .. } => write!(f, "Bidirectional"),
+            RelationshipStatus::Unidirectional { .. } => write!(f, "Unidirectional"),
+            RelationshipStatus::Unrelated => write!(f, "Unrelated"),
+        }
+    }
 }
 
 #[derive(Debug)]
