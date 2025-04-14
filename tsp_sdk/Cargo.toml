@@ -39,6 +39,7 @@ async = [
 resolve = ["serialize", "dep:reqwest"]
 serialize = ["dep:serde", "dep:serde_with"]
 use_local_certificate = []
+postgres = ["async", "aries-askar/postgres"]
 
 [dependencies]
 # generic

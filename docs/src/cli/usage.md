@@ -2,7 +2,7 @@
 
 ## Create a first identity
 
-The `tsp` command line tool will store its wallet encrypted using [Askar](https://github.com/openwallet-foundation/askar) in a SQLite file in the current directory. See the [custom secure storage](../custom-secure-storage.md) page for documentation about how to implement custom secure storage solutions.
+The `tsp` command line tool will store its wallet encrypted using [Askar](https://github.com/openwallet-foundation/askar) in the current directory. See the [custom secure storage](../custom-secure-storage.md) page for documentation about how to implement custom secure storage solutions.
 
 <div class="warning">
 The TSP command is used as an example and 'playground' to explore TSP, and as an
@@ -37,16 +37,17 @@ Every `tsp` subcommand also supports the `--verbose` or `-v` flag for a more
 verbose output:
 
 ```sh
-tsp --verbose create example
+tsp --verbose create example --alias example
 ```
 
 Output:
 ``` 
-TRACE tsp: opened wallet wallet.sqlite
+TRACE tsp: opened wallet wallet
  INFO tsp: added alias example -> did:web:did.teaspoon.world:user:example
  INFO tsp: created identity did:web:did.teaspoon.world:user:example
-TRACE tsp: published DID document to https://did.teaspoon.world/user/example/did.json
-TRACE tsp: persisted wallet to wallet.sqlite
+DEBUG tsp: DID server responded with status code 200 OK
+TRACE tsp: published DID document for did:web:did.teaspoon.world:user:example
+TRACE tsp: persisted wallet
 ```
 
 ## Resolve a VID

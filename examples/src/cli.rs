@@ -9,7 +9,7 @@ use tokio::io::AsyncReadExt;
 use tracing::{debug, error, info, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{
-    AskarSqliteSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
+    AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
     SecureStorage, VerifiedVid, Vid,
     cesr::{self, Part},
 };
@@ -171,7 +171,7 @@ struct WalletContents {
 }
 
 async fn write_wallet(
-    vault: &AskarSqliteSecureStorage,
+    vault: &AskarSecureStorage,
     db: &AsyncSecureStore,
     aliases: Aliases,
 ) -> Result<(), Error> {
@@ -186,8 +186,9 @@ async fn write_wallet(
 async fn read_wallet(
     wallet_name: &str,
     password: &str,
-) -> Result<(AskarSqliteSecureStorage, AsyncSecureStore, Aliases), Error> {
-    match AskarSqliteSecureStorage::open(wallet_name, password.as_bytes()).await {
+) -> Result<(AskarSecureStorage, AsyncSecureStore, Aliases), Error> {
+    let url = format!("sqlite://{wallet_name}.sqlite");
+    match AskarSecureStorage::open(&url, password.as_bytes()).await {
         Ok(vault) => {
             let (vids, aliases) = vault.read().await?;
 
@@ -204,7 +205,7 @@ async fn read_wallet(
             Ok((vault, db, aliases))
         }
         Err(_) => {
-            let vault = AskarSqliteSecureStorage::new(wallet_name, password.as_bytes()).await?;
+            let vault = AskarSecureStorage::new(&url, password.as_bytes()).await?;
 
             let db = AsyncSecureStore::new();
             info!("created new wallet");
@@ -298,10 +299,7 @@ async fn run() -> Result<(), Error> {
 
             write_wallet(&vault, &vid_wallet, aliases).await?;
 
-            info!(
-                "{vid} is verified and added to the wallet {}",
-                &args.wallet
-            );
+            info!("{vid} is verified and added to the wallet {}", &args.wallet);
         }
         Commands::Print { alias } => {
             let vid = aliases.get(&alias).unwrap_or(&alias);
@@ -612,20 +610,14 @@ async fn run() -> Result<(), Error> {
                     Action::VerifyAndOpen(vid, payload) => {
                         let message = vid_wallet.verify_and_open(&vid, payload).await?;
 
-                        info!(
-                            "{vid} is verified and added to the wallet {}",
-                            &args.wallet
-                        );
+                        info!("{vid} is verified and added to the wallet {}", &args.wallet);
 
                         let _ = handle_message(message);
                     }
                     Action::Verify(vid) => {
                         vid_wallet.verify_vid(&vid).await?;
 
-                        info!(
-                            "{vid} is verified and added to the wallet {}",
-                            &args.wallet
-                        );
+                        info!("{vid} is verified and added to the wallet {}", &args.wallet);
                     }
                     Action::Forward(next_hop, route, payload) => {
                         vid_wallet

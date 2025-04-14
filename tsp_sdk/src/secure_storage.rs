@@ -16,10 +16,10 @@ use serde::{Deserialize, Serialize};
 #[async_trait]
 pub trait SecureStorage: Sized {
     /// Create a new secure storage
-    async fn new(name: &str, password: &[u8]) -> Result<Self, Error>;
+    async fn new(url: &str, password: &[u8]) -> Result<Self, Error>;
 
     /// Open an existing secure storage
-    async fn open(name: &str, password: &[u8]) -> Result<Self, Error>;
+    async fn open(url: &str, password: &[u8]) -> Result<Self, Error>;
 
     /// Write data from memory to secure storage
     async fn persist(
@@ -39,8 +39,8 @@ pub trait SecureStorage: Sized {
 }
 // ANCHOR_END: custom-secure-storage-mbBook
 
-/// An example implementation of secure storage, using Askar with SQLite
-pub struct AskarSqliteSecureStorage {
+/// An implementation of secure storage using Aries Askar
+pub struct AskarSecureStorage {
     inner: aries_askar::Store,
     url: String,
 }
@@ -56,26 +56,30 @@ pub(crate) struct Metadata {
 }
 
 #[async_trait]
-impl SecureStorage for AskarSqliteSecureStorage {
-    async fn new(name: &str, password: &[u8]) -> Result<Self, Error> {
+impl SecureStorage for AskarSecureStorage {
+    async fn new(url: &str, password: &[u8]) -> Result<Self, Error> {
         let pass_key = aries_askar::Store::new_raw_key(Some(password))?;
-        let url = format!("sqlite://{name}.sqlite");
 
         let inner =
-            aries_askar::Store::provision(&url, StoreKeyMethod::RawKey, pass_key, None, true)
+            aries_askar::Store::provision(url, StoreKeyMethod::RawKey, pass_key, None, true)
                 .await?;
 
-        Ok(Self { inner, url })
+        Ok(Self {
+            inner,
+            url: url.to_string(),
+        })
     }
 
-    async fn open(name: &str, password: &[u8]) -> Result<Self, Error> {
+    async fn open(url: &str, password: &[u8]) -> Result<Self, Error> {
         let pass_key = aries_askar::Store::new_raw_key(Some(password))?;
-        let url = format!("sqlite://{name}.sqlite");
 
         let inner =
-            aries_askar::Store::open(&url, Some(StoreKeyMethod::RawKey), pass_key, None).await?;
+            aries_askar::Store::open(url, Some(StoreKeyMethod::RawKey), pass_key, None).await?;
 
-        Ok(Self { inner, url })
+        Ok(Self {
+            inner,
+            url: url.to_string(),
+        })
     }
 
     async fn persist(
@@ -345,7 +349,7 @@ mod test {
     #[tokio::test]
     async fn test_vault() {
         let id = {
-            let vault = AskarSqliteSecureStorage::new("test", b"password")
+            let vault = AskarSecureStorage::new("sqlite://test.sqlite", b"password")
                 .await
                 .unwrap();
 
@@ -359,7 +363,7 @@ mod test {
         };
 
         {
-            let vault = AskarSqliteSecureStorage::open("test", b"password")
+            let vault = AskarSecureStorage::open("sqlite://test.sqlite", b"password")
                 .await
                 .unwrap();
             let (vids, _) = vault.read().await.unwrap();

@@ -109,7 +109,7 @@ mod test;
 pub use async_store::AsyncSecureStore;
 
 #[cfg(feature = "async")]
-pub use secure_storage::AskarSqliteSecureStorage;
+pub use secure_storage::AskarSecureStorage;
 pub use secure_storage::SecureStorage;
 
 pub use definitions::{Payload, PrivateVid, ReceivedTspMessage, RelationshipStatus, VerifiedVid};

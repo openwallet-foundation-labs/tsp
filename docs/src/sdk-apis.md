@@ -10,7 +10,7 @@ For a detailed and complete API reference, please take a look at <https://docs.r
 A `SecureStore` allows the user to store VID-public-key pairs and optionally metadata related to the VID, like a name or transport specification.
  
 A `SecureStore` the data in memory. `SecureStorage` can be used to persist this data in a wallet.
-We provide `AskarSqliteSecureStorage`, which uses [Aries Askar](https://github.com/openwallet-foundation/askar) to secure the stored data in a local SQLite wallet.
+We provide the `AskarSecureStorage` implementation, which uses [Aries Askar](https://github.com/openwallet-foundation/askar) to securely store the data.
 See the [custom secure storage](../custom-secure-storage.md) page for documentation about how to implement custom secure storage solutions.
 
 The SDK also has the `AsyncSecureStore` interface that provides an asynchronous version of the `SecureStore`.
