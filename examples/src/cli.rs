@@ -46,8 +46,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    #[command(about = "list VID their state stored in the wallet")]
-    Show,
+    #[command(subcommand, about = "Show information stored in the wallet")]
+    Show(ShowCommands),
     #[command(
         arg_required_else_help = true,
         about = "verify and add a identifier to the wallet"
@@ -161,6 +161,17 @@ enum Commands {
         #[arg(short, long, required = true)]
         new_vid: String,
     },
+}
+
+#[derive(Debug, Parser)]
+enum ShowCommands {
+    #[command(about = "List all local VIDs")]
+    Local,
+    #[command(
+        about = "List all relationships for a specific local VID",
+        arg_required_else_help = true
+    )]
+    Relations { vid: String },
 }
 
 type Aliases = HashMap<String, String>;
@@ -288,55 +299,67 @@ async fn run() -> Result<(), Error> {
     let did_server = args.did_server;
 
     match args.command {
-        Commands::Show => {
+        Commands::Show(sub) => {
             let mut table = Table::new();
             table.set_content_arrangement(ContentArrangement::Dynamic);
-            table.set_header(
-                vec![
-                    "Kind",
-                    "VID",
-                    "Alias",
-                    "Transport",
-                    "Relation Status",
-                    "Relation VID",
-                    "Parent",
-                    "Route",
-                ]
-                .into_iter()
-                .map(|h| Cell::new(h).add_attribute(Attribute::Bold)),
-            );
             let mut vids = vid_database.export()?;
             vids.sort_by(|a, b| a.id.cmp(&b.id));
-            for vid in vids {
-                table.add_row(vec![
-                    if vid.is_private() {
-                        Cell::new("owned").fg(Color::Red)
-                    } else {
-                        Cell::new("resolved").fg(Color::Green)
-                    },
-                    Cell::new(&vid.id),
-                    aliases
-                        .iter()
-                        .find_map(|(a, id)| {
-                            if id == &vid.id {
-                                Some(Cell::new(a).fg(Color::Green))
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap_or(Cell::new("None").fg(Color::Red)),
-                    Cell::new(&vid.transport),
-                    Cell::new(&vid.relation_status),
-                    vid.relation_vid
-                        .map(|ref vid| Cell::new(vid).fg(Color::Green))
-                        .unwrap_or(Cell::new("None").fg(Color::Red)),
-                    vid.parent_vid
-                        .map(|ref vid| Cell::new(vid).fg(Color::Green))
-                        .unwrap_or(Cell::new("None").fg(Color::Red)),
-                    vid.tunnel
-                        .map(|ref vids| Cell::new(vids.join("\n")).fg(Color::Green))
-                        .unwrap_or(Cell::new("None").fg(Color::Red)),
-                ]);
+
+            match sub {
+                ShowCommands::Local => {
+                    table.set_header(
+                        vec!["VID", "Alias", "Transport", "Parent"]
+                            .into_iter()
+                            .map(|h| Cell::new(h).add_attribute(Attribute::Bold)),
+                    );
+                    for vid in vids.into_iter().filter(|v| v.is_private()) {
+                        table.add_row(vec![
+                            Cell::new(&vid.id),
+                            aliases
+                                .iter()
+                                .find_map(|(a, id)| {
+                                    if id == &vid.id {
+                                        Some(Cell::new(a).fg(Color::Green))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or(Cell::new("None").fg(Color::Red)),
+                            Cell::new(&vid.transport),
+                            vid.parent_vid
+                                .map(|ref vid| Cell::new(vid).fg(Color::Green))
+                                .unwrap_or(Cell::new("None").fg(Color::Red)),
+                        ]);
+                    }
+                }
+                ShowCommands::Relations { vid } => {
+                    table.set_header(
+                        vec!["Remote VID", "Alias", "Relation Status", "Transport"]
+                            .into_iter()
+                            .map(|h| Cell::new(h).add_attribute(Attribute::Bold)),
+                    );
+                    let vid = aliases.get(&vid).unwrap_or(&vid);
+                    for vid in vids
+                        .into_iter()
+                        .filter(|v| v.relation_vid.as_deref() == Some(vid))
+                    {
+                        table.add_row(vec![
+                            Cell::new(&vid.id),
+                            aliases
+                                .iter()
+                                .find_map(|(a, id)| {
+                                    if id == &vid.id {
+                                        Some(Cell::new(a).fg(Color::Green))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or(Cell::new("None").fg(Color::Red)),
+                            Cell::new(&vid.relation_status),
+                            Cell::new(&vid.transport),
+                        ]);
+                    }
+                }
             }
             println!("{table}");
         }
