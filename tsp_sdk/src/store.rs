@@ -641,7 +641,7 @@ impl Store {
                                 | RelationshipStatus::Unidirectional { thread_id: digest } => {
                                     if thread_id != digest {
                                         return Err(Error::Relationship(
-                                            "invalid attempt to end the relationship".into(),
+                                            "invalid attempt to end the relationship, wrong thread_id".into(),
                                         ));
                                     }
                                     context.relation_status = RelationshipStatus::Unrelated;
@@ -664,7 +664,9 @@ impl Store {
                             ..
                         } = crate::cesr::probe(inner)?
                         else {
-                            return Err(Error::Relationship("invalid nested request".into()));
+                            return Err(Error::Relationship(
+                                "invalid nested request, not a signed message".into(),
+                            ));
                         };
 
                         let inner_vid = std::str::from_utf8(inner_vid)?.to_string();
@@ -691,7 +693,9 @@ impl Store {
                             ..
                         } = crate::cesr::probe(inner)?
                         else {
-                            return Err(Error::Relationship("invalid nested reply".into()));
+                            return Err(Error::Relationship(
+                                "invalid nested accept reply, not a signed message".into(),
+                            ));
                         };
 
                         let vid = std::str::from_utf8(vid)?.to_string();
@@ -716,11 +720,23 @@ impl Store {
                             RelationshipStatus::Bidirectional {
                                 thread_id: check_id,
                                 ..
-                            } if check_id == thread_id => Ok(ReceivedTspMessage::NewIdentifier {
-                                sender,
-                                new_vid: vid,
-                            }),
-                            _ => Err(Error::Relationship(vid)),
+                            } => {
+                                if check_id == thread_id {
+                                    Ok(ReceivedTspMessage::NewIdentifier {
+                                        sender,
+                                        new_vid: vid,
+                                    })
+                                } else {
+                                    Err(Error::Relationship(
+                                        "thread_id does not match, not accepting new identifier"
+                                            .into(),
+                                    ))
+                                }
+                            }
+                            _ => Err(Error::Relationship(format!(
+                                "no bidirectional relationship with {}, not accepting new identifier",
+                                sender
+                            ))),
                         }
                     }
                     Payload::Referral { referred_vid } => {
@@ -955,7 +971,10 @@ impl Store {
         let RelationshipStatus::Bidirectional { thread_id, .. } =
             self.get_vid(receiver)?.relation_status
         else {
-            return Err(Error::Relationship(receiver.to_string()));
+            return Err(Error::Relationship(format!(
+                "no relationship with {}",
+                receiver
+            )));
         };
 
         let (transport, tsp_message) = self.seal_message_payload(
@@ -1027,12 +1046,18 @@ impl Store {
     ) -> Result<(), Error> {
         let mut vids = self.vids.write()?;
         let Some(context) = vids.get_mut(other_vid) else {
-            return Err(Error::Relationship(other_vid.into()));
+            return Err(Error::Relationship(format!(
+                "unknown other vid {}",
+                other_vid
+            )));
         };
 
         let RelationshipStatus::Unidirectional { thread_id: digest } = context.relation_status
         else {
-            return Err(Error::Relationship(other_vid.into()));
+            return Err(Error::Relationship(format!(
+                "no unidirectional relationship with {}, cannot upgrade",
+                other_vid
+            )));
         };
 
         if thread_id != digest {
@@ -1062,7 +1087,10 @@ impl Store {
             ..
         } = context.relation_status
         else {
-            return Err(Error::Relationship(vid.into()));
+            return Err(Error::Relationship(format!(
+                "no relationship with {}",
+                vid.to_string()
+            )));
         };
 
         outstanding_nested_thread_ids.push(thread_id);
@@ -1078,7 +1106,10 @@ impl Store {
     ) -> Result<(), Error> {
         let mut vids = self.vids.write()?;
         let Some(context) = vids.get_mut(parent_vid) else {
-            return Err(Error::Relationship(parent_vid.into()));
+            return Err(Error::Relationship(format!(
+                "unknown parent vid {}",
+                parent_vid
+            )));
         };
 
         let RelationshipStatus::Bidirectional {
@@ -1086,7 +1117,10 @@ impl Store {
             ..
         } = context.relation_status
         else {
-            return Err(Error::Relationship(parent_vid.into()));
+            return Err(Error::Relationship(format!(
+                "no relationship set for parent vid {}",
+                parent_vid
+            )));
         };
 
         // find the thread_id in the list of outstanding thread id's of the parent and remove it
@@ -1094,12 +1128,18 @@ impl Store {
             .iter()
             .position(|&x| x == thread_id)
         else {
-            return Err(Error::Relationship(nested_vid.into()));
+            return Err(Error::Relationship(format!(
+                "cannot find thread_id for nested vid {}",
+                nested_vid
+            )));
         };
         outstanding_nested_thread_ids.remove(index);
 
         let Some(context) = vids.get_mut(nested_vid) else {
-            return Err(Error::Relationship(nested_vid.into()));
+            return Err(Error::Relationship(format!(
+                "unknown nested vid {}",
+                nested_vid
+            )));
         };
 
         context.relation_status = RelationshipStatus::Bidirectional {
