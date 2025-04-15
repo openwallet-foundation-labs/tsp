@@ -207,7 +207,7 @@ tsp -w bob receive --one bob
 Then send a nested message from __alice__:
 
 ```sh
-echo "Hi Bob!" | tsp --pretty-print -w alice send -s alice-inner -r bob-inner
+echo "Hi Bob!" | tsp --verbose -w alice send -s alice-inner -r bob-inner
 ```
 
 Output:

@@ -138,7 +138,7 @@ tsp -w b receive --one b
 Let `a` sent a message:
 
 ```sh
-echo "Hi b" | tsp --pretty-print -w a send -s a -r b
+echo "Hi b" | tsp --verbose -w a send -s a -r b
 ```
 
 Output:

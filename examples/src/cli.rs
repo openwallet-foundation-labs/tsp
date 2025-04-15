@@ -41,8 +41,6 @@ struct Cli {
     verbose: bool,
     #[arg(short, long, help = "Always answer yes to any prompts")]
     yes: bool,
-    #[arg(short, long, help = "Pretty print CESR messages")]
-    pretty_print: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -448,7 +446,7 @@ async fn run() -> Result<(), Error> {
                 }
             };
 
-            if args.pretty_print {
+            if args.verbose {
                 let cesr_message = vid_wallet
                     .as_store()
                     .seal_message(sender_vid, receiver_vid, non_confidential_data, &message)?
