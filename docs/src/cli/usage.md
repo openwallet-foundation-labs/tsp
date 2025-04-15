@@ -23,7 +23,7 @@ INFO tsp: created new wallet
 INFO tsp: created identity did:web:did.teaspoon.world:user:example
 ```
 
-**Note:** the DIDs need to be unique. If you try to create a user that already exists on did.teaspoon.world, you will get an error.
+**Note:** the DIDs need to be unique. If you try to create an endpoint that already exists on did.teaspoon.world, you will get an error.
 
 We can add an alias to a VID using the --alias argument:
 

@@ -53,8 +53,8 @@ namely the `SecureStore` or the `AsyncSecureStore`. Use the `AsyncSecureStore` a
 interface, with built-in transport methods. Use the `SecureStore` if you have different
 or specific transportation methods and only use this crate to seal and unseal TSP messages.
 
-An intermediary basically needs to hold key material of its users and forwards/routes
-messages. To add / manage user key material use the default store methods, like
+An intermediary basically needs to hold key material of its endpoints and forwards/routes
+messages. To add / manage endpoint key material use the default store methods, like
 `add_verified_vid` or `verify_id`. The server itself also needs an identity and
 key material. Populate a store to manage these identities.
 

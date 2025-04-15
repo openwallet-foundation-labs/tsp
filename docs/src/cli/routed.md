@@ -83,7 +83,7 @@ And we also initialize `b`:
 tsp -w b import-piv --alias b ./identity-b.json
 ```
 
-Note that this way of importing private VIDs is only meant for demo purposes to quickly set up some identities. As these identities are publicly available from our GitHub repository, any communication done with these identities is inherently unsafe as the key pairs publicly available. In practice, you would want to create new users with their own private key pairs.
+Note that this way of importing private VIDs is only meant for demo purposes to quickly set up some identities. As these identities are publicly available from our GitHub repository, any communication done with these identities is inherently unsafe as the key pairs publicly available. In practice, you would want to create new endpoints with their own private key pairs.
 
 ## Introduce the nodes to each other
 
@@ -167,7 +167,7 @@ SrBAkd6evt2M2Z2ugVyVwxTU-pVVXlcTa5p_-N05lWEZ0bdUBdR4upMUDA
 Note that the message is longer than a direct mode message, since the ciphertext contains another
 TSP message.
 
-The `cli-demo-routed-external.sh` script in the `examples/` folder performs all the previously described steps automatically, but using users created on the teaspoon.world DID support server for easy testing. The only difference here is thus that in the script `a` and `b` use <https://demo.teaspoon.world/> for transport, while the identities from the step-by-step tutorial above are configured to use intermediaries directly.
+The `cli-demo-routed-external.sh` script in the `examples/` folder performs all the previously described steps automatically, but using endpoints created on the teaspoon.world DID support server for easy testing. The only difference here is thus that in the script `a` and `b` use <https://demo.teaspoon.world/> for transport, while the identities from the step-by-step tutorial above are configured to use intermediaries directly.
 
 ## Debug intermediaries
 

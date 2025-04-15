@@ -1,13 +1,13 @@
 ## API overview
 
-The `rust-tsp` library should allow users to seal and open TSP messages. Note that the provided code is pseudo-Rust
+The `rust-tsp` library should allow endpoints to seal and open TSP messages. Note that the provided code is pseudo-Rust
 code;
 we abstract away from some implementation details.
 For a detailed and complete API reference, please take a look at <https://docs.rs/tsp-sdk/>.
 
 ### Secure Store
 
-A `SecureStore` allows the user to store VID-public-key pairs and optionally metadata related to the VID, like a name or transport specification.
+A `SecureStore` allows the endpoint to store VID-public-key pairs and optionally metadata related to the VID, like a name or transport specification.
  
 A `SecureStore` the data in memory. `SecureStorage` can be used to persist this data in a wallet.
 We provide the `AskarSecureStorage` implementation, which uses [Aries Askar](https://github.com/openwallet-foundation/askar) to securely store the data.

@@ -46,7 +46,7 @@ struct Cli {
     domain: String,
 }
 
-/// Identity struct, used to store the DID document and VID of a user
+/// Identity struct, used to store the DID document and VID of an endpoint
 #[derive(Debug, Serialize, Deserialize)]
 struct Identity {
     did_doc: serde_json::Value,
@@ -330,7 +330,7 @@ async fn route_message(State(state): State<Arc<AppState>>, body: Bytes) -> Respo
     let receiver = String::from_utf8_lossy(receiver).to_string();
 
     // translate received identifier into the transport; either because it is a
-    // known user or because it is a did:peer. note that this allows "snooping" messages
+    // known endpoint or because it is a did:peer. note that this allows "snooping" messages
     // that are not intended for you --- but that will allow building interesting demo cases
     // since the unintended recipient cannot read the message: the security of TSP is not based
     // on security of the transport layer.
