@@ -1,6 +1,7 @@
 use base64ct::{Base64Unpadded, Base64UrlUnpadded, Encoding};
 use bytes::BytesMut;
 use clap::{Parser, Subcommand};
+use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table};
 use futures::StreamExt;
 use rustls::crypto::CryptoProvider;
 use serde::{Deserialize, Serialize};
@@ -45,6 +46,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    #[command(subcommand, about = "Show information stored in the wallet")]
+    Show(ShowCommands),
     #[command(
         arg_required_else_help = true,
         about = "verify and add a identifier to the wallet"
@@ -158,6 +161,17 @@ enum Commands {
         #[arg(short, long, required = true)]
         new_vid: String,
     },
+}
+
+#[derive(Debug, Parser)]
+enum ShowCommands {
+    #[command(about = "List all local VIDs")]
+    Local,
+    #[command(
+        about = "List all relationships for a specific local VID",
+        arg_required_else_help = true
+    )]
+    Relations { vid: String },
 }
 
 type Aliases = HashMap<String, String>;
@@ -285,6 +299,70 @@ async fn run() -> Result<(), Error> {
     let did_server = args.did_server;
 
     match args.command {
+        Commands::Show(sub) => {
+            let mut table = Table::new();
+            table.set_content_arrangement(ContentArrangement::Dynamic);
+            let mut vids = vid_database.export()?;
+            vids.sort_by(|a, b| a.id.cmp(&b.id));
+
+            match sub {
+                ShowCommands::Local => {
+                    table.set_header(
+                        vec!["VID", "Alias", "Transport", "Parent"]
+                            .into_iter()
+                            .map(|h| Cell::new(h).add_attribute(Attribute::Bold)),
+                    );
+                    for vid in vids.into_iter().filter(|v| v.is_private()) {
+                        table.add_row(vec![
+                            Cell::new(&vid.id),
+                            aliases
+                                .iter()
+                                .find_map(|(a, id)| {
+                                    if id == &vid.id {
+                                        Some(Cell::new(a).fg(Color::Green))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or(Cell::new("None").fg(Color::Red)),
+                            Cell::new(&vid.transport),
+                            vid.parent_vid
+                                .map(|ref vid| Cell::new(vid).fg(Color::Green))
+                                .unwrap_or(Cell::new("None").fg(Color::Red)),
+                        ]);
+                    }
+                }
+                ShowCommands::Relations { vid } => {
+                    table.set_header(
+                        vec!["Remote VID", "Alias", "Relation Status", "Transport"]
+                            .into_iter()
+                            .map(|h| Cell::new(h).add_attribute(Attribute::Bold)),
+                    );
+                    let vid = aliases.get(&vid).unwrap_or(&vid);
+                    for vid in vids
+                        .into_iter()
+                        .filter(|v| v.relation_vid.as_deref() == Some(vid))
+                    {
+                        table.add_row(vec![
+                            Cell::new(&vid.id),
+                            aliases
+                                .iter()
+                                .find_map(|(a, id)| {
+                                    if id == &vid.id {
+                                        Some(Cell::new(a).fg(Color::Green))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or(Cell::new("None").fg(Color::Red)),
+                            Cell::new(&vid.relation_status),
+                            Cell::new(&vid.transport),
+                        ]);
+                    }
+                }
+            }
+            println!("{table}");
+        }
         Commands::Verify { vid, alias, sender } => {
             vid_wallet.verify_vid(&vid).await?;
             let sender = sender.map(|s| aliases.get(&s).cloned().unwrap_or(s));
@@ -332,7 +410,7 @@ async fn run() -> Result<(), Error> {
                 client = client.add_root_certificate(cert);
             }
 
-            let _: Vid = client
+            let _: Vid = match client
                 .build()
                 .unwrap()
                 .post(format!("https://{did_server}/add-vid"))
@@ -343,7 +421,15 @@ async fn run() -> Result<(), Error> {
                 .expect("Could not publish VID on server")
                 .json()
                 .await
-                .expect("Not a JSON response");
+            {
+                Ok(vid) => vid,
+                Err(_) => {
+                    error!(
+                        "An error occurred publishing the DID. Does this DID maybe exist already?"
+                    );
+                    return Ok(());
+                }
+            };
 
             trace!("published DID document for {did}");
 

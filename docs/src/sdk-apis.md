@@ -62,7 +62,7 @@ pub fn sign_anycast(&self, sender: &str, message: &[u8]) -> Result<Vec<u8>, Erro
 ### Managing VID's
 
 The `SecureStore` supports the following methods to manage the VIDs. This is just an extraction of the most relevant methods;
-see the [API docs](https://docs.rs/tsp-sdk/) for the full list.
+see the [API docs](https://docs.rs/tsp_sdk/) for the full list.
 
 ```rust
 /// Add the already resolved `verified_vid` to the wallet as a relationship
