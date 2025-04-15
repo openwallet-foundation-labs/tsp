@@ -62,6 +62,5 @@ Options:
       --did-server <DID_SERVER>  DID server domain [default: did.teaspoon.world]
   -v, --verbose                  
   -y, --yes                      Always answer yes to any prompts
-  -p, --pretty-print             Pretty print CESR messages
   -h, --help                     Print help
 ```

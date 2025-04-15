@@ -162,13 +162,13 @@ The TSP CLI can use two types of transport:
 
 ### Pretty print messages
 
-The send command supports the `--pretty-print` argument.
-This will output the CESR-encoded TSP message that is sent.
+The CLI has a `--verbose` flag.
+For the `send` command, this will output the CESR-encoded TSP message that is sent.
 
 Continuing with the __alice__ and __bob__ example:
 
 ```sh
-echo "Hello Bob!" | tsp --pretty-print -w alice send -s alice -r bob
+echo "Hello Bob!" | tsp --verbose -w alice send -s alice -r bob
 ```
 
 Output:
