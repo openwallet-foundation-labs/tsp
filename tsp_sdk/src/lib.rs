@@ -31,7 +31,7 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Error> {
-//!     // bob database
+//!     // bob wallet
 //!     let mut bob_db = AsyncStore::new();
 //!     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json").await?;
 //!     bob_db.add_private_vid(bob_vid)?;
@@ -39,7 +39,7 @@
 //!
 //!     let mut bobs_messages = bob_db.receive("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob").await?;
 //!
-//!     // alice database
+//!     // alice wallet
 //!     let mut alice_db = AsyncStore::new();
 //!     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json").await?;
 //!     alice_db.add_private_vid(alice_vid)?;
@@ -98,7 +98,7 @@ pub mod transport;
 mod async_store;
 
 #[cfg(feature = "async")]
-mod vault;
+mod secure_storage;
 
 #[cfg(not(feature = "pq"))]
 #[cfg(feature = "async")]
@@ -106,12 +106,13 @@ mod vault;
 mod test;
 
 #[cfg(feature = "async")]
-pub use async_store::AsyncStore;
+pub use async_store::AsyncSecureStore;
 
 #[cfg(feature = "async")]
-pub use vault::Vault;
+pub use secure_storage::AskarSecureStorage;
+pub use secure_storage::SecureStorage;
 
 pub use definitions::{Payload, PrivateVid, ReceivedTspMessage, RelationshipStatus, VerifiedVid};
 pub use error::Error;
-pub use store::Store;
+pub use store::SecureStore;
 pub use vid::{ExportVid, OwnedVid, Vid};

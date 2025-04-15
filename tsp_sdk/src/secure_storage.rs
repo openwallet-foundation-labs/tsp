@@ -9,9 +9,38 @@ use aries_askar::{
     entry::EntryOperation,
     kms::{KeyAlg, LocalKey},
 };
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-pub struct Vault {
+// ANCHOR: custom-secure-storage-mbBook
+#[async_trait]
+pub trait SecureStorage: Sized {
+    /// Create a new secure storage
+    async fn new(url: &str, password: &[u8]) -> Result<Self, Error>;
+
+    /// Open an existing secure storage
+    async fn open(url: &str, password: &[u8]) -> Result<Self, Error>;
+
+    /// Write data from memory to secure storage
+    async fn persist(
+        &self,
+        vids: Vec<ExportVid>,
+        extra_data: Option<serde_json::Value>,
+    ) -> Result<(), Error>;
+
+    /// Read data from secure storage to memory
+    async fn read(&self) -> Result<(Vec<ExportVid>, Option<serde_json::Value>), Error>;
+
+    /// Close the secure storage
+    async fn close(self) -> Result<(), Error>;
+
+    /// Destroy the secure storage
+    async fn destroy(self) -> Result<(), Error>;
+}
+// ANCHOR_END: custom-secure-storage-mbBook
+
+/// An implementation of secure storage using Aries Askar
+pub struct AskarSecureStorage {
     inner: aries_askar::Store,
     url: String,
 }
@@ -26,29 +55,34 @@ pub(crate) struct Metadata {
     tunnel: Option<Box<[String]>>,
 }
 
-impl Vault {
-    pub async fn new_sqlite(name: &str, password: &[u8]) -> Result<Self, Error> {
+#[async_trait]
+impl SecureStorage for AskarSecureStorage {
+    async fn new(url: &str, password: &[u8]) -> Result<Self, Error> {
         let pass_key = aries_askar::Store::new_raw_key(Some(password))?;
-        let url = format!("sqlite://{name}.sqlite");
 
         let inner =
-            aries_askar::Store::provision(&url, StoreKeyMethod::RawKey, pass_key, None, true)
+            aries_askar::Store::provision(url, StoreKeyMethod::RawKey, pass_key, None, true)
                 .await?;
 
-        Ok(Self { inner, url })
+        Ok(Self {
+            inner,
+            url: url.to_string(),
+        })
     }
 
-    pub async fn open_sqlite(name: &str, password: &[u8]) -> Result<Self, Error> {
+    async fn open(url: &str, password: &[u8]) -> Result<Self, Error> {
         let pass_key = aries_askar::Store::new_raw_key(Some(password))?;
-        let url = format!("sqlite://{name}.sqlite");
 
         let inner =
-            aries_askar::Store::open(&url, Some(StoreKeyMethod::RawKey), pass_key, None).await?;
+            aries_askar::Store::open(url, Some(StoreKeyMethod::RawKey), pass_key, None).await?;
 
-        Ok(Self { inner, url })
+        Ok(Self {
+            inner,
+            url: url.to_string(),
+        })
     }
 
-    pub async fn persist(
+    async fn persist(
         &self,
         vids: Vec<ExportVid>,
         extra_data: Option<serde_json::Value>,
@@ -188,7 +222,7 @@ impl Vault {
         Ok(())
     }
 
-    pub async fn load(&self) -> Result<(Vec<ExportVid>, Option<serde_json::Value>), Error> {
+    async fn read(&self) -> Result<(Vec<ExportVid>, Option<serde_json::Value>), Error> {
         let mut vids = Vec::new();
 
         let mut conn = self.inner.session(None).await?;
@@ -291,13 +325,13 @@ impl Vault {
         Ok((vids, extra_data))
     }
 
-    pub async fn close(self) -> Result<(), Error> {
+    async fn close(self) -> Result<(), Error> {
         self.inner.close().await?;
 
         Ok(())
     }
 
-    pub async fn destroy(self) -> Result<(), Error> {
+    async fn destroy(self) -> Result<(), Error> {
         self.inner.close().await?;
         aries_askar::Store::remove(&self.url).await?;
 
@@ -308,16 +342,18 @@ impl Vault {
 #[cfg(not(feature = "pq"))]
 #[cfg(test)]
 mod test {
-    use crate::{OwnedVid, Store, VerifiedVid};
+    use crate::{OwnedVid, SecureStore, VerifiedVid};
 
     use super::*;
 
     #[tokio::test]
     async fn test_vault() {
         let id = {
-            let vault = Vault::new_sqlite("test", b"password").await.unwrap();
+            let vault = AskarSecureStorage::new("sqlite://test.sqlite", b"password")
+                .await
+                .unwrap();
 
-            let store = Store::new();
+            let store = SecureStore::new();
             let vid = OwnedVid::new_did_peer("tcp://127.0.0.1:1337".parse().unwrap());
             store.add_private_vid(vid.clone()).unwrap();
 
@@ -327,10 +363,12 @@ mod test {
         };
 
         {
-            let vault = Vault::open_sqlite("test", b"password").await.unwrap();
-            let (vids, _) = vault.load().await.unwrap();
+            let vault = AskarSecureStorage::open("sqlite://test.sqlite", b"password")
+                .await
+                .unwrap();
+            let (vids, _) = vault.read().await.unwrap();
 
-            let store = Store::new();
+            let store = SecureStore::new();
             store.import(vids).unwrap();
             assert!(store.has_private_vid(&id).unwrap());
 

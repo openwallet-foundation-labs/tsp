@@ -1,28 +1,26 @@
 ## API overview
 
-The `rust-tsp` library should allow users to seal and open TSP messages. Note that the provided code is pseudo-Rust
+The `rust-tsp` library should allow endpoints to seal and open TSP messages. Note that the provided code is pseudo-Rust
 code;
 we abstract away from some implementation details.
 For a detailed and complete API reference, please take a look at <https://docs.rs/tsp-sdk/>.
 
-### The VID Store
+### Secure Store
 
-A VID Store allows the user to store VID-public-key pairs and optionally metadata related to the VID, like a name
-or transport specification.
+A `SecureStore` allows the endpoint to store VID-public-key pairs and optionally metadata related to the VID, like a name or transport specification.
  
-A VID Store stores the data in memory.
-A Vault can be used to persist the data.
-It currently supports only sqlite and uses [Aries Askar](https://github.com/openwallet-foundation/askar) 
-to secure the stored data.
+A `SecureStore` the data in memory. `SecureStorage` can be used to persist this data in a wallet.
+We provide the `AskarSecureStorage` implementation, which uses [Aries Askar](https://github.com/openwallet-foundation/askar) to securely store the data.
+See the [custom secure storage](../custom-secure-storage.md) page for documentation about how to implement custom secure storage solutions.
 
-The SDK also has the `AsyncStore` that provides an asynchronous version of the `Store`.
+The SDK also has the `AsyncSecureStore` interface that provides an asynchronous version of the `SecureStore`.
 
 ### Seal and open a TSP message
 
 Seal means encrypting, authenticating, signing, and encoding a message; open is the reverse operation. Note that the
 Header may contain additional authenticated data. The sender and receiver VID are added to the header by this
 method.
-All the methods below work on a `Store` instance, which holds the cryptographic details and relations.
+All the methods below work on a `SecureStore` instance, which holds the cryptographic details and relations.
 
 ```rust
 /// Seal a TSP message.
@@ -30,7 +28,7 @@ All the methods below work on a `Store` instance, which holds the cryptographic 
 /// of the sender and receiver, specified by their VIDs.
 ///
 /// Note that the corresponding VIDs should first be added and configured
-/// using this store.
+/// using this secure store.
 /// 
 /// *Returns:* The receiver VID endpoint and TSP message
 pub fn seal_message(
@@ -63,14 +61,14 @@ pub fn sign_anycast(&self, sender: &str, message: &[u8]) -> Result<Vec<u8>, Erro
 
 ### Managing VID's
 
-The `Store` supports the following methods to manage the VIDs. This is just an extraction of the most relevant methods;
+The `SecureStore` supports the following methods to manage the VIDs. This is just an extraction of the most relevant methods;
 see the [API docs](https://docs.rs/tsp-sdk/) for the full list.
 
 ```rust
-/// Add the already resolved `verified_vid` to the database as a relationship
+/// Add the already resolved `verified_vid` to the wallet as a relationship
 pub fn add_verified_vid(&self, verified_vid: impl VerifiedVid + 'static) -> Result<(), Error>;
 
-/// Adds `private_vid` to the database
+/// Adds `private_vid` to the wallet
 pub fn add_private_vid(&self, private_vid: impl PrivateVid + 'static) -> Result<(), Error>;
 
 /// Remove a VID from the Store

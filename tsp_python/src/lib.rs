@@ -18,13 +18,13 @@ fn py_exception<E: std::fmt::Debug>(e: E) -> PyErr {
 }
 
 #[pyclass]
-struct Store(tsp_sdk::Store);
+struct Store(tsp_sdk::SecureStore);
 
 #[pymethods]
 impl Store {
     #[new]
     fn new() -> Self {
-        Self(tsp_sdk::Store::default())
+        Self(tsp_sdk::SecureStore::default())
     }
 
     fn add_private_vid(&self, vid: OwnedVid) -> PyResult<()> {

@@ -79,21 +79,21 @@ impl VidContext {
 /// A Store contains verified VIDs, our relationship status to them,
 /// as well as the private VIDs that this application has control over.
 ///
-/// The struct is the primary interface to the VID database, in a synchronous
+/// The struct is the primary interface to the VID wallet, in a synchronous
 /// context (when no async runtime is available).
 #[derive(Default, Clone)]
-pub struct Store {
+pub struct SecureStore {
     pub(crate) vids: Arc<RwLock<HashMap<String, VidContext>>>,
 }
 
-/// This database is used to store and resolve VIDs
-impl Store {
-    /// Create a new, empty VID database
+/// This wallet is used to store and resolve VIDs
+impl SecureStore {
+    /// Create a new, empty VID wallet
     pub fn new() -> Self {
         Default::default()
     }
 
-    /// Export the database to serializable default types
+    /// Export the wallet to serializable default types
     pub fn export(&self) -> Result<Vec<ExportVid>, Error> {
         self.vids
             .read()?
@@ -115,7 +115,7 @@ impl Store {
             .collect()
     }
 
-    /// Import the database from serializable default types
+    /// Import the wallet from serializable default types
     pub fn import(&self, vids: Vec<ExportVid>) -> Result<(), Error> {
         vids.into_iter().try_for_each(|vid| {
             self.vids.write()?.insert(
@@ -137,7 +137,7 @@ impl Store {
         })
     }
 
-    /// Add the already resolved `verified_vid` to the database as a relationship
+    /// Add the already resolved `verified_vid` to the wallet as a relationship
     pub fn add_verified_vid(&self, verified_vid: impl VerifiedVid + 'static) -> Result<(), Error> {
         self.vids.write()?.insert(
             verified_vid.identifier().to_string(),
@@ -154,7 +154,7 @@ impl Store {
         Ok(())
     }
 
-    /// Adds `private_vid` to the database
+    /// Adds `private_vid` to the wallet
     pub fn add_private_vid(&self, private_vid: impl PrivateVid + 'static) -> Result<(), Error> {
         let vid = Arc::new(private_vid);
 
@@ -173,7 +173,7 @@ impl Store {
         Ok(())
     }
 
-    /// Remove a VID from the [`Store`]
+    /// Remove a VID from the [`SecureStore`]
     pub fn forget_vid(&self, vid: &str) -> Result<(), Error> {
         self.vids.write()?.remove(vid);
 
@@ -200,7 +200,7 @@ impl Store {
         })
     }
 
-    /// List all VIDs in the database
+    /// List all VIDs in the wallet
     pub fn list_vids(&self) -> Result<Vec<String>, Error> {
         Ok(self.vids.read()?.keys().cloned().collect())
     }
@@ -274,12 +274,12 @@ impl Store {
         }
     }
 
-    /// Check whether the [PrivateVid] identified by `vid` exists in the database
+    /// Check whether the [PrivateVid] identified by `vid` exists in the wallet
     pub fn has_private_vid(&self, vid: &str) -> Result<bool, Error> {
         Ok(self.get_private_vid(vid).is_ok())
     }
 
-    /// Retrieve the [PrivateVid] identified by `vid` from the database, if it exists.
+    /// Retrieve the [PrivateVid] identified by `vid` from the wallet, if it exists.
     pub(crate) fn get_private_vid(&self, vid: &str) -> Result<Arc<dyn PrivateVid>, Error> {
         match self.get_vid(vid)?.private {
             Some(private) => Ok(private),
@@ -287,12 +287,12 @@ impl Store {
         }
     }
 
-    /// Retrieve the [VerifiedVid] identified by `vid` from the database if it exists.
+    /// Retrieve the [VerifiedVid] identified by `vid` from the wallet if it exists.
     pub(crate) fn get_verified_vid(&self, vid: &str) -> Result<Arc<dyn VerifiedVid>, Error> {
         Ok(self.get_vid(vid)?.vid)
     }
 
-    /// Retrieve the [VidContext] identified by `vid` from the database, if it exists.
+    /// Retrieve the [VidContext] identified by `vid` from the wallet, if it exists.
     pub(super) fn get_vid(&self, vid: &str) -> Result<VidContext, Error> {
         match self.vids.read()?.get(vid) {
             Some(resolved) => Ok(resolved.clone()),
@@ -1115,7 +1115,7 @@ impl Store {
 mod test {
     use wasm_bindgen_test::wasm_bindgen_test;
 
-    use crate::{OwnedVid, ReceivedTspMessage, Store, VerifiedVid};
+    use crate::{OwnedVid, ReceivedTspMessage, SecureStore, VerifiedVid};
 
     fn new_vid() -> OwnedVid {
         OwnedVid::new_did_peer("tcp://127.0.0.1:1337".parse().unwrap())
@@ -1124,7 +1124,7 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_add_private_vid() {
-        let store = Store::new();
+        let store = SecureStore::new();
         let vid = new_vid();
 
         store.add_private_vid(vid.clone()).unwrap();
@@ -1135,7 +1135,7 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_add_verified_vid() {
-        let store = Store::new();
+        let store = SecureStore::new();
         let owned_vid = new_vid();
 
         store.add_verified_vid(owned_vid.vid().clone()).unwrap();
@@ -1146,7 +1146,7 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_remove() {
-        let store = Store::new();
+        let store = SecureStore::new();
         let vid = new_vid();
 
         store.add_private_vid(vid.clone()).unwrap();
@@ -1161,7 +1161,7 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_open_seal() {
-        let store = Store::new();
+        let store = SecureStore::new();
         let alice = new_vid();
         let bob = new_vid();
 
@@ -1200,7 +1200,7 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_make_relationship_request() {
-        let store = Store::new();
+        let store = SecureStore::new();
         let alice = new_vid();
         let bob = new_vid();
 
@@ -1225,7 +1225,7 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_make_relationship_accept() {
-        let store = Store::new();
+        let store = SecureStore::new();
         let alice = new_vid();
         let bob = new_vid();
 
@@ -1266,7 +1266,7 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_make_relationship_cancel() {
-        let store = Store::new();
+        let store = SecureStore::new();
         let alice = new_vid();
         let bob = new_vid();
 
@@ -1319,8 +1319,8 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_make_new_identity() {
-        let a_store = Store::new();
-        let b_store = Store::new();
+        let a_store = SecureStore::new();
+        let b_store = SecureStore::new();
         let alice = new_vid();
         let bob = new_vid();
         let charles = new_vid();
@@ -1362,7 +1362,7 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_make_referral() {
-        let store = Store::new();
+        let store = SecureStore::new();
         let alice = new_vid();
         let bob = new_vid();
         let charles = new_vid();
@@ -1393,10 +1393,10 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_routed() {
-        let a_store = Store::new();
-        let b_store = Store::new();
-        let c_store = Store::new();
-        let d_store = Store::new();
+        let a_store = SecureStore::new();
+        let b_store = SecureStore::new();
+        let c_store = SecureStore::new();
+        let d_store = SecureStore::new();
 
         let nette_a = new_vid();
         let sneaky_a = new_vid();
@@ -1530,8 +1530,8 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_nested_manual() {
-        let a_store = Store::new();
-        let b_store = Store::new();
+        let a_store = SecureStore::new();
+        let b_store = SecureStore::new();
 
         let a = new_vid();
         let b = new_vid();
@@ -1604,8 +1604,8 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_nested_automatic_setup() {
-        let a_store = Store::new();
-        let b_store = Store::new();
+        let a_store = SecureStore::new();
+        let b_store = SecureStore::new();
 
         let a = new_vid();
         let b = new_vid();

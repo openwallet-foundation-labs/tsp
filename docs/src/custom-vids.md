@@ -1,6 +1,6 @@
 # Implement custom VIDs
 
-The `Store`, exposed as the primary API for the TSP Rust library,
+The `SecureStore`, exposed as the primary API for the TSP Rust library,
 accepts adding private and verified VIDs.
 
 A private VID is an identity that contains private key material
@@ -13,18 +13,18 @@ What verification means depends on the type of VID.
 
 ## Traits
 
-The `Store` accepts any private or verified VID that implements the `PrivateVid` and `VerifiedVid` traits, respectively.
+The `SecureStore` accepts any private or verified VID that implements the `PrivateVid` and `VerifiedVid` traits, respectively.
 Each of these traits defines methods to get the VID string itself and methods to get the key material:
 
 ```rust
-{{#include ../../tsp/src/definitions/mod.rs:custom-vid-mbBook}}
+{{#include ../../tsp_sdk/src/definitions/mod.rs:custom-vid-mbBook}}
 ```
 
 Any Rust type that implements one of these traits can be added to the
-store (either `AsyncStore` or the `Store`).
+store (either `AsyncSecureStore` or the `SecureStore`).
 
 <div class="warning">
 
-**Caution:** make sure a `VerifiedVid` is always verified.
+**Caution:** make sure a `VerifiedVid` is always verified. How VIDs are verified depends on the type of VID used.
 
 </div>

@@ -29,7 +29,7 @@ use tokio::sync::{RwLock, broadcast};
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{
-    Store, cesr,
+    SecureStore, cesr,
     definitions::{Payload, VerifiedVid},
     vid::{OwnedVid, Vid},
 };
@@ -46,7 +46,7 @@ struct Cli {
     domain: String,
 }
 
-/// Identity struct, used to store the DID document and VID of a user
+/// Identity struct, used to store the DID document and VID of an endpoint
 #[derive(Debug, Serialize, Deserialize)]
 struct Identity {
     did_doc: serde_json::Value,
@@ -57,7 +57,7 @@ struct Identity {
 struct AppState {
     domain: String,
     did_server: String,
-    timestamp_server: Store,
+    timestamp_server: SecureStore,
     tx: broadcast::Sender<(String, String, Vec<u8>)>,
 }
 
@@ -78,7 +78,7 @@ async fn main() {
 
     let args = Cli::parse();
 
-    let timestamp_server = Store::new();
+    let timestamp_server = SecureStore::new();
     let piv: OwnedVid =
         serde_json::from_str(include_str!("../test/timestamp-server/piv.json")).unwrap();
     timestamp_server.add_private_vid(piv).unwrap();
@@ -330,7 +330,7 @@ async fn route_message(State(state): State<Arc<AppState>>, body: Bytes) -> Respo
     let receiver = String::from_utf8_lossy(receiver).to_string();
 
     // translate received identifier into the transport; either because it is a
-    // known user or because it is a did:peer. note that this allows "snooping" messages
+    // known endpoint or because it is a did:peer. note that this allows "snooping" messages
     // that are not intended for you --- but that will allow building interesting demo cases
     // since the unintended recipient cannot read the message: the security of TSP is not based
     // on security of the transport layer.

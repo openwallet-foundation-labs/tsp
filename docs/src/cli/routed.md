@@ -18,21 +18,21 @@ messages to the final recipient `b`. This can be achieved in two ways:
 * Explicitly creating a separate public identity for the node `q` that is verified by `b` and has `b` as its "relation vid":
 
   ```sh
-  > tsp -d q create --alias q2 q2
-  > tsp -d q set-relation q2 b
+  > tsp -w q create --alias q2 q2
+  > tsp -w q set-relation q2 b
   ```
 
 When this set up is done, the only thing left to send a routed message from `a` to `b`, is to set up a route.
 
 ```sh
-tsp -d a set-route b VID-FOR-P,VID-FOR-Q,VID-FOR-Q2
+tsp -w a set-route b VID-FOR-P,VID-FOR-Q,VID-FOR-Q2
 ```
 Note, this requires `a` to have verified the VID of `p`, but it does not need to have verified the VID's `q` or `q2`. In fact, if
 the VID `q2` is an inner vid for a nested relationship, `a` will not have a way to verify it at all.
 
 When this route is set up properly, sending a message proceeds as normal:
 ```sh
-echo "Routed Hello" | tsp -d a send --sender-vid a --receiver-vid b
+echo "Routed Hello" | tsp -w a send --sender-vid a --receiver-vid b
 ```
 
 ## Routed mode (manual set up)
@@ -71,29 +71,31 @@ curl -s https://raw.githubusercontent.com/openwallet-foundation-labs/tsp/main/ex
 curl -s https://raw.githubusercontent.com/openwallet-foundation-labs/tsp/main/examples/test/b/piv.json > identity-b.json
 ```
 
-Create a new identity (and database) for `a` based on the downloaded file using the `create-from-file` command:
+Create a new identity (and wallet) for `a` based on the downloaded file using the `import-piv` command:
 
 ```sh
-tsp -d a create-from-file --alias a ./identity-a.json
+tsp -w a import-piv --alias a ./identity-a.json
 ```
 
 And we also initialize `b`:
 
 ```sh
-tsp -d b create-from-file --alias b ./identity-b.json
+tsp -w b import-piv --alias b ./identity-b.json
 ```
+
+Note that this way of importing private VIDs is only meant for demo purposes to quickly set up some identities. As these identities are publicly available from our GitHub repository, any communication done with these identities is inherently unsafe as the key pairs publicly available. In practice, you would want to create new endpoints with their own private key pairs.
 
 ## Introduce the nodes to each other
 
 The sender `a` resolves and verifies the receiver `b`:
 ```sh
-tsp -d b print b | xargs tsp -d a verify --alias b
+tsp -w b print b | xargs tsp -w a verify --alias b
 ```
 
 The sender `a` also resolves and verifies the first intermediary `p`, and requests a relationship with this intermediary:
 ```sh
-tsp -d a verify did:web:p.teaspoon.world --alias p
-tsp -d a request -s a -r p
+tsp -w a verify did:web:p.teaspoon.world --alias p
+tsp -w a request -s a -r p
 ```
 
 Our public demo intermediaries are configured to accept all incoming relationship requests.
@@ -102,18 +104,18 @@ Our public demo intermediaries are configured to accept all incoming relationshi
 > Passing the `--sender` argument configures which sender VID is used when sending messages to the passed VID. This is equivalent with an extra call to the `set-relation` command.
 > So, instead of the previous two commands, you could also do the following instead:
 > ```
-> tsp -d a verify did:web:p.teaspoon.world --alias p --sender a
+> tsp -w a verify did:web:p.teaspoon.world --alias p --sender a
 > ```
 
 The receiver `b` resolves and verifies the second intermediary `q`, and requests a relationship with this second intermediary:
 ```sh
-tsp -d b verify did:web:q.teaspoon.world --alias q
-tsp -d b request -s b -r q
+tsp -w b verify did:web:q.teaspoon.world --alias q
+tsp -w b request -s b -r q
 ```
 
 In order for the final drop-off to work, `b` needs to set up a nested relation with `q`, otherwise `q` would have no way of knowing were to deliver the message to in the last hop. The following command will read the nested DIDs into the bash environment variables `DID_B2` and `DID_Q2`:
 ```sh
-read -d '' DID_B2 DID_Q2 <<< $(tsp -d b request --nested -s b -r q)
+read -d '' DID_B2 DID_Q2 <<< $(tsp -w b request --nested -s b -r q)
 echo "DID_B2=$DID_B2"
 echo "DID_Q2=$DID_Q2"
 ```
@@ -122,7 +124,7 @@ echo "DID_Q2=$DID_Q2"
 
 Now that we have set up all the relations between the nodes, we can configure the route for messages that are to be delivered from `a` to `b`. We will route these messages via `p` to `q`, and then `q2` will drop it off at `b`:
 ```sh
-tsp -d a set-route b "p,did:web:q.teaspoon.world,$DID_Q2"
+tsp -w a set-route b "p,did:web:q.teaspoon.world,$DID_Q2"
 ```
 
 Sending the routed message is trivial, now we have configured the relations and route.
@@ -130,13 +132,13 @@ Sending the routed message is trivial, now we have configured the relations and 
 Let `b` listen for one message:
 
 ```sh
-tsp -d b receive --one b
+tsp -w b receive --one b
 ```
 
 Let `a` sent a message:
 
 ```sh
-echo "Hi b" | tsp --pretty-print -d a send -s a -r b
+echo "Hi b" | tsp --pretty-print -w a send -s a -r b
 ```
 
 Output:
@@ -165,7 +167,7 @@ SrBAkd6evt2M2Z2ugVyVwxTU-pVVXlcTa5p_-N05lWEZ0bdUBdR4upMUDA
 Note that the message is longer than a direct mode message, since the ciphertext contains another
 TSP message.
 
-The `cli-demo-routed-external.sh` script in the `examples/` folder performs all the previously described steps automatically, but using users created on the teaspoon.world DID support server for easy testing. The only difference here is thus that in the script `a` and `b` use <https://demo.teaspoon.world/> for transport, while the identities from the step-by-step tutorial above are configured to use intermediaries directly.
+The `cli-demo-routed-external.sh` script in the `examples/` folder performs all the previously described steps automatically, but using endpoints created on the teaspoon.world DID support server for easy testing. The only difference here is thus that in the script `a` and `b` use <https://demo.teaspoon.world/> for transport, while the identities from the step-by-step tutorial above are configured to use intermediaries directly.
 
 ## Debug intermediaries
 

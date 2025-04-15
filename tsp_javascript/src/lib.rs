@@ -12,7 +12,7 @@ impl From<Error> for JsValue {
 
 #[derive(Default, Clone)]
 #[wasm_bindgen]
-pub struct Store(tsp_sdk::Store);
+pub struct Store(tsp_sdk::SecureStore);
 
 #[wasm_bindgen]
 pub struct SealedMessage {

@@ -139,7 +139,7 @@ async fn create_identity(
     Json(private_vid).into_response()
 }
 
-/// Get the DID document of a user
+/// Get the DID document of an endpoint
 async fn get_did_doc(State(state): State<AppState>, Path(name): Path<String>) -> Response {
     if !verify_name(&name) {
         return (StatusCode::BAD_REQUEST, "invalid name").into_response();
@@ -200,7 +200,7 @@ fn verify_name(name: &str) -> bool {
     !name.is_empty() && name.len() < 64 && name.chars().all(|c| c.is_alphanumeric())
 }
 
-/// Identity struct, used to store the DID document and VID of a user
+/// Identity struct, used to store the DID document and VID of an endpoint
 #[derive(Debug, Serialize, Deserialize)]
 struct Identity {
     did_doc: serde_json::Value,

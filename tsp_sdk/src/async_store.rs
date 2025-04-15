@@ -2,7 +2,7 @@ use crate::{
     ExportVid, OwnedVid, PrivateVid,
     definitions::{Digest, ReceivedTspMessage, TSPStream, VerifiedVid},
     error::Error,
-    store::Store,
+    store::SecureStore,
 };
 use bytes::BytesMut;
 use futures::StreamExt;
@@ -20,7 +20,7 @@ use url::Url;
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     // alice database
+///     // alice wallet
 ///     let mut db = AsyncStore::new();
 ///     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json").await.unwrap();
 ///     db.add_private_vid(alice_vid).unwrap();
@@ -36,27 +36,27 @@ use url::Url;
 /// }
 /// ```
 #[derive(Default)]
-pub struct AsyncStore {
-    inner: Store,
+pub struct AsyncSecureStore {
+    inner: SecureStore,
 }
 
-impl AsyncStore {
+impl AsyncSecureStore {
     /// Create a new and empty store
     pub fn new() -> Self {
         Default::default()
     }
 
-    /// Export the database to serializable default types
+    /// Export the wallet to serializable default types
     pub fn export(&self) -> Result<Vec<ExportVid>, Error> {
         self.inner.export()
     }
 
-    /// Expose the inner non-async database
-    pub fn as_store(&self) -> &Store {
+    /// Expose the inner non-async wallet
+    pub fn as_store(&self) -> &SecureStore {
         &self.inner
     }
 
-    /// Import the database from serializable default types
+    /// Import the wallet from serializable default types
     pub fn import(&self, vids: Vec<ExportVid>) -> Result<(), Error> {
         self.inner.import(vids)
     }
@@ -76,12 +76,12 @@ impl AsyncStore {
         self.inner.set_parent_for_vid(vid, parent)
     }
 
-    /// List all VIDs in the database
+    /// List all VIDs in the wallet
     pub fn list_vids(&self) -> Result<Vec<String>, Error> {
         self.inner.list_vids()
     }
 
-    /// Adds `private_vid` to the database
+    /// Adds `private_vid` to the wallet
     pub fn add_private_vid(
         &self,
         private_vid: impl PrivateVid + Clone + 'static,
@@ -89,22 +89,22 @@ impl AsyncStore {
         self.inner.add_private_vid(private_vid)
     }
 
-    /// Remove a VID from the [`AsyncStore`]
+    /// Remove a VID from the [`AsyncSecureStore`]
     pub fn forget_vid(&self, vid: &str) -> Result<(), Error> {
         self.inner.forget_vid(vid)
     }
 
-    /// Add the already resolved `verified_vid` to the database as a relationship
+    /// Add the already resolved `verified_vid` to the wallet as a relationship
     pub fn add_verified_vid(&self, verified_vid: impl VerifiedVid + 'static) -> Result<(), Error> {
         self.inner.add_verified_vid(verified_vid)
     }
 
-    /// Check whether the [PrivateVid] identified by `vid` exists in the database
+    /// Check whether the [PrivateVid] identified by `vid` exists in the wallet
     pub fn has_private_vid(&self, vid: &str) -> Result<bool, Error> {
         self.inner.has_private_vid(vid)
     }
 
-    /// Resolve and verify public key material for a VID identified by `vid` and add it to the database as a relationship
+    /// Resolve and verify public key material for a VID identified by `vid` and add it to the wallet as a relationship
     pub async fn verify_vid(&mut self, vid: &str) -> Result<(), Error> {
         let verified_vid = crate::vid::verify_vid(vid).await?;
 

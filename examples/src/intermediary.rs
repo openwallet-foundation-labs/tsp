@@ -14,8 +14,8 @@ use std::{collections::VecDeque, sync::Arc};
 use tokio::sync::{RwLock, broadcast};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{
-    AsyncStore, OwnedVid, ReceivedTspMessage, VerifiedVid, cesr, definitions::Digest, transport,
-    vid::vid_to_did_document,
+    AsyncSecureStore, OwnedVid, ReceivedTspMessage, VerifiedVid, cesr, definitions::Digest,
+    transport, vid::vid_to_did_document,
 };
 use url::Url;
 
@@ -37,7 +37,7 @@ struct Cli {
 struct IntermediaryState {
     domain: String,
     did: String,
-    db: RwLock<AsyncStore>,
+    db: RwLock<AsyncSecureStore>,
     message_tx: broadcast::Sender<(String, Vec<u8>)>,
     log: RwLock<VecDeque<LogEntry>>,
     log_tx: broadcast::Sender<String>,
@@ -117,7 +117,7 @@ async fn main() {
     let private_vid = OwnedVid::bind(did.clone(), transport);
     let did_doc = vid_to_did_document(private_vid.vid()).to_string();
 
-    let db = AsyncStore::new();
+    let db = AsyncSecureStore::new();
     db.add_private_vid(private_vid).unwrap();
 
     let state = Arc::new(IntermediaryState {

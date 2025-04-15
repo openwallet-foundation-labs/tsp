@@ -1,11 +1,11 @@
-use crate::{AsyncStore, OwnedVid, VerifiedVid};
+use crate::{AsyncSecureStore, OwnedVid, VerifiedVid};
 use futures::StreamExt;
 
 #[tokio::test]
 #[serial_test::serial(tcp)]
 async fn test_direct_mode() {
-    // bob database
-    let mut bob_db = AsyncStore::new();
+    // bob wallet
+    let mut bob_db = AsyncSecureStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
@@ -20,8 +20,8 @@ async fn test_direct_mode() {
         .await
         .unwrap();
 
-    // alice database
-    let mut alice_db = AsyncStore::new();
+    // alice wallet
+    let mut alice_db = AsyncSecureStore::new();
     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
@@ -64,8 +64,8 @@ async fn test_direct_mode() {
 #[tokio::test]
 #[serial_test::serial(tcp)]
 async fn test_large_messages() {
-    // bob database
-    let mut bob_db = AsyncStore::new();
+    // bob wallet
+    let mut bob_db = AsyncSecureStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
@@ -80,8 +80,8 @@ async fn test_large_messages() {
         .await
         .unwrap();
 
-    // alice database
-    let mut alice_db = AsyncStore::new();
+    // alice wallet
+    let mut alice_db = AsyncSecureStore::new();
     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
@@ -127,8 +127,8 @@ async fn test_large_messages() {
 #[tokio::test]
 #[serial_test::serial(tcp)]
 async fn test_anycast() {
-    // bob database
-    let mut bob_db = AsyncStore::new();
+    // bob wallet
+    let mut bob_db = AsyncSecureStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
@@ -143,8 +143,8 @@ async fn test_anycast() {
         .await
         .unwrap();
 
-    // alice database
-    let mut alice_db = AsyncStore::new();
+    // alice wallet
+    let mut alice_db = AsyncSecureStore::new();
     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
@@ -186,8 +186,8 @@ async fn test_anycast() {
 #[tokio::test]
 #[serial_test::serial(tcp)]
 async fn test_nested_mode() {
-    // bob database
-    let mut bob_db = AsyncStore::new();
+    // bob wallet
+    let mut bob_db = AsyncSecureStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
@@ -197,8 +197,8 @@ async fn test_nested_mode() {
         .await
         .unwrap();
 
-    // alice database
-    let mut alice_db = AsyncStore::new();
+    // alice wallet
+    let mut alice_db = AsyncSecureStore::new();
     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
@@ -278,13 +278,13 @@ async fn test_nested_mode() {
 #[tokio::test]
 #[serial_test::serial(tcp)]
 async fn test_routed_mode() {
-    let mut bob_db = AsyncStore::new();
+    let mut bob_db = AsyncSecureStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
     bob_db.add_private_vid(bob_vid.clone()).unwrap();
 
-    let mut alice_db = AsyncStore::new();
+    let mut alice_db = AsyncSecureStore::new();
     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
@@ -485,8 +485,8 @@ async fn test_routed_mode() {
 
 #[tokio::test]
 async fn attack_failures() {
-    // bob database
-    let mut bob_db = AsyncStore::new();
+    // bob wallet
+    let mut bob_db = AsyncSecureStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
@@ -547,8 +547,8 @@ async fn attack_failures() {
 #[tokio::test]
 #[serial_test::serial(tcp)]
 async fn test_relation_forming() {
-    // bob database
-    let mut bob_db = AsyncStore::new();
+    // bob wallet
+    let mut bob_db = AsyncSecureStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
@@ -563,8 +563,8 @@ async fn test_relation_forming() {
         .await
         .unwrap();
 
-    // alice database
-    let mut alice_db = AsyncStore::new();
+    // alice wallet
+    let mut alice_db = AsyncSecureStore::new();
     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();

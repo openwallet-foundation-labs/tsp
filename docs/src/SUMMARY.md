@@ -17,7 +17,7 @@
 - [SDK APIs](./sdk-apis.md)
 - [Custom VIDs](custom-vids.md)
 - [Custom transport]()
-- [Custom secure storage]()
+- [Custom secure storage](custom-secure-storage.md)
 - [Benchmark](benchmark.md)
 
 # Protocol Integrations
