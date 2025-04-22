@@ -1,15 +1,18 @@
 # tsp_python
 
-An incomplete python api that binds to rust
+A TSP Python API that binds to Rust
 
 ## How to run
 
-_hopefully_ this works. This requires pyenv and maturin
-
+Use [uv](https://docs.astral.sh/uv/) (uv will automatically install and build the needed packages):
 ```
-# from within tsp_python
+uv run test.py
+```
+
+Alternatively, you can use `pyenv` with manually installed `maturin` (run within the `tsp_python` directory):
+```
 pyenv init - | source
 pyenv activate 
 maturin develop
-python3 test_open_seal.py
+python3 test.py
 ```
