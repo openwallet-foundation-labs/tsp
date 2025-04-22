@@ -26,13 +26,13 @@
 //! The following example demonstrates how to send a message from Alice to Bob
 //!
 //! ```rust
-//! use tsp_sdk::{AsyncStore, OwnedVid, Error, ReceivedTspMessage};
+//! use tsp_sdk::{AsyncSecureStore, OwnedVid, Error, ReceivedTspMessage};
 //! use futures::StreamExt;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Error> {
 //!     // bob wallet
-//!     let mut bob_db = AsyncStore::new();
+//!     let mut bob_db = AsyncSecureStore::new();
 //!     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json").await?;
 //!     bob_db.add_private_vid(bob_vid)?;
 //!     bob_db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice").await?;
@@ -40,7 +40,7 @@
 //!     let mut bobs_messages = bob_db.receive("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob").await?;
 //!
 //!     // alice wallet
-//!     let mut alice_db = AsyncStore::new();
+//!     let mut alice_db = AsyncSecureStore::new();
 //!     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json").await?;
 //!     alice_db.add_private_vid(alice_vid)?;
 //!     alice_db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob").await?;
@@ -110,6 +110,7 @@ pub use async_store::AsyncSecureStore;
 
 #[cfg(feature = "async")]
 pub use secure_storage::AskarSecureStorage;
+#[cfg(feature = "async")]
 pub use secure_storage::SecureStorage;
 
 pub use definitions::{Payload, PrivateVid, ReceivedTspMessage, RelationshipStatus, VerifiedVid};

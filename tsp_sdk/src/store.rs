@@ -1087,10 +1087,7 @@ impl SecureStore {
             ..
         } = context.relation_status
         else {
-            return Err(Error::Relationship(format!(
-                "no relationship with {}",
-                vid.to_string()
-            )));
+            return Err(Error::Relationship(format!("no relationship with {}", vid)));
         };
 
         outstanding_nested_thread_ids.push(thread_id);
