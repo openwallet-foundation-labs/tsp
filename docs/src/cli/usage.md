@@ -181,7 +181,9 @@ CESR-encoded message:
 
 In a terminal window supporting colors this will look like the following:
 
-<strong style="color:red">-EABXAAA</strong><span style="color:purple"><strong>9VIDAAALAAA</strong>ZGlkOndlYjp0c3AtdGVzdC5vcmc6dXNlcjphbGljZQ</span><span style="color:blue"><strong>8VIDAAAKAA</strong>ZGlkOndlYjp0c3AtdGVzdC5vcmc6dXNlcjpib2I</span><span style="color:yellow"><strong>4CAX</strong>5I7ozAGaFVqTxz8PJve0Tscor80fvds6hCf3yDUtOnHpXZ84uXFGXM-PcfLDWsRWvH7SoOG4UwQU8H-zEfBFs0skhjtk</span><span style="color:cyan"><strong>0BA</strong>trMgdWXM9Mfdgiq2awx6VAWCUUYCfjv1tdQqnjNc4eB-IOdBVA459uAFX2EGfdWWGp2OxxwbAutneudE9zYUBg</span>
+<code style="display: block; line-break: anywhere; padding: 1rem;">
+<strong style="color: #F66151;">-EABXAAA</strong><span style="color: #C061CB;"><strong>9VIDAAALAAA</strong>ZGlkOndlYjp0c3AtdGVzdC5vcmc6dXNlcjphbGljZQ</span><span style="color: #2A7BDE;"><strong>8VIDAAAKAA</strong>ZGlkOndlYjp0c3AtdGVzdC5vcmc6dXNlcjpib2I</span><span style="color: #E9AD0C;"><strong>4CAX</strong>5I7ozAGaFVqTxz8PJve0Tscor80fvds6hCf3yDUtOnHpXZ84uXFGXM-PcfLDWsRWvH7SoOG4UwQU8H-zEfBFs0skhjtk</span><span style="color: #33C7DE;"><strong>0BA</strong>trMgdWXM9Mfdgiq2awx6VAWCUUYCfjv1tdQqnjNc4eB-IOdBVA459uAFX2EGfdWWGp2OxxwbAutneudE9zYUBg</span>
+</code>
 
 The first red part is the TSP prefix. The purple part is the sender VID, the blue
 part the receiver VID, the yellow is the ciphertext and the cyan part is the signature.
