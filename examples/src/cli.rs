@@ -302,7 +302,7 @@ async fn run() -> Result<(), Error> {
         Commands::Show(sub) => {
             let mut table = Table::new();
             table.set_content_arrangement(ContentArrangement::Dynamic);
-            let mut vids = vid_database.export()?;
+            let mut vids = vid_wallet.export()?;
             vids.sort_by(|a, b| a.id.cmp(&b.id));
 
             match sub {

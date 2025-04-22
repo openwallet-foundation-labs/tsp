@@ -15,7 +15,7 @@ cargo version
 
 Output:
 ```
-cargo 1.77.1 (e52e36006 2024-03-26) for example
+cargo 1.86.0 (adf9b6ad1 2025-02-28) # for example
 ```
 
 Installing the TSP CLI program:
@@ -37,6 +37,7 @@ Send and receive TSP messages
 Usage: tsp [OPTIONS] <COMMAND>
 
 Commands:
+  show          Show information stored in the wallet
   verify        verify and add a identifier to the wallet
   print         
   create        create and register a did:web identifier

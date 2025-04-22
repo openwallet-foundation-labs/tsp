@@ -49,10 +49,36 @@ TRACE tsp: published DID document for did:web:did.teaspoon.world:user:example
 TRACE tsp: persisted wallet
 ```
 
+## Show wallet content
+In some cases it might be helpful to check what the wallet contains to understand the behavior of TSP.
+Therefore, the CLI provides a `show` command.
+The `show local` command will print all the local VIDs stored in the wallet,
+including their alias, transport, and parent.
+
+```
++--------------------------------------+-------+-----------------------------------------------------------------------+--------+
+| VID                                  | Alias | Transport                                                             | Parent |
++===============================================================================================================================+
+| did:web:did.teaspoon.world:user:asdf | asdf  | https://demo.teaspoon.world/user/did:web:did.teaspoon.world:user:asdf | None   |
++--------------------------------------+-------+-----------------------------------------------------------------------+--------+
+```
+
+Additionally, `tsp show relations <local VID or alias>`
+will provide all resolved VIDs that the local VID has a relation with,
+including the alias, relation status, and transport.
+
+```
++--------------------------+-------+-----------------+-------------------------------------------------------------+
+| Remote VID               | Alias | Relation Status | Transport                                                   |
++==================================================================================================================+
+| did:web:q.teaspoon.world | q     | Bidirectional   | https://q.teaspoon.world/transport/did:web:q.teaspoon.world |
++--------------------------+-------+-----------------+-------------------------------------------------------------+
+```
+
 ## Resolve a VID
 
 VIDs created with the `tsp` tool are published on __did.teaspoon.world__.
-Currently Rust TSP is able to verify `did:web` and `did:peer` VIDs
+Currently, Rust TSP is able to verify `did:web` and `did:peer` VIDs
 
 To resolve and verify a VID, run the following:
 
@@ -185,6 +211,6 @@ In a terminal window supporting colors this will look like the following:
 </code>
 
 The first red part is the TSP prefix. The purple part is the sender VID, the blue
-part the receiver VID, the yellow is the ciphertext and the cyan part is the signature.
+part the receiver VID, the yellow is the ciphertext, and the cyan part is the signature.
 
 The bold characters note the CESR selector of the part.
