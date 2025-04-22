@@ -1,0 +1,7 @@
+version = 1
+revision = 1
+requires-python = ">=3.10.0"
+
+[[package]]
+name = "tsp-python"
+source = { editable = "." }
