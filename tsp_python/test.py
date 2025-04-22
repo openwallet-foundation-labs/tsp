@@ -128,17 +128,17 @@ class AliceBob(unittest.TestCase):
         d_store.add_private_vid(sneaky_d)
         d_store.add_private_vid(nette_d)
 
-        a_store.add_verified_vid(b)
-        a_store.add_verified_vid(sneaky_d)
+        a_store.add_verified_owned_vid(b)
+        a_store.add_verified_owned_vid(sneaky_d)
 
-        b_store.add_verified_vid(nette_a)
-        b_store.add_verified_vid(c)
+        b_store.add_verified_owned_vid(nette_a)
+        b_store.add_verified_owned_vid(c)
 
-        c_store.add_verified_vid(b)
-        c_store.add_verified_vid(nette_d)
+        c_store.add_verified_owned_vid(b)
+        c_store.add_verified_owned_vid(nette_d)
 
-        d_store.add_verified_vid(sneaky_a)
-        d_store.add_verified_vid(mailbox_c)
+        d_store.add_verified_owned_vid(sneaky_a)
+        d_store.add_verified_owned_vid(mailbox_c)
 
         # relations
 
@@ -203,8 +203,8 @@ class AliceBob(unittest.TestCase):
         a_store.add_private_vid(a)
         b_store.add_private_vid(b)
 
-        a_store.add_verified_vid(b)
-        b_store.add_verified_vid(a)
+        a_store.add_verified_owned_vid(b)
+        b_store.add_verified_owned_vid(a)
 
         url, sealed = a_store.make_relationship_request(a.identifier(), b.identifier(), None)
         self.assertEqual(url, "tcp://127.0.0.1:1337")

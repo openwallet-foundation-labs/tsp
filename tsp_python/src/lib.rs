@@ -32,8 +32,19 @@ impl Store {
     }
 
     #[pyo3(signature = (vid, alias=None))]
-    fn add_verified_vid(&self, vid: OwnedVid, alias: Option<String>) -> PyResult<()> {
+    fn add_verified_owned_vid(&self, vid: OwnedVid, alias: Option<String>) -> PyResult<()> {
         self.0.add_verified_vid(vid.0, alias).map_err(py_exception)
+    }
+
+    #[pyo3(signature = (did_json, expected_did, alias=None))]
+    fn verify(&self, did_json: &str, expected_did: &str, alias: Option<String>) -> PyResult<()> {
+        let did_document: tsp_sdk::vid::did::web::DidDocument =
+            serde_json::from_str(did_json).map_err(py_exception)?;
+
+        let vid = tsp_sdk::vid::did::web::resolve_document(did_document, expected_did)
+            .map_err(py_exception)?;
+
+        self.0.add_verified_vid(vid, alias).map_err(py_exception)
     }
 
     #[pyo3(signature = (vid, relation_vid=None))]
@@ -403,6 +414,11 @@ impl OwnedVid {
     #[staticmethod]
     fn new_did_peer(url: String) -> Self {
         OwnedVid(tsp_sdk::OwnedVid::new_did_peer(url.parse().unwrap()))
+    }
+
+    #[staticmethod]
+    fn bind(did: String, transport_url: String) -> Self {
+        OwnedVid(tsp_sdk::OwnedVid::bind(did, transport_url.parse().unwrap()))
     }
 
     fn identifier(&self) -> String {

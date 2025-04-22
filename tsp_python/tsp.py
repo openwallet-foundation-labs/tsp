@@ -1,7 +1,15 @@
 from dataclasses import dataclass
+import requests
 
 import tsp_python
-from tsp_python import OwnedVid, ReceivedTspMessageVariant, FlatReceivedTspMessage, CryptoType, SignatureType
+from tsp_python import (
+    OwnedVid,
+    ReceivedTspMessageVariant,
+    FlatReceivedTspMessage,
+    CryptoType,
+    SignatureType,
+)
+
 
 class Store:
     inner: tsp_python.Store
@@ -14,6 +22,20 @@ class Store:
 
     def add_verified_vid(self, *args, **kwargs):
         return self.inner.add_verified_vid(*args, **kwargs)
+
+    def verify(self, did: str):
+        if not did.startswith("did:web:"):
+            raise Exception(f"{did} is not a DID web, cannot verify")
+
+        url = did.removeprefix("did:web:").replace(":", "/").replace("%25", ":")
+        if "/" not in url:
+            url += "/.well-known"
+        url = "https://" + url + "/did.json"
+
+        # We do the request in Python so we don't have to deal with PyO3 async stuff
+        document = requests.get(url).text
+
+        return self.inner.verify(document, did)
 
     def set_relation_for_vid(self, *args, **kwargs):
         return self.inner.set_relation_for_vid(*args, **kwargs)
@@ -46,15 +68,24 @@ class Store:
     def forward_routed_message(self, *args, **kwargs):
         return self.inner.forward_routed_message(*args, **kwargs)
 
+
 class ReceivedTspMessage:
     @staticmethod
     def from_flat(msg: FlatReceivedTspMessage):
         match msg.variant:
             case ReceivedTspMessageVariant.GenericMessage:
-                return GenericMessage(msg.sender, msg.nonconfidential_data, bytes(msg.message), msg.crypto_type, msg.signature_type)
+                return GenericMessage(
+                    msg.sender,
+                    msg.nonconfidential_data,
+                    bytes(msg.message),
+                    msg.crypto_type,
+                    msg.signature_type,
+                )
 
             case ReceivedTspMessageVariant.RequestRelationship:
-                return RequestRelationship(msg.sender, msg.route, msg.nested_vid, msg.thread_id)
+                return RequestRelationship(
+                    msg.sender, msg.route, msg.nested_vid, msg.thread_id
+                )
 
             case ReceivedTspMessageVariant.AcceptRelationship:
                 return AcceptRelationship(msg.sender, msg.nested_vid)
@@ -63,13 +94,16 @@ class ReceivedTspMessage:
                 return CancelRelationship(msg.sender)
 
             case ReceivedTspMessageVariant.ForwardRequest:
-                return ForwardRequest(msg.sender, msg.next_hop, msg.route, msg.opaque_payload)
+                return ForwardRequest(
+                    msg.sender, msg.next_hop, msg.route, msg.opaque_payload
+                )
 
             case ReceivedTspMessageVariant.PendingMessage:
                 raise ValueError("todo!")
 
             case other:
                 raise ValueError(f"Unrecognized variant: {other}")
+
 
 @dataclass
 class GenericMessage(ReceivedTspMessage):
@@ -79,14 +113,17 @@ class GenericMessage(ReceivedTspMessage):
     crypto_type: str
     signature_type: str
 
+
 @dataclass
 class AcceptRelationship(ReceivedTspMessage):
     sender: str
     nested_vid: str
 
+
 @dataclass
 class CancelRelationship(ReceivedTspMessage):
     sender: str
+
 
 @dataclass
 class RequestRelationship(ReceivedTspMessage):
@@ -94,6 +131,7 @@ class RequestRelationship(ReceivedTspMessage):
     route: str
     nested_vid: str
     thread_id: str
+
 
 @dataclass
 class ForwardRequest(ReceivedTspMessage):
