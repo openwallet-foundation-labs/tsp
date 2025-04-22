@@ -16,12 +16,12 @@ use url::Url;
 /// # Example
 ///
 /// ```rust
-/// use tsp_sdk::{AsyncStore, OwnedVid, Error, ReceivedTspMessage};
+/// use tsp_sdk::{AsyncSecureStore, OwnedVid, Error, ReceivedTspMessage};
 ///
 /// #[tokio::main]
 /// async fn main() {
 ///     // alice wallet
-///     let mut db = AsyncStore::new();
+///     let mut db = AsyncSecureStore::new();
 ///     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json").await.unwrap();
 ///     db.add_private_vid(alice_vid).unwrap();
 ///     db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob").await.unwrap();
@@ -126,11 +126,11 @@ impl AsyncSecureStore {
     /// # Example
     ///
     /// ```rust
-    /// use tsp_sdk::{AsyncStore, OwnedVid};
+    /// use tsp_sdk::{AsyncSecureStore, OwnedVid};
     ///
     /// #[tokio::main]
     /// async fn main() {
-    ///     let mut db = AsyncStore::new();
+    ///     let mut db = AsyncSecureStore::new();
     ///     let private_vid = OwnedVid::from_file("../examples/test/bob/piv.json").await.unwrap();
     ///     db.add_private_vid(private_vid).unwrap();
     ///     db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice").await.unwrap();
@@ -170,11 +170,11 @@ impl AsyncSecureStore {
     /// # Example
     ///
     /// ```rust
-    /// use tsp_sdk::{AsyncStore, OwnedVid};
+    /// use tsp_sdk::{AsyncSecureStore, OwnedVid};
     ///
     /// #[tokio::main]
     /// async fn main() {
-    ///     let mut db = AsyncStore::new();
+    ///     let mut db = AsyncSecureStore::new();
     ///     let private_vid = OwnedVid::from_file("../examples/test/bob/piv.json").await.unwrap();
     ///     db.add_private_vid(private_vid).unwrap();
     ///     db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice").await.unwrap();
