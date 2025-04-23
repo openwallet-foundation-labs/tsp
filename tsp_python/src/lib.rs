@@ -1,4 +1,5 @@
 use pyo3::{exceptions::PyException, prelude::*};
+use tsp_sdk::VerifiedVid;
 
 #[pymodule]
 fn tsp_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -37,7 +38,12 @@ impl Store {
     }
 
     #[pyo3(signature = (did_json, expected_did, alias=None))]
-    fn verify(&self, did_json: &str, expected_did: &str, alias: Option<String>) -> PyResult<()> {
+    fn resolve_did_web(
+        &self,
+        did_json: &str,
+        expected_did: &str,
+        alias: Option<String>,
+    ) -> PyResult<()> {
         let did_document: tsp_sdk::vid::did::web::DidDocument =
             serde_json::from_str(did_json).map_err(py_exception)?;
 
@@ -421,8 +427,16 @@ impl OwnedVid {
         OwnedVid(tsp_sdk::OwnedVid::bind(did, transport_url.parse().unwrap()))
     }
 
+    fn json(&self) -> PyResult<String> {
+        serde_json::to_string(&self.0).map_err(py_exception)
+    }
+
     fn identifier(&self) -> String {
         use tsp_sdk::VerifiedVid;
         self.0.identifier().to_string()
+    }
+
+    fn endpoint(&self) -> String {
+        self.0.endpoint().to_string()
     }
 }

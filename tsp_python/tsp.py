@@ -11,7 +11,7 @@ from tsp_python import (
 )
 
 
-class Store:
+class SecureStore:
     inner: tsp_python.Store
 
     def __init__(self):
@@ -20,12 +20,12 @@ class Store:
     def add_private_vid(self, *args, **kwargs):
         return self.inner.add_private_vid(*args, **kwargs)
 
-    def add_verified_vid(self, *args, **kwargs):
-        return self.inner.add_verified_vid(*args, **kwargs)
+    def add_verified_owned_vid(self, *args, **kwargs):
+        return self.inner.add_verified_owned_vid(*args, **kwargs)
 
-    def verify(self, did: str):
+    def resolve_did_web(self, did: str):
         if not did.startswith("did:web:"):
-            raise Exception(f"{did} is not a DID web, cannot verify")
+            raise Exception(f"{did} is not a DID web, cannot resolve")
 
         url = did.removeprefix("did:web:").replace(":", "/").replace("%25", ":")
         if "/" not in url:
@@ -33,9 +33,11 @@ class Store:
         url = "https://" + url + "/did.json"
 
         # We do the request in Python so we don't have to deal with PyO3 async stuff
-        document = requests.get(url).text
+        response = requests.get(url)
+        if not response.ok:
+            raise Exception(f"Could not get {url}")
 
-        return self.inner.verify(document, did)
+        return self.inner.resolve_did_web(response.text, did)
 
     def set_relation_for_vid(self, *args, **kwargs):
         return self.inner.set_relation_for_vid(*args, **kwargs)
@@ -45,6 +47,21 @@ class Store:
 
     def seal_message(self, *args, **kwargs):
         return self.inner.seal_message(*args, **kwargs)
+
+    def send_message(
+        self,
+        sender: str,
+        receiver: str,
+        message: bytes,
+        nonconfidential_data: bytes | None = None,
+    ) -> requests.Response:
+        url, message = self.seal_message(
+            sender, receiver, nonconfidential_data, message
+        )
+        if not url.startswith("http"):
+            raise Exception("The Python SDK currently only supports HTTP(S) transport")
+
+        return requests.post(url, data=message)
 
     def open_message(self, *args, **kwargs):
         flat_message = self.inner.open_message(*args, **kwargs)

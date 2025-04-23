@@ -6,7 +6,7 @@ def new_vid():
 
 class AliceBob(unittest.TestCase):
     def setUp(self):
-        self.store = Store()
+        self.store = SecureStore()
         self.alice = new_vid()
         self.bob = new_vid()
 
@@ -104,10 +104,10 @@ class AliceBob(unittest.TestCase):
                 self.fail(f"unexpected message type {other}")
 
     def test_routed(self):
-        a_store = Store()
-        b_store = Store()
-        c_store = Store()
-        d_store = Store()
+        a_store = SecureStore()
+        b_store = SecureStore()
+        c_store = SecureStore()
+        d_store = SecureStore()
 
         nette_a = new_vid()
         sneaky_a = new_vid()
@@ -194,8 +194,8 @@ class AliceBob(unittest.TestCase):
                 self.fail(f"unexpected message type {other}")
 
     def test_nested_automatic(self):
-        a_store = Store()
-        b_store = Store()
+        a_store = SecureStore()
+        b_store = SecureStore()
 
         a = new_vid()
         b = new_vid()
