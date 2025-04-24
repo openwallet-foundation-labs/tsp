@@ -53,6 +53,11 @@ impl Store {
         self.0.add_verified_vid(vid, alias).map_err(py_exception)
     }
 
+    fn get_vid_endpoint(&self, vid: &str) -> PyResult<String> {
+        let vid = self.0.get_verified_vid(vid).map_err(py_exception)?;
+        Ok(vid.endpoint().to_string())
+    }
+
     #[pyo3(signature = (vid, relation_vid=None))]
     fn set_relation_for_vid(&self, vid: String, relation_vid: Option<String>) -> PyResult<()> {
         self.0

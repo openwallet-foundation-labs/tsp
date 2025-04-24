@@ -38,6 +38,9 @@ class SecureStore:
 
         return self.inner.resolve_did_web(response.text, did)
 
+    def get_vid_endpoint(self, *args, **kwargs):
+        return self.inner.get_vid_endpoint(*args, **kwargs)
+
     def set_relation_for_vid(self, *args, **kwargs):
         return self.inner.set_relation_for_vid(*args, **kwargs)
 

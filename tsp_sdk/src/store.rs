@@ -334,7 +334,7 @@ impl SecureStore {
     }
 
     /// Retrieve the [VerifiedVid] identified by `vid` from the wallet if it exists.
-    pub(crate) fn get_verified_vid(&self, vid: &str) -> Result<Arc<dyn VerifiedVid>, Error> {
+    pub fn get_verified_vid(&self, vid: &str) -> Result<Arc<dyn VerifiedVid>, Error> {
         Ok(self.get_vid(vid)?.vid)
     }
 

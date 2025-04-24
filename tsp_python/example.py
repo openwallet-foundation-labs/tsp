@@ -28,8 +28,9 @@ store.add_private_vid(alice)
 
 # Resolve other party
 bob_did = "did:web:did.teaspoon.world:user:bob"
-store.resolve_did_web(bob_did)
+endpoint = store.resolve_did_web(bob_did)
+print("bob's endpoint:", endpoint)
 
+# Send a message
 response = store.send_message(alice.identifier(), bob_did, b"hi bob")
-
 print(response.status_code)
