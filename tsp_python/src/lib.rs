@@ -448,7 +448,7 @@ impl OwnedVid {
     }
 
     fn json(&self) -> PyResult<String> {
-        serde_json::to_string(&self.0).map_err(py_exception)
+        serde_json::to_string(&self.0.vid()).map_err(py_exception)
     }
 
     fn identifier(&self) -> String {
