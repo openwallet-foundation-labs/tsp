@@ -96,4 +96,4 @@ tower-http = { version = "0.6.2", features = ["cors"] }
 tsp_sdk = { path = "./tsp_sdk" }
 
 [patch.crates-io]
-askar-storage = { git = "https://github.com/pohlm01/askar.git", branch = "quick-fix-sqlx-compilation-error" }
+askar-storage = { git = "https://github.com/openwallet-foundation/askar.git" }
