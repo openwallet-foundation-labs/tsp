@@ -16,7 +16,7 @@ class AliceBob(unittest.TestCase):
     def test_open_seal(self):
         message = b"hello world"
 
-        url, sealed = self.store.seal_message(self.alice.identifier(), self.bob.identifier(), None, message)
+        url, sealed = self.store.seal_message(self.alice.identifier(), self.bob.identifier(), message)
 
         self.assertEqual(url, "tcp://127.0.0.1:1337")
 
@@ -159,7 +159,7 @@ class AliceBob(unittest.TestCase):
 
         hello_world = b"hello world";
 
-        _, sealed = a_store.seal_message(sneaky_a.identifier(), sneaky_d.identifier(), None, hello_world)
+        _, sealed = a_store.seal_message(sneaky_a.identifier(), sneaky_d.identifier(), hello_world)
         received = b_store.open_message(sealed)
 
         match received:
@@ -251,7 +251,7 @@ class AliceBob(unittest.TestCase):
 
         hello_world = b"hello world";
 
-        _url, sealed = a_store.seal_message(nested_a.identifier(), nested_b.identifier(), None, hello_world)
+        _url, sealed = a_store.seal_message(nested_a.identifier(), nested_b.identifier(), hello_world)
 
         received = b_store.open_message(sealed)
 

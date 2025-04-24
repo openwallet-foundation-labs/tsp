@@ -37,25 +37,24 @@ impl Store {
         self.0.add_verified_vid(vid.0, alias).map_err(py_exception)
     }
 
+    /// Verify did web json document, add vid to store, and return endpoint
     #[pyo3(signature = (did_json, expected_did, alias=None))]
     fn resolve_did_web(
         &self,
         did_json: &str,
         expected_did: &str,
         alias: Option<String>,
-    ) -> PyResult<()> {
+    ) -> PyResult<String> {
         let did_document: tsp_sdk::vid::did::web::DidDocument =
             serde_json::from_str(did_json).map_err(py_exception)?;
 
         let vid = tsp_sdk::vid::did::web::resolve_document(did_document, expected_did)
             .map_err(py_exception)?;
+        let endpoint = vid.endpoint().to_string();
 
-        self.0.add_verified_vid(vid, alias).map_err(py_exception)
-    }
+        self.0.add_verified_vid(vid, alias).map_err(py_exception)?;
 
-    fn get_vid_endpoint(&self, vid: &str) -> PyResult<String> {
-        let vid = self.0.get_verified_vid(vid).map_err(py_exception)?;
-        Ok(vid.endpoint().to_string())
+        Ok(endpoint)
     }
 
     #[pyo3(signature = (vid, relation_vid=None))]
@@ -72,13 +71,13 @@ impl Store {
             .map_err(py_exception)
     }
 
-    #[pyo3(signature = (sender, receiver, nonconfidential_data, message))]
+    #[pyo3(signature = (sender, receiver, message, nonconfidential_data = None))]
     fn seal_message(
         &self,
         sender: String,
         receiver: String,
-        nonconfidential_data: Option<Vec<u8>>,
         message: Vec<u8>,
+        nonconfidential_data: Option<Vec<u8>>,
     ) -> PyResult<(String, Vec<u8>)> {
         let (url, bytes) = self
             .0
@@ -221,6 +220,22 @@ impl Store {
             .map_err(py_exception)?;
 
         Ok((url.to_string(), bytes))
+    }
+
+    fn get_sender_receiver(&self, message: Vec<u8>) -> PyResult<(String, String)> {
+        let Ok((sender, Some(receiver))) = tsp_sdk::cesr::get_sender_receiver(&message) else {
+            return Err(PyException::new_err("Invalid message, receiver missing"));
+        };
+
+        let Ok(sender) = std::str::from_utf8(sender) else {
+            return Err(PyException::new_err("Invalid sender"));
+        };
+
+        let Ok(receiver) = std::str::from_utf8(receiver) else {
+            return Err(PyException::new_err("Invalid receiver"));
+        };
+
+        Ok((sender.to_string(), receiver.to_string()))
     }
 
     fn open_message(&self, mut message: Vec<u8>) -> PyResult<FlatReceivedTspMessage> {

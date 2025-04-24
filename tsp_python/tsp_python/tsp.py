@@ -22,7 +22,7 @@ class SecureStore:
     def add_verified_owned_vid(self, *args, **kwargs):
         return self.inner.add_verified_owned_vid(*args, **kwargs)
 
-    def resolve_did_web(self, did: str):
+    def resolve_did_web(self, did: str) -> str:
         if not did.startswith("did:web:"):
             raise Exception(f"{did} is not a DID web, cannot resolve")
 
@@ -58,12 +58,15 @@ class SecureStore:
         nonconfidential_data: bytes | None = None,
     ) -> requests.Response:
         url, message = self.seal_message(
-            sender, receiver, nonconfidential_data, message
+            sender, receiver, message, nonconfidential_data
         )
         if not url.startswith("http"):
             raise Exception("The Python SDK currently only supports HTTP(S) transport")
 
         return requests.post(url, data=message)
+
+    def get_sender_receiver(self, *args, **kwargs):
+        return self.inner.get_sender_receiver(*args, **kwargs)
 
     def open_message(self, *args, **kwargs):
         flat_message = self.inner.open_message(*args, **kwargs)
