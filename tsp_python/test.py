@@ -1,5 +1,5 @@
 import unittest
-from tsp import *
+from tsp_python import *
 
 def new_vid():
         return OwnedVid.new_did_peer("tcp://127.0.0.1:1337")

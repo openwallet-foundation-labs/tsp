@@ -1,4 +1,4 @@
-import tsp
+import tsp_python as tsp
 import random
 import requests
 
@@ -9,14 +9,20 @@ alice_username = "alice" + str(random.randint(0, 999999))
 print(f"Username: {alice_username}")
 
 alice = tsp.OwnedVid.bind(
-    f"did:web:did.teaspoon.world:user:{alice_username}", # my DID
-    f"https://demo.teaspoon.world/user/{alice_username}", # transport URL
+    f"did:web:did.teaspoon.world:user:{alice_username}",  # my DID
+    f"https://demo.teaspoon.world/user/{alice_username}",  # transport URL
 )
 
 # Publish DID (this is non-standard and dependents on the implementation of the DID support server)
-response = requests.post("https://did.teaspoon.world/add-vid", data = alice.json(), headers={"Content-type": "application/json"})
+response = requests.post(
+    "https://did.teaspoon.world/add-vid",
+    data=alice.json(),
+    headers={"Content-type": "application/json"},
+)
 if not response.ok:
-    raise Exception(f"Could not publish DID (status code: {response.status_code}):\n{alice.json()}");
+    raise Exception(
+        f"Could not publish DID (status code: {response.status_code}):\n{alice.json()}"
+    )
 
 store.add_private_vid(alice)
 

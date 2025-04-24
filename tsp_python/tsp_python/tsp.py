@@ -1,14 +1,13 @@
 from dataclasses import dataclass
 import requests
 
-import tsp_python
-from tsp_python import (
-    OwnedVid,
-    ReceivedTspMessageVariant,
-    FlatReceivedTspMessage,
-    CryptoType,
-    SignatureType,
-)
+from tsp_python import tsp_python
+
+OwnedVid = tsp_python.OwnedVid
+ReceivedTspMessageVariant = tsp_python.ReceivedTspMessageVariant
+FlatReceivedTspMessage = tsp_python.FlatReceivedTspMessage
+CryptoType = tsp_python.CryptoType
+SignatureType = tsp_python.SignatureType
 
 
 class SecureStore:
