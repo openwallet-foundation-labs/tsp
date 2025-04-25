@@ -1,12 +1,17 @@
-use axum::extract::{DefaultBodyLimit, Path, State};
+use axum::extract::ws::Message;
+use axum::extract::{DefaultBodyLimit, Path, State, WebSocketUpgrade};
 use axum::http::{Method, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Form, Json, Router};
 use clap::Parser;
+use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::net::SocketAddrV4;
+use std::sync::Arc;
 use tokio::signal;
+use tokio::sync::{RwLock, broadcast};
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -29,11 +34,53 @@ struct Cli {
     domain: String,
 }
 
-#[derive(Clone)]
 struct AppState {
     transport: String,
     domain: String,
+    log: RwLock<VecDeque<LogEntry>>,
+    log_tx: broadcast::Sender<String>,
 }
+
+#[derive(Clone, Serialize)]
+struct LogEntry {
+    text: String,
+    timestamp: u64,
+}
+
+impl LogEntry {
+    fn new(text: String) -> LogEntry {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        LogEntry { text, timestamp }
+    }
+}
+
+impl AppState {
+    async fn log(&self, text: String) {
+        let mut log = self.log.write().await;
+        let entry = LogEntry::new(text);
+        log.push_front(entry.clone());
+        log.truncate(MAX_LOG_LEN);
+
+        let json = serde_json::to_string(&entry).unwrap();
+        let _ = self.log_tx.send(json);
+    }
+
+    async fn announce_new_did(&self, did: &str) {
+        self.log(format!(
+            "Published DID: <a href=\"{}\" target=\"_blank\"><code>{}</code></a>",
+            tsp_sdk::vid::did::get_resolve_url(did)
+                .map(|url| url.to_string())
+                .unwrap_or(".".to_string()),
+            did
+        ))
+        .await;
+    }
+}
+
+const MAX_LOG_LEN: usize = 20;
 
 #[tokio::main]
 async fn main() {
@@ -50,10 +97,6 @@ async fn main() {
         .init();
 
     let args = Cli::parse();
-    let state = AppState {
-        transport: args.transport,
-        domain: args.domain,
-    };
 
     let cors = CorsLayer::new()
         // allow `GET` and `POST` when accessing the resource
@@ -62,8 +105,17 @@ async fn main() {
         // allow requests from any origin
         .allow_origin(Any);
 
+    let state = Arc::new(AppState {
+        transport: args.transport,
+        domain: args.domain,
+        log: RwLock::new(VecDeque::with_capacity(MAX_LOG_LEN)),
+        log_tx: broadcast::channel(100).0,
+    });
+
     // Compose the routes
     let app = Router::new()
+        .route("/", get(index))
+        .route("/logs", get(log_websocket_handler))
         .route("/create-identity", post(create_identity))
         .route("/add-vid", post(add_vid))
         .route("/user/{name}/did.json", get(get_did_doc))
@@ -101,6 +153,17 @@ async fn shutdown_signal() {
     }
 }
 
+async fn index(State(state): State<Arc<AppState>>) -> Html<String> {
+    let mut html = include_str!("../did-web.html").to_string();
+    html = html.replace("[[DOMAIN]]", &state.domain);
+
+    let log = state.log.read().await;
+    let serialized_log = serde_json::to_string(&log.iter().collect::<Vec<_>>()).unwrap();
+    html = html.replace("[[LOG_JSON]]", &serialized_log);
+
+    Html(html)
+}
+
 #[derive(Deserialize, Debug)]
 struct CreateIdentityInput {
     name: String,
@@ -108,7 +171,7 @@ struct CreateIdentityInput {
 
 /// Create a new identity (private VID)
 async fn create_identity(
-    State(state): State<AppState>,
+    State(state): State<Arc<AppState>>,
     Form(form): Form<CreateIdentityInput>,
 ) -> Response {
     if !verify_name(&form.name) {
@@ -135,12 +198,13 @@ async fn create_identity(
     }
 
     tracing::debug!("created identity {key}");
+    state.announce_new_did(key).await;
 
     Json(private_vid).into_response()
 }
 
 /// Get the DID document of an endpoint
-async fn get_did_doc(State(state): State<AppState>, Path(name): Path<String>) -> Response {
+async fn get_did_doc(State(state): State<Arc<AppState>>, Path(name): Path<String>) -> Response {
     if !verify_name(&name) {
         return (StatusCode::BAD_REQUEST, "invalid name").into_response();
     }
@@ -162,7 +226,7 @@ async fn get_did_doc(State(state): State<AppState>, Path(name): Path<String>) ->
 }
 
 /// Add did document to the local state
-async fn add_vid(Json(vid): Json<Vid>) -> Response {
+async fn add_vid(State(state): State<Arc<AppState>>, Json(vid): Json<Vid>) -> Response {
     let name = vid.identifier().split(':').next_back().unwrap_or_default();
 
     if !verify_name(name) {
@@ -182,7 +246,9 @@ async fn add_vid(Json(vid): Json<Vid>) -> Response {
         return (StatusCode::INTERNAL_SERVER_ERROR, "error writing identity").into_response();
     }
 
-    tracing::debug!("added VID {}", vid.identifier());
+    let did = vid.identifier();
+    tracing::debug!("added VID {}", did);
+    state.announce_new_did(did).await;
 
     Json(&vid).into_response()
 }
@@ -224,4 +290,22 @@ async fn write_id(id: Identity) -> Result<(), Box<dyn std::error::Error>> {
     tokio::fs::write(path, did).await?;
 
     Ok(())
+}
+
+/// Handle incoming websocket connections for users viewing the web interface
+async fn log_websocket_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let mut logs_rx = state.log_tx.subscribe();
+
+    ws.on_upgrade(|socket| {
+        let (mut ws_send, _) = socket.split();
+
+        async move {
+            while let Ok(log) = logs_rx.recv().await {
+                let _ = ws_send.send(Message::Text(log.into())).await;
+            }
+        }
+    })
 }
