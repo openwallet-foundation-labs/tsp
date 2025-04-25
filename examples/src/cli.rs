@@ -1,7 +1,6 @@
 use base64ct::{Base64, Base64Unpadded, Base64UrlUnpadded, Encoding};
 use bytes::BytesMut;
 use clap::{Parser, Subcommand};
-use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table};
 use futures::StreamExt;
 use rustls::crypto::CryptoProvider;
 use serde::{Deserialize, Serialize};
@@ -301,75 +300,46 @@ async fn run() -> Result<(), Error> {
 
     match args.command {
         Commands::Show(sub) => {
-            let mut table = Table::new();
-            table.set_content_arrangement(ContentArrangement::Dynamic);
             let mut vids = vid_wallet.export()?;
             vids.sort_by(|a, b| a.id.cmp(&b.id));
 
             match sub {
                 ShowCommands::Local => {
-                    table.set_header(
-                        vec![
-                            "VID",
-                            "Alias",
-                            "Transport",
-                            "DID doc",
-                            "public enc key",
-                            "public sign key",
-                        ]
-                        .into_iter()
-                        .map(|h| Cell::new(h).add_attribute(Attribute::Bold)),
-                    );
                     for vid in vids.into_iter().filter(|v| v.is_private()) {
                         let transport = if vid.transport.as_str() == "tsp://" {
-                            vid.parent_vid
-                                .map(|ref vid| Cell::new(vid).fg(Color::Green))
-                                .unwrap_or(Cell::new("None").fg(Color::Red))
+                            vid.parent_vid.unwrap_or("None".to_string())
                         } else {
-                            Cell::new(&vid.transport)
+                            vid.transport.as_str().to_string()
                         };
 
                         let did_parts = vid.id.split(":").collect::<Vec<_>>();
                         let did_doc = match did_parts.as_slice() {
                             ["did", "web", ..] => {
-                                Cell::new(tsp_sdk::vid::did::resolve_url(&did_parts)?)
+                                tsp_sdk::vid::did::resolve_url(&did_parts)?.to_string()
                             }
-                            _ => Cell::new("None"),
+                            _ => "None".to_string(),
                         };
+                        let alias = aliases
+                            .iter()
+                            .find_map(|(a, id)| if id == &vid.id { Some(a.clone()) } else { None })
+                            .unwrap_or("None".to_string());
 
-                        table.add_row(vec![
-                            Cell::new(&vid.id),
-                            aliases
-                                .iter()
-                                .find_map(|(a, id)| {
-                                    if id == &vid.id {
-                                        Some(Cell::new(a).fg(Color::Green))
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .unwrap_or(Cell::new("None").fg(Color::Red)),
-                            transport,
-                            did_doc,
-                            Cell::new(Base64::encode_string(vid.public_enckey.deref())),
-                            Cell::new(Base64::encode_string(vid.public_sigkey.deref())),
-                        ]);
+                        println!("{}", &vid.id);
+                        println!("\t Alias: {}", alias);
+                        println!("\t Transport: {}", transport);
+                        println!("\t DID doc: {}", did_doc);
+                        println!(
+                            "\t public enc key: {}",
+                            Base64::encode_string(vid.public_enckey.deref())
+                        );
+                        println!(
+                            "\t public sign key: {}",
+                            Base64::encode_string(vid.public_sigkey.deref())
+                        );
+                        println!();
                     }
                 }
                 ShowCommands::Relations { vid } => {
-                    table.set_header(
-                        vec![
-                            "Remote VID",
-                            "Alias",
-                            "Relation Status",
-                            "Transport",
-                            "DID doc",
-                            "public enc key",
-                            "public sign key",
-                        ]
-                        .into_iter()
-                        .map(|h| Cell::new(h).add_attribute(Attribute::Bold)),
-                    );
                     let vid = aliases.get(&vid).unwrap_or(&vid);
                     for vid in vids
                         .into_iter()
@@ -378,33 +348,33 @@ async fn run() -> Result<(), Error> {
                         let did_parts = vid.id.split(":").collect::<Vec<_>>();
                         let did_doc = match did_parts.as_slice() {
                             ["did", "web", ..] => {
-                                Cell::new(tsp_sdk::vid::did::resolve_url(&did_parts)?)
+                                tsp_sdk::vid::did::resolve_url(&did_parts)?.to_string()
                             }
-                            _ => Cell::new("None"),
+                            _ => "None".to_string(),
                         };
 
-                        table.add_row(vec![
-                            Cell::new(&vid.id),
-                            aliases
-                                .iter()
-                                .find_map(|(a, id)| {
-                                    if id == &vid.id {
-                                        Some(Cell::new(a).fg(Color::Green))
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .unwrap_or(Cell::new("None").fg(Color::Red)),
-                            Cell::new(&vid.relation_status),
-                            Cell::new(&vid.transport),
-                            did_doc,
-                            Cell::new(Base64::encode_string(vid.public_enckey.deref())),
-                            Cell::new(Base64::encode_string(vid.public_sigkey.deref())),
-                        ]);
+                        let alias = aliases
+                            .iter()
+                            .find_map(|(a, id)| if id == &vid.id { Some(a.clone()) } else { None })
+                            .unwrap_or("None".to_string());
+
+                        println!("{}", &vid.id);
+                        println!("\t Relation Status: {}", vid.relation_status);
+                        println!("\t Alias: {}", alias);
+                        println!("\t Transport: {}", vid.transport);
+                        println!("\t DID doc: {}", did_doc);
+                        println!(
+                            "\t public enc key: {}",
+                            Base64::encode_string(vid.public_enckey.deref())
+                        );
+                        println!(
+                            "\t public sign key: {}",
+                            Base64::encode_string(vid.public_sigkey.deref())
+                        );
+                        println!();
                     }
                 }
             }
-            println!("{table}");
         }
         Commands::Verify { vid, alias, sender } => {
             vid_wallet.verify_vid(&vid).await?;

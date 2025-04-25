@@ -56,25 +56,19 @@ The `show local` command will print all the local VIDs stored in the wallet,
 including their alias, transport, and parent.
 
 ```
-+-----------------------+-------+-----------------------+-----------------------+-----------------------+-----------------------+
-| VID                   | Alias | Transport             | DID doc               | public enc key        | public sign key       |
-+===============================================================================================================================+
-| did:peer:2.Vz6MurhTjq | None  | did:web:raw.githubuse | None                  | XwZQDosAabkk61UmCcLaQ | AeQsHfFqfWT/tuImrIoan |
-| X5uhQ5bJbAaoEwSDFcKDw |       | rcontent.com:openwall |                       | KrvlgM6RLX+9bsVe2TCpl | qkui0rvVezHP4gBfCA2g6 |
-| VJTvoii51JBtSPpKzX.Ez |       | et-foundation-labs:ts |                       | o=                    | g=                    |
-| 6LbvBvy92yWENk8xKYmaX |       | p:main:examples:test: |                       |                       |                       |
-| 9X9nzMtQCQ2EqgdLKv2Yk |       | b                     |                       |                       |                       |
-| cpHo7.SeyJzIjp7InVyaS |       |                       |                       |                       |                       |
-| I6InRzcDovLyJ9LCJ0Ijo |       |                       |                       |                       |                       |
-| idHNwIn0              |       |                       |                       |                       |                       |
-|-----------------------+-------+-----------------------+-----------------------+-----------------------+-----------------------|
-| did:web:raw.githubuse | b     | https://q.teaspoon.wo | https://raw.githubuse | JY/sQu1c8LJq6aTR9TlUM | EAA90CN5qEnTUXyNpPRmV |
-| rcontent.com:openwall |       | rld/transport/did:web | rcontent.com/openwall | dNDf6xEzqkZeuJH6berxF | sME2Qyxjj/KlRbP2DcXrF |
-| et-foundation-labs:ts |       | :raw.githubuserconten | et-foundation-labs/ts | k=                    | 4=                    |
-| p:main:examples:test: |       | t.com:openwallet-foun | p/main/examples/test/ |                       |                       |
-| b                     |       | dation-labs:tsp:main: | b/did.json            |                       |                       |
-|                       |       | examples:test:b       |                       |                       |                       |
-+-----------------------+-------+-----------------------+-----------------------+-----------------------+-----------------------+
+did:peer:2.Vz6MurhTjqX5uhQ5bJbAaoEwSDFcKDwVJTvoii51JBtSPpKzX.Ez6LbvBvy92yWENk8xKYmaX9X9nzMtQCQ2EqgdLKv2YkcpHo7.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0
+	 Alias: None
+	 Transport: did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:b
+	 DID doc: None
+	 public enc key: XwZQDosAabkk61UmCcLaQKrvlgM6RLX+9bsVe2TCplo=
+	 public sign key: AeQsHfFqfWT/tuImrIoanqkui0rvVezHP4gBfCA2g6g=
+
+did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:b
+	 Alias: b
+	 Transport: https://q.teaspoon.world/transport/did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:b
+	 DID doc: https://raw.githubusercontent.com/openwallet-foundation-labs/tsp/main/examples/test/b/did.json
+	 public enc key: JY/sQu1c8LJq6aTR9TlUMdNDf6xEzqkZeuJH6berxFk=
+	 public sign key: EAA90CN5qEnTUXyNpPRmVsME2Qyxjj/KlRbP2DcXrF4=
 ```
 
 Additionally, `tsp show relations <local VID or alias>`
@@ -82,14 +76,13 @@ will provide all resolved VIDs that the local VID has a relation with,
 including the alias, relation status, and transport.
 
 ```
-+--------------------+-------+-----------------+--------------------+-------------------+-------------------+-------------------+
-| Remote VID         | Alias | Relation Status | Transport          | DID doc           | public enc key    | public sign key   |
-+===============================================================================================================================+
-| did:web:q.teaspoon | q     | Bidirectional   | https://q.teaspoon | https://q.teaspoo | slqqOWKP1WhCN+X/t | djnK+ljzZsA2gX/X/ |
-| .world             |       |                 | .world/transport/d | n.world/.well-kno | uGgoUkrryA6F//f5r | IUy1Y06+j5Souo1bz |
-|                    |       |                 | id:web:q.teaspoon. | wn/did.json       | V6cqXsL3Q=        | TDZ9RoJxc=        |
-|                    |       |                 | world              |                   |                   |                   |
-+--------------------+-------+-----------------+--------------------+-------------------+-------------------+-------------------+
+did:web:q.teaspoon.world
+	 Relation Status: Bidirectional
+	 Alias: q
+	 Transport: https://q.teaspoon.world/transport/did:web:q.teaspoon.world
+	 DID doc: https://q.teaspoon.world/.well-known/did.json
+	 public enc key: slqqOWKP1WhCN+X/tuGgoUkrryA6F//f5rV6cqXsL3Q=
+	 public sign key: djnK+ljzZsA2gX/X/IUy1Y06+j5Souo1bzTDZ9RoJxc=
 ```
 
 ## Resolve a VID

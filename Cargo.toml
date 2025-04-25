@@ -93,9 +93,6 @@ clap = { version = "4.5", features = ["derive"] }
 axum = { version = "0.8.1", features = ["ws", "macros"] }
 tower-http = { version = "0.6.2", features = ["cors"]}
 
-# SDK
-comfy-table = "7.1.4"
-
 tsp_sdk = { path = "./tsp_sdk" }
 
 [patch.crates-io]

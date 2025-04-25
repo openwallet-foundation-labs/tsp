@@ -48,4 +48,3 @@ bytes = { workspace = true }
 url = { workspace = true }
 rustls = { workspace = true }
 tower-http = { workspace = true }
-comfy-table = {workspace = true }
