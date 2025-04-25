@@ -308,11 +308,27 @@ async fn run() -> Result<(), Error> {
             match sub {
                 ShowCommands::Local => {
                     table.set_header(
-                        vec!["VID", "Alias", "Transport", "Parent"]
+                        vec!["VID", "Alias", "Transport", "DID doc"]
                             .into_iter()
                             .map(|h| Cell::new(h).add_attribute(Attribute::Bold)),
                     );
                     for vid in vids.into_iter().filter(|v| v.is_private()) {
+                        let transport = if vid.transport.as_str() == "tsp://" {
+                            vid.parent_vid
+                                .map(|ref vid| Cell::new(vid).fg(Color::Green))
+                                .unwrap_or(Cell::new("None").fg(Color::Red))
+                        } else {
+                            Cell::new(&vid.transport)
+                        };
+
+                        let did_parts = vid.id.split(":").collect::<Vec<_>>();
+                        let did_doc = match did_parts.as_slice() {
+                            ["did", "web", ..] => {
+                                Cell::new(tsp_sdk::vid::did::resolve_url(&did_parts)?)
+                            }
+                            _ => Cell::new("None"),
+                        };
+
                         table.add_row(vec![
                             Cell::new(&vid.id),
                             aliases
@@ -325,24 +341,36 @@ async fn run() -> Result<(), Error> {
                                     }
                                 })
                                 .unwrap_or(Cell::new("None").fg(Color::Red)),
-                            Cell::new(&vid.transport),
-                            vid.parent_vid
-                                .map(|ref vid| Cell::new(vid).fg(Color::Green))
-                                .unwrap_or(Cell::new("None").fg(Color::Red)),
+                            transport,
+                            did_doc,
                         ]);
                     }
                 }
                 ShowCommands::Relations { vid } => {
                     table.set_header(
-                        vec!["Remote VID", "Alias", "Relation Status", "Transport"]
-                            .into_iter()
-                            .map(|h| Cell::new(h).add_attribute(Attribute::Bold)),
+                        vec![
+                            "Remote VID",
+                            "Alias",
+                            "Relation Status",
+                            "Transport",
+                            "DID doc",
+                        ]
+                        .into_iter()
+                        .map(|h| Cell::new(h).add_attribute(Attribute::Bold)),
                     );
                     let vid = aliases.get(&vid).unwrap_or(&vid);
                     for vid in vids
                         .into_iter()
                         .filter(|v| v.relation_vid.as_deref() == Some(vid))
                     {
+                        let did_parts = vid.id.split(":").collect::<Vec<_>>();
+                        let did_doc = match did_parts.as_slice() {
+                            ["did", "web", ..] => {
+                                Cell::new(tsp_sdk::vid::did::resolve_url(&did_parts)?)
+                            }
+                            _ => Cell::new("None"),
+                        };
+
                         table.add_row(vec![
                             Cell::new(&vid.id),
                             aliases
@@ -357,6 +385,7 @@ async fn run() -> Result<(), Error> {
                                 .unwrap_or(Cell::new("None").fg(Color::Red)),
                             Cell::new(&vid.relation_status),
                             Cell::new(&vid.transport),
+                            did_doc,
                         ]);
                     }
                 }

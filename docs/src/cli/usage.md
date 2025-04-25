@@ -56,11 +56,20 @@ The `show local` command will print all the local VIDs stored in the wallet,
 including their alias, transport, and parent.
 
 ```
-+--------------------------------------+-------+-----------------------------------------------------------------------+--------+
-| VID                                  | Alias | Transport                                                             | Parent |
-+===============================================================================================================================+
-| did:web:did.teaspoon.world:user:asdf | asdf  | https://demo.teaspoon.world/user/did:web:did.teaspoon.world:user:asdf | None   |
-+--------------------------------------+-------+-----------------------------------------------------------------------+--------+
++-------------------------------------+-------+-------------------------------------+-------------------------------------+
+| VID                                 | Alias | Transport                           | DID doc                             |
++=========================================================================================================================+
+| did:peer:2.Vz6MurhTjqX5uhQ5bJbAaoEw | None  | did:web:raw.githubusercontent.com:o | None                                |
+| SDFcKDwVJTvoii51JBtSPpKzX.Ez6LbvBvy |       | penwallet-foundation-labs:tsp:main: |                                     |
+| 92yWENk8xKYmaX9X9nzMtQCQ2EqgdLKv2Yk |       | examples:test:b                     |                                     |
+| cpHo7.SeyJzIjp7InVyaSI6InRzcDovLyJ9 |       |                                     |                                     |
+| LCJ0IjoidHNwIn0                     |       |                                     |                                     |
+|-------------------------------------+-------+-------------------------------------+-------------------------------------|
+| did:web:raw.githubusercontent.com:o | b     | https://q.teaspoon.world/transport/ | https://raw.githubusercontent.com/o |
+| penwallet-foundation-labs:tsp:main: |       | did:web:raw.githubusercontent.com:o | penwallet-foundation-labs/tsp/main/ |
+| examples:test:b                     |       | penwallet-foundation-labs:tsp:main: | examples/test/b/did.json            |
+|                                     |       | examples:test:b                     |                                     |
++-------------------------------------+-------+-------------------------------------+-------------------------------------+
 ```
 
 Additionally, `tsp show relations <local VID or alias>`
@@ -68,11 +77,12 @@ will provide all resolved VIDs that the local VID has a relation with,
 including the alias, relation status, and transport.
 
 ```
-+--------------------------+-------+-----------------+-------------------------------------------------------------+
-| Remote VID               | Alias | Relation Status | Transport                                                   |
-+==================================================================================================================+
-| did:web:q.teaspoon.world | q     | Bidirectional   | https://q.teaspoon.world/transport/did:web:q.teaspoon.world |
-+--------------------------+-------+-----------------+-------------------------------------------------------------+
++--------------------------+-------+-----------------+----------------------------------+---------------------------------+
+| Remote VID               | Alias | Relation Status | Transport                        | DID doc                         |
++=========================================================================================================================+
+| did:web:q.teaspoon.world | q     | Bidirectional   | https://q.teaspoon.world/transpo | https://q.teaspoon.world/.well- |
+|                          |       |                 | rt/did:web:q.teaspoon.world      | known/did.json                  |
++--------------------------+-------+-----------------+----------------------------------+---------------------------------+
 ```
 
 ## Resolve a VID
