@@ -33,8 +33,7 @@ tsp create example --alias example
 
 In subsequent commands we can type `example` instead of `did:web:did.teaspoon.world:user:example`.
 
-Every `tsp` subcommand also supports the `--verbose` or `-v` flag for a more
-verbose output:
+Every `tsp` subcommand also supports the `--verbose` flag for a more verbose output:
 
 ```sh
 tsp --verbose create example --alias example
