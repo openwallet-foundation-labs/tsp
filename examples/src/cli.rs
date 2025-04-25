@@ -1,10 +1,11 @@
-use base64ct::{Base64Unpadded, Base64UrlUnpadded, Encoding};
+use base64ct::{Base64, Base64Unpadded, Base64UrlUnpadded, Encoding};
 use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table};
 use futures::StreamExt;
 use rustls::crypto::CryptoProvider;
 use serde::{Deserialize, Serialize};
+use std::ops::Deref;
 use std::{collections::HashMap, path::PathBuf};
 use tokio::io::AsyncReadExt;
 use tracing::{debug, error, info, trace};
@@ -308,9 +309,16 @@ async fn run() -> Result<(), Error> {
             match sub {
                 ShowCommands::Local => {
                     table.set_header(
-                        vec!["VID", "Alias", "Transport", "DID doc"]
-                            .into_iter()
-                            .map(|h| Cell::new(h).add_attribute(Attribute::Bold)),
+                        vec![
+                            "VID",
+                            "Alias",
+                            "Transport",
+                            "DID doc",
+                            "public enc key",
+                            "public sign key",
+                        ]
+                        .into_iter()
+                        .map(|h| Cell::new(h).add_attribute(Attribute::Bold)),
                     );
                     for vid in vids.into_iter().filter(|v| v.is_private()) {
                         let transport = if vid.transport.as_str() == "tsp://" {
@@ -343,6 +351,8 @@ async fn run() -> Result<(), Error> {
                                 .unwrap_or(Cell::new("None").fg(Color::Red)),
                             transport,
                             did_doc,
+                            Cell::new(Base64::encode_string(vid.public_enckey.deref())),
+                            Cell::new(Base64::encode_string(vid.public_sigkey.deref())),
                         ]);
                     }
                 }
@@ -354,6 +364,8 @@ async fn run() -> Result<(), Error> {
                             "Relation Status",
                             "Transport",
                             "DID doc",
+                            "public enc key",
+                            "public sign key",
                         ]
                         .into_iter()
                         .map(|h| Cell::new(h).add_attribute(Attribute::Bold)),
@@ -386,6 +398,8 @@ async fn run() -> Result<(), Error> {
                             Cell::new(&vid.relation_status),
                             Cell::new(&vid.transport),
                             did_doc,
+                            Cell::new(Base64::encode_string(vid.public_enckey.deref())),
+                            Cell::new(Base64::encode_string(vid.public_sigkey.deref())),
                         ]);
                     }
                 }

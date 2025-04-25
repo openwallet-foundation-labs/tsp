@@ -56,20 +56,25 @@ The `show local` command will print all the local VIDs stored in the wallet,
 including their alias, transport, and parent.
 
 ```
-+-------------------------------------+-------+-------------------------------------+-------------------------------------+
-| VID                                 | Alias | Transport                           | DID doc                             |
-+=========================================================================================================================+
-| did:peer:2.Vz6MurhTjqX5uhQ5bJbAaoEw | None  | did:web:raw.githubusercontent.com:o | None                                |
-| SDFcKDwVJTvoii51JBtSPpKzX.Ez6LbvBvy |       | penwallet-foundation-labs:tsp:main: |                                     |
-| 92yWENk8xKYmaX9X9nzMtQCQ2EqgdLKv2Yk |       | examples:test:b                     |                                     |
-| cpHo7.SeyJzIjp7InVyaSI6InRzcDovLyJ9 |       |                                     |                                     |
-| LCJ0IjoidHNwIn0                     |       |                                     |                                     |
-|-------------------------------------+-------+-------------------------------------+-------------------------------------|
-| did:web:raw.githubusercontent.com:o | b     | https://q.teaspoon.world/transport/ | https://raw.githubusercontent.com/o |
-| penwallet-foundation-labs:tsp:main: |       | did:web:raw.githubusercontent.com:o | penwallet-foundation-labs/tsp/main/ |
-| examples:test:b                     |       | penwallet-foundation-labs:tsp:main: | examples/test/b/did.json            |
-|                                     |       | examples:test:b                     |                                     |
-+-------------------------------------+-------+-------------------------------------+-------------------------------------+
++-----------------------+-------+-----------------------+-----------------------+-----------------------+-----------------------+
+| VID                   | Alias | Transport             | DID doc               | public enc key        | public sign key       |
++===============================================================================================================================+
+| did:peer:2.Vz6MurhTjq | None  | did:web:raw.githubuse | None                  | XwZQDosAabkk61UmCcLaQ | AeQsHfFqfWT/tuImrIoan |
+| X5uhQ5bJbAaoEwSDFcKDw |       | rcontent.com:openwall |                       | KrvlgM6RLX+9bsVe2TCpl | qkui0rvVezHP4gBfCA2g6 |
+| VJTvoii51JBtSPpKzX.Ez |       | et-foundation-labs:ts |                       | o=                    | g=                    |
+| 6LbvBvy92yWENk8xKYmaX |       | p:main:examples:test: |                       |                       |                       |
+| 9X9nzMtQCQ2EqgdLKv2Yk |       | b                     |                       |                       |                       |
+| cpHo7.SeyJzIjp7InVyaS |       |                       |                       |                       |                       |
+| I6InRzcDovLyJ9LCJ0Ijo |       |                       |                       |                       |                       |
+| idHNwIn0              |       |                       |                       |                       |                       |
+|-----------------------+-------+-----------------------+-----------------------+-----------------------+-----------------------|
+| did:web:raw.githubuse | b     | https://q.teaspoon.wo | https://raw.githubuse | JY/sQu1c8LJq6aTR9TlUM | EAA90CN5qEnTUXyNpPRmV |
+| rcontent.com:openwall |       | rld/transport/did:web | rcontent.com/openwall | dNDf6xEzqkZeuJH6berxF | sME2Qyxjj/KlRbP2DcXrF |
+| et-foundation-labs:ts |       | :raw.githubuserconten | et-foundation-labs/ts | k=                    | 4=                    |
+| p:main:examples:test: |       | t.com:openwallet-foun | p/main/examples/test/ |                       |                       |
+| b                     |       | dation-labs:tsp:main: | b/did.json            |                       |                       |
+|                       |       | examples:test:b       |                       |                       |                       |
++-----------------------+-------+-----------------------+-----------------------+-----------------------+-----------------------+
 ```
 
 Additionally, `tsp show relations <local VID or alias>`
@@ -77,12 +82,14 @@ will provide all resolved VIDs that the local VID has a relation with,
 including the alias, relation status, and transport.
 
 ```
-+--------------------------+-------+-----------------+----------------------------------+---------------------------------+
-| Remote VID               | Alias | Relation Status | Transport                        | DID doc                         |
-+=========================================================================================================================+
-| did:web:q.teaspoon.world | q     | Bidirectional   | https://q.teaspoon.world/transpo | https://q.teaspoon.world/.well- |
-|                          |       |                 | rt/did:web:q.teaspoon.world      | known/did.json                  |
-+--------------------------+-------+-----------------+----------------------------------+---------------------------------+
++--------------------+-------+-----------------+--------------------+-------------------+-------------------+-------------------+
+| Remote VID         | Alias | Relation Status | Transport          | DID doc           | public enc key    | public sign key   |
++===============================================================================================================================+
+| did:web:q.teaspoon | q     | Bidirectional   | https://q.teaspoon | https://q.teaspoo | slqqOWKP1WhCN+X/t | djnK+ljzZsA2gX/X/ |
+| .world             |       |                 | .world/transport/d | n.world/.well-kno | uGgoUkrryA6F//f5r | IUy1Y06+j5Souo1bz |
+|                    |       |                 | id:web:q.teaspoon. | wn/did.json       | V6cqXsL3Q=        | TDZ9RoJxc=        |
+|                    |       |                 | world              |                   |                   |                   |
++--------------------+-------+-----------------+--------------------+-------------------+-------------------+-------------------+
 ```
 
 ## Resolve a VID
