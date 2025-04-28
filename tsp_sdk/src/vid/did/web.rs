@@ -107,6 +107,11 @@ pub async fn resolve(id: &str, parts: Vec<&str>) -> Result<Vid, VidError> {
     }
 }
 
+pub fn get_resolve_url(did: &str) -> Result<Url, VidError> {
+    let parts = did.split(":").collect::<Vec<_>>();
+    resolve_url(&parts)
+}
+
 pub fn resolve_url(parts: &[&str]) -> Result<Url, VidError> {
     match parts {
         ["did", "web", domain] => format!(

@@ -15,7 +15,7 @@ use tsp_sdk::{
 };
 
 #[derive(Debug, Parser)]
-#[command(name = "tsp")]
+#[command(name = "tsp", version)]
 #[command(about = "Send and receive TSP messages", long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -37,7 +37,7 @@ struct Cli {
     server: String,
     #[arg(long, default_value = "did.teaspoon.world", help = "DID server domain")]
     did_server: String,
-    #[arg(short, long)]
+    #[arg(long)]
     verbose: bool,
     #[arg(short, long, help = "Always answer yes to any prompts")]
     yes: bool,
@@ -332,20 +332,32 @@ async fn run() -> Result<(), Error> {
                 client = client.add_root_certificate(cert);
             }
 
-            let _: Vid = client
+            let _: Vid = match client
                 .build()
                 .unwrap()
                 .post(format!("https://{did_server}/add-vid"))
-                .json(&private_vid)
+                .json(&private_vid.vid())
                 .send()
                 .await
                 .inspect(|r| debug!("DID server responded with status code {}", r.status()))
                 .expect("Could not publish VID on server")
-                .json()
-                .await
-                .expect("Not a JSON response");
+                .error_for_status()
+            {
+                Ok(response) => response.json().await.expect("Could not decode VID"),
+                Err(e) => {
+                    error!(
+                        "{e}\nAn error occurred while publishing the DID. Maybe this DID exists already?"
+                    );
+                    return Ok(());
+                }
+            };
 
-            trace!("published DID document for {did}");
+            info!(
+                "published DID document at {}",
+                tsp_sdk::vid::did::get_resolve_url(&did)
+                    .unwrap()
+                    .to_string()
+            );
 
             vid_wallet.add_private_vid(private_vid.clone())?;
             write_wallet(&vault, &vid_wallet, aliases).await?;
