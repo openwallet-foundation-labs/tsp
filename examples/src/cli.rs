@@ -15,7 +15,7 @@ use tsp_sdk::{
 };
 
 #[derive(Debug, Parser)]
-#[command(name = "tsp")]
+#[command(name = "tsp", version)]
 #[command(about = "Send and receive TSP messages", long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -37,7 +37,7 @@ struct Cli {
     server: String,
     #[arg(long, default_value = "did.teaspoon.world", help = "DID server domain")]
     did_server: String,
-    #[arg(short, long)]
+    #[arg(long)]
     verbose: bool,
     #[arg(short, long, help = "Always answer yes to any prompts")]
     yes: bool,

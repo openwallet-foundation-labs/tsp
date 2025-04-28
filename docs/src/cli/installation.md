@@ -60,7 +60,8 @@ Options:
       --password <PASSWORD>      Password used to encrypt the wallet [default: unsecure]
   -s, --server <SERVER>          Test server domain [default: demo.teaspoon.world]
       --did-server <DID_SERVER>  DID server domain [default: did.teaspoon.world]
-  -v, --verbose                  
+      --verbose                  
   -y, --yes                      Always answer yes to any prompts
   -h, --help                     Print help
+  -V, --version                  Print version
 ```
