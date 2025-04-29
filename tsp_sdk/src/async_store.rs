@@ -2,7 +2,7 @@ use crate::{
     ExportVid, OwnedVid, PrivateVid,
     definitions::{Digest, ReceivedTspMessage, TSPStream, VerifiedVid},
     error::Error,
-    store::SecureStore,
+    store::{Aliases, SecureStore},
 };
 use bytes::BytesMut;
 use futures::StreamExt;
@@ -24,7 +24,7 @@ use url::Url;
 ///     let mut db = AsyncSecureStore::new();
 ///     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json").await.unwrap();
 ///     db.add_private_vid(alice_vid).unwrap();
-///     db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob").await.unwrap();
+///     db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob", None).await.unwrap();
 ///
 ///     // send a message
 ///     let result = db.send(
@@ -47,7 +47,7 @@ impl AsyncSecureStore {
     }
 
     /// Export the wallet to serializable default types
-    pub fn export(&self) -> Result<Vec<ExportVid>, Error> {
+    pub fn export(&self) -> Result<(Vec<ExportVid>, Aliases), Error> {
         self.inner.export()
     }
 
@@ -57,8 +57,8 @@ impl AsyncSecureStore {
     }
 
     /// Import the wallet from serializable default types
-    pub fn import(&self, vids: Vec<ExportVid>) -> Result<(), Error> {
-        self.inner.import(vids)
+    pub fn import(&self, vids: Vec<ExportVid>, aliases: Aliases) -> Result<(), Error> {
+        self.inner.import(vids, aliases)
     }
 
     /// Adds a relation to an already existing VID, making it a nested VID
@@ -95,8 +95,12 @@ impl AsyncSecureStore {
     }
 
     /// Add the already resolved `verified_vid` to the wallet as a relationship
-    pub fn add_verified_vid(&self, verified_vid: impl VerifiedVid + 'static) -> Result<(), Error> {
-        self.inner.add_verified_vid(verified_vid)
+    pub fn add_verified_vid(
+        &self,
+        verified_vid: impl VerifiedVid + 'static,
+        alias: Option<String>,
+    ) -> Result<(), Error> {
+        self.inner.add_verified_vid(verified_vid, alias)
     }
 
     /// Check whether the [PrivateVid] identified by `vid` exists in the wallet
@@ -105,12 +109,22 @@ impl AsyncSecureStore {
     }
 
     /// Resolve and verify public key material for a VID identified by `vid` and add it to the wallet as a relationship
-    pub async fn verify_vid(&mut self, vid: &str) -> Result<(), Error> {
+    pub async fn verify_vid(&mut self, vid: &str, alias: Option<String>) -> Result<(), Error> {
         let verified_vid = crate::vid::verify_vid(vid).await?;
 
-        self.inner.add_verified_vid(verified_vid)?;
+        self.inner.add_verified_vid(verified_vid, alias)?;
 
         Ok(())
+    }
+
+    /// Resolve alias to its corresponding DID
+    pub fn resolve_alias(&self, alias: &str) -> Result<String, Error> {
+        self.inner.resolve_alias(alias)
+    }
+
+    /// Set alias for a DID
+    pub fn set_alias(&self, alias: String, did: String) -> Result<(), Error> {
+        self.inner.set_alias(alias, did)
     }
 
     /// Send a TSP message given earlier resolved VIDs
@@ -133,7 +147,7 @@ impl AsyncSecureStore {
     ///     let mut db = AsyncSecureStore::new();
     ///     let private_vid = OwnedVid::from_file("../examples/test/bob/piv.json").await.unwrap();
     ///     db.add_private_vid(private_vid).unwrap();
-    ///     db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice").await.unwrap();
+    ///     db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice", None).await.unwrap();
     ///
     ///     let sender = "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob";
     ///     let receiver = "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice";
@@ -177,7 +191,7 @@ impl AsyncSecureStore {
     ///     let mut db = AsyncSecureStore::new();
     ///     let private_vid = OwnedVid::from_file("../examples/test/bob/piv.json").await.unwrap();
     ///     db.add_private_vid(private_vid).unwrap();
-    ///     db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice").await.unwrap();
+    ///     db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice", None).await.unwrap();
     ///
     ///     let sender = "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob";
     ///     let receiver = "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice";
@@ -432,7 +446,7 @@ impl AsyncSecureStore {
         vid: &str,
         mut payload: BytesMut,
     ) -> Result<ReceivedTspMessage, Error> {
-        self.verify_vid(vid).await?;
+        self.verify_vid(vid, None).await?;
 
         Ok(self.inner.open_message(&mut payload)?.into_owned())
     }

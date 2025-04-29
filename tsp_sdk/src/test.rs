@@ -11,7 +11,7 @@ async fn test_direct_mode() {
         .unwrap();
     bob_db.add_private_vid(bob_vid.clone()).unwrap();
     bob_db
-        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice", None)
         .await
         .unwrap();
 
@@ -27,7 +27,7 @@ async fn test_direct_mode() {
         .unwrap();
     alice_db.add_private_vid(alice_vid.clone()).unwrap();
     alice_db
-        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob", None)
         .await
         .unwrap();
 
@@ -71,7 +71,7 @@ async fn test_large_messages() {
         .unwrap();
     bob_db.add_private_vid(bob_vid.clone()).unwrap();
     bob_db
-        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice", None)
         .await
         .unwrap();
 
@@ -87,7 +87,7 @@ async fn test_large_messages() {
         .unwrap();
     alice_db.add_private_vid(alice_vid.clone()).unwrap();
     alice_db
-        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob", None)
         .await
         .unwrap();
 
@@ -134,7 +134,7 @@ async fn test_anycast() {
         .unwrap();
     bob_db.add_private_vid(bob_vid.clone()).unwrap();
     bob_db
-        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice", None)
         .await
         .unwrap();
 
@@ -150,7 +150,7 @@ async fn test_anycast() {
         .unwrap();
     alice_db.add_private_vid(alice_vid.clone()).unwrap();
     alice_db
-        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob", None)
         .await
         .unwrap();
 
@@ -193,7 +193,7 @@ async fn test_nested_mode() {
         .unwrap();
     bob_db.add_private_vid(bob_vid.clone()).unwrap();
     bob_db
-        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice", None)
         .await
         .unwrap();
 
@@ -204,7 +204,7 @@ async fn test_nested_mode() {
         .unwrap();
     alice_db.add_private_vid(alice_vid.clone()).unwrap();
     alice_db
-        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob", None)
         .await
         .unwrap();
 
@@ -224,7 +224,7 @@ async fn test_nested_mode() {
         .set_parent_for_vid(nested_alice_vid.identifier(), Some(alice_vid.identifier()))
         .unwrap();
     alice_db
-        .verify_vid(nested_bob_vid.identifier())
+        .verify_vid(nested_bob_vid.identifier(), None)
         .await
         .unwrap();
     alice_db
@@ -238,7 +238,7 @@ async fn test_nested_mode() {
         .unwrap();
 
     bob_db
-        .verify_vid(nested_alice_vid.identifier())
+        .verify_vid(nested_alice_vid.identifier(), None)
         .await
         .unwrap();
     bob_db
@@ -292,7 +292,7 @@ async fn test_routed_mode() {
 
     // inform bob about alice
     bob_db
-        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice", None)
         .await
         .unwrap();
 
@@ -304,7 +304,7 @@ async fn test_routed_mode() {
 
     // inform alice about the nodes
     alice_db
-        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob", None)
         .await
         .unwrap();
     alice_db
@@ -493,7 +493,7 @@ async fn attack_failures() {
     bob_db.add_private_vid(bob_vid.clone()).unwrap();
 
     bob_db
-        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice", None)
         .await
         .unwrap();
 
@@ -554,7 +554,7 @@ async fn test_relation_forming() {
         .unwrap();
     bob_db.add_private_vid(bob_vid.clone()).unwrap();
     bob_db
-        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice", None)
         .await
         .unwrap();
 
@@ -570,7 +570,7 @@ async fn test_relation_forming() {
         .unwrap();
     alice_db.add_private_vid(alice_vid.clone()).unwrap();
     alice_db
-        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob")
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob", None)
         .await
         .unwrap();
 

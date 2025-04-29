@@ -31,8 +31,9 @@ impl Store {
         self.0.add_private_vid(vid.0).map_err(py_exception)
     }
 
-    fn add_verified_vid(&self, vid: OwnedVid) -> PyResult<()> {
-        self.0.add_verified_vid(vid.0).map_err(py_exception)
+    #[pyo3(signature = (vid, alias=None))]
+    fn add_verified_vid(&self, vid: OwnedVid, alias: Option<String>) -> PyResult<()> {
+        self.0.add_verified_vid(vid.0, alias).map_err(py_exception)
     }
 
     #[pyo3(signature = (vid, relation_vid=None))]

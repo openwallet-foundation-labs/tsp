@@ -3,15 +3,14 @@ use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use futures::StreamExt;
 use rustls::crypto::CryptoProvider;
-use serde::{Deserialize, Serialize};
 use std::ops::Deref;
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
 use tokio::io::AsyncReadExt;
 use tracing::{debug, error, info, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{
-    AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
-    SecureStorage, VerifiedVid, Vid,
+    AskarSecureStorage, AsyncSecureStore, Error, OwnedVid, ReceivedTspMessage, SecureStorage,
+    VerifiedVid, Vid,
     cesr::{self, Part},
 };
 
@@ -174,21 +173,8 @@ enum ShowCommands {
     Relations { vid: String },
 }
 
-type Aliases = HashMap<String, String>;
-
-#[derive(Serialize, Deserialize)]
-struct WalletContents {
-    data: Vec<ExportVid>,
-    aliases: Aliases,
-}
-
-async fn write_wallet(
-    vault: &AskarSecureStorage,
-    db: &AsyncSecureStore,
-    aliases: Aliases,
-) -> Result<(), Error> {
-    let aliases = serde_json::to_value(&aliases).ok();
-    vault.persist(db.export()?, aliases).await?;
+async fn write_wallet(vault: &AskarSecureStorage, db: &AsyncSecureStore) -> Result<(), Error> {
+    vault.persist(db.export()?).await?;
 
     trace!("persisted wallet");
 
@@ -198,23 +184,18 @@ async fn write_wallet(
 async fn read_wallet(
     wallet_name: &str,
     password: &str,
-) -> Result<(AskarSecureStorage, AsyncSecureStore, Aliases), Error> {
+) -> Result<(AskarSecureStorage, AsyncSecureStore), Error> {
     let url = format!("sqlite://{wallet_name}.sqlite");
     match AskarSecureStorage::open(&url, password.as_bytes()).await {
         Ok(vault) => {
             let (vids, aliases) = vault.read().await?;
 
-            let aliases: Aliases = match aliases {
-                Some(aliases) => serde_json::from_value(aliases).expect("Invalid aliases"),
-                None => Aliases::new(),
-            };
-
             let db = AsyncSecureStore::new();
-            db.import(vids)?;
+            db.import(vids, aliases)?;
 
             trace!("opened wallet {wallet_name}");
 
-            Ok((vault, db, aliases))
+            Ok((vault, db))
         }
         Err(_) => {
             let vault = AskarSecureStorage::new(&url, password.as_bytes()).await?;
@@ -222,7 +203,7 @@ async fn read_wallet(
             let db = AsyncSecureStore::new();
             info!("created new wallet");
 
-            Ok((vault, db, Aliases::new()))
+            Ok((vault, db))
         }
     }
 }
@@ -294,13 +275,13 @@ async fn run() -> Result<(), Error> {
     CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider())
         .expect("Failed to install crypto provider");
 
-    let (vault, mut vid_wallet, mut aliases) = read_wallet(&args.wallet, &args.password).await?;
+    let (vault, mut vid_wallet) = read_wallet(&args.wallet, &args.password).await?;
     let server: String = args.server;
     let did_server = args.did_server;
 
     match args.command {
         Commands::Show(sub) => {
-            let mut vids = vid_wallet.export()?;
+            let (mut vids, aliases) = vid_wallet.export()?;
             vids.sort_by(|a, b| a.id.cmp(&b.id));
 
             match sub {
@@ -373,21 +354,16 @@ async fn run() -> Result<(), Error> {
             }
         }
         Commands::Verify { vid, alias, sender } => {
-            vid_wallet.verify_vid(&vid).await?;
-            let sender = sender.map(|s| aliases.get(&s).cloned().unwrap_or(s));
-
-            if let Some(alias) = alias {
-                aliases.insert(alias.clone(), vid.clone());
-            }
+            vid_wallet.verify_vid(&vid, alias).await?;
 
             vid_wallet.set_relation_for_vid(&vid, sender.as_deref())?;
 
-            write_wallet(&vault, &vid_wallet, aliases).await?;
+            write_wallet(&vault, &vid_wallet).await?;
 
             info!("{vid} is verified and added to the wallet {}", &args.wallet);
         }
         Commands::Print { alias } => {
-            let vid = aliases.get(&alias).unwrap_or(&alias);
+            let vid = vid_wallet.resolve_alias(&alias)?;
 
             print!("{vid}");
         }
@@ -395,7 +371,7 @@ async fn run() -> Result<(), Error> {
             let did = format!("did:web:{}:user:{username}", did_server.replace(":", "%3A"));
 
             if let Some(alias) = alias {
-                aliases.insert(alias.clone(), did.clone());
+                vid_wallet.set_alias(alias.clone(), did.clone())?;
                 info!("added alias {alias} -> {did}");
             }
 
@@ -447,7 +423,7 @@ async fn run() -> Result<(), Error> {
             );
 
             vid_wallet.add_private_vid(private_vid.clone())?;
-            write_wallet(&vault, &vid_wallet, aliases).await?;
+            write_wallet(&vault, &vid_wallet).await?;
         }
         Commands::CreatePeer { alias, tcp } => {
             let transport = if let Some(address) = tcp {
@@ -457,10 +433,10 @@ async fn run() -> Result<(), Error> {
             };
             let private_vid = OwnedVid::new_did_peer(transport);
 
-            aliases.insert(alias.clone(), private_vid.identifier().to_string());
+            vid_wallet.set_alias(alias, private_vid.identifier().to_string())?;
 
             vid_wallet.add_private_vid(private_vid.clone())?;
-            write_wallet(&vault, &vid_wallet, aliases).await?;
+            write_wallet(&vault, &vid_wallet).await?;
 
             info!("created peer identity {}", private_vid.identifier());
         }
@@ -469,49 +445,41 @@ async fn run() -> Result<(), Error> {
             vid_wallet.add_private_vid(private_vid.clone())?;
 
             if let Some(alias) = alias {
-                aliases.insert(alias.clone(), private_vid.identifier().to_string());
+                vid_wallet.set_alias(alias, private_vid.identifier().to_string())?;
             }
 
-            write_wallet(&vault, &vid_wallet, aliases).await?;
+            write_wallet(&vault, &vid_wallet).await?;
 
             info!("created identity from file {}", private_vid.identifier());
         }
         Commands::SetParent { vid, other_vid } => {
-            let vid = aliases.get(&vid).unwrap_or(&vid);
-            let other_vid = aliases.get(&other_vid).unwrap_or(&other_vid);
-
-            vid_wallet.set_parent_for_vid(vid, Some(other_vid))?;
+            vid_wallet.set_parent_for_vid(&vid, Some(&other_vid))?;
 
             info!("{vid} is now a child of {other_vid}");
 
-            write_wallet(&vault, &vid_wallet, aliases).await?;
+            write_wallet(&vault, &vid_wallet).await?;
         }
         Commands::SetAlias { vid, alias } => {
-            aliases.insert(alias.clone(), vid.clone());
+            vid_wallet.set_alias(alias.clone(), vid.clone())?;
             info!("added alias {alias} -> {vid}");
-            write_wallet(&vault, &vid_wallet, aliases).await?;
+            write_wallet(&vault, &vid_wallet).await?;
         }
         Commands::SetRoute { vid, route } => {
-            let vid = aliases.get(&vid).cloned().unwrap_or(vid);
-
             let route: Vec<_> = route
                 .split(',')
-                .map(|s| aliases.get(s).cloned().unwrap_or(s.to_string()))
+                .map(|s| vid_wallet.resolve_alias(s).unwrap())
                 .collect();
 
             let route_ref = route.iter().map(|s| s.as_str()).collect::<Vec<_>>();
 
             vid_wallet.set_route_for_vid(&vid, &route_ref)?;
-            write_wallet(&vault, &vid_wallet, aliases).await?;
+            write_wallet(&vault, &vid_wallet).await?;
 
             info!("{vid} has route {route:?}");
         }
         Commands::SetRelation { vid, other_vid } => {
-            let vid = aliases.get(&vid).cloned().unwrap_or(vid);
-            let other_vid = aliases.get(&other_vid).cloned().unwrap_or(other_vid);
-
             vid_wallet.set_relation_for_vid(&vid, Some(&other_vid))?;
-            write_wallet(&vault, &vid_wallet, aliases).await?;
+            write_wallet(&vault, &vid_wallet).await?;
 
             info!("{vid} has relation to {other_vid}");
         }
@@ -520,9 +488,6 @@ async fn run() -> Result<(), Error> {
             receiver_vid,
             non_confidential_data,
         } => {
-            let sender_vid = aliases.get(&sender_vid).unwrap_or(&sender_vid);
-            let receiver_vid = aliases.get(&receiver_vid).unwrap_or(&receiver_vid);
-
             let non_confidential_data = non_confidential_data.as_deref().map(|s| s.as_bytes());
 
             let mut message = Vec::new();
@@ -532,7 +497,7 @@ async fn run() -> Result<(), Error> {
                 .expect("Could not read message from stdin");
 
             match vid_wallet
-                .send(sender_vid, receiver_vid, non_confidential_data, &message)
+                .send(&sender_vid, &receiver_vid, non_confidential_data, &message)
                 .await
             {
                 Ok(()) => {}
@@ -548,7 +513,7 @@ async fn run() -> Result<(), Error> {
             if args.verbose {
                 let cesr_message = vid_wallet
                     .as_store()
-                    .seal_message(sender_vid, receiver_vid, non_confidential_data, &message)?
+                    .seal_message(&sender_vid, &receiver_vid, non_confidential_data, &message)?
                     .1;
                 print_message(&cesr_message);
             }
@@ -559,7 +524,6 @@ async fn run() -> Result<(), Error> {
             );
         }
         Commands::Receive { vid, one } => {
-            let vid = aliases.get(&vid).cloned().unwrap_or(vid);
             let mut messages = vid_wallet.receive(&vid).await?;
 
             info!("listening for messages...");
@@ -712,7 +676,7 @@ async fn run() -> Result<(), Error> {
                         let _ = handle_message(message);
                     }
                     Action::Verify(vid) => {
-                        vid_wallet.verify_vid(&vid).await?;
+                        vid_wallet.verify_vid(&vid, None).await?;
 
                         info!("{vid} is verified and added to the wallet {}", &args.wallet);
                     }
@@ -724,7 +688,7 @@ async fn run() -> Result<(), Error> {
                     }
                 }
 
-                write_wallet(&vault, &vid_wallet, aliases.clone()).await?;
+                write_wallet(&vault, &vid_wallet).await?;
 
                 if one {
                     break;
@@ -735,11 +699,8 @@ async fn run() -> Result<(), Error> {
             sender_vid,
             receiver_vid,
         } => {
-            let sender_vid = aliases.get(&sender_vid).unwrap_or(&sender_vid);
-            let receiver_vid = aliases.get(&receiver_vid).unwrap_or(&receiver_vid);
-
             if let Err(e) = vid_wallet
-                .send_relationship_cancel(sender_vid, receiver_vid)
+                .send_relationship_cancel(&sender_vid, &receiver_vid)
                 .await
             {
                 tracing::error!("error sending message from {sender_vid} to {receiver_vid}: {e}");
@@ -748,7 +709,7 @@ async fn run() -> Result<(), Error> {
             }
 
             info!("sent control message from {sender_vid} to {receiver_vid}",);
-            write_wallet(&vault, &vid_wallet, aliases.clone()).await?;
+            write_wallet(&vault, &vid_wallet).await?;
         }
         Commands::Request {
             sender_vid,
@@ -756,18 +717,14 @@ async fn run() -> Result<(), Error> {
             nested,
             parent_vid,
         } => {
-            let sender_vid = aliases.get(&sender_vid).unwrap_or(&sender_vid);
-            let receiver_vid = aliases.get(&receiver_vid).unwrap_or(&receiver_vid);
-
             // Setup receive stream before sending the request
             let listener_vid = parent_vid.unwrap_or(sender_vid.clone());
-            let listener_vid = aliases.get(&listener_vid).unwrap_or(&listener_vid);
-            let mut messages = vid_wallet.receive(listener_vid).await?;
+            let mut messages = vid_wallet.receive(&listener_vid).await?;
 
             tracing::debug!("sending request...");
             if nested {
                 match vid_wallet
-                    .send_nested_relationship_request(sender_vid, receiver_vid)
+                    .send_nested_relationship_request(&sender_vid, &receiver_vid)
                     .await
                 {
                     Ok(vid) => {
@@ -783,7 +740,7 @@ async fn run() -> Result<(), Error> {
                     }
                 }
             } else if let Err(e) = vid_wallet
-                .send_relationship_request(sender_vid, receiver_vid, None)
+                .send_relationship_request(&sender_vid, &receiver_vid, None)
                 .await
             {
                 tracing::error!("error sending message from {sender_vid} to {receiver_vid}: {e}");
@@ -834,7 +791,7 @@ async fn run() -> Result<(), Error> {
                 }
             }
 
-            write_wallet(&vault, &vid_wallet, aliases.clone()).await?;
+            write_wallet(&vault, &vid_wallet).await?;
         }
         Commands::Accept {
             sender_vid,
@@ -842,15 +799,12 @@ async fn run() -> Result<(), Error> {
             thread_id,
             nested,
         } => {
-            let sender_vid = aliases.get(&sender_vid).unwrap_or(&sender_vid);
-            let receiver_vid = aliases.get(&receiver_vid).unwrap_or(&receiver_vid);
-
             let mut digest: [u8; 32] = Default::default();
             Base64Unpadded::decode(&thread_id, &mut digest).unwrap();
 
             if nested {
                 match vid_wallet
-                    .send_nested_relationship_accept(sender_vid, receiver_vid, digest)
+                    .send_nested_relationship_accept(&sender_vid, &receiver_vid, digest)
                     .await
                 {
                     Ok(vid) => {
@@ -868,7 +822,7 @@ async fn run() -> Result<(), Error> {
                     }
                 }
             } else if let Err(e) = vid_wallet
-                .send_relationship_accept(sender_vid, receiver_vid, digest, None)
+                .send_relationship_accept(&sender_vid, &receiver_vid, digest, None)
                 .await
             {
                 tracing::error!("error sending message from {sender_vid} to {receiver_vid}: {e}");
@@ -877,19 +831,15 @@ async fn run() -> Result<(), Error> {
             }
 
             info!("sent control message from {sender_vid} to {receiver_vid}",);
-            write_wallet(&vault, &vid_wallet, aliases.clone()).await?;
+            write_wallet(&vault, &vid_wallet).await?;
         }
         Commands::Refer {
             sender_vid,
             receiver_vid,
             referred_vid,
         } => {
-            let sender_vid = aliases.get(&sender_vid).unwrap_or(&sender_vid);
-            let receiver_vid = aliases.get(&receiver_vid).unwrap_or(&receiver_vid);
-            let referred_vid = aliases.get(&referred_vid).unwrap_or(&referred_vid);
-
             if let Err(e) = vid_wallet
-                .send_relationship_referral(sender_vid, receiver_vid, referred_vid)
+                .send_relationship_referral(&sender_vid, &receiver_vid, &referred_vid)
                 .await
             {
                 tracing::error!("error sending message from {sender_vid} to {receiver_vid}: {e}");
@@ -898,19 +848,15 @@ async fn run() -> Result<(), Error> {
             }
 
             info!("sent control message from {sender_vid} to {receiver_vid}",);
-            write_wallet(&vault, &vid_wallet, aliases.clone()).await?;
+            write_wallet(&vault, &vid_wallet).await?;
         }
         Commands::Publish {
             sender_vid,
             receiver_vid,
             new_vid,
         } => {
-            let sender_vid = aliases.get(&sender_vid).unwrap_or(&sender_vid);
-            let receiver_vid = aliases.get(&receiver_vid).unwrap_or(&receiver_vid);
-            let new_vid = aliases.get(&new_vid).unwrap_or(&new_vid);
-
             if let Err(e) = vid_wallet
-                .send_new_identifier_notice(sender_vid, receiver_vid, new_vid)
+                .send_new_identifier_notice(&sender_vid, &receiver_vid, &new_vid)
                 .await
             {
                 tracing::error!("error sending message from {sender_vid} to {receiver_vid}: {e}");
@@ -919,7 +865,7 @@ async fn run() -> Result<(), Error> {
             }
 
             info!("sent control message from {sender_vid} to {receiver_vid}",);
-            write_wallet(&vault, &vid_wallet, aliases.clone()).await?;
+            write_wallet(&vault, &vid_wallet).await?;
         }
     }
 

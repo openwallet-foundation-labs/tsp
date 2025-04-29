@@ -46,12 +46,12 @@ impl Store {
 
     #[wasm_bindgen]
     pub fn add_verified_vid(&self, vid: &Vid) -> Result<(), Error> {
-        self.0.add_verified_vid(vid.0.clone()).map_err(Error)
+        self.0.add_verified_vid(vid.0.clone(), None).map_err(Error)
     }
 
     #[wasm_bindgen]
     pub fn add_private_as_verified_vid(&self, vid: &OwnedVid) -> Result<(), Error> {
-        self.0.add_verified_vid(vid.0.clone()).map_err(Error)
+        self.0.add_verified_vid(vid.0.clone(), None).map_err(Error)
     }
 
     #[wasm_bindgen]
