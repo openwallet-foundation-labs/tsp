@@ -7,7 +7,7 @@ pub mod web;
 
 #[cfg(feature = "resolve")]
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) mod webvh;
+pub mod webvh;
 
 #[cfg(feature = "resolve")]
 pub use web::get_resolve_url;

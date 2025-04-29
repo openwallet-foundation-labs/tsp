@@ -98,4 +98,4 @@ arbitrary = { workspace = true }
 wasm-bindgen-test = "0.3.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-didwebvh-resolver = {workspace = true, optional = true}
+didwebvh-resolver = { workspace = true, optional = true }

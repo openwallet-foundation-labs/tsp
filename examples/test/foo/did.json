@@ -1,0 +1,44 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/did/v1",
+    "https://w3id.org/security/suites/jws-2020/v1"
+  ],
+  "authentication": [
+    "did:webvh:QmX6gpoQeyVuLT5sc7NeP3Nzh9ArrJ7yPAzu8oG5vDAhoC:raw.githubusercontent.com:openwallet-foundation-labs:tsp:did-webvh:examples:test:foo#verification-key"
+  ],
+  "id": "did:webvh:QmX6gpoQeyVuLT5sc7NeP3Nzh9ArrJ7yPAzu8oG5vDAhoC:raw.githubusercontent.com:openwallet-foundation-labs:tsp:did-webvh:examples:test:foo",
+  "keyAgreement": [
+    "did:webvh:QmX6gpoQeyVuLT5sc7NeP3Nzh9ArrJ7yPAzu8oG5vDAhoC:raw.githubusercontent.com:openwallet-foundation-labs:tsp:did-webvh:examples:test:foo#encryption-key"
+  ],
+  "service": [
+    {
+      "id": "#tsp-transport",
+      "serviceEndpoint": "https://demo.teaspoon.world/user/did:webvh:QmX6gpoQeyVuLT5sc7NeP3Nzh9ArrJ7yPAzu8oG5vDAhoC:raw.githubusercontent.com:openwallet-foundation-labs:tsp:did-webvh:examples:test:foo",
+      "type": "TSPTransport"
+    }
+  ],
+  "verificationMethod": [
+    {
+      "controller": "did:webvh:QmX6gpoQeyVuLT5sc7NeP3Nzh9ArrJ7yPAzu8oG5vDAhoC:raw.githubusercontent.com:openwallet-foundation-labs:tsp:did-webvh:examples:test:foo",
+      "id": "did:webvh:QmX6gpoQeyVuLT5sc7NeP3Nzh9ArrJ7yPAzu8oG5vDAhoC:raw.githubusercontent.com:openwallet-foundation-labs:tsp:did-webvh:examples:test:foo#verification-key",
+      "publicKeyJwk": {
+        "crv": "Ed25519",
+        "kty": "OKP",
+        "use": "sig",
+        "x": "sENIDVO8NUxo6-WM8sd9wnra5auLTHZNd2BLi4ZzZLw"
+      },
+      "type": "JsonWebKey2020"
+    },
+    {
+      "controller": "did:webvh:QmX6gpoQeyVuLT5sc7NeP3Nzh9ArrJ7yPAzu8oG5vDAhoC:raw.githubusercontent.com:openwallet-foundation-labs:tsp:did-webvh:examples:test:foo",
+      "id": "did:webvh:QmX6gpoQeyVuLT5sc7NeP3Nzh9ArrJ7yPAzu8oG5vDAhoC:raw.githubusercontent.com:openwallet-foundation-labs:tsp:did-webvh:examples:test:foo#encryption-key",
+      "publicKeyJwk": {
+        "crv": "X25519",
+        "kty": "OKP",
+        "use": "enc",
+        "x": "NXhJPs94TNtJSFm8d56Ni1r5q0VxF72upY78VIcEtiw"
+      },
+      "type": "JsonWebKey2020"
+    }
+  ]
+}
