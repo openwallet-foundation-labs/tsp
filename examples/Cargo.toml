@@ -33,7 +33,7 @@ name = "did-web"
 path = "src/did-web.rs"
 
 [dependencies]
-tsp_sdk = { path = "../tsp_sdk", features = ["async"] }
+tsp_sdk = { path = "../tsp_sdk", features = ["async", "resolve"] }
 axum = { workspace = true }
 base64ct = { workspace = true }
 clap = { workspace = true }

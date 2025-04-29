@@ -171,16 +171,16 @@ impl OwnedVid {
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 #[derive(Clone)]
 pub struct ExportVid {
-    pub(crate) id: String,
-    pub(crate) transport: Url,
-    pub(crate) public_sigkey: PublicVerificationKeyData,
-    pub(crate) public_enckey: PublicKeyData,
+    pub id: String,
+    pub transport: Url,
+    pub public_sigkey: PublicVerificationKeyData,
+    pub public_enckey: PublicKeyData,
     pub(crate) sigkey: Option<PrivateSigningKeyData>,
     pub(crate) enckey: Option<PrivateKeyData>,
-    pub(crate) relation_status: RelationshipStatus,
-    pub(crate) relation_vid: Option<String>,
-    pub(crate) parent_vid: Option<String>,
-    pub(crate) tunnel: Option<Box<[String]>>,
+    pub relation_status: RelationshipStatus,
+    pub relation_vid: Option<String>,
+    pub parent_vid: Option<String>,
+    pub tunnel: Option<Box<[String]>>,
 }
 
 impl ExportVid {
@@ -202,5 +202,9 @@ impl ExportVid {
             }),
             _ => None,
         }
+    }
+
+    pub fn is_private(&self) -> bool {
+        self.enckey.is_some() && self.sigkey.is_some()
     }
 }

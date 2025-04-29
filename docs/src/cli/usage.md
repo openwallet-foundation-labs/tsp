@@ -49,10 +49,46 @@ TRACE tsp: published DID document for did:web:did.teaspoon.world:user:example
 TRACE tsp: persisted wallet
 ```
 
+## Show wallet content
+In some cases it might be helpful to check what the wallet contains to understand the behavior of TSP.
+Therefore, the CLI provides a `show` command.
+The `show local` command will print all the local VIDs stored in the wallet,
+including their alias, transport, and parent.
+
+```
+did:peer:2.Vz6MurhTjqX5uhQ5bJbAaoEwSDFcKDwVJTvoii51JBtSPpKzX.Ez6LbvBvy92yWENk8xKYmaX9X9nzMtQCQ2EqgdLKv2YkcpHo7.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0
+	 Alias: None
+	 Transport: did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:b
+	 DID doc: None
+	 public enc key: XwZQDosAabkk61UmCcLaQKrvlgM6RLX+9bsVe2TCplo=
+	 public sign key: AeQsHfFqfWT/tuImrIoanqkui0rvVezHP4gBfCA2g6g=
+
+did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:b
+	 Alias: b
+	 Transport: https://q.teaspoon.world/transport/did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:b
+	 DID doc: https://raw.githubusercontent.com/openwallet-foundation-labs/tsp/main/examples/test/b/did.json
+	 public enc key: JY/sQu1c8LJq6aTR9TlUMdNDf6xEzqkZeuJH6berxFk=
+	 public sign key: EAA90CN5qEnTUXyNpPRmVsME2Qyxjj/KlRbP2DcXrF4=
+```
+
+Additionally, `tsp show relations <local VID or alias>`
+will provide all resolved VIDs that the local VID has a relation with,
+including the alias, relation status, and transport.
+
+```
+did:web:q.teaspoon.world
+	 Relation Status: Bidirectional
+	 Alias: q
+	 Transport: https://q.teaspoon.world/transport/did:web:q.teaspoon.world
+	 DID doc: https://q.teaspoon.world/.well-known/did.json
+	 public enc key: slqqOWKP1WhCN+X/tuGgoUkrryA6F//f5rV6cqXsL3Q=
+	 public sign key: djnK+ljzZsA2gX/X/IUy1Y06+j5Souo1bzTDZ9RoJxc=
+```
+
 ## Resolve a VID
 
 VIDs created with the `tsp` tool are published on __did.teaspoon.world__.
-Currently Rust TSP is able to verify `did:web` and `did:peer` VIDs
+Currently, Rust TSP is able to verify `did:web` and `did:peer` VIDs
 
 To resolve and verify a VID, run the following:
 
@@ -185,6 +221,6 @@ In a terminal window supporting colors this will look like the following:
 </code>
 
 The first red part is the TSP prefix. The purple part is the sender VID, the blue
-part the receiver VID, the yellow is the ciphertext and the cyan part is the signature.
+part the receiver VID, the yellow is the ciphertext, and the cyan part is the signature.
 
 The bold characters note the CESR selector of the part.

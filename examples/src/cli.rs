@@ -1,9 +1,10 @@
-use base64ct::{Base64Unpadded, Base64UrlUnpadded, Encoding};
+use base64ct::{Base64, Base64Unpadded, Base64UrlUnpadded, Encoding};
 use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use futures::StreamExt;
 use rustls::crypto::CryptoProvider;
 use serde::{Deserialize, Serialize};
+use std::ops::Deref;
 use std::{collections::HashMap, path::PathBuf};
 use tokio::io::AsyncReadExt;
 use tracing::{debug, error, info, trace};
@@ -45,6 +46,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    #[command(subcommand, about = "Show information stored in the wallet")]
+    Show(ShowCommands),
     #[command(
         arg_required_else_help = true,
         about = "verify and add a identifier to the wallet"
@@ -158,6 +161,17 @@ enum Commands {
         #[arg(short, long, required = true)]
         new_vid: String,
     },
+}
+
+#[derive(Debug, Parser)]
+enum ShowCommands {
+    #[command(about = "List all local VIDs")]
+    Local,
+    #[command(
+        about = "List all relationships for a specific local VID",
+        arg_required_else_help = true
+    )]
+    Relations { vid: String },
 }
 
 type Aliases = HashMap<String, String>;
@@ -285,6 +299,79 @@ async fn run() -> Result<(), Error> {
     let did_server = args.did_server;
 
     match args.command {
+        Commands::Show(sub) => {
+            let mut vids = vid_wallet.export()?;
+            vids.sort_by(|a, b| a.id.cmp(&b.id));
+
+            match sub {
+                ShowCommands::Local => {
+                    for vid in vids.into_iter().filter(|v| v.is_private()) {
+                        let transport = if vid.transport.as_str() == "tsp://" {
+                            vid.parent_vid.unwrap_or("None".to_string())
+                        } else {
+                            vid.transport.as_str().to_string()
+                        };
+
+                        let did_doc = if vid.id.starts_with("did:web") {
+                            tsp_sdk::vid::did::get_resolve_url(&vid.id)?.to_string()
+                        } else {
+                            "None".to_string()
+                        };
+                        let alias = aliases
+                            .iter()
+                            .find_map(|(a, id)| if id == &vid.id { Some(a.clone()) } else { None })
+                            .unwrap_or("None".to_string());
+
+                        println!("{}", &vid.id);
+                        println!("\t Alias: {}", alias);
+                        println!("\t Transport: {}", transport);
+                        println!("\t DID doc: {}", did_doc);
+                        println!(
+                            "\t public enc key: {}",
+                            Base64::encode_string(vid.public_enckey.deref())
+                        );
+                        println!(
+                            "\t public sign key: {}",
+                            Base64::encode_string(vid.public_sigkey.deref())
+                        );
+                        println!();
+                    }
+                }
+                ShowCommands::Relations { vid } => {
+                    let vid = aliases.get(&vid).unwrap_or(&vid);
+                    for vid in vids
+                        .into_iter()
+                        .filter(|v| v.relation_vid.as_deref() == Some(vid))
+                    {
+                        let did_doc = if vid.id.starts_with("did:web") {
+                            tsp_sdk::vid::did::get_resolve_url(&vid.id)?.to_string()
+                        } else {
+                            "None".to_string()
+                        };
+
+                        let alias = aliases
+                            .iter()
+                            .find_map(|(a, id)| if id == &vid.id { Some(a.clone()) } else { None })
+                            .unwrap_or("None".to_string());
+
+                        println!("{}", &vid.id);
+                        println!("\t Relation Status: {}", vid.relation_status);
+                        println!("\t Alias: {}", alias);
+                        println!("\t Transport: {}", vid.transport);
+                        println!("\t DID doc: {}", did_doc);
+                        println!(
+                            "\t public enc key: {}",
+                            Base64::encode_string(vid.public_enckey.deref())
+                        );
+                        println!(
+                            "\t public sign key: {}",
+                            Base64::encode_string(vid.public_sigkey.deref())
+                        );
+                        println!();
+                    }
+                }
+            }
+        }
         Commands::Verify { vid, alias, sender } => {
             vid_wallet.verify_vid(&vid).await?;
             let sender = sender.map(|s| aliases.get(&s).cloned().unwrap_or(s));
