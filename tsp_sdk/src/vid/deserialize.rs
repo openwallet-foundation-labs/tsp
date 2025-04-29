@@ -2,19 +2,18 @@ use base64ct::{Base64UrlUnpadded, Encoding};
 use serde::{Deserialize, Serialize};
 
 use crate::definitions::{
-    PrivateKeyData, PrivateSigningKeyData, PublicKeyData, PublicVerificationKeyData,
     PRIVATE_KEY_SIZE, PRIVATE_SIGNING_KEY_SIZE, PUBLIC_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE,
+    PrivateKeyData, PrivateSigningKeyData, PublicKeyData, PublicVerificationKeyData,
 };
 
 #[cfg(feature = "async")]
-use super::{error::VidError, OwnedVid};
+use super::{OwnedVid, error::VidError};
 
 #[cfg(feature = "async")]
 use std::path::Path;
 
 #[cfg(feature = "async")]
 use tokio::fs;
-use tracing::log::error;
 
 #[cfg(feature = "async")]
 impl OwnedVid {
@@ -24,7 +23,6 @@ impl OwnedVid {
             .map_err(|_| VidError::ResolveVid("private VID file not found"))?;
 
         serde_json::from_str(&vid_data)
-            .inspect_err(|err| error!("{}", err))
             .map_err(|_| VidError::ResolveVid("private VID contains invalid JSON"))
     }
 }
