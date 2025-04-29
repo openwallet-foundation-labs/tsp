@@ -168,7 +168,7 @@ impl OwnedVid {
     }
 }
 
-#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize), serde(rename_all = "camelCase"))]
 #[derive(Clone)]
 pub struct ExportVid {
     pub id: String,
