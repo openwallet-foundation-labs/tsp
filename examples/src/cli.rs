@@ -312,12 +312,10 @@ async fn run() -> Result<(), Error> {
                             vid.transport.as_str().to_string()
                         };
 
-                        let did_parts = vid.id.split(":").collect::<Vec<_>>();
-                        let did_doc = match did_parts.as_slice() {
-                            ["did", "web", ..] => {
-                                tsp_sdk::vid::did::resolve_url(&did_parts)?.to_string()
-                            }
-                            _ => "None".to_string(),
+                        let did_doc = if vid.id.starts_with("did:web") {
+                            tsp_sdk::vid::did::get_resolve_url(&vid.id)?.to_string()
+                        } else {
+                            "None".to_string()
                         };
                         let alias = aliases
                             .iter()
@@ -345,12 +343,10 @@ async fn run() -> Result<(), Error> {
                         .into_iter()
                         .filter(|v| v.relation_vid.as_deref() == Some(vid))
                     {
-                        let did_parts = vid.id.split(":").collect::<Vec<_>>();
-                        let did_doc = match did_parts.as_slice() {
-                            ["did", "web", ..] => {
-                                tsp_sdk::vid::did::resolve_url(&did_parts)?.to_string()
-                            }
-                            _ => "None".to_string(),
+                        let did_doc = if vid.id.starts_with("did:web") {
+                            tsp_sdk::vid::did::get_resolve_url(&vid.id)?.to_string()
+                        } else {
+                            "None".to_string()
                         };
 
                         let alias = aliases

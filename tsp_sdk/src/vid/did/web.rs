@@ -112,7 +112,7 @@ pub fn get_resolve_url(did: &str) -> Result<Url, VidError> {
     resolve_url(&parts)
 }
 
-pub fn resolve_url(parts: &[&str]) -> Result<Url, VidError> {
+fn resolve_url(parts: &[&str]) -> Result<Url, VidError> {
     match parts {
         ["did", "web", domain] => format!(
             "{PROTOCOL}{}/{DEFAULT_PATH}/{DOCUMENT}",
