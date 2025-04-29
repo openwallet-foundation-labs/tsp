@@ -1,3 +1,4 @@
+#[cfg(not(target_arch = "wasm32"))]
 use didwebvh_resolver::ResolutionError;
 
 #[derive(thiserror::Error, Debug)]
@@ -23,6 +24,7 @@ pub enum VidError {
     Verification(String),
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<ResolutionError> for VidError {
     fn from(err: ResolutionError) -> Self {
         match err {

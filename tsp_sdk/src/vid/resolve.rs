@@ -1,5 +1,7 @@
+#[cfg(not(target_arch = "wasm32"))]
+use super::did::webvh;
 use super::{
-    did::{self, peer, web, webvh},
+    did::{self, peer, web},
     error::VidError,
 };
 use crate::Vid;
@@ -12,6 +14,7 @@ pub async fn verify_vid(id: &str) -> Result<Vid, VidError> {
     match parts.get(0..2) {
         Some([did::SCHEME, web::SCHEME]) => web::resolve(id, parts).await,
         Some([did::SCHEME, peer::SCHEME]) => peer::verify_did_peer(&parts),
+        #[cfg(not(target_arch = "wasm32"))]
         Some([did::SCHEME, webvh::SCHEME]) => webvh::resolve(id).await,
         _ => Err(VidError::InvalidVid(id.to_string())),
     }

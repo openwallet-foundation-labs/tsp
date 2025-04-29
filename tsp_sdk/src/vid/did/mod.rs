@@ -6,6 +6,7 @@ pub(crate) mod peer;
 pub mod web;
 
 #[cfg(feature = "resolve")]
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod webvh;
 
 #[cfg(feature = "resolve")]
