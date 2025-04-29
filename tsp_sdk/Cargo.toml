@@ -36,7 +36,7 @@ async = [
     "dep:rustls-pemfile",
     "dep:quinn",
 ]
-resolve = ["serialize", "dep:reqwest"]
+resolve = ["serialize", "dep:reqwest", "dep:didwebvh-resolver"]
 serialize = ["dep:serde", "dep:serde_with"]
 use_local_certificate = []
 postgres = ["async", "aries-askar/postgres"]
@@ -76,6 +76,7 @@ rustls-pemfile = { workspace = true, optional = true }
 quinn = { workspace = true, optional = true }
 # resolve
 reqwest = { workspace = true, optional = true }
+didwebvh-resolver = {workspace = true, optional = true}
 # serialize
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = false }
