@@ -2,6 +2,9 @@
 
 ## Creating a new did:webvh
 
+### Step 0
+Checkout https://github.com/decentralized-identity/didwebvh-py
+
 ### Step 1
 ```shell
 tsp create --local foo
@@ -73,4 +76,17 @@ tsp import-piv <temporary-file-with-changed-ids>
 Output
 ```
 INFO tsp: created identity from file did:webvh:QmX6gpoQeyVuLT5sc7NeP3Nzh9ArrJ7yPAzu8oG5vDAhoC:raw.githubusercontent.com:openwallet-foundation-labs:tsp:did-webvh:examples:test:foo
+```
+
+### Step 9
+Check that your DID actually verifies
+
+```shell
+tsp --wallet test verify 'did:webvh:QmX6gpoQeyVuLT5sc7NeP3Nzh9ArrJ7yPAzu8oG5vDAhoC:raw.githubusercontent.com:openwallet-foundation-labs:tsp:did-webvh:examples:test:foo'
+```
+
+Output
+```
+INFO tsp: created new wallet
+INFO tsp: did:webvh:QmX6gpoQeyVuLT5sc7NeP3Nzh9ArrJ7yPAzu8oG5vDAhoC:raw.githubusercontent.com:openwallet-foundation-labs:tsp:did-webvh:examples:test:foo is verified and added to the wallet test
 ```

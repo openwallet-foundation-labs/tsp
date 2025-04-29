@@ -9,11 +9,16 @@ use tokio::io::AsyncReadExt;
 use tracing::{debug, error, info, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{
+    cesr::{self, Part}, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid,
+    ReceivedTspMessage, SecureStorage, VerifiedVid,
+    Vid,
+};
+use tsp_sdk::vid::vid_to_did_document;
+use tsp_sdk::{
     AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
     SecureStorage, VerifiedVid, Vid,
     cesr::{self, Part},
 };
-use tsp_sdk::vid::vid_to_did_document;
 
 #[derive(Debug, Parser)]
 #[command(name = "tsp", version)]
@@ -61,7 +66,9 @@ enum Commands {
         alias: Option<String>,
     },
     #[command(arg_required_else_help = true)]
-    Print { alias: String },
+    Print {
+        alias: String,
+    },
     #[command(
         arg_required_else_help = true,
         about = "create and register a did:web identifier"
@@ -70,8 +77,12 @@ enum Commands {
         username: String,
         #[arg(short, long)]
         alias: Option<String>,
-        #[arg(short, long, help = "Do not publish the DID on the DID server but print it to the console")]
-        local: bool
+        #[arg(
+            short,
+            long,
+            help = "Do not publish the DID on the DID server but print it to the console"
+        )]
+        local: bool,
     },
     CreatePeer {
         alias: String,
@@ -96,9 +107,15 @@ enum Commands {
         vid: String,
     },
     #[command(arg_required_else_help = true)]
-    SetAlias { alias: String, vid: String },
+    SetAlias {
+        alias: String,
+        vid: String,
+    },
     #[command(arg_required_else_help = true)]
-    SetRoute { vid: String, route: String },
+    SetRoute {
+        vid: String,
+        route: String,
+    },
     #[command(arg_required_else_help = true)]
     SetParent { vid: String, other_vid: String },
     #[command(arg_required_else_help = true, about = "send a message")]
@@ -302,11 +319,16 @@ async fn run() -> Result<(), Error> {
 
             print!("{vid}");
         }
-        Commands::Create { username, alias, local } => {
+        Commands::Create {
+            username,
+            alias,
+            local,
+        } => {
             let did = format!(
                 "did:web:{}:endpoint:{username}",
                 did_server.replace(":", "%3A")
-            .replace("/", ":"));
+            .replace("/", ":")
+            );
 
             if let Some(alias) = alias {
                 vid_wallet.set_alias(alias.clone(), did.clone())?;
@@ -354,11 +376,11 @@ async fn run() -> Result<(), Error> {
                     }
                 };
                 info!(
-                "published DID document at {}",
-                tsp_sdk::vid::did::get_resolve_url(&did)
-                    .unwrap()
-                    .to_string()
-            );
+                    "published DID document at {}",
+                    tsp_sdk::vid::did::get_resolve_url(&did)
+                        .unwrap()
+                        .to_string()
+                );
             }
 
             vid_wallet.add_private_vid(private_vid.clone())?;
@@ -386,7 +408,7 @@ async fn run() -> Result<(), Error> {
 
             info!("created identity from file {}", private_vid.identifier());
         }
-        Commands::ExportPiv { vid} => {
+        Commands::ExportPiv { vid } => {
             let exported = vid_wallet.export()?.into_iter().find(|e| e.id == vid);
             println!("{}", serde_json::to_string_pretty(&exported).unwrap());
         }
