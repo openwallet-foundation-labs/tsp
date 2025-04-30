@@ -258,7 +258,7 @@ pub fn create_did_web(
     domain: &str,
     transport: &str,
 ) -> (serde_json::Value, serde_json::Value, OwnedVid) {
-    let did = format!("did:web:{}:user:{name}", domain.replace(":", "%3A"));
+    let did = format!("did:web:{}:endpoint:{name}", domain.replace(":", "%3A"));
     let private_vid = OwnedVid::bind(did, Url::parse(transport).unwrap());
     let private_doc = serde_json::to_value(&private_vid).unwrap();
     let did_doc = vid_to_did_document(private_vid.vid());
@@ -290,14 +290,14 @@ mod tests {
         );
 
         assert_eq!(
-            resolve_did_string("did:web:example.com:user:bob")
+            resolve_did_string("did:web:example.com:endpoint:bob")
                 .unwrap()
                 .to_string(),
-            "https://example.com/user/bob/did.json"
+            "https://example.com/endpoint/bob/did.json"
         );
 
         assert!(resolve_did_string("did:web:example%20.com").is_err());
-        assert!(resolve_did_string("did:web:example.com:user:user:user").is_ok());
+        assert!(resolve_did_string("did:web:example.com:endpoint:user:user").is_ok());
     }
 
     #[cfg(not(feature = "pq"))]

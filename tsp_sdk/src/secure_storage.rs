@@ -352,7 +352,7 @@ mod test {
 
             store.aliases.write().unwrap().insert(
                 "pigeon".to_string(),
-                "did:web:did.teaspoon.world:user:pigeon".to_string(),
+                "did:web:did.teaspoon.world:endpoint:pigeon".to_string(),
             );
 
             vault.persist(store.export().unwrap()).await.unwrap();
@@ -368,7 +368,7 @@ mod test {
 
             assert_eq!(
                 aliases.get("pigeon"),
-                Some(&"did:web:did.teaspoon.world:user:pigeon".to_string())
+                Some(&"did:web:did.teaspoon.world:endpoint:pigeon".to_string())
             );
 
             let store = SecureStore::new();

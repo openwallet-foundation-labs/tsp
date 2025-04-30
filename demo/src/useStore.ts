@@ -203,7 +203,7 @@ export default function useStore() {
         dispatch({ type: 'setId', id });
       } else {
         const vid = OwnedVid.new_did_peer(
-          `https://demo.teaspoon.world/user/[vid_placeholder]`
+          `https://demo.teaspoon.world/endpoint/[vid_placeholder]`
         );
         const id = { label, vid: JSON.parse(vid.to_json()) };
         store.current.add_private_vid(vid.create_clone());
@@ -403,7 +403,7 @@ export default function useStore() {
   useEffect(() => {
     if (state.id) {
       ws.current = new ReconnectingWebSocket(
-        `wss://demo.teaspoon.world/user/${state.id.vid.id}`
+        `wss://demo.teaspoon.world/endpoint/${state.id.vid.id}`
       );
       const wsCurrent = ws.current;
       ws.current.onmessage = async (e) => {

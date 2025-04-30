@@ -26,7 +26,7 @@ struct Cli {
     #[arg(
         short,
         long,
-        default_value = "https://did.teaspoon.world/user",
+        default_value = "https://demo.teaspoon.world/endpoint",
         help = "The base path of the transport for new DIDs"
     )]
     transport: String,
@@ -118,7 +118,7 @@ async fn main() {
         .route("/logs", get(log_websocket_handler))
         .route("/create-identity", post(create_identity))
         .route("/add-vid", post(add_vid))
-        .route("/user/{name}/did.json", get(get_did_doc))
+        .route("/endpoint/{name}/did.json", get(get_did_doc))
         .layer(DefaultBodyLimit::max(50 * 1024 * 1024))
         .layer(cors)
         .with_state(state);
@@ -209,7 +209,10 @@ async fn get_did_doc(State(state): State<Arc<AppState>>, Path(name): Path<String
         return (StatusCode::BAD_REQUEST, "invalid name").into_response();
     }
 
-    let key = format!("did:web:{}:user:{name}", state.domain.replace(":", "%3A"));
+    let key = format!(
+        "did:web:{}:endpoint:{name}",
+        state.domain.replace(":", "%3A")
+    );
 
     match read_id(&key).await {
         Ok(identity) => {
@@ -220,7 +223,7 @@ async fn get_did_doc(State(state): State<Arc<AppState>>, Path(name): Path<String
         Err(e) => {
             tracing::error!("{key} not found: {e}");
 
-            (StatusCode::NOT_FOUND, "no user found").into_response()
+            (StatusCode::NOT_FOUND, "no endpoint found").into_response()
         }
     }
 }

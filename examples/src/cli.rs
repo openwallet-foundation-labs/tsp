@@ -368,7 +368,10 @@ async fn run() -> Result<(), Error> {
             print!("{vid}");
         }
         Commands::Create { username, alias } => {
-            let did = format!("did:web:{}:user:{username}", did_server.replace(":", "%3A"));
+            let did = format!(
+                "did:web:{}:endpoint:{username}",
+                did_server.replace(":", "%3A")
+            );
 
             if let Some(alias) = alias {
                 vid_wallet.set_alias(alias.clone(), did.clone())?;
@@ -376,7 +379,7 @@ async fn run() -> Result<(), Error> {
             }
 
             let transport = url::Url::parse(&format!(
-                "https://{server}/user/{}",
+                "https://{server}/endpoint/{}",
                 did.replace("%", "%25")
             ))
             .unwrap();
@@ -429,7 +432,7 @@ async fn run() -> Result<(), Error> {
             let transport = if let Some(address) = tcp {
                 url::Url::parse(&format!("tcp://{address}")).unwrap()
             } else {
-                url::Url::parse(&format!("https://{server}/user/[vid_placeholder]",)).unwrap()
+                url::Url::parse(&format!("https://{server}/endpoint/[vid_placeholder]",)).unwrap()
             };
             let private_vid = OwnedVid::new_did_peer(transport);
 

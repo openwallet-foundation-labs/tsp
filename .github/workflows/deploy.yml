@@ -87,7 +87,7 @@ jobs:
         run: |-
           export TAG="${{ env.tag }}"
           export SERVICE="did-server"
-          export TRANSPORT="https://demo.teaspoon.world/user"
+          export TRANSPORT="https://demo.teaspoon.world/endpoint"
           export DOMAIN="did.teaspoon.world"
           envsubst < deploy/did-web.template.yaml > did-server.yaml
       - name: Deploy intermediary p

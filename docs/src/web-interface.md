@@ -11,7 +11,7 @@ Go to <https://demo.teaspoon.world/>
 This interface allows us to create VIDs and send and receive messages.
 
 The VID type used for this demo is `did:web`. When a new identity
-is created, the corresponding `did.json` document is published on the DID support server (<https://did.teaspoon.world/user/{username}/did.json>).
+is created, the corresponding `did.json` document is published on the DID support server (<https://did.teaspoon.world/endpoint/{username}/did.json>).
 
 The transport used for this demo is HTTPS and web sockets (WSS). The server also acts as a transport backbone. 
 
@@ -51,7 +51,7 @@ is restarted, which happens at least once a week.
 </div>
 
 Enter a full VID in the field "Resolve and verify VID" and push the button.
-For example, endpoint `bob` might have identifier `did:web:did.teaspoon.world:user:bob`.
+For example, endpoint `bob` might have identifier `did:web:did.teaspoon.world:endpoint:bob`.
 You can also verify identifiers from other external DID Web servers. For example, the identifier `did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:a` points to [this did.json](https://raw.githubusercontent.com/openwallet-foundation-labs/tsp/refs/heads/main/examples/test/a/did.json) in the TSP GitHub repository and can also be verified by the demo server.
 The resolved and verified VID will be displayed in the "Identities" column.
 
@@ -61,9 +61,9 @@ Use the "Send message" for to send messages. The "Sender" and "Receiver" fields
 must be filled in with fully qualified VIDs, that exist in the "Identities"
 column. 
 
-For example, we could fill in `did:web:did.teaspoon.world:user:alice` as sender and
-`did:web:did.teaspoon.world:user:bob` as receiver if we have the private VID for
-`did:web:did.teaspoon.world:user:alice` and the Public VID for `did:web:did.teaspoon.world:user:bob`.
+For example, we could fill in `did:web:did.teaspoon.world:endpoint:alice` as sender and
+`did:web:did.teaspoon.world:endpoint:bob` as receiver if we have the private VID for
+`did:web:did.teaspoon.world:endpoint:alice` and the Public VID for `did:web:did.teaspoon.world:endpoint:bob`.
 
 The contents in the "Non-confidential data" will be added to the TSP unencrypted.
 The contents of the field "Message" will always be encrypted.

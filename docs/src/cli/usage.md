@@ -20,7 +20,7 @@ tsp create example
 Output:
 ``` 
 INFO tsp: created new wallet
-INFO tsp: created identity did:web:did.teaspoon.world:user:example
+INFO tsp: created identity did:web:did.teaspoon.world:endpoint:example
 ```
 
 **Note:** the DIDs need to be unique. If you try to create an endpoint that already exists on did.teaspoon.world, you will get an error.
@@ -31,7 +31,7 @@ We can add an alias to a VID using the --alias argument:
 tsp create example --alias example
 ```
 
-In subsequent commands we can type `example` instead of `did:web:did.teaspoon.world:user:example`.
+In subsequent commands we can type `example` instead of `did:web:did.teaspoon.world:endpoint:example`.
 
 Every `tsp` subcommand also supports the `--verbose` flag for a more verbose output:
 
@@ -42,10 +42,10 @@ tsp --verbose create example --alias example
 Output:
 ``` 
 TRACE tsp: opened wallet wallet
- INFO tsp: added alias example -> did:web:did.teaspoon.world:user:example
- INFO tsp: created identity did:web:did.teaspoon.world:user:example
+ INFO tsp: added alias example -> did:web:did.teaspoon.world:endpoint:example
+ INFO tsp: created identity did:web:did.teaspoon.world:endpoint:example
 DEBUG tsp: DID server responded with status code 200 OK
-TRACE tsp: published DID document for did:web:did.teaspoon.world:user:example
+TRACE tsp: published DID document for did:web:did.teaspoon.world:endpoint:example
 TRACE tsp: persisted wallet
 ```
 
@@ -93,18 +93,18 @@ Currently, Rust TSP is able to verify `did:web` and `did:peer` VIDs
 To resolve and verify a VID, run the following:
 
 ```sh
-tsp verify did:web:did.teaspoon.world:user:example
+tsp verify did:web:did.teaspoon.world:endpoint:example
 ```
 
 Output:
 ```
- INFO tsp: did:web:did.teaspoon.world:user:example is verified and added to the wallet
+ INFO tsp: did:web:did.teaspoon.world:endpoint:example is verified and added to the wallet
 ```
 
 The verify command also support the alias argument:
 
 ```sh
-tsp verify did:web:did.teaspoon.world:user:example --alias example
+tsp verify did:web:did.teaspoon.world:endpoint:example --alias example
 ```
 
 ## Send a message
@@ -131,13 +131,13 @@ tsp --wallet bob create bob --alias bob
 Let __alice__ verify __bob__'s VID and add it to the wallet `alice`:
 
 ```sh
-tsp --wallet alice verify did:web:did.teaspoon.world:user:bob --alias bob
+tsp --wallet alice verify did:web:did.teaspoon.world:endpoint:bob --alias bob
 ```
 
 Let __bob__ verify __alice__'s VID and add it to the wallet `bob`:
 
 ```sh
-tsp --wallet bob verify did:web:did.teaspoon.world:user:alice --alias alice
+tsp --wallet bob verify did:web:did.teaspoon.world:endpoint:alice --alias alice
 ```
 
 Let __bob__  start listening for a message:
@@ -157,8 +157,8 @@ To send a message run the following:
 echo "Hello Bob!" | tsp --wallet alice send --sender-vid alice --receiver-vid bob
 ```
 
-Note that `alice` and `bob` are aliases of `did:web:did.teaspoon.world:user:alice`
-and `did:web:did.teaspoon.world:user:bob`.
+Note that `alice` and `bob` are aliases of `did:web:did.teaspoon.world:endpoint:alice`
+and `did:web:did.teaspoon.world:endpoint:bob`.
 
 We can also use aliases for the argument, for example:
 
@@ -174,7 +174,7 @@ tsp --wallet bob receive --one bob
 
 ```
  INFO tsp: listening for messages...
- INFO tsp: received message (11 bytes) from did:web:did.teaspoon.world:user:alice
+ INFO tsp: received message (11 bytes) from did:web:did.teaspoon.world:endpoint:alice
 Hello Bob!
 ```
 
@@ -208,10 +208,10 @@ echo "Hello Bob!" | tsp --verbose -w alice send -s alice -r bob
 
 Output:
 ```
- INFO tsp::async_store: sending message to https://demo.teaspoon.world/user/did:web:did.teaspoon.world:user:bob
+ INFO tsp::async_store: sending message to https://demo.teaspoon.world/endpoint/did:web:did.teaspoon.world:endpoint:bob
 CESR-encoded message:
 -EABXAAA9VIDAAALAAAZGlkOndlYjp0c3AtdGVzdC5vcmc6dXNlcjphbGljZQ8VIDAAAKAAZGlkOndlYjp0c3AtdGVzdC5vcmc6dXNlcjpib2I4CAX7ngr3YHl2z91L-anFBYxbQhM48CT_wqrCCRNdsN5fm-oshqvwqnKDK5rLkn_kvVI8aWZ7SEhiaiB8N6e-bjInrBbhNII0BAceo-mZoSvG3MY_UEqrgzP4kpeLJJK9MdQx53c4nxKh6_jvB2DuXJ6TBNjj-lXszyTH8yDAMSioDRluucSBpPAg
- INFO tsp: sent message (11 bytes) from did:web:did.teaspoon.world:user:alice to did:web:did.teaspoon.world:user:bob
+ INFO tsp: sent message (11 bytes) from did:web:did.teaspoon.world:endpoint:alice to did:web:did.teaspoon.world:endpoint:bob
 ```
 
 In a terminal window supporting colors this will look like the following:
