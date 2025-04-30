@@ -87,8 +87,13 @@ did:web:q.teaspoon.world
 
 ## Resolve a VID
 
-VIDs created with the `tsp` tool are published on __did.teaspoon.world__.
-Currently, Rust TSP is able to verify `did:web` and `did:peer` VIDs
+VIDs created with the `tsp` tool are published on __did.teaspoon.world__ (unless you specify a different DID support server using the `--did-server` option).
+Currently, Rust TSP is able to verify `did:web` and `did:peer` VIDs.
+
+You can use the `tsp discover` command to discover DIDs that are hosted the DID server:
+```sh
+tsp discover
+```
 
 To resolve and verify a VID, run the following:
 
