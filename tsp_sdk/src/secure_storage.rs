@@ -1,8 +1,11 @@
+use std::collections::HashMap;
+
 use crate::{
     Error, ExportVid, RelationshipStatus,
     definitions::{
         PRIVATE_KEY_SIZE, PRIVATE_SIGNING_KEY_SIZE, PUBLIC_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE,
     },
+    store::Aliases,
 };
 use aries_askar::{
     ErrorKind, StoreKeyMethod,
@@ -22,14 +25,10 @@ pub trait SecureStorage: Sized {
     async fn open(url: &str, password: &[u8]) -> Result<Self, Error>;
 
     /// Write data from memory to secure storage
-    async fn persist(
-        &self,
-        vids: Vec<ExportVid>,
-        extra_data: Option<serde_json::Value>,
-    ) -> Result<(), Error>;
+    async fn persist(&self, (vids, aliases): (Vec<ExportVid>, Aliases)) -> Result<(), Error>;
 
     /// Read data from secure storage to memory
-    async fn read(&self) -> Result<(Vec<ExportVid>, Option<serde_json::Value>), Error>;
+    async fn read(&self) -> Result<(Vec<ExportVid>, Aliases), Error>;
 
     /// Close the secure storage
     async fn close(self) -> Result<(), Error>;
@@ -82,11 +81,7 @@ impl SecureStorage for AskarSecureStorage {
         })
     }
 
-    async fn persist(
-        &self,
-        vids: Vec<ExportVid>,
-        extra_data: Option<serde_json::Value>,
-    ) -> Result<(), Error> {
+    async fn persist(&self, (vids, aliases): (Vec<ExportVid>, Aliases)) -> Result<(), Error> {
         let mut conn = self.inner.session(None).await?;
 
         for export in vids {
@@ -190,12 +185,12 @@ impl SecureStorage for AskarSecureStorage {
             }
         }
 
-        if let Some(extra_data) = extra_data {
+        if let Ok(aliases) = serde_json::to_value(&aliases) {
             if let Err(e) = conn
                 .insert(
                     "extra_data",
-                    "extra_data",
-                    extra_data.to_string().as_bytes(),
+                    "aliases",
+                    aliases.to_string().as_bytes(),
                     None,
                     None,
                 )
@@ -205,8 +200,8 @@ impl SecureStorage for AskarSecureStorage {
                     conn.update(
                         EntryOperation::Replace,
                         "extra_data",
-                        "extra_data",
-                        Some(extra_data.to_string().as_bytes()),
+                        "aliases",
+                        Some(aliases.to_string().as_bytes()),
                         None,
                         None,
                     )
@@ -222,7 +217,7 @@ impl SecureStorage for AskarSecureStorage {
         Ok(())
     }
 
-    async fn read(&self) -> Result<(Vec<ExportVid>, Option<serde_json::Value>), Error> {
+    async fn read(&self) -> Result<(Vec<ExportVid>, Aliases), Error> {
         let mut vids = Vec::new();
 
         let mut conn = self.inner.session(None).await?;
@@ -312,17 +307,15 @@ impl SecureStorage for AskarSecureStorage {
             vids.push(vid);
         }
 
-        let extra_data = match conn.fetch("extra_data", "extra_data", false).await? {
-            Some(data) => Some(
-                serde_json::from_slice(&data.value)
-                    .map_err(|_| Error::DecodeState("could not decode extra data from storage"))?,
-            ),
-            None => None,
+        let aliases = match conn.fetch("extra_data", "aliases", false).await? {
+            Some(data) => serde_json::from_slice(&data.value)
+                .map_err(|_| Error::DecodeState("could not decode extra data from storage"))?,
+            None => HashMap::new(),
         };
 
         conn.commit().await?;
 
-        Ok((vids, extra_data))
+        Ok((vids, aliases))
     }
 
     async fn close(self) -> Result<(), Error> {
@@ -357,7 +350,12 @@ mod test {
             let vid = OwnedVid::new_did_peer("tcp://127.0.0.1:1337".parse().unwrap());
             store.add_private_vid(vid.clone()).unwrap();
 
-            vault.persist(store.export().unwrap(), None).await.unwrap();
+            store.aliases.write().unwrap().insert(
+                "pigeon".to_string(),
+                "did:web:did.teaspoon.world:user:pigeon".to_string(),
+            );
+
+            vault.persist(store.export().unwrap()).await.unwrap();
 
             vid.identifier().to_string()
         };
@@ -366,10 +364,15 @@ mod test {
             let vault = AskarSecureStorage::open("sqlite://test.sqlite", b"password")
                 .await
                 .unwrap();
-            let (vids, _) = vault.read().await.unwrap();
+            let (vids, aliases) = vault.read().await.unwrap();
+
+            assert_eq!(
+                aliases.get("pigeon"),
+                Some(&"did:web:did.teaspoon.world:user:pigeon".to_string())
+            );
 
             let store = SecureStore::new();
-            store.import(vids).unwrap();
+            store.import(vids, aliases).unwrap();
             assert!(store.has_private_vid(&id).unwrap());
 
             vault.destroy().await.unwrap();
