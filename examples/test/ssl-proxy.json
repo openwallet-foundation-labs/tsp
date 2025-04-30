@@ -1,4 +1,11 @@
 {
+    "DID Support Server": {
+        "source": 3000,
+        "target": 3010,
+        "key": "./localhost-key.pem",
+        "cert": "./localhost.pem",
+        "hostname": "localhost"
+    },
     "Intermediary P": {
         "source": 3001,
         "target": 3011,

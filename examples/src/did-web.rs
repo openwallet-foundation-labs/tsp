@@ -119,6 +119,7 @@ async fn main() {
         .route("/create-identity", post(create_identity))
         .route("/add-vid", post(add_vid))
         .route("/endpoint/{name}/did.json", get(get_did_doc))
+        .route("/.well-known/endpoints.json", get(get_endpoints))
         .layer(DefaultBodyLimit::max(50 * 1024 * 1024))
         .layer(cors)
         .with_state(state);
@@ -228,6 +229,17 @@ async fn get_did_doc(State(state): State<Arc<AppState>>, Path(name): Path<String
     }
 }
 
+async fn get_endpoints(State(state): State<Arc<AppState>>) -> Response {
+    let domain = state.domain.replace(":", "%3A");
+    match list_all_ids(domain).await {
+        Ok(dids) => Json(dids).into_response(),
+        Err(e) => {
+            tracing::error!("Could not load endpoints: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "error loading dids").into_response()
+        }
+    }
+}
+
 /// Add did document to the local state
 async fn add_vid(State(state): State<Arc<AppState>>, Json(vid): Json<Vid>) -> Response {
     let name = vid.identifier().split(':').next_back().unwrap_or_default();
@@ -263,6 +275,22 @@ async fn read_id(vid: &str) -> Result<Identity, Box<dyn std::error::Error>> {
     let id = serde_json::from_str(&did)?;
 
     Ok(id)
+}
+
+async fn list_all_ids(domain: String) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let mut dir = tokio::fs::read_dir("data").await?;
+    let mut dids = Vec::new();
+
+    while let Some(entry) = dir.next_entry().await? {
+        if let Some(filename) = entry.file_name().to_str() {
+            if let Some(name) = filename.strip_suffix(".json") {
+                let did = format!("did:web:{domain}:endpoint:{name}");
+                dids.push(did);
+            }
+        }
+    }
+
+    Ok(dids)
 }
 
 fn verify_name(name: &str) -> bool {
