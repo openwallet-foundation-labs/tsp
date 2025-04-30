@@ -74,7 +74,7 @@ impl VidContext {
     }
 }
 
-pub(crate) type Aliases = HashMap<String, String>;
+pub type Aliases = HashMap<String, String>;
 
 /// Holds private and verified VIDs
 ///
@@ -705,6 +705,7 @@ impl SecureStore {
                                         ));
                                     }
                                     context.relation_status = RelationshipStatus::Unrelated;
+                                    context.relation_vid = None;
                                 }
                                 RelationshipStatus::_Controlled => {
                                     return Err(Error::Relationship(

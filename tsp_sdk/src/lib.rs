@@ -115,5 +115,5 @@ pub use secure_storage::SecureStorage;
 
 pub use definitions::{Payload, PrivateVid, ReceivedTspMessage, RelationshipStatus, VerifiedVid};
 pub use error::Error;
-pub use store::SecureStore;
+pub use store::{Aliases, SecureStore};
 pub use vid::{ExportVid, OwnedVid, Vid};
