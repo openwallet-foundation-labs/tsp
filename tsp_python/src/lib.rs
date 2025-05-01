@@ -1,5 +1,5 @@
 use pyo3::{exceptions::PyException, prelude::*};
-use tsp_sdk::VerifiedVid;
+use tsp_sdk::{AskarSecureStorage, SecureStorage, SecureStore, VerifiedVid};
 
 #[pymodule]
 fn tsp_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -18,23 +18,74 @@ fn py_exception<E: std::fmt::Debug>(e: E) -> PyErr {
     PyException::new_err(format!("{e:?}"))
 }
 
+/// Run async functions with blocking since PyO3 doesn't support async yet
+/// https://pyo3.rs/v0.24.2/ecosystem/async-await
+fn wait_for<F: std::future::Future>(future: F) -> F::Output {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(future)
+}
+
 #[pyclass]
-struct Store(tsp_sdk::SecureStore);
+struct Store {
+    inner: SecureStore,
+    vault: AskarSecureStorage,
+}
 
 #[pymethods]
 impl Store {
     #[new]
-    fn new() -> Self {
-        Self(tsp_sdk::SecureStore::default())
+    #[pyo3(signature = (wallet_url = "sqlite://wallet.sqlite", wallet_password = "unsecure"))]
+    fn new(wallet_url: &str, wallet_password: &str) -> PyResult<Self> {
+        let wallet_password = wallet_password.as_bytes();
+        wait_for(async {
+            match AskarSecureStorage::open(wallet_url, wallet_password).await {
+                Ok(vault) => {
+                    let (vids, aliases) = vault.read().await.map_err(py_exception)?;
+
+                    let inner = SecureStore::new();
+                    inner.import(vids, aliases).map_err(py_exception)?;
+
+                    Ok(Self { inner, vault })
+                }
+                Err(_) => {
+                    let vault = AskarSecureStorage::new(wallet_url, wallet_password)
+                        .await
+                        .map_err(py_exception)?;
+                    let inner = SecureStore::default();
+                    Ok(Self { inner, vault })
+                }
+            }
+        })
+    }
+
+    fn read_wallet(&mut self) -> PyResult<()> {
+        wait_for(async {
+            let (vids, aliases) = self.vault.read().await.map_err(py_exception)?;
+            self.inner.import(vids, aliases).map_err(py_exception)
+        })
+    }
+
+    fn write_wallet(&self) -> PyResult<()> {
+        wait_for(async {
+            self.vault
+                .persist(self.inner.export().map_err(py_exception)?)
+                .await
+                .map_err(py_exception)
+        })
     }
 
     fn add_private_vid(&self, vid: OwnedVid) -> PyResult<()> {
-        self.0.add_private_vid(vid.0).map_err(py_exception)
+        self.inner.add_private_vid(vid.0).map_err(py_exception)
     }
 
     #[pyo3(signature = (vid, alias=None))]
     fn add_verified_owned_vid(&self, vid: OwnedVid, alias: Option<String>) -> PyResult<()> {
-        self.0.add_verified_vid(vid.0, alias).map_err(py_exception)
+        self.inner
+            .add_verified_vid(vid.0, alias)
+            .map_err(py_exception)
     }
 
     /// Verify did web json document, add vid to store, and return endpoint
@@ -52,21 +103,23 @@ impl Store {
             .map_err(py_exception)?;
         let endpoint = vid.endpoint().to_string();
 
-        self.0.add_verified_vid(vid, alias).map_err(py_exception)?;
+        self.inner
+            .add_verified_vid(vid, alias)
+            .map_err(py_exception)?;
 
         Ok(endpoint)
     }
 
     #[pyo3(signature = (vid, relation_vid=None))]
     fn set_relation_for_vid(&self, vid: String, relation_vid: Option<String>) -> PyResult<()> {
-        self.0
+        self.inner
             .set_relation_for_vid(&vid, relation_vid.as_deref())
             .map_err(py_exception)
     }
 
     fn set_route_for_vid(&self, vid: String, route: Vec<String>) -> PyResult<()> {
         let borrowed: Vec<_> = route.iter().map(|s| s.as_str()).collect();
-        self.0
+        self.inner
             .set_route_for_vid(&vid, &borrowed)
             .map_err(py_exception)
     }
@@ -80,7 +133,7 @@ impl Store {
         nonconfidential_data: Option<Vec<u8>>,
     ) -> PyResult<(String, Vec<u8>)> {
         let (url, bytes) = self
-            .0
+            .inner
             .seal_message(
                 &sender,
                 &receiver,
@@ -102,7 +155,7 @@ impl Store {
         let route_items: Vec<&str> = route.iter().flatten().map(|s| s.as_str()).collect();
 
         let (url, bytes) = self
-            .0
+            .inner
             .make_relationship_request(
                 &sender,
                 &receiver,
@@ -124,7 +177,7 @@ impl Store {
         let route_items: Vec<&str> = route.iter().flatten().map(|s| s.as_str()).collect();
 
         let (url, bytes) = self
-            .0
+            .inner
             .make_relationship_accept(
                 &sender,
                 &receiver,
@@ -143,7 +196,7 @@ impl Store {
         receiver: String,
     ) -> PyResult<(String, Vec<u8>)> {
         let (url, bytes) = self
-            .0
+            .inner
             .make_relationship_cancel(&sender, &receiver)
             .map_err(py_exception)?;
 
@@ -158,7 +211,7 @@ impl Store {
         sender_new_vid: String,
     ) -> PyResult<(String, Vec<u8>)> {
         let (url, bytes) = self
-            .0
+            .inner
             .make_new_identifier_notice(&sender, &receiver, &sender_new_vid)
             .map_err(py_exception)?;
 
@@ -173,7 +226,7 @@ impl Store {
         referred_vid: String,
     ) -> PyResult<(String, Vec<u8>)> {
         let (url, bytes) = self
-            .0
+            .inner
             .make_relationship_referral(&sender, &receiver, &referred_vid)
             .map_err(py_exception)?;
 
@@ -186,7 +239,7 @@ impl Store {
         receiver: String,
     ) -> PyResult<((String, Vec<u8>), OwnedVid)> {
         let ((url, bytes), vid) = self
-            .0
+            .inner
             .make_nested_relationship_request(&parent_sender, &receiver)
             .map_err(py_exception)?;
 
@@ -200,7 +253,7 @@ impl Store {
         thread_id: [u8; 32],
     ) -> PyResult<((String, Vec<u8>), OwnedVid)> {
         let ((url, bytes), vid) = self
-            .0
+            .inner
             .make_nested_relationship_accept(&sender, &receiver, thread_id)
             .map_err(py_exception)?;
 
@@ -215,7 +268,7 @@ impl Store {
     ) -> PyResult<(String, Vec<u8>)> {
         let borrowed_route: Vec<_> = route.iter().map(|v| v.as_slice()).collect();
         let (url, bytes) = self
-            .0
+            .inner
             .forward_routed_message(&next_hop, borrowed_route, &opaque_payload)
             .map_err(py_exception)?;
 
@@ -239,7 +292,7 @@ impl Store {
     }
 
     fn open_message(&self, mut message: Vec<u8>) -> PyResult<FlatReceivedTspMessage> {
-        self.0
+        self.inner
             .open_message(&mut message)
             .map(|msg| msg.into_owned())
             .map(FlatReceivedTspMessage::from)

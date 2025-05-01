@@ -13,4 +13,5 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = { version = "0.24.0" }
 serde_json.workspace = true
+tokio.workspace = true
 tsp_sdk.workspace = true
