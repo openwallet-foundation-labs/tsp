@@ -10,6 +10,17 @@ CryptoType = tsp_python.CryptoType
 SignatureType = tsp_python.SignatureType
 
 
+class Wallet:
+    def __init__(self, store):
+        self.inner = store.inner
+
+    def __enter__(self):
+        self.inner.read_wallet()
+
+    def __exit__(self, type, value, traceback):
+        self.inner.write_wallet()
+
+
 class SecureStore:
     inner: tsp_python.Store
 
@@ -17,38 +28,45 @@ class SecureStore:
         self.inner = tsp_python.Store()
 
     def add_private_vid(self, *args, **kwargs):
-        return self.inner.add_private_vid(*args, **kwargs)
+        with Wallet(self):
+            return self.inner.add_private_vid(*args, **kwargs)
 
     def add_verified_owned_vid(self, *args, **kwargs):
-        return self.inner.add_verified_owned_vid(*args, **kwargs)
+        with Wallet(self):
+            return self.inner.add_verified_owned_vid(*args, **kwargs)
 
     def resolve_did_web(self, did: str) -> str:
-        if not did.startswith("did:web:"):
-            raise Exception(f"{did} is not a DID web, cannot resolve")
+        with Wallet(self):
+            if not did.startswith("did:web:"):
+                raise Exception(f"{did} is not a DID web, cannot resolve")
 
-        url = did.removeprefix("did:web:").replace(":", "/").replace("%25", ":")
-        if "/" not in url:
-            url += "/.well-known"
-        url = "https://" + url + "/did.json"
+            url = did.removeprefix("did:web:").replace(":", "/").replace("%25", ":")
+            if "/" not in url:
+                url += "/.well-known"
+            url = "https://" + url + "/did.json"
 
-        # We do the request in Python so we don't have to deal with PyO3 async stuff
-        response = requests.get(url)
-        if not response.ok:
-            raise Exception(f"Could not get {url}")
+            # We do the request in Python so we don't have to deal with PyO3 async stuff
+            response = requests.get(url)
+            if not response.ok:
+                raise Exception(f"Could not get {url}")
 
-        return self.inner.resolve_did_web(response.text, did)
+            return self.inner.resolve_did_web(response.text, did)
 
     def get_vid_endpoint(self, *args, **kwargs):
-        return self.inner.get_vid_endpoint(*args, **kwargs)
+        with Wallet(self):
+            return self.inner.get_vid_endpoint(*args, **kwargs)
 
     def set_relation_for_vid(self, *args, **kwargs):
-        return self.inner.set_relation_for_vid(*args, **kwargs)
+        with Wallet(self):
+            return self.inner.set_relation_for_vid(*args, **kwargs)
 
     def set_route_for_vid(self, *args, **kwargs):
-        return self.inner.set_route_for_vid(*args, **kwargs)
+        with Wallet(self):
+            return self.inner.set_route_for_vid(*args, **kwargs)
 
     def seal_message(self, *args, **kwargs):
-        return self.inner.seal_message(*args, **kwargs)
+        with Wallet(self):
+            return self.inner.seal_message(*args, **kwargs)
 
     def send_message(
         self,
@@ -57,38 +75,49 @@ class SecureStore:
         message: bytes,
         nonconfidential_data: bytes | None = None,
     ) -> requests.Response:
-        url, message = self.seal_message(
-            sender, receiver, message, nonconfidential_data
-        )
-        if not url.startswith("http"):
-            raise Exception("The Python SDK currently only supports HTTP(S) transport")
+        with Wallet(self):
+            url, message = self.inner.seal_message(
+                sender, receiver, message, nonconfidential_data
+            )
+            if not url.startswith("http"):
+                raise Exception(
+                    "The Python SDK currently only supports HTTP(S) transport"
+                )
 
-        return requests.post(url, data=message)
+            return requests.post(url, data=message)
 
     def get_sender_receiver(self, *args, **kwargs):
-        return self.inner.get_sender_receiver(*args, **kwargs)
+        with Wallet(self):
+            return self.inner.get_sender_receiver(*args, **kwargs)
 
     def open_message(self, *args, **kwargs):
-        flat_message = self.inner.open_message(*args, **kwargs)
-        return ReceivedTspMessage.from_flat(flat_message)
+        with Wallet(self):
+            flat_message = self.inner.open_message(*args, **kwargs)
+            return ReceivedTspMessage.from_flat(flat_message)
 
     def make_relationship_request(self, *args, **kwargs):
-        return self.inner.make_relationship_request(*args, **kwargs)
+        with Wallet(self):
+            return self.inner.make_relationship_request(*args, **kwargs)
 
     def make_relationship_accept(self, *args, **kwargs):
-        return self.inner.make_relationship_accept(*args, **kwargs)
+        with Wallet(self):
+            return self.inner.make_relationship_accept(*args, **kwargs)
 
     def make_relationship_cancel(self, *args, **kwargs):
-        return self.inner.make_relationship_cancel(*args, **kwargs)
+        with Wallet(self):
+            return self.inner.make_relationship_cancel(*args, **kwargs)
 
     def make_nested_relationship_request(self, *args, **kwargs):
-        return self.inner.make_nested_relationship_request(*args, **kwargs)
+        with Wallet(self):
+            return self.inner.make_nested_relationship_request(*args, **kwargs)
 
     def make_nested_relationship_accept(self, *args, **kwargs):
-        return self.inner.make_nested_relationship_accept(*args, **kwargs)
+        with Wallet(self):
+            return self.inner.make_nested_relationship_accept(*args, **kwargs)
 
     def forward_routed_message(self, *args, **kwargs):
-        return self.inner.forward_routed_message(*args, **kwargs)
+        with Wallet(self):
+            return self.inner.forward_routed_message(*args, **kwargs)
 
 
 class ReceivedTspMessage:
