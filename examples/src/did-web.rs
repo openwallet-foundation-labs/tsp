@@ -293,8 +293,15 @@ async fn list_all_ids(domain: String) -> Result<Vec<String>, Box<dyn std::error:
     Ok(dids)
 }
 
+// These characters are unreserved and can safely be used in any URL according to RFC3986
+const ADDITIONAL_CHARS: &str = "-._~";
+
 fn verify_name(name: &str) -> bool {
-    !name.is_empty() && name.len() < 64 && name.chars().all(|c| c.is_alphanumeric())
+    !name.is_empty()
+        && name.len() < 64
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || ADDITIONAL_CHARS.contains(c))
 }
 
 /// Identity struct, used to store the DID document and VID of an endpoint
