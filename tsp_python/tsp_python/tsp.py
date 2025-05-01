@@ -35,6 +35,10 @@ class SecureStore:
         with Wallet(self):
             return self.inner.add_verified_owned_vid(*args, **kwargs)
 
+    def resolve_alias(self, *args, **kwargs):
+        with Wallet(self):
+            return self.inner.resolve_alias(*args, **kwargs)
+
     def resolve_did_web(self, did: str) -> str:
         with Wallet(self):
             if not did.startswith("did:web:"):
