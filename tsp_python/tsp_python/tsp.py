@@ -10,6 +10,10 @@ CryptoType = tsp_python.CryptoType
 SignatureType = tsp_python.SignatureType
 
 
+def color_print(message: bytes):
+    return tsp_python.color_print(message)
+
+
 class Wallet:
     def __init__(self, store):
         self.inner = store.inner

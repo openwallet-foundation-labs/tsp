@@ -4,6 +4,8 @@ mod detect;
 mod encode;
 pub mod error;
 mod packet;
+use base64ct::{Base64UrlUnpadded, Encoding};
+use error::DecodeError;
 pub use packet::*;
 
 #[cfg(feature = "cesr-t")]
@@ -119,6 +121,32 @@ pub fn probe(stream: &mut [u8]) -> Result<EnvelopeType, error::DecodeError> {
             nonconfidential_data: envelope.nonconfidential_data,
         }
     })
+}
+
+fn color_print_part(part: Option<Part>, color: u8) {
+    if let Some(Part { prefix, data }) = part {
+        print!(
+            "\x1b[1;{color}m{}\x1b[0;{color}m{}\x1b[0m",
+            Base64UrlUnpadded::encode_string(prefix),
+            Base64UrlUnpadded::encode_string(data)
+        )
+    }
+}
+
+#[allow(clippy::option_map_unit_fn)]
+pub fn color_print(message: &[u8]) -> Result<(), DecodeError> {
+    let parts = open_message_into_parts(message)?;
+
+    color_print_part(Some(parts.prefix), 31);
+    color_print_part(Some(parts.sender), 35);
+    color_print_part(parts.receiver, 34);
+    color_print_part(parts.nonconfidential_data, 32);
+    color_print_part(parts.ciphertext, 33);
+    color_print_part(Some(parts.signature), 36);
+
+    println!();
+
+    Ok(())
 }
 
 #[cfg(test)]

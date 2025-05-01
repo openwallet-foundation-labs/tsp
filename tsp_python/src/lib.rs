@@ -11,6 +11,8 @@ fn tsp_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ReceivedTspMessageVariant>()?;
     m.add_class::<FlatReceivedTspMessage>()?;
 
+    m.add_function(wrap_pyfunction!(color_print, m)?)?;
+
     Ok(())
 }
 
@@ -26,6 +28,11 @@ fn wait_for<F: std::future::Future>(future: F) -> F::Output {
         .build()
         .unwrap()
         .block_on(future)
+}
+
+#[pyfunction]
+fn color_print(message: &[u8]) -> PyResult<()> {
+    tsp_sdk::cesr::color_print(message).map_err(py_exception)
 }
 
 #[pyclass]
