@@ -86,6 +86,8 @@ enum Commands {
         #[arg(short, long)]
         alias: Option<String>,
     },
+    #[command(about = "Discover DIDs from the DID support server")]
+    Discover,
     #[command(arg_required_else_help = true)]
     SetAlias { alias: String, vid: String },
     #[command(arg_required_else_help = true)]
@@ -368,7 +370,10 @@ async fn run() -> Result<(), Error> {
             print!("{vid}");
         }
         Commands::Create { username, alias } => {
-            let did = format!("did:web:{}:user:{username}", did_server.replace(":", "%3A"));
+            let did = format!(
+                "did:web:{}:endpoint:{username}",
+                did_server.replace(":", "%3A")
+            );
 
             if let Some(alias) = alias {
                 vid_wallet.set_alias(alias.clone(), did.clone())?;
@@ -376,7 +381,7 @@ async fn run() -> Result<(), Error> {
             }
 
             let transport = url::Url::parse(&format!(
-                "https://{server}/user/{}",
+                "https://{server}/endpoint/{}",
                 did.replace("%", "%25")
             ))
             .unwrap();
@@ -384,16 +389,13 @@ async fn run() -> Result<(), Error> {
             let private_vid = OwnedVid::bind(&did, transport);
             info!("created identity {}", private_vid.identifier());
 
-            #[allow(unused_mut)]
-            let mut client = reqwest::ClientBuilder::new();
+            let client = reqwest::ClientBuilder::new();
 
             #[cfg(feature = "use_local_certificate")]
-            {
-                tracing::warn!("Using local certificate, use only for testing!");
-                let cert = include_bytes!("../test/root-ca.pem");
-                let cert = reqwest::tls::Certificate::from_pem(cert).unwrap();
-                client = client.add_root_certificate(cert);
-            }
+            let client = client.add_root_certificate({
+                tracing::warn!("Using local root CA! (should only be used for local testing)");
+                reqwest::Certificate::from_pem(include_bytes!("../test/root-ca.pem")).unwrap()
+            });
 
             let _: Vid = match client
                 .build()
@@ -429,7 +431,7 @@ async fn run() -> Result<(), Error> {
             let transport = if let Some(address) = tcp {
                 url::Url::parse(&format!("tcp://{address}")).unwrap()
             } else {
-                url::Url::parse(&format!("https://{server}/user/[vid_placeholder]",)).unwrap()
+                url::Url::parse(&format!("https://{server}/endpoint/[vid_placeholder]",)).unwrap()
             };
             let private_vid = OwnedVid::new_did_peer(transport);
 
@@ -451,6 +453,42 @@ async fn run() -> Result<(), Error> {
             write_wallet(&vault, &vid_wallet).await?;
 
             info!("created identity from file {}", private_vid.identifier());
+        }
+        Commands::Discover => {
+            let url = format!("https://{did_server}/.well-known/endpoints.json");
+            info!("discovering DIDs from {}", url);
+
+            let client = reqwest::Client::builder();
+
+            #[cfg(feature = "use_local_certificate")]
+            let client = client.add_root_certificate({
+                tracing::warn!("Using local root CA! (should only be used for local testing)");
+                reqwest::Certificate::from_pem(include_bytes!("../test/root-ca.pem")).unwrap()
+            });
+
+            let dids = match client
+                .build()
+                .unwrap()
+                .get(url)
+                .send()
+                .await
+                .expect("could not load discovery list")
+                .error_for_status()
+            {
+                Ok(r) => r
+                    .json::<Vec<String>>()
+                    .await
+                    .expect("could not parse discovery list"),
+                Err(e) => {
+                    tracing::error!("could not load discovery list: {e}");
+                    return Ok(());
+                }
+            };
+
+            println!("DIDs available on {did_server}:");
+            for did in dids {
+                println!("- {did}");
+            }
         }
         Commands::SetParent { vid, other_vid } => {
             vid_wallet.set_parent_for_vid(&vid, Some(&other_vid))?;

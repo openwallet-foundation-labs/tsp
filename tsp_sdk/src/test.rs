@@ -313,7 +313,7 @@ async fn test_routed_mode() {
             &[
                 "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
                 "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
-                "did:web:hidden.web:user:realbob",
+                "did:web:hidden.web:endpoint:realbob",
             ],
         )
         .unwrap();
@@ -365,7 +365,7 @@ async fn test_routed_mode() {
             .iter()
             .map(|b| b.iter().as_slice())
             .collect::<Vec<_>>(),
-        vec![b"did:web:hidden.web:user:realbob"]
+        vec![b"did:web:hidden.web:endpoint:realbob"]
     );
 
     // let alice listen
@@ -401,7 +401,7 @@ async fn test_routed_mode() {
     else {
         panic!("alice accepted a message which she cannot handle");
     };
-    assert_eq!(next_hop, "did:web:hidden.web:user:realbob");
+    assert_eq!(next_hop, "did:web:hidden.web:endpoint:realbob");
     let crate::Error::UnverifiedVid { .. } = alice_db
         .forward_routed_message(&next_hop, route, &opaque_payload)
         .await

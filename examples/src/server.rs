@@ -103,8 +103,8 @@ async fn main() {
         .route("/script.js", get(script))
         .route("/create-identity", post(create_identity))
         .route("/verify-vid", post(verify_vid))
-        .route("/user/{user}", get(websocket_user_handler))
-        .route("/user/{user}", post(route_message))
+        .route("/endpoint/{user}", get(websocket_user_handler))
+        .route("/endpoint/{user}", post(route_message))
         .route("/sign-timestamp", post(sign_timestamp))
         .route("/send-message", post(send_message))
         .route("/receive-messages", get(websocket_handler))
@@ -305,7 +305,7 @@ async fn sign_timestamp(
         .timestamp_server
         .seal_message(
             &format!(
-                "did:web:did.{}:user:timestamp-server",
+                "did:web:did.{}:endpoint:timestamp-server",
                 state.domain.replace(":", "%3A")
             ),
             receiver,

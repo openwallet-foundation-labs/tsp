@@ -18,35 +18,35 @@ We use the same __alice__ and __bob__ example as in the previous chapter.
 First, __alice__ will have to learn about __bob__'s existence:
 
 ```sh
-> tsp -w alice verify --alias bob did:web:did.teaspoon.world:user:bob
- INFO tsp: did:web:did.teaspoon.world:user:bob is verified and added to the wallet alice
+> tsp -w alice verify --alias bob did:web:did.teaspoon.world:endpoint:bob
+ INFO tsp: did:web:did.teaspoon.world:endpoint:bob is verified and added to the wallet alice
 ```
 Then she can send a relationship request message. This requires __bob__ to be listening as
 shown in the previous chapter (i.e. running `tsp -w bob receive` in a separate window):
 ```sh
-> tsp -w alice request --sender-vid did:web:did.teaspoon.world:user:alice --receiver-vid did:web:did.teaspoon.world:user:bob
- INFO tsp::async_store: sending message to https://did.teaspoon.world/user/bob
- INFO tsp: sent relationship request from did:web:did.teaspoon.world:user:alice to did:web:did.teaspoon.world:user:bob, waiting for response...
+> tsp -w alice request --sender-vid did:web:did.teaspoon.world:endpoint:alice --receiver-vid did:web:did.teaspoon.world:endpoint:bob
+ INFO tsp::async_store: sending message to https://did.teaspoon.world/endpoint/bob
+ INFO tsp: sent relationship request from did:web:did.teaspoon.world:endpoint:alice to did:web:did.teaspoon.world:endpoint:bob, waiting for response...
 ```
 
 On __bob__'s side, we will see:
 ```sh
-> tsp -w bob receive --one did:web:did.teaspoon.world:user:bob
- INFO tsp: message involving unknown party did:web:did.teaspoon.world:user:alice
-do you want to read a message from 'did:web:did.teaspoon.world:user:alice'? [y/n] y
- INFO tsp: received relationship request from did:web:did.teaspoon.world:user:alice, thread-id 'JZla6+N6FP/In7ywOp8yQD2GfXemCn1e4b6tFVWaLxg'
+> tsp -w bob receive --one did:web:did.teaspoon.world:endpoint:bob
+ INFO tsp: message involving unknown party did:web:did.teaspoon.world:endpoint:alice
+do you want to read a message from 'did:web:did.teaspoon.world:endpoint:alice'? [y/n] y
+ INFO tsp: received relationship request from did:web:did.teaspoon.world:endpoint:alice, thread-id 'JZla6+N6FP/In7ywOp8yQD2GfXemCn1e4b6tFVWaLxg'
 ```
 
 Notice how a thread-id was generated, we need this to confirm the relationship.  This can be done by sending a relationship acceptance message (this requires __alice__ to be listening, which the CLI does automatically after sending a relationship request):
 
 ```sh
-> tsp -w bob accept --sender-vid did:web:did.teaspoon.world:user:bob --receiver-vid did:web:did.teaspoon.world:user:alice --thread-id 'JZla6+N6FP/In7ywOp8yQD2GfXemCn1e4b6tFVWaLxg'
+> tsp -w bob accept --sender-vid did:web:did.teaspoon.world:endpoint:bob --receiver-vid did:web:did.teaspoon.world:endpoint:alice --thread-id 'JZla6+N6FP/In7ywOp8yQD2GfXemCn1e4b6tFVWaLxg'
 ```
 
 On __alice__'s side, this will look like:
 ```sh
-> tsp -w alice receive --one did:web:did.teaspoon.world:user:alice
- INFO tsp: received accept relationship from did:web:did.teaspoon.world:user:bob
+> tsp -w alice receive --one did:web:did.teaspoon.world:endpoint:alice
+ INFO tsp: received accept relationship from did:web:did.teaspoon.world:endpoint:bob
 ```
 
 __alice__ and __bob__ now have a bidirectional relationship.
@@ -59,28 +59,28 @@ have to be passed the `--nested` parameter.
 Let's say that __alice__ again takes the initiative to nest the relationship, which starts the same as before:
 
 ```sh
-> tsp -w alice request --nested --sender-vid did:web:did.teaspoon.world:user:alice --receiver-vid did:web:did.teaspoon.world:user:bob
- INFO tsp: sent a nested relationship request to did:web:did.teaspoon.world:user:bob with new identity 'did:peer:2.Vz6Mv3HRDr8nQ28LZxXHrU1zaUdXVJVjQzhuVcFB4pyF5rweQ.Ez6Lc6URPHMVN1vswnk32ND5zNcAb5o2QA1Hs4NThH2YzAuVL.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0'
+> tsp -w alice request --nested --sender-vid did:web:did.teaspoon.world:endpoint:alice --receiver-vid did:web:did.teaspoon.world:endpoint:bob
+ INFO tsp: sent a nested relationship request to did:web:did.teaspoon.world:endpoint:bob with new identity 'did:peer:2.Vz6Mv3HRDr8nQ28LZxXHrU1zaUdXVJVjQzhuVcFB4pyF5rweQ.Ez6Lc6URPHMVN1vswnk32ND5zNcAb5o2QA1Hs4NThH2YzAuVL.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0'
 ```
 Notice that a new `did:peer` identifier was created. This will have a transport set to `tsp://`. Let's create an alias for it:
 
 On __bob__'s side, this message will appear:
 ```sh
 > tsp -w bob receive --one
- INFO tsp: received nested relationship request from 'did:peer:2.Vz6Mv3HRDr8nQ28LZxXHrU1zaUdXVJVjQzhuVcFB4pyF5rweQ.Ez6Lc6URPHMVN1vswnk32ND5zNcAb5o2QA1Hs4NThH2YzAuVL.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0' (new identity for did:web:did.teaspoon.world:user:alice), thread-id 'cR9RznAELgbp9XZ+VFFjq7vYv4v+ITaGrxa7L2ddCPw'
+ INFO tsp: received nested relationship request from 'did:peer:2.Vz6Mv3HRDr8nQ28LZxXHrU1zaUdXVJVjQzhuVcFB4pyF5rweQ.Ez6Lc6URPHMVN1vswnk32ND5zNcAb5o2QA1Hs4NThH2YzAuVL.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0' (new identity for did:web:did.teaspoon.world:endpoint:alice), thread-id 'cR9RznAELgbp9XZ+VFFjq7vYv4v+ITaGrxa7L2ddCPw'
 ```
 
 As before, __bob__ can accept this using `tsp accept`:
 
 ```sh
-> tsp -w bob accept --nested --sender-vid did:web:did.teaspoon.world:user:bob --receiver-vid did:peer:2.Vz6Mv3HRDr8nQ28LZxXHrU1zaUdXVJVjQzhuVcFB4pyF5rweQ.Ez6Lc6URPHMVN1vswnk32ND5zNcAb5o2QA1Hs4NThH2YzAuVL.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0
+> tsp -w bob accept --nested --sender-vid did:web:did.teaspoon.world:endpoint:bob --receiver-vid did:peer:2.Vz6Mv3HRDr8nQ28LZxXHrU1zaUdXVJVjQzhuVcFB4pyF5rweQ.Ez6Lc6URPHMVN1vswnk32ND5zNcAb5o2QA1Hs4NThH2YzAuVL.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0
  INFO tsp: formed a nested relationship with did:peer:2.Vz6Mv3HRDr8nQ28LZxXHrU1zaUdXVJVjQzhuVcFB4pyF5rweQ.Ez6Lc6URPHMVN1vswnk32ND5zNcAb5o2QA1Hs4NThH2YzAuVL.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0 with new identity 'did:peer:2.Vz6MuvAXTdNjiSV4DkbMUXAzShqiL2wvFNf2Dg4mr34JkQqk6.Ez6LbyVXwzoVNbRVm7X1Bpa4BqM5Aa5QYXyT4j6iRCxJAo4Fc.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0'
 ```
 Instead of the `did:peer`, __bob__ could also have used __alice__'s outer VID here. The TSP SDK will know which VID to use. Notice
 how a new VID was also generated for __bob__. On __alice__'s side, this will look as follows:
 
 ```sh
- INFO tsp: received accept nested relationship from 'did:peer:2.Vz6MuvAXTdNjiSV4DkbMUXAzShqiL2wvFNf2Dg4mr34JkQqk6.Ez6LbyVXwzoVNbRVm7X1Bpa4BqM5Aa5QYXyT4j6iRCxJAo4Fc.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0' (new identity for did:web:did.teaspoon.world:user:bob)
+ INFO tsp: received accept nested relationship from 'did:peer:2.Vz6MuvAXTdNjiSV4DkbMUXAzShqiL2wvFNf2Dg4mr34JkQqk6.Ez6LbyVXwzoVNbRVm7X1Bpa4BqM5Aa5QYXyT4j6iRCxJAo4Fc.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0' (new identity for did:web:did.teaspoon.world:endpoint:bob)
 ```
 
 Note that to make operation easier, we recommend using the alias mechanism to create better names for these essentially random inner identifiers:
@@ -126,7 +126,7 @@ Output:
  INFO tsp: did:peer:2.Vz6MutdCU73wbCRc4Uypzg1a3gU5vAfwsLjHWbgArHzjqWzpw.Ez6Lbwx
  U56UYuE9EwTPgVJFX2nB3UcssbLk7nnrEF8qQNEZQv.SeyJzIjp7InVyaSI6Imh0dHBzOi8vdHNwLX
  Rlc3Qub3JnL3VzZXIvYWxpY2UtaW5uZXIifSwidCI6InRzcCJ9
- is now a child of did:web:did.teaspoon.world:user:alice
+ is now a child of did:web:did.teaspoon.world:endpoint:alice
 ```
 
 We do the same for __bob__:
@@ -152,7 +152,7 @@ Output:
  INFO tsp: did:peer:2.Vz6Mv49Sf4ui8iG5C7VTjMS2bXq7EZDhyKSDNbcQhcvUmGLLW.Ez6Lc2R
  ywGrd9ARMmfLBGL3QFsoijt1PmYMMFrPRk6QMfwTEr.SeyJzIjp7InVyaSI6Imh0dHBzOi8vdHNwLX
  Rlc3Qub3JnL3VzZXIvYm9iLWlubmVyIn0sInQiOiJ0c3AifQ
- is now a child of did:web:did.teaspoon.world:user:bob
+ is now a child of did:web:did.teaspoon.world:endpoint:bob
 ```
 
 Next we resolve and verify __bob__'s inner VID. We use the `print` command to print
@@ -212,7 +212,7 @@ echo "Hi Bob!" | tsp --verbose -w alice send -s alice-inner -r bob-inner
 
 Output:
 ```
- INFO tsp::async_store: sending message to https://demo.teaspoon.world/user/did:web:did.teaspoon.world:user:bob
+ INFO tsp::async_store: sending message to https://demo.teaspoon.world/endpoint/did:web:did.teaspoon.world:endpoint:bob
 CESR-encoded message:
 -EABXAAA9VIDAAALAAAZGlkOndlYjp0c3AtdGVzdC5vcmc6dXNlcjphbGljZQ8VIDAAAKAAZGlkOnd
 lYjp0c3AtdGVzdC5vcmc6dXNlcjpib2I4CC2TF93f5Igkjgp4feBYOas18w-GhN_Q7oCRNStEbbdVK

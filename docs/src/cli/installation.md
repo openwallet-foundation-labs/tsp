@@ -43,6 +43,7 @@ Commands:
   create        create and register a did:web identifier
   create-peer   
   import-piv    import an identity from a file (for demo purposes only)
+  discover      Discover DIDs from the DID support server
   set-alias     
   set-route     
   set-parent    
