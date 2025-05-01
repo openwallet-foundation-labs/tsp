@@ -365,7 +365,7 @@ async fn run() -> Result<(), Error> {
             info!("{vid} is verified and added to the wallet {}", &args.wallet);
         }
         Commands::Print { alias } => {
-            let vid = vid_wallet.resolve_alias(&alias)?;
+            let vid = vid_wallet.try_resolve_alias(&alias)?;
 
             print!("{vid}");
         }
@@ -505,7 +505,7 @@ async fn run() -> Result<(), Error> {
         Commands::SetRoute { vid, route } => {
             let route: Vec<_> = route
                 .split(',')
-                .map(|s| vid_wallet.resolve_alias(s).unwrap())
+                .map(|s| vid_wallet.try_resolve_alias(s).unwrap())
                 .collect();
 
             let route_ref = route.iter().map(|s| s.as_str()).collect::<Vec<_>>();

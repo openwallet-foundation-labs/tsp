@@ -77,6 +77,10 @@ impl Store {
         })
     }
 
+    fn resolve_alias(&self, alias: &str) -> PyResult<Option<String>> {
+        self.inner.resolve_alias(alias).map_err(py_exception)
+    }
+
     fn add_private_vid(&self, vid: OwnedVid) -> PyResult<()> {
         self.inner.add_private_vid(vid.0).map_err(py_exception)
     }
@@ -84,8 +88,16 @@ impl Store {
     #[pyo3(signature = (vid, alias=None))]
     fn add_verified_owned_vid(&self, vid: OwnedVid, alias: Option<String>) -> PyResult<()> {
         self.inner
-            .add_verified_vid(vid.0, alias)
-            .map_err(py_exception)
+            .add_verified_vid(vid.0.clone())
+            .map_err(py_exception)?;
+
+        if let Some(alias) = alias {
+            self.inner
+                .set_alias(alias, vid.identifier())
+                .map_err(py_exception)?;
+        }
+
+        Ok(())
     }
 
     /// Verify did web json document, add vid to store, and return endpoint
@@ -103,9 +115,13 @@ impl Store {
             .map_err(py_exception)?;
         let endpoint = vid.endpoint().to_string();
 
-        self.inner
-            .add_verified_vid(vid, alias)
-            .map_err(py_exception)?;
+        self.inner.add_verified_vid(vid).map_err(py_exception)?;
+
+        if let Some(alias) = alias {
+            self.inner
+                .set_alias(alias, expected_did.to_string())
+                .map_err(py_exception)?;
+        }
 
         Ok(endpoint)
     }
