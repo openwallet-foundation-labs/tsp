@@ -309,7 +309,11 @@ impl SecureStore {
 
     /// Check whether the [PrivateVid] identified by `vid` exists in the wallet
     pub fn has_private_vid(&self, vid: &str) -> Result<bool, Error> {
-        Ok(self.get_private_vid(vid).is_ok())
+        match self.get_private_vid(vid) {
+            Ok(_) => Ok(true),
+            Err(Error::UnverifiedVid(_)) | Err(Error::MissingPrivateVid(_)) => Ok(false),
+            Err(e) => Err(e),
+        }
     }
 
     /// Retrieve the [PrivateVid] identified by `vid` from the wallet, if it exists.
@@ -317,6 +321,15 @@ impl SecureStore {
         match self.get_vid(vid)?.private {
             Some(private) => Ok(private),
             None => Err(Error::MissingPrivateVid(vid.to_string())),
+        }
+    }
+
+    /// Check whether the [VerifiedVid] identified by `vid` exists in the wallet
+    pub fn has_verified_vid(&self, vid: &str) -> Result<bool, Error> {
+        match self.get_verified_vid(vid) {
+            Ok(_) => Ok(true),
+            Err(Error::UnverifiedVid(_)) => Ok(false),
+            Err(e) => Err(e),
         }
     }
 
