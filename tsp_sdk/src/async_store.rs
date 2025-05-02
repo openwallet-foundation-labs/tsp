@@ -108,6 +108,11 @@ impl AsyncSecureStore {
         self.inner.has_private_vid(vid)
     }
 
+    /// Check whether the [VerifiedVid] identified by `vid` exists in the wallet
+    pub fn has_verified_vid(&self, vid: &str) -> Result<bool, Error> {
+        self.inner.has_verified_vid(vid)
+    }
+
     /// Resolve and verify public key material for a VID identified by `vid` and add it to the wallet as a relationship
     pub async fn verify_vid(&mut self, vid: &str, alias: Option<String>) -> Result<(), Error> {
         let verified_vid = crate::vid::verify_vid(vid).await?;
