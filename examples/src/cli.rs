@@ -262,33 +262,29 @@ async fn run() -> Result<(), Error> {
             let (mut vids, aliases) = vid_wallet.export()?;
             vids.sort_by(|a, b| a.id.cmp(&b.id));
 
-            if let Some(sub) = sub {
-                match sub {
-                    ShowCommands::Local => {
-                        show_local(&vids, &aliases)?;
-                    }
-                    ShowCommands::Relations { vid, unrelated } => {
-                        if unrelated {
-                            return show_relations(&vids, None, &aliases);
-                        }
-                        if let Some(vid) = vid {
-                            show_relations(&vids, Some(vid), &aliases)?;
-                        } else {
-                            for vid in vids.iter().filter(|v| v.is_private()) {
-                                show_relations(&vids, Some(vid.id.clone()), &aliases)?;
-                            }
-                        }
+            if let Some(ShowCommands::Local) = sub {
+                show_local(&vids, &aliases)?;
+            }
+            if let Some(ShowCommands::Relations { vid, unrelated }) = sub {
+                if unrelated {
+                    return show_relations(&vids, None, &aliases);
+                }
+                if let Some(vid) = vid {
+                    show_relations(&vids, Some(vid), &aliases)?;
+                } else {
+                    for vid in vids.iter().filter(|v| v.is_private()) {
+                        show_relations(&vids, Some(vid.id.clone()), &aliases)?;
                     }
                 }
             } else {
                 println!("local VIDs");
                 println!();
                 show_local(&vids, &aliases)?;
-                println!("---------------------------");
+                println!("---------------------------\n");
                 for vid in vids.iter().filter(|v| v.is_private()) {
                     show_relations(&vids, Some(vid.id.clone()), &aliases)?;
                 }
-                println!("---------------------------");
+                println!("---------------------------\n");
                 show_relations(&vids, None, &aliases)?;
             }
         }
