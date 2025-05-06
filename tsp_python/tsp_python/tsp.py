@@ -43,22 +43,10 @@ class SecureStore:
         with Wallet(self):
             return self.inner.resolve_alias(*args, **kwargs)
 
-    def resolve_did_web(self, did: str) -> str:
+    def verify_vid(self, did: str, alias=None) -> str:
+        """Verify did document, add vid to store, and return endpoint"""
         with Wallet(self):
-            if not did.startswith("did:web:"):
-                raise Exception(f"{did} is not a DID web, cannot resolve")
-
-            url = did.removeprefix("did:web:").replace(":", "/").replace("%25", ":")
-            if "/" not in url:
-                url += "/.well-known"
-            url = "https://" + url + "/did.json"
-
-            # We do the request in Python so we don't have to deal with PyO3 async stuff
-            response = requests.get(url)
-            if not response.ok:
-                raise Exception(f"Could not get {url}")
-
-            return self.inner.resolve_did_web(response.text, did)
+            return self.inner.verify_vid(did, alias)
 
     def get_vid_endpoint(self, *args, **kwargs):
         with Wallet(self):

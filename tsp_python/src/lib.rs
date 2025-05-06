@@ -118,26 +118,17 @@ impl Store {
         Ok(())
     }
 
-    /// Verify did web json document, add vid to store, and return endpoint
-    #[pyo3(signature = (did_json, expected_did, alias=None))]
-    fn resolve_did_web(
-        &self,
-        did_json: &str,
-        expected_did: &str,
-        alias: Option<String>,
-    ) -> PyResult<String> {
-        let did_document: tsp_sdk::vid::did::web::DidDocument =
-            serde_json::from_str(did_json).map_err(py_exception)?;
-
-        let vid = tsp_sdk::vid::did::web::resolve_document(did_document, expected_did)
-            .map_err(py_exception)?;
+    /// Verify did document, add vid to store, and return endpoint
+    #[pyo3(signature = (did, alias=None))]
+    fn verify_vid(&self, did: &str, alias: Option<String>) -> PyResult<String> {
+        let vid = wait_for(tsp_sdk::vid::verify_vid(did)).map_err(py_exception)?;
         let endpoint = vid.endpoint().to_string();
 
         self.inner.add_verified_vid(vid).map_err(py_exception)?;
 
         if let Some(alias) = alias {
             self.inner
-                .set_alias(alias, expected_did.to_string())
+                .set_alias(alias, did.to_string())
                 .map_err(py_exception)?;
         }
 
