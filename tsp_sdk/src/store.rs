@@ -534,7 +534,7 @@ impl SecureStore {
         Ok((next_hop, path))
     }
 
-    /// Pass along a in-transit routed TSP `opaque_message` that is not meant for us, given earlier resolved VIDs.
+    /// Pass along an in-transit routed TSP `opaque_message` that is not meant for us, given earlier resolved VIDs.
     /// The message is routed through the route that has been established with `receiver`.
     pub fn forward_routed_message(
         &self,
