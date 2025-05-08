@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tsp_sdk::cesr::EnvelopeType;
 use wasm_bindgen::prelude::*;
+
 pub struct Error(tsp_sdk::Error);
 
 impl From<Error> for JsValue {
@@ -52,17 +53,6 @@ impl Store {
     #[wasm_bindgen]
     pub fn add_private_as_verified_vid(&self, vid: &OwnedVid) -> Result<(), Error> {
         self.0.add_verified_vid(vid.0.clone()).map_err(Error)
-    }
-
-    #[wasm_bindgen]
-    pub fn set_relation_for_vid(
-        &self,
-        vid: String,
-        relation_vid: Option<String>,
-    ) -> Result<(), Error> {
-        self.0
-            .set_relation_for_vid(&vid, relation_vid.as_deref())
-            .map_err(Error)
     }
 
     #[wasm_bindgen]

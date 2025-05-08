@@ -56,7 +56,7 @@ tsp --wallet a verify --alias b "$DID_B"
 echo "---- establish outer relation a<->p"
 tsp --wallet a verify --alias p "$DID_P"
 
-sleep 2 && tsp --wallet a request -s a -r p &
+sleep 2 && tsp --wallet a request --wait -s a -r p &
 read -d '\t' vid thread_id <<< $(tsp --yes --wallet p receive --one p)
 tsp --wallet p set-alias a "$vid"
 sleep 2 && tsp --wallet p accept -s p -r a --thread-id "$thread_id"
@@ -64,7 +64,7 @@ sleep 2 && tsp --wallet p accept -s p -r a --thread-id "$thread_id"
 echo "---- establish outer relation p<->q"
 tsp --wallet q verify --alias p "$DID_P"
 
-sleep 2 && tsp --wallet q request -s q -r p &
+sleep 2 && tsp --wallet q request --wait -s q -r p &
 read -d '\t' vid thread_id <<< $(tsp --yes --wallet p receive --one p)
 tsp --wallet p set-alias q "$vid"
 sleep 2 && tsp --wallet p accept -s p -r q --thread-id "$thread_id"
@@ -73,17 +73,17 @@ if [ "$Q2" ]; then
     echo "---- establish outer relation q2<->b"
     tsp --wallet b verify --alias q2 "$DID_Q2"
 
-    sleep 2 && tsp --wallet b request -s b -r q2 &
+    sleep 2 && tsp --wallet b request --wait -s b -r q2 &
     read -d '\t' vid thread_id <<< $(tsp --yes --wallet q receive --one q2)
     tsp --wallet q set-alias b "$vid"
     sleep 2 && tsp --wallet q accept -s q2 -r b --thread-id "$thread_id"
 
-    tsp --wallet q set-relation q2 b
+    tsp --wallet q request -s q2 -r b
 else
     echo "---- establish outer relation q<->b"
     tsp --wallet b verify --alias q "$DID_Q"
 
-    sleep 2 && tsp --wallet b request -s b -r q &
+    sleep 2 && tsp --wallet b request --wait -s b -r q &
     read -d '\t' vid thread_id <<< $(tsp --yes --wallet q receive --one q)
     tsp --wallet q set-alias b "$vid"
     sleep 2 && tsp --wallet q accept -s q -r b --thread-id "$thread_id"
@@ -93,7 +93,7 @@ else
         read -d '\t' nested_b thread_id <<< $(tsp --wallet q receive --one q)
         sleep 1 && tsp --wallet q accept --nested -s q -r "$nested_b" --thread-id "$thread_id"
     ) &
-    sleep 2 && read -d '' DID_B2 DID_Q2 <<< $(tsp --wallet b request --nested -s b -r q)
+    sleep 2 && read -d '' DID_B2 DID_Q2 <<< $(tsp --wallet b request --wait --nested -s b -r q)
 fi
 
 echo "---- setup the route"
