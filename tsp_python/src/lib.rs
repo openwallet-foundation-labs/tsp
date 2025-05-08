@@ -1,5 +1,6 @@
+use futures::StreamExt;
 use pyo3::{exceptions::PyException, prelude::*};
-use tsp_sdk::{AskarSecureStorage, SecureStorage, SecureStore, VerifiedVid};
+use tsp_sdk::{AskarSecureStorage, AsyncSecureStore, SecureStorage, VerifiedVid};
 
 #[pymodule]
 fn tsp_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -23,7 +24,7 @@ fn py_exception<E: std::fmt::Debug>(e: E) -> PyErr {
 /// Run async functions with blocking since PyO3 doesn't support async yet
 /// https://pyo3.rs/v0.24.2/ecosystem/async-await
 fn wait_for<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_multi_thread()
+    tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()
@@ -37,7 +38,7 @@ fn color_print(message: &[u8]) -> PyResult<()> {
 
 #[pyclass]
 struct Store {
-    inner: SecureStore,
+    inner: AsyncSecureStore,
     vault: AskarSecureStorage,
 }
 
@@ -52,7 +53,7 @@ impl Store {
                 Ok(vault) => {
                     let (vids, aliases) = vault.read().await.map_err(py_exception)?;
 
-                    let inner = SecureStore::new();
+                    let inner = AsyncSecureStore::new();
                     inner.import(vids, aliases).map_err(py_exception)?;
 
                     Ok(Self { inner, vault })
@@ -61,7 +62,7 @@ impl Store {
                     let vault = AskarSecureStorage::new(wallet_url, wallet_password)
                         .await
                         .map_err(py_exception)?;
-                    let inner = SecureStore::default();
+                    let inner = AsyncSecureStore::default();
                     Ok(Self { inner, vault })
                 }
             }
@@ -161,6 +162,34 @@ impl Store {
             .map_err(py_exception)?;
 
         Ok((url.to_string(), bytes))
+    }
+
+    #[pyo3(signature = (sender, receiver, message, nonconfidential_data = None))]
+    fn send(
+        &self,
+        sender: String,
+        receiver: String,
+        message: Vec<u8>,
+        nonconfidential_data: Option<Vec<u8>>,
+    ) -> PyResult<()> {
+        wait_for(self.inner.send(
+            &sender,
+            &receiver,
+            nonconfidential_data.as_deref(),
+            &message,
+        ))
+        .map_err(py_exception)
+    }
+
+    fn receive(&self, vid: String) -> PyResult<Option<FlatReceivedTspMessage>> {
+        wait_for(async {
+            let mut messages = self.inner.receive(&vid).await.map_err(py_exception)?;
+            messages
+                .next()
+                .await
+                .map_or(Ok(None), |m| m.map(FlatReceivedTspMessage::from).map(Some))
+                .map_err(py_exception)
+        })
     }
 
     #[pyo3(signature = (sender, receiver, route))]
@@ -287,7 +316,7 @@ impl Store {
         let borrowed_route: Vec<_> = route.iter().map(|v| v.as_slice()).collect();
         let (url, bytes) = self
             .inner
-            .forward_routed_message(&next_hop, borrowed_route, &opaque_payload)
+            .make_next_routed_message(&next_hop, borrowed_route, &opaque_payload)
             .map_err(py_exception)?;
 
         Ok((url.to_string(), bytes))

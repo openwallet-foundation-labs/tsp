@@ -143,6 +143,17 @@ impl AsyncSecureStore {
         self.inner.set_alias(alias, did)
     }
 
+    pub fn seal_message(
+        &self,
+        sender: &str,
+        receiver: &str,
+        nonconfidential_data: Option<&[u8]>,
+        message: &[u8],
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.inner
+            .seal_message(sender, receiver, nonconfidential_data, message)
+    }
+
     /// Send a TSP message given earlier resolved VIDs
     /// Encodes, encrypts, signs, and sends a TSP message
     ///
@@ -201,6 +212,16 @@ impl AsyncSecureStore {
         crate::transport::send_message(&endpoint, &message).await?;
 
         Ok(())
+    }
+
+    pub fn make_relationship_request(
+        &self,
+        sender: &str,
+        receiver: &str,
+        route: Option<&[&str]>,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.inner
+            .make_relationship_request(sender, receiver, route)
     }
 
     /// Request a direct relationship with a resolved VID using the TSP
@@ -277,6 +298,14 @@ impl AsyncSecureStore {
         Ok(())
     }
 
+    pub fn make_relationship_cancel(
+        &self,
+        sender: &str,
+        receiver: &str,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.inner.make_relationship_cancel(sender, receiver)
+    }
+
     /// Cancels a direct relationship between the resolved `sender` and `receiver` VIDs.
     /// Encodes the control message, encrypts, signs, and sends a TSP message
     pub async fn send_relationship_cancel(
@@ -291,6 +320,16 @@ impl AsyncSecureStore {
         crate::transport::send_message(&endpoint, &message).await?;
 
         Ok(())
+    }
+
+    pub fn make_new_identifier_notice(
+        &self,
+        sender: &str,
+        receiver: &str,
+        sender_new_vid: &str,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.inner
+            .make_new_identifier_notice(sender, receiver, sender_new_vid)
     }
 
     /// Send a new identifier introduction notice
@@ -311,6 +350,16 @@ impl AsyncSecureStore {
         Ok(())
     }
 
+    pub fn make_relationship_referral(
+        &self,
+        sender: &str,
+        receiver: &str,
+        referred_vid: &str,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.inner
+            .make_relationship_referral(sender, receiver, referred_vid)
+    }
+
     /// Send a relationship referral message to `receiver`
     pub async fn send_relationship_referral(
         &self,
@@ -327,6 +376,15 @@ impl AsyncSecureStore {
         crate::transport::send_message(&endpoint, &message).await?;
 
         Ok(())
+    }
+
+    pub fn make_nested_relationship_request(
+        &self,
+        parent_sender: &str,
+        receiver: &str,
+    ) -> Result<((Url, Vec<u8>), OwnedVid), Error> {
+        self.inner
+            .make_nested_relationship_request(parent_sender, receiver)
     }
 
     /// Send a nested relationship request to `receiver`, creating a new nested vid with `outer_sender` as a parent.
