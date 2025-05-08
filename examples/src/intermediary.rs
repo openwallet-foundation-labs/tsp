@@ -294,21 +294,6 @@ async fn new_message(
                         return (StatusCode::BAD_REQUEST, "error verifying next hop VID")
                             .into_response();
                     }
-
-                    if let Err(e) = state
-                        .db
-                        .read()
-                        .await
-                        .send_relationship_request(&next_hop, receiver, None)
-                        .await
-                    {
-                        tracing::error!("error setting relation with {next_hop}: {e}");
-                        return (
-                            StatusCode::BAD_REQUEST,
-                            "error setting relation with next hop",
-                        )
-                            .into_response();
-                    }
                 }
 
                 let (transport, message) = match state.db.read().await.make_next_routed_message(

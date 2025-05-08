@@ -773,18 +773,12 @@ impl SecureStore {
                         self.add_nested_relation(&sender, &vid, thread_id)?;
                         self.set_relation_and_status_for_vid(
                             &connect_to_vid,
-                            RelationshipStatus::Bidirectional {
-                                thread_id,
-                                outstanding_nested_thread_ids: vec![],
-                            },
+                            RelationshipStatus::bi_default(),
                             &vid,
                         )?;
                         self.set_relation_and_status_for_vid(
                             &vid,
-                            RelationshipStatus::Bidirectional {
-                                thread_id,
-                                outstanding_nested_thread_ids: vec![],
-                            },
+                            RelationshipStatus::bi_default(),
                             &connect_to_vid,
                         )?;
 
@@ -1008,18 +1002,12 @@ impl SecureStore {
         let nested_vid = self.make_propositioning_vid(parent_sender)?;
         self.set_relation_and_status_for_vid(
             nested_vid.identifier(),
-            RelationshipStatus::Bidirectional {
-                thread_id,
-                outstanding_nested_thread_ids: vec![],
-            },
+            RelationshipStatus::bi(thread_id),
             nested_receiver,
         )?;
         self.set_relation_and_status_for_vid(
             nested_receiver,
-            RelationshipStatus::Bidirectional {
-                thread_id,
-                outstanding_nested_thread_ids: vec![],
-            },
+            RelationshipStatus::bi(thread_id),
             nested_vid.identifier(),
         )?;
 
@@ -1463,10 +1451,7 @@ mod test {
         a_store.add_verified_vid(bob.clone()).unwrap();
         b_store.add_verified_vid(alice.clone()).unwrap();
 
-        let status = super::RelationshipStatus::Bidirectional {
-            thread_id: Default::default(),
-            outstanding_nested_thread_ids: vec![],
-        };
+        let status = super::RelationshipStatus::bi_default();
 
         a_store
             .replace_relation_status_for_vid(bob.identifier(), status.clone())

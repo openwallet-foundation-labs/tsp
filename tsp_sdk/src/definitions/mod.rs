@@ -67,6 +67,22 @@ pub enum RelationshipStatus {
     Unrelated,
 }
 
+impl RelationshipStatus {
+    pub(crate) fn bi_default() -> Self {
+        RelationshipStatus::Bidirectional {
+            thread_id: [0; 32],
+            outstanding_nested_thread_ids: vec![],
+        }
+    }
+
+    pub(crate) fn bi(thread_id: Digest) -> Self {
+        RelationshipStatus::Bidirectional {
+            thread_id,
+            outstanding_nested_thread_ids: vec![],
+        }
+    }
+}
+
 impl Display for RelationshipStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
