@@ -103,6 +103,8 @@ enum Commands {
         receiver_vid: String,
         #[arg(short, long)]
         non_confidential_data: Option<String>,
+        #[arg(long, help = "Ask for confirmation before interacting with unknown end-points")]
+        ask: bool,
     },
     #[command(arg_required_else_help = true, about = "listen for messages")]
     Receive {
@@ -214,7 +216,7 @@ async fn read_wallet(
 
 fn prompt(message: String) -> bool {
     use std::io::{self, BufRead, Write};
-    print!("{message}? [y/n] ");
+    print!("{message}? [y/n]");
     io::stdout().flush().expect("I/O error");
     let mut line = String::new();
     io::stdin()
@@ -435,8 +437,32 @@ async fn run() -> Result<(), Error> {
             sender_vid,
             receiver_vid,
             non_confidential_data,
+            ask,
         } => {
             let non_confidential_data = non_confidential_data.as_deref().map(|s| s.as_bytes());
+
+            if !vid_wallet.has_verified_vid(&receiver_vid)? {
+                if ask {
+                    if prompt(format!("Do you want to verify receiver DID {receiver_vid}")) {
+                        vid_wallet.verify_vid(&receiver_vid, None).await?;
+                        info!(
+                            "{receiver_vid} is verified and added to the wallet {}",
+                            &args.wallet
+                        );
+                    } else {
+                        tracing::error!(
+                            "Message cannot be sent without verifying the receiver's DID."
+                        );
+                        return Ok(());
+                    }
+                } else {
+                    vid_wallet.verify_vid(&receiver_vid, None).await?;
+                    info!(
+                        "{receiver_vid} is verified and added to the wallet {}",
+                        &args.wallet
+                    );
+                }
+            }
 
             let mut message = Vec::new();
             tokio::io::stdin()
