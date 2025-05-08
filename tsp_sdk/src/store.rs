@@ -223,6 +223,26 @@ impl SecureStore {
         })
     }
 
+    pub fn relation_status_for_vid_pair(
+        &self,
+        local_vid: &str,
+        remote_vid: &str,
+    ) -> Result<RelationshipStatus, Error> {
+        let local_vid = self.try_resolve_alias(local_vid)?;
+        let remote_vid = self.try_resolve_alias(remote_vid)?;
+
+        if let Some((_, context)) = self.vids.read()?.iter().find(|(l_vid, context)| {
+            (**l_vid == local_vid) && (context.relation_vid.as_deref() == Some(&remote_vid))
+        }) {
+            Ok(context.relation_status.clone())
+        } else {
+            Err(Error::Relationship(format!(
+                "{} and {} do not have a relationship",
+                local_vid, remote_vid
+            )))
+        }
+    }
+
     /// List all VIDs in the wallet
     pub fn list_vids(&self) -> Result<Vec<String>, Error> {
         Ok(self.vids.read()?.keys().cloned().collect())
@@ -874,9 +894,10 @@ impl SecureStore {
             (receiver.endpoint().clone(), tsp_message)
         };
 
-        self.set_relation_status_for_vid(
+        self.set_relation_and_status_for_vid(
             receiver.identifier(),
             RelationshipStatus::Unidirectional { thread_id },
+            sender.identifier(),
         )?;
 
         Ok((transport, tsp_message.to_owned()))

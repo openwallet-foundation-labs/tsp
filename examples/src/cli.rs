@@ -293,8 +293,6 @@ async fn run() -> Result<(), Error> {
 
             vid_wallet.set_relation_for_vid(&vid, sender.as_deref())?;
 
-            write_wallet(&vault, &vid_wallet).await?;
-
             info!("{vid} is verified and added to the wallet {}", &args.wallet);
         }
         Commands::Print { alias } => {
@@ -358,7 +356,6 @@ async fn run() -> Result<(), Error> {
             );
 
             vid_wallet.add_private_vid(private_vid.clone())?;
-            write_wallet(&vault, &vid_wallet).await?;
         }
         Commands::CreatePeer { alias, tcp } => {
             let transport = if let Some(address) = tcp {
@@ -371,8 +368,6 @@ async fn run() -> Result<(), Error> {
             vid_wallet.set_alias(alias, private_vid.identifier().to_string())?;
 
             vid_wallet.add_private_vid(private_vid.clone())?;
-            write_wallet(&vault, &vid_wallet).await?;
-
             info!("created peer identity {}", private_vid.identifier());
         }
         Commands::ImportPiv { file, alias } => {
@@ -382,8 +377,6 @@ async fn run() -> Result<(), Error> {
             if let Some(alias) = alias {
                 vid_wallet.set_alias(alias, private_vid.identifier().to_string())?;
             }
-
-            write_wallet(&vault, &vid_wallet).await?;
 
             info!("created identity from file {}", private_vid.identifier());
         }
@@ -425,15 +418,11 @@ async fn run() -> Result<(), Error> {
         }
         Commands::SetParent { vid, other_vid } => {
             vid_wallet.set_parent_for_vid(&vid, Some(&other_vid))?;
-
             info!("{vid} is now a child of {other_vid}");
-
-            write_wallet(&vault, &vid_wallet).await?;
         }
         Commands::SetAlias { vid, alias } => {
             vid_wallet.set_alias(alias.clone(), vid.clone())?;
             info!("added alias {alias} -> {vid}");
-            write_wallet(&vault, &vid_wallet).await?;
         }
         Commands::SetRoute { vid, route } => {
             let route: Vec<_> = route
@@ -444,14 +433,10 @@ async fn run() -> Result<(), Error> {
             let route_ref = route.iter().map(|s| s.as_str()).collect::<Vec<_>>();
 
             vid_wallet.set_route_for_vid(&vid, &route_ref)?;
-            write_wallet(&vault, &vid_wallet).await?;
-
             info!("{vid} has route {route:?}");
         }
         Commands::SetRelation { vid, other_vid } => {
             vid_wallet.set_relation_for_vid(&vid, Some(&other_vid))?;
-            write_wallet(&vault, &vid_wallet).await?;
-
             info!("{vid} has relation to {other_vid}");
         }
         Commands::Send {
@@ -681,7 +666,6 @@ async fn run() -> Result<(), Error> {
             }
 
             info!("sent control message from {sender_vid} to {receiver_vid}",);
-            write_wallet(&vault, &vid_wallet).await?;
         }
         Commands::Request {
             sender_vid,
@@ -762,8 +746,6 @@ async fn run() -> Result<(), Error> {
                     }
                 }
             }
-
-            write_wallet(&vault, &vid_wallet).await?;
         }
         Commands::Accept {
             sender_vid,
@@ -803,7 +785,6 @@ async fn run() -> Result<(), Error> {
             }
 
             info!("sent control message from {sender_vid} to {receiver_vid}",);
-            write_wallet(&vault, &vid_wallet).await?;
         }
         Commands::Refer {
             sender_vid,
@@ -820,7 +801,6 @@ async fn run() -> Result<(), Error> {
             }
 
             info!("sent control message from {sender_vid} to {receiver_vid}",);
-            write_wallet(&vault, &vid_wallet).await?;
         }
         Commands::Publish {
             sender_vid,
@@ -837,10 +817,10 @@ async fn run() -> Result<(), Error> {
             }
 
             info!("sent control message from {sender_vid} to {receiver_vid}",);
-            write_wallet(&vault, &vid_wallet).await?;
         }
     }
 
+    write_wallet(&vault, &vid_wallet).await?;
     vault.close().await?;
 
     Ok(())

@@ -1,5 +1,5 @@
 use crate::{
-    ExportVid, OwnedVid, PrivateVid,
+    ExportVid, OwnedVid, PrivateVid, RelationshipStatus,
     definitions::{Digest, ReceivedTspMessage, TSPStream, VerifiedVid},
     error::Error,
     store::{Aliases, SecureStore},
@@ -172,6 +172,20 @@ impl AsyncSecureStore {
         nonconfidential_data: Option<&[u8]>,
         message: &[u8],
     ) -> Result<(), Error> {
+        match self.inner.relation_status_for_vid_pair(sender, receiver) {
+            Ok(relation) => {
+                if matches!(relation, RelationshipStatus::Unrelated) {
+                    self.send_relationship_request(sender, receiver, None)
+                        .await?
+                }
+            }
+            Err(Error::Relationship(_)) => {
+                self.send_relationship_request(sender, receiver, None)
+                    .await?
+            }
+            Err(e) => return Err(e),
+        };
+
         let (endpoint, message) =
             self.inner
                 .seal_message(sender, receiver, nonconfidential_data, message)?;
