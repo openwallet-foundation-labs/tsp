@@ -8,16 +8,12 @@ use std::path::PathBuf;
 use tokio::io::AsyncReadExt;
 use tracing::{debug, error, info, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use tsp_sdk::{
-    cesr::{self, Part}, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid,
-    ReceivedTspMessage, SecureStorage, VerifiedVid,
-    Vid,
-};
+use tsp_sdk::cesr::color_print;
 use tsp_sdk::vid::vid_to_did_document;
 use tsp_sdk::{
-    AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
-    SecureStorage, VerifiedVid, Vid,
-    cesr::{self, Part},
+    Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
+    RelationshipStatus, SecureStorage, VerifiedVid, Vid,
+    cesr::{self},
 };
 
 #[derive(Debug, Parser)]
@@ -326,8 +322,7 @@ async fn run() -> Result<(), Error> {
         } => {
             let did = format!(
                 "did:web:{}:endpoint:{username}",
-                did_server.replace(":", "%3A")
-            .replace("/", ":")
+                did_server.replace(":", "%3A").replace("/", ":")
             );
 
             if let Some(alias) = alias {
@@ -353,7 +348,6 @@ async fn run() -> Result<(), Error> {
                 let client = client.add_root_certificate({
                     tracing::warn!("Using local root CA! (should only be used for local testing)");
                     reqwest::Certificate::from_pem(include_bytes!("../test/root-ca.pem")).unwrap()
-
                 });
 
                 let _: Vid = match client
@@ -409,7 +403,7 @@ async fn run() -> Result<(), Error> {
             info!("created identity from file {}", private_vid.identifier());
         }
         Commands::ExportPiv { vid } => {
-            let exported = vid_wallet.export()?.into_iter().find(|e| e.id == vid);
+            let exported = vid_wallet.export()?.0.into_iter().find(|e| e.id == vid);
             println!("{}", serde_json::to_string_pretty(&exported).unwrap());
         }
         Commands::Discover => {
