@@ -9,8 +9,8 @@ use tokio::io::AsyncReadExt;
 use tracing::{debug, error, info, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{
-    AskarSecureStorage, AsyncSecureStore, Error, OwnedVid, ReceivedTspMessage, SecureStorage,
-    VerifiedVid, Vid,
+    Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
+    RelationshipStatus, SecureStorage, VerifiedVid, Vid,
     cesr::{self, color_print},
 };
 
@@ -45,8 +45,11 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    #[command(subcommand, about = "Show information stored in the wallet")]
-    Show(ShowCommands),
+    #[command(about = "Show information stored in the wallet")]
+    Show {
+        #[clap(subcommand)]
+        sub: Option<ShowCommands>,
+    },
     #[command(
         arg_required_else_help = true,
         about = "verify and add a identifier to the wallet"
@@ -168,11 +171,12 @@ enum Commands {
 enum ShowCommands {
     #[command(about = "List all local VIDs")]
     Local,
-    #[command(
-        about = "List all relationships for a specific local VID",
-        arg_required_else_help = true
-    )]
-    Relations { vid: String },
+    #[command(about = "List all relationships for a specific local VID")]
+    Relations {
+        vid: Option<String>,
+        #[arg(short, long)]
+        unrelated: bool,
+    },
 }
 
 async fn write_wallet(vault: &AskarSecureStorage, db: &AsyncSecureStore) -> Result<(), Error> {
@@ -254,77 +258,34 @@ async fn run() -> Result<(), Error> {
     let did_server = args.did_server;
 
     match args.command {
-        Commands::Show(sub) => {
+        Commands::Show { sub } => {
             let (mut vids, aliases) = vid_wallet.export()?;
             vids.sort_by(|a, b| a.id.cmp(&b.id));
 
-            match sub {
-                ShowCommands::Local => {
-                    for vid in vids.into_iter().filter(|v| v.is_private()) {
-                        let transport = if vid.transport.as_str() == "tsp://" {
-                            vid.parent_vid.unwrap_or("None".to_string())
-                        } else {
-                            vid.transport.as_str().to_string()
-                        };
-
-                        let did_doc = if vid.id.starts_with("did:web") {
-                            tsp_sdk::vid::did::get_resolve_url(&vid.id)?.to_string()
-                        } else {
-                            "None".to_string()
-                        };
-                        let alias = aliases
-                            .iter()
-                            .find_map(|(a, id)| if id == &vid.id { Some(a.clone()) } else { None })
-                            .unwrap_or("None".to_string());
-
-                        println!("{}", &vid.id);
-                        println!("\t Alias: {}", alias);
-                        println!("\t Transport: {}", transport);
-                        println!("\t DID doc: {}", did_doc);
-                        println!(
-                            "\t public enc key: {}",
-                            Base64::encode_string(vid.public_enckey.deref())
-                        );
-                        println!(
-                            "\t public sign key: {}",
-                            Base64::encode_string(vid.public_sigkey.deref())
-                        );
-                        println!();
+            if let Some(ShowCommands::Local) = sub {
+                show_local(&vids, &aliases)?;
+            }
+            if let Some(ShowCommands::Relations { vid, unrelated }) = sub {
+                if unrelated {
+                    return show_relations(&vids, None, &aliases);
+                }
+                if let Some(vid) = vid {
+                    show_relations(&vids, Some(vid), &aliases)?;
+                } else {
+                    for vid in vids.iter().filter(|v| v.is_private()) {
+                        show_relations(&vids, Some(vid.id.clone()), &aliases)?;
                     }
                 }
-                ShowCommands::Relations { vid } => {
-                    let vid = aliases.get(&vid).unwrap_or(&vid);
-                    for vid in vids
-                        .into_iter()
-                        .filter(|v| v.relation_vid.as_deref() == Some(vid))
-                    {
-                        let did_doc = if vid.id.starts_with("did:web") {
-                            tsp_sdk::vid::did::get_resolve_url(&vid.id)?.to_string()
-                        } else {
-                            "None".to_string()
-                        };
-
-                        let alias = aliases
-                            .iter()
-                            .find_map(|(a, id)| if id == &vid.id { Some(a.clone()) } else { None })
-                            .unwrap_or("None".to_string());
-
-                        println!("{}", &vid.id);
-                        println!("\t Relation Status: {}", vid.relation_status);
-                        println!("\t Alias: {}", alias);
-                        println!("\t Transport: {}", vid.transport);
-                        println!("\t DID doc: {}", did_doc);
-                        println!(
-                            "\t public enc key: {}",
-                            Base64::encode_string(vid.public_enckey.deref())
-                        );
-                        println!(
-                            "\t public sign key: {}",
-                            Base64::encode_string(vid.public_sigkey.deref())
-                        );
-                        println!();
-                    }
+            } else {
+                println!("local VIDs");
+                println!();
+                show_local(&vids, &aliases)?;
+                println!("---------------------------\n");
+                for vid in vids.iter().filter(|v| v.is_private()) {
+                    show_relations(&vids, Some(vid.id.clone()), &aliases)?;
                 }
+                println!("---------------------------\n");
+                show_relations(&vids, None, &aliases)?;
             }
         }
         Commands::Verify { vid, alias, sender } => {
@@ -664,7 +625,7 @@ async fn run() -> Result<(), Error> {
 
                             let user_affirms = args.yes
                                 || prompt(format!(
-                                    "do you want to read a message from '{unknown_vid}'"
+                                    "received first time message from '{unknown_vid}', do you want to accept it?"
                                 ));
 
                             if user_affirms {
@@ -881,6 +842,103 @@ async fn run() -> Result<(), Error> {
     }
 
     vault.close().await?;
+
+    Ok(())
+}
+
+fn show_local(vids: &[ExportVid], aliases: &Aliases) -> Result<(), Error> {
+    let enc_key_type = if cfg!(feature = "nacl") {
+        "nacl"
+    } else {
+        "X25519"
+    };
+    for vid in vids.iter().filter(|v| v.is_private()) {
+        let transport = if vid.transport.as_str() == "tsp://" {
+            vid.parent_vid.clone().unwrap_or("None".to_string())
+        } else {
+            vid.transport.as_str().to_string()
+        };
+
+        let did_doc = if vid.id.starts_with("did:web") {
+            tsp_sdk::vid::did::get_resolve_url(&vid.id)?.to_string()
+        } else {
+            "None".to_string()
+        };
+        let alias = aliases
+            .iter()
+            .find_map(|(a, id)| if id == &vid.id { Some(a.clone()) } else { None })
+            .unwrap_or("None".to_string());
+
+        println!("{}", &vid.id);
+        println!("\t Alias: {}", alias);
+        println!("\t Transport: {}", transport);
+        println!("\t DID doc: {}", did_doc);
+        println!(
+            "\t public enc key: ({enc_key_type}): {}",
+            Base64::encode_string(vid.public_enckey.deref())
+        );
+        println!(
+            "\t public sign key: (Ed25519) {}",
+            Base64::encode_string(vid.public_sigkey.deref())
+        );
+        println!();
+    }
+    println!();
+
+    Ok(())
+}
+
+fn show_relations(vids: &[ExportVid], vid: Option<String>, aliases: &Aliases) -> Result<(), Error> {
+    let filtered_vids = if let Some(vid) = vid {
+        let vid = aliases.get(&vid).unwrap_or(&vid);
+        println!("Relations of local VID {vid}");
+        println!();
+        vids.iter()
+            .filter(|v| v.relation_vid.as_deref() == Some(vid))
+            .collect::<Vec<_>>()
+    } else {
+        println!("Remote VIDs without relation status\n");
+        vids.iter()
+            .filter(|v| {
+                matches!(v.relation_status, RelationshipStatus::Unrelated) && !v.is_private()
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let enc_key_type = if cfg!(feature = "nacl") {
+        "nacl"
+    } else {
+        "X25519"
+    };
+
+    for vid in filtered_vids {
+        let did_doc = if vid.id.starts_with("did:web") {
+            tsp_sdk::vid::did::get_resolve_url(&vid.id)?.to_string()
+        } else {
+            "None".to_string()
+        };
+
+        let alias = aliases
+            .iter()
+            .find_map(|(a, id)| if id == &vid.id { Some(a.clone()) } else { None })
+            .unwrap_or("None".to_string());
+
+        println!("{}", &vid.id);
+        println!("\t Relation Status: {}", vid.relation_status);
+        println!("\t Alias: {}", alias);
+        println!("\t Transport: {}", vid.transport);
+        println!("\t DID doc: {}", did_doc);
+        println!(
+            "\t public enc key: ({enc_key_type}) {}",
+            Base64::encode_string(vid.public_enckey.deref())
+        );
+        println!(
+            "\t public sign key: (Ed25519) {}",
+            Base64::encode_string(vid.public_sigkey.deref())
+        );
+        println!();
+    }
+    println!();
 
     Ok(())
 }
