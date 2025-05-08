@@ -12,6 +12,7 @@ use crate::{
 #[cfg(feature = "async")]
 use bytes::Bytes;
 use bytes::BytesMut;
+use std::fmt::Display;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
@@ -272,7 +273,7 @@ impl SecureStore {
     pub fn set_route_for_vid(
         &self,
         vid: &str,
-        route: impl IntoIterator<Item: ToString, IntoIter: ExactSizeIterator>,
+        route: impl IntoIterator<Item: ToString, IntoIter: ExactSizeIterator<Item = impl Display>>,
     ) -> Result<(), Error> {
         let route = route.into_iter();
         if route.len() == 1 {
