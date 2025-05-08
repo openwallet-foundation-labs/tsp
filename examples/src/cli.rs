@@ -1,4 +1,4 @@
-use base64ct::{Base64, Base64Unpadded, Base64UrlUnpadded, Encoding};
+use base64ct::{Base64, Base64Unpadded, Encoding};
 use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use futures::StreamExt;
@@ -11,7 +11,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{
     AskarSecureStorage, AsyncSecureStore, Error, OwnedVid, ReceivedTspMessage, SecureStorage,
     VerifiedVid, Vid,
-    cesr::{self, Part},
+    cesr::{self, color_print},
 };
 
 #[derive(Debug, Parser)]
@@ -210,34 +210,6 @@ async fn read_wallet(
     }
 }
 
-fn color_print_part(part: Option<Part>, color: u8) {
-    if let Some(Part { prefix, data }) = part {
-        print!(
-            "\x1b[1;{color}m{}\x1b[0;{color}m{}\x1b[0m",
-            Base64UrlUnpadded::encode_string(prefix),
-            Base64UrlUnpadded::encode_string(data)
-        );
-    }
-}
-
-fn print_message(message: &[u8]) {
-    let Ok(parts) = tsp_sdk::cesr::open_message_into_parts(message) else {
-        eprintln!("Invalid encoded message");
-        return;
-    };
-
-    println!("CESR-encoded message:");
-
-    color_print_part(Some(parts.prefix), 31);
-    color_print_part(Some(parts.sender), 35);
-    color_print_part(parts.receiver, 34);
-    color_print_part(parts.nonconfidential_data, 32);
-    color_print_part(parts.ciphertext, 33);
-    color_print_part(Some(parts.signature), 36);
-
-    println!();
-}
-
 fn prompt(message: String) -> bool {
     use std::io::{self, BufRead, Write};
     print!("{message}? [y/n] ");
@@ -365,7 +337,7 @@ async fn run() -> Result<(), Error> {
             info!("{vid} is verified and added to the wallet {}", &args.wallet);
         }
         Commands::Print { alias } => {
-            let vid = vid_wallet.resolve_alias(&alias)?;
+            let vid = vid_wallet.try_resolve_alias(&alias)?;
 
             print!("{vid}");
         }
@@ -505,7 +477,7 @@ async fn run() -> Result<(), Error> {
         Commands::SetRoute { vid, route } => {
             let route: Vec<_> = route
                 .split(',')
-                .map(|s| vid_wallet.resolve_alias(s).unwrap())
+                .map(|s| vid_wallet.try_resolve_alias(s).unwrap())
                 .collect();
 
             let route_ref = route.iter().map(|s| s.as_str()).collect::<Vec<_>>();
@@ -553,7 +525,8 @@ async fn run() -> Result<(), Error> {
                     .as_store()
                     .seal_message(&sender_vid, &receiver_vid, non_confidential_data, &message)?
                     .1;
-                print_message(&cesr_message);
+                println!("CESR-encoded message:");
+                color_print(&cesr_message).unwrap();
             }
 
             info!(

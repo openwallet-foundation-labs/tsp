@@ -95,12 +95,8 @@ impl AsyncSecureStore {
     }
 
     /// Add the already resolved `verified_vid` to the wallet as a relationship
-    pub fn add_verified_vid(
-        &self,
-        verified_vid: impl VerifiedVid + 'static,
-        alias: Option<String>,
-    ) -> Result<(), Error> {
-        self.inner.add_verified_vid(verified_vid, alias)
+    pub fn add_verified_vid(&self, verified_vid: impl VerifiedVid + 'static) -> Result<(), Error> {
+        self.inner.add_verified_vid(verified_vid)
     }
 
     /// Check whether the [PrivateVid] identified by `vid` exists in the wallet
@@ -117,14 +113,23 @@ impl AsyncSecureStore {
     pub async fn verify_vid(&mut self, vid: &str, alias: Option<String>) -> Result<(), Error> {
         let verified_vid = crate::vid::verify_vid(vid).await?;
 
-        self.inner.add_verified_vid(verified_vid, alias)?;
+        self.inner.add_verified_vid(verified_vid)?;
+
+        if let Some(alias) = alias {
+            self.set_alias(alias, vid.to_owned())?;
+        }
 
         Ok(())
     }
 
     /// Resolve alias to its corresponding DID
-    pub fn resolve_alias(&self, alias: &str) -> Result<String, Error> {
+    pub fn resolve_alias(&self, alias: &str) -> Result<Option<String>, Error> {
         self.inner.resolve_alias(alias)
+    }
+
+    /// Resolve alias to its corresponding DID
+    pub fn try_resolve_alias(&self, alias: &str) -> Result<String, Error> {
+        self.inner.try_resolve_alias(alias)
     }
 
     /// Set alias for a DID

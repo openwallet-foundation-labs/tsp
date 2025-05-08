@@ -298,7 +298,7 @@ async fn sign_timestamp(
         .map_err(|_| (StatusCode::BAD_REQUEST, "Error verifying vid").into_response())?;
     state
         .timestamp_server
-        .add_verified_vid(verified_vid, None)
+        .add_verified_vid(verified_vid)
         .map_err(|_| (StatusCode::BAD_REQUEST, "Error adding verified vid").into_response())?;
 
     let (_url, response_bytes) = state

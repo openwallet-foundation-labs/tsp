@@ -86,7 +86,7 @@ impl IntermediaryState {
         let verified_vid = tsp_sdk::vid::verify_vid(vid).await?;
 
         // Immediately releases write lock
-        self.db.write().await.add_verified_vid(verified_vid, None)?;
+        self.db.write().await.add_verified_vid(verified_vid)?;
 
         Ok(())
     }

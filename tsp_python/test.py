@@ -1,12 +1,12 @@
 import unittest
-from tsp import *
+from tsp_python import *
 
 def new_vid():
         return OwnedVid.new_did_peer("tcp://127.0.0.1:1337")
 
 class AliceBob(unittest.TestCase):
     def setUp(self):
-        self.store = Store()
+        self.store = SecureStore()
         self.alice = new_vid()
         self.bob = new_vid()
 
@@ -16,7 +16,7 @@ class AliceBob(unittest.TestCase):
     def test_open_seal(self):
         message = b"hello world"
 
-        url, sealed = self.store.seal_message(self.alice.identifier(), self.bob.identifier(), None, message)
+        url, sealed = self.store.seal_message(self.alice.identifier(), self.bob.identifier(), message)
 
         self.assertEqual(url, "tcp://127.0.0.1:1337")
 
@@ -104,10 +104,10 @@ class AliceBob(unittest.TestCase):
                 self.fail(f"unexpected message type {other}")
 
     def test_routed(self):
-        a_store = Store()
-        b_store = Store()
-        c_store = Store()
-        d_store = Store()
+        a_store = SecureStore()
+        b_store = SecureStore()
+        c_store = SecureStore()
+        d_store = SecureStore()
 
         nette_a = new_vid()
         sneaky_a = new_vid()
@@ -128,17 +128,17 @@ class AliceBob(unittest.TestCase):
         d_store.add_private_vid(sneaky_d)
         d_store.add_private_vid(nette_d)
 
-        a_store.add_verified_vid(b)
-        a_store.add_verified_vid(sneaky_d)
+        a_store.add_verified_owned_vid(b)
+        a_store.add_verified_owned_vid(sneaky_d)
 
-        b_store.add_verified_vid(nette_a)
-        b_store.add_verified_vid(c)
+        b_store.add_verified_owned_vid(nette_a)
+        b_store.add_verified_owned_vid(c)
 
-        c_store.add_verified_vid(b)
-        c_store.add_verified_vid(nette_d)
+        c_store.add_verified_owned_vid(b)
+        c_store.add_verified_owned_vid(nette_d)
 
-        d_store.add_verified_vid(sneaky_a)
-        d_store.add_verified_vid(mailbox_c)
+        d_store.add_verified_owned_vid(sneaky_a)
+        d_store.add_verified_owned_vid(mailbox_c)
 
         # relations
 
@@ -159,7 +159,7 @@ class AliceBob(unittest.TestCase):
 
         hello_world = b"hello world";
 
-        _, sealed = a_store.seal_message(sneaky_a.identifier(), sneaky_d.identifier(), None, hello_world)
+        _, sealed = a_store.seal_message(sneaky_a.identifier(), sneaky_d.identifier(), hello_world)
         received = b_store.open_message(sealed)
 
         match received:
@@ -194,8 +194,8 @@ class AliceBob(unittest.TestCase):
                 self.fail(f"unexpected message type {other}")
 
     def test_nested_automatic(self):
-        a_store = Store()
-        b_store = Store()
+        a_store = SecureStore()
+        b_store = SecureStore()
 
         a = new_vid()
         b = new_vid()
@@ -203,8 +203,8 @@ class AliceBob(unittest.TestCase):
         a_store.add_private_vid(a)
         b_store.add_private_vid(b)
 
-        a_store.add_verified_vid(b)
-        b_store.add_verified_vid(a)
+        a_store.add_verified_owned_vid(b)
+        b_store.add_verified_owned_vid(a)
 
         url, sealed = a_store.make_relationship_request(a.identifier(), b.identifier(), None)
         self.assertEqual(url, "tcp://127.0.0.1:1337")
@@ -251,7 +251,7 @@ class AliceBob(unittest.TestCase):
 
         hello_world = b"hello world";
 
-        _url, sealed = a_store.seal_message(nested_a.identifier(), nested_b.identifier(), None, hello_world)
+        _url, sealed = a_store.seal_message(nested_a.identifier(), nested_b.identifier(), hello_world)
 
         received = b_store.open_message(sealed)
 

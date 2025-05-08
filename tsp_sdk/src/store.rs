@@ -147,11 +147,7 @@ impl SecureStore {
     }
 
     /// Add the already resolved `verified_vid` to the wallet as a relationship
-    pub fn add_verified_vid(
-        &self,
-        verified_vid: impl VerifiedVid + 'static,
-        alias: Option<String>,
-    ) -> Result<(), Error> {
+    pub fn add_verified_vid(&self, verified_vid: impl VerifiedVid + 'static) -> Result<(), Error> {
         let did = verified_vid.identifier().to_string();
 
         self.vids.write()?.insert(
@@ -165,10 +161,6 @@ impl SecureStore {
                 tunnel: None,
             },
         );
-
-        if let Some(alias) = alias {
-            self.set_alias(alias, did)?;
-        }
 
         Ok(())
     }
@@ -202,7 +194,7 @@ impl SecureStore {
     /// Sets the parent for a VID, thus making it a nested VID
     pub fn set_parent_for_vid(&self, vid: &str, parent_vid: Option<&str>) -> Result<(), Error> {
         let parent_vid = if let Some(parent_vid) = parent_vid {
-            Some(self.resolve_alias(parent_vid)?)
+            Some(self.try_resolve_alias(parent_vid)?)
         } else {
             None
         };
@@ -219,7 +211,7 @@ impl SecureStore {
     /// The relation VID will be used as sender VID when sending messages to this VID.
     pub fn set_relation_for_vid(&self, vid: &str, relation_vid: Option<&str>) -> Result<(), Error> {
         let relation_vid = if let Some(relation_vid) = relation_vid {
-            Some(self.resolve_alias(relation_vid)?)
+            Some(self.try_resolve_alias(relation_vid)?)
         } else {
             None
         };
@@ -299,7 +291,7 @@ impl SecureStore {
         vid: &str,
         change: impl FnOnce(&mut VidContext) -> Result<T, Error>,
     ) -> Result<T, Error> {
-        let vid = self.resolve_alias(vid)?;
+        let vid = self.try_resolve_alias(vid)?;
 
         match self.vids.write()?.get_mut(&vid) {
             Some(resolved) => change(resolved),
@@ -334,13 +326,13 @@ impl SecureStore {
     }
 
     /// Retrieve the [VerifiedVid] identified by `vid` from the wallet if it exists.
-    pub(crate) fn get_verified_vid(&self, vid: &str) -> Result<Arc<dyn VerifiedVid>, Error> {
+    pub fn get_verified_vid(&self, vid: &str) -> Result<Arc<dyn VerifiedVid>, Error> {
         Ok(self.get_vid(vid)?.vid)
     }
 
     /// Retrieve the [VidContext] identified by `vid` from the wallet, if it exists.
     pub(super) fn get_vid(&self, vid: &str) -> Result<VidContext, Error> {
-        let vid = self.resolve_alias(vid)?;
+        let vid = self.try_resolve_alias(vid)?;
 
         match self.vids.read()?.get(&vid) {
             Some(resolved) => Ok(resolved.clone()),
@@ -348,13 +340,17 @@ impl SecureStore {
         }
     }
 
-    /// Resolve alias to its corresponding DID, or leave it as is
-    pub fn resolve_alias(&self, alias: &str) -> Result<String, Error> {
+    /// Resolve alias to its corresponding DID
+    pub fn resolve_alias(&self, alias: &str) -> Result<Option<String>, Error> {
         let aliases = self.aliases.read()?;
-        Ok(aliases
-            .get(alias)
-            .to_owned()
-            .map_or(alias, |v| v)
+        Ok(aliases.get(alias).cloned())
+    }
+
+    /// Resolve alias to its corresponding DID, or leave it as is
+    pub fn try_resolve_alias(&self, alias: &str) -> Result<String, Error> {
+        Ok(self
+            .resolve_alias(alias)?
+            .unwrap_or(alias.to_owned())
             .to_string())
     }
 
@@ -1099,7 +1095,7 @@ impl SecureStore {
     fn add_nested_vid(&self, vid: &str) -> Result<(), Error> {
         let nested_vid = verify_vid_offline(vid)?;
 
-        self.add_verified_vid(nested_vid, None)
+        self.add_verified_vid(nested_vid)
     }
 
     fn upgrade_relation(
@@ -1239,9 +1235,7 @@ mod test {
         let store = SecureStore::new();
         let owned_vid = new_vid();
 
-        store
-            .add_verified_vid(owned_vid.vid().clone(), None)
-            .unwrap();
+        store.add_verified_vid(owned_vid.vid().clone()).unwrap();
 
         assert!(store.get_verified_vid(owned_vid.identifier()).is_ok());
     }
@@ -1432,8 +1426,8 @@ mod test {
         b_store.add_private_vid(bob.clone()).unwrap();
         a_store.add_private_vid(charles.clone()).unwrap();
 
-        a_store.add_verified_vid(bob.clone(), None).unwrap();
-        b_store.add_verified_vid(alice.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.clone()).unwrap();
+        b_store.add_verified_vid(alice.clone()).unwrap();
 
         let status = super::RelationshipStatus::Bidirectional {
             thread_id: Default::default(),
@@ -1472,7 +1466,7 @@ mod test {
 
         store.add_private_vid(alice.clone()).unwrap();
         store.add_private_vid(bob.clone()).unwrap();
-        store.add_verified_vid(charles.clone(), None).unwrap();
+        store.add_verified_vid(charles.clone()).unwrap();
 
         // alice vouches for charlies to bob
         let (url, mut sealed) = store
@@ -1520,17 +1514,17 @@ mod test {
         d_store.add_private_vid(sneaky_d.clone()).unwrap();
         d_store.add_private_vid(nette_d.clone()).unwrap();
 
-        a_store.add_verified_vid(b.clone(), None).unwrap();
-        a_store.add_verified_vid(sneaky_d.clone(), None).unwrap();
+        a_store.add_verified_vid(b.clone()).unwrap();
+        a_store.add_verified_vid(sneaky_d.clone()).unwrap();
 
-        b_store.add_verified_vid(nette_a.clone(), None).unwrap();
-        b_store.add_verified_vid(c.clone(), None).unwrap();
+        b_store.add_verified_vid(nette_a.clone()).unwrap();
+        b_store.add_verified_vid(c.clone()).unwrap();
 
-        c_store.add_verified_vid(b.clone(), None).unwrap();
-        c_store.add_verified_vid(nette_d.clone(), None).unwrap();
+        c_store.add_verified_vid(b.clone()).unwrap();
+        c_store.add_verified_vid(nette_d.clone()).unwrap();
 
-        d_store.add_verified_vid(sneaky_a.clone(), None).unwrap();
-        d_store.add_verified_vid(mailbox_c.clone(), None).unwrap();
+        d_store.add_verified_vid(sneaky_a.clone()).unwrap();
+        d_store.add_verified_vid(mailbox_c.clone()).unwrap();
 
         a_store
             .set_relation_for_vid(b.identifier(), Some(nette_a.identifier()))
@@ -1648,11 +1642,11 @@ mod test {
         b_store.add_private_vid(b.clone()).unwrap();
         b_store.add_private_vid(nested_b.clone()).unwrap();
 
-        a_store.add_verified_vid(b.clone(), None).unwrap();
-        a_store.add_verified_vid(nested_b.clone(), None).unwrap();
+        a_store.add_verified_vid(b.clone()).unwrap();
+        a_store.add_verified_vid(nested_b.clone()).unwrap();
 
-        b_store.add_verified_vid(a.clone(), None).unwrap();
-        b_store.add_verified_vid(nested_a.clone(), None).unwrap();
+        b_store.add_verified_vid(a.clone()).unwrap();
+        b_store.add_verified_vid(nested_a.clone()).unwrap();
 
         a_store
             .set_parent_for_vid(nested_b.identifier(), Some(b.identifier()))
@@ -1716,8 +1710,8 @@ mod test {
         a_store.add_private_vid(a.clone()).unwrap();
         b_store.add_private_vid(b.clone()).unwrap();
 
-        a_store.add_verified_vid(b.clone(), None).unwrap();
-        b_store.add_verified_vid(a.clone(), None).unwrap();
+        a_store.add_verified_vid(b.clone()).unwrap();
+        b_store.add_verified_vid(a.clone()).unwrap();
 
         let (_url, mut sealed) = a_store
             .make_relationship_request(a.identifier(), b.identifier(), None)
