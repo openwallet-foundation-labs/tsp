@@ -1,4 +1,5 @@
 import unittest
+import os
 
 from tsp_python import *
 
@@ -9,24 +10,31 @@ def new_vid():
 
 class AliceBob(unittest.TestCase):
     def setUp(self):
-        self.store = SecureStore()
+        self.store = SecureStore(wallet_url="sqlite://test_wallet.sqlite")
         self.alice = new_vid()
         self.bob = new_vid()
 
         self.store.add_private_vid(self.alice)
         self.store.add_private_vid(self.bob)
 
+    def tearDown(self):
+        os.remove("test_wallet.sqlite")
+
     def test_open_seal(self):
         message = b"hello world"
 
-        url, sealed = self.store.seal_message(self.alice.identifier(), self.bob.identifier(), message)
+        url, sealed = self.store.seal_message(
+            self.alice.identifier(), self.bob.identifier(), message
+        )
 
         self.assertEqual(url, "tcp://127.0.0.1:1337")
 
         received = self.store.open_message(sealed)
 
         match received:
-            case GenericMessage(sender, _, received_message, crypto_type, signature_type):
+            case GenericMessage(
+                sender, _, received_message, crypto_type, signature_type
+            ):
                 self.assertEqual(sender, self.alice.identifier())
                 self.assertEqual(received_message, message)
                 self.assertNotEqual(crypto_type, CryptoType.Plaintext)
@@ -36,7 +44,9 @@ class AliceBob(unittest.TestCase):
                 self.fail(f"unexpected message type {other}")
 
     def test_make_relationship_request(self):
-        url, sealed = self.store.make_relationship_request(self.alice.identifier(), self.bob.identifier(), None)
+        url, sealed = self.store.make_relationship_request(
+            self.alice.identifier(), self.bob.identifier(), None
+        )
 
         self.assertEqual(url, "tcp://127.0.0.1:1337")
 
@@ -50,7 +60,9 @@ class AliceBob(unittest.TestCase):
                 self.fail(f"unexpected message type {other}")
 
     def test_make_relationship_accept(self):
-        url, sealed = self.store.make_relationship_request(self.alice.identifier(), self.bob.identifier(), None)
+        url, sealed = self.store.make_relationship_request(
+            self.alice.identifier(), self.bob.identifier(), None
+        )
         self.assertEqual(url, "tcp://127.0.0.1:1337")
 
         received = self.store.open_message(sealed)
@@ -61,8 +73,9 @@ class AliceBob(unittest.TestCase):
             case other:
                 self.fail(f"unexpected message type {other}")
 
-        url, sealed = self.store.make_relationship_accept(self.bob.identifier(), self.alice.identifier(), thread_id,
-                                                          None)
+        url, sealed = self.store.make_relationship_accept(
+            self.bob.identifier(), self.alice.identifier(), thread_id, None
+        )
         self.assertEqual(url, "tcp://127.0.0.1:1337")
 
         received = self.store.open_message(sealed)
@@ -74,7 +87,9 @@ class AliceBob(unittest.TestCase):
                 self.fail(f"unexpected message type {other}")
 
     def test_make_relationship_cancel(self):
-        url, sealed = self.store.make_relationship_request(self.alice.identifier(), self.bob.identifier(), None)
+        url, sealed = self.store.make_relationship_request(
+            self.alice.identifier(), self.bob.identifier(), None
+        )
         self.assertEqual(url, "tcp://127.0.0.1:1337")
 
         received = self.store.open_message(sealed)
@@ -85,8 +100,9 @@ class AliceBob(unittest.TestCase):
             case other:
                 self.fail(f"unexpected message type {other}")
 
-        url, sealed = self.store.make_relationship_accept(self.bob.identifier(), self.alice.identifier(), thread_id,
-                                                          None)
+        url, sealed = self.store.make_relationship_accept(
+            self.bob.identifier(), self.alice.identifier(), thread_id, None
+        )
         self.assertEqual(url, "tcp://127.0.0.1:1337")
 
         received = self.store.open_message(sealed)
@@ -97,7 +113,9 @@ class AliceBob(unittest.TestCase):
             case other:
                 self.fail(f"unexpected message type {other}")
 
-        url, sealed = self.store.make_relationship_cancel(self.bob.identifier(), self.alice.identifier())
+        url, sealed = self.store.make_relationship_cancel(
+            self.bob.identifier(), self.alice.identifier()
+        )
         self.assertEqual(url, "tcp://127.0.0.1:1337")
 
         received = self.store.open_message(sealed)
@@ -109,10 +127,10 @@ class AliceBob(unittest.TestCase):
                 self.fail(f"unexpected message type {other}")
 
     def test_routed(self):
-        a_store = SecureStore()
-        b_store = SecureStore()
-        c_store = SecureStore()
-        d_store = SecureStore()
+        a_store = SecureStore(wallet_url="sqlite://test_wallet_a.sqlite")
+        b_store = SecureStore(wallet_url="sqlite://test_wallet_b.sqlite")
+        c_store = SecureStore(wallet_url="sqlite://test_wallet_c.sqlite")
+        d_store = SecureStore(wallet_url="sqlite://test_wallet_d.sqlite")
 
         nette_a = new_vid()
         sneaky_a = new_vid()
@@ -140,7 +158,8 @@ class AliceBob(unittest.TestCase):
         b_store.add_verified_owned_vid(c)
 
         c_store.add_verified_owned_vid(b)
-        c_store.add_verified_owned_vid(nette_d)
+        c_store.add_private_vid(nette_d)
+        # TODO: fix routed mode (should not require private vid for setting drop off)
 
         d_store.add_verified_owned_vid(sneaky_a)
         d_store.add_verified_owned_vid(mailbox_c)
@@ -149,7 +168,9 @@ class AliceBob(unittest.TestCase):
 
         a_store.make_relationship_request(nette_a.identifier(), b.identifier(), None)
 
-        a_store.make_relationship_request(sneaky_a.identifier(), sneaky_d.identifier(), None)
+        a_store.make_relationship_request(
+            sneaky_a.identifier(), sneaky_d.identifier(), None
+        )
 
         a_store.set_route_for_vid(
             sneaky_d.identifier(),
@@ -158,13 +179,16 @@ class AliceBob(unittest.TestCase):
 
         b_store.make_relationship_request(b.identifier(), c.identifier(), None)
 
-        c_store.make_relationship_request(nette_d.identifier(), mailbox_c.identifier(), None)
+        c_store.make_relationship_request(
+            nette_d.identifier(), mailbox_c.identifier(), None
+        )
 
         # that was all the setup, now let's run some things
 
-        hello_world = b"hello world";
-
-        _, sealed = a_store.seal_message(sneaky_a.identifier(), sneaky_d.identifier(), hello_world)
+        hello_world = b"hello world"
+        _, sealed = a_store.seal_message(
+            sneaky_a.identifier(), sneaky_d.identifier(), hello_world
+        )
         received = b_store.open_message(sealed)
 
         match received:
@@ -187,8 +211,15 @@ class AliceBob(unittest.TestCase):
         _url, sealed = c_store.forward_routed_message(next_hop, route, opaque_payload)
         received = d_store.open_message(sealed)
 
+        os.remove("test_wallet_a.sqlite")
+        os.remove("test_wallet_b.sqlite")
+        os.remove("test_wallet_c.sqlite")
+        os.remove("test_wallet_d.sqlite")
+
         match received:
-            case GenericMessage(sender, nonconfidential_data, message, crypto_type, signature_type):
+            case GenericMessage(
+                sender, nonconfidential_data, message, crypto_type, signature_type
+            ):
                 self.assertEqual(sender, sneaky_a.identifier())
                 self.assertEqual(nonconfidential_data, None)
                 self.assertEqual(message, hello_world)
@@ -199,8 +230,8 @@ class AliceBob(unittest.TestCase):
                 self.fail(f"unexpected message type {other}")
 
     def test_nested_automatic(self):
-        a_store = SecureStore()
-        b_store = SecureStore()
+        a_store = SecureStore(wallet_url="sqlite://test_wallet_a.sqlite")
+        b_store = SecureStore(wallet_url="sqlite://test_wallet_b.sqlite")
 
         a = new_vid()
         b = new_vid()
@@ -211,7 +242,9 @@ class AliceBob(unittest.TestCase):
         a_store.add_verified_owned_vid(b)
         b_store.add_verified_owned_vid(a)
 
-        url, sealed = a_store.make_relationship_request(a.identifier(), b.identifier(), None)
+        url, sealed = a_store.make_relationship_request(
+            a.identifier(), b.identifier(), None
+        )
         self.assertEqual(url, "tcp://127.0.0.1:1337")
 
         received = b_store.open_message(sealed)
@@ -222,7 +255,9 @@ class AliceBob(unittest.TestCase):
             case other:
                 self.fail(f"unexpected message type {other}")
 
-        url, sealed = b_store.make_relationship_accept(b.identifier(), a.identifier(), thread_id, None)
+        url, sealed = b_store.make_relationship_accept(
+            b.identifier(), a.identifier(), thread_id, None
+        )
         self.assertEqual(url, "tcp://127.0.0.1:1337")
 
         received = a_store.open_message(sealed)
@@ -233,7 +268,9 @@ class AliceBob(unittest.TestCase):
             case other:
                 self.fail(f"unexpected message type {other}")
 
-        (_url, sealed), nested_a = a_store.make_nested_relationship_request(a.identifier(), b.identifier())
+        (_url, sealed), nested_a = a_store.make_nested_relationship_request(
+            a.identifier(), b.identifier()
+        )
 
         match b_store.open_message(sealed):
             case RequestRelationship(sender, _route, nested_vid_1, thread_id):
@@ -242,7 +279,9 @@ class AliceBob(unittest.TestCase):
             case other:
                 self.fail(f"unexpected message type {other}")
 
-        (_url, sealed), nested_b = b_store.make_nested_relationship_accept(b.identifier(), nested_vid_1, thread_id)
+        (_url, sealed), nested_b = b_store.make_nested_relationship_accept(
+            b.identifier(), nested_vid_1, thread_id
+        )
 
         match a_store.open_message(sealed):
             case AcceptRelationship(sender, nested_vid_2):
@@ -251,17 +290,22 @@ class AliceBob(unittest.TestCase):
             case other:
                 self.fail(f"unexpected message type {other}")
 
-        self.assertEqual(nested_a.identifier(), nested_vid_1);
-        self.assertEqual(nested_b.identifier(), nested_vid_2);
-
-        hello_world = b"hello world";
-
-        _url, sealed = a_store.seal_message(nested_a.identifier(), nested_b.identifier(), hello_world)
+        self.assertEqual(nested_a.identifier(), nested_vid_1)
+        self.assertEqual(nested_b.identifier(), nested_vid_2)
+        hello_world = b"hello world"
+        _url, sealed = a_store.seal_message(
+            nested_a.identifier(), nested_b.identifier(), hello_world
+        )
 
         received = b_store.open_message(sealed)
 
+        os.remove("test_wallet_a.sqlite")
+        os.remove("test_wallet_b.sqlite")
+
         match received:
-            case GenericMessage(sender, _, received_message, crypto_type, signature_type):
+            case GenericMessage(
+                sender, _, received_message, crypto_type, signature_type
+            ):
                 self.assertEqual(sender, nested_a.identifier())
                 self.assertEqual(received_message, hello_world)
                 self.assertNotEqual(crypto_type, CryptoType.Plaintext)
@@ -271,5 +315,5 @@ class AliceBob(unittest.TestCase):
                 self.fail(f"unexpected message type {other}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
