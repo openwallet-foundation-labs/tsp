@@ -30,7 +30,7 @@ tsp --wallet a set-parent b-inner b
 tsp --wallet b set-parent a-inner a
 
 echo "---- configure relations"
-tsp --wallet a set-relation b-inner a-inner
+tsp --wallet a request -r b-inner -s a-inner
 
 echo "---- wait 2 seconds and then send a message to the receiver"
 sleep 2 && echo "Hi b" | tsp --wallet a send -s a-inner -r b-inner &

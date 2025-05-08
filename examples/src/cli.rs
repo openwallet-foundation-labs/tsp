@@ -58,8 +58,6 @@ enum Commands {
         vid: String,
         #[arg(short, long)]
         alias: Option<String>,
-        #[arg(short, long)]
-        sender: Option<String>,
     },
     #[command(arg_required_else_help = true)]
     Print { alias: String },
@@ -97,8 +95,6 @@ enum Commands {
     SetRoute { vid: String, route: String },
     #[command(arg_required_else_help = true)]
     SetParent { vid: String, other_vid: String },
-    #[command(arg_required_else_help = true)]
-    SetRelation { vid: String, other_vid: String },
     #[command(arg_required_else_help = true, about = "send a message")]
     Send {
         #[arg(short, long, required = true)]
@@ -128,6 +124,8 @@ enum Commands {
             help = "parent VID of the sender, used to listen for a response"
         )]
         parent_vid: Option<String>,
+        #[arg(long, help = "wait for a response")]
+        wait: bool,
     },
     #[command(arg_required_else_help = true, about = "accept a relationship")]
     Accept {
@@ -288,10 +286,8 @@ async fn run() -> Result<(), Error> {
                 show_relations(&vids, None, &aliases)?;
             }
         }
-        Commands::Verify { vid, alias, sender } => {
+        Commands::Verify { vid, alias } => {
             vid_wallet.verify_vid(&vid, alias).await?;
-
-            vid_wallet.set_relation_for_vid(&vid, sender.as_deref())?;
 
             info!("{vid} is verified and added to the wallet {}", &args.wallet);
         }
@@ -434,10 +430,6 @@ async fn run() -> Result<(), Error> {
 
             vid_wallet.set_route_for_vid(&vid, &route_ref)?;
             info!("{vid} has route {route:?}");
-        }
-        Commands::SetRelation { vid, other_vid } => {
-            vid_wallet.set_relation_for_vid(&vid, Some(&other_vid))?;
-            info!("{vid} has relation to {other_vid}");
         }
         Commands::Send {
             sender_vid,
@@ -672,6 +664,7 @@ async fn run() -> Result<(), Error> {
             receiver_vid,
             nested,
             parent_vid,
+            wait,
         } => {
             // Setup receive stream before sending the request
             let listener_vid = parent_vid.unwrap_or(sender_vid.clone());
@@ -703,46 +696,48 @@ async fn run() -> Result<(), Error> {
                 return Ok(());
             }
 
-            info!(
-                "sent relationship request from {sender_vid} to {receiver_vid}, waiting for response...",
-            );
+            info!("sent relationship request from {sender_vid} to {receiver_vid}",);
 
-            // Give user some feedback for what messages it receives
-            // The actual logic for handling the relationship happens internally in the `open_message` function
-            while let Some(Ok(message)) = messages.next().await {
-                match message {
-                    ReceivedTspMessage::GenericMessage { sender, .. } => {
-                        info!("received generic message from {sender}")
-                    }
-                    ReceivedTspMessage::RequestRelationship { sender, .. } => {
-                        info!("received relationship request from {sender}")
-                    }
-                    ReceivedTspMessage::AcceptRelationship { sender, nested_vid } => {
-                        info!(
-                            "received accept relationship from {sender} (nested_vid: {})",
-                            nested_vid.clone().unwrap_or("none".to_string())
-                        );
-                        if let Some(nested_vid) = nested_vid {
-                            println!("{}", nested_vid);
+            if wait {
+                info!("waiting for response...",);
+
+                // Give user some feedback for what messages it receives
+                // The actual logic for handling the relationship happens internally in the `open_message` function
+                while let Some(Ok(message)) = messages.next().await {
+                    match message {
+                        ReceivedTspMessage::GenericMessage { sender, .. } => {
+                            info!("received generic message from {sender}")
                         }
-                        break;
-                    }
-                    ReceivedTspMessage::CancelRelationship { sender } => {
-                        info!("received cancel relationship from {sender}");
-                        break;
-                    }
-                    ReceivedTspMessage::ForwardRequest { sender, .. } => {
-                        info!("received forward request from {sender}")
-                    }
-                    ReceivedTspMessage::NewIdentifier { sender, new_vid } => {
-                        info!("received new identifier for {sender}: {new_vid}")
-                    }
-                    ReceivedTspMessage::Referral {
-                        sender,
-                        referred_vid,
-                    } => info!("received referral from {sender} for {referred_vid}"),
-                    ReceivedTspMessage::PendingMessage { unknown_vid, .. } => {
-                        info!("received pending message from {unknown_vid}")
+                        ReceivedTspMessage::RequestRelationship { sender, .. } => {
+                            info!("received relationship request from {sender}")
+                        }
+                        ReceivedTspMessage::AcceptRelationship { sender, nested_vid } => {
+                            info!(
+                                "received accept relationship from {sender} (nested_vid: {})",
+                                nested_vid.clone().unwrap_or("none".to_string())
+                            );
+                            if let Some(nested_vid) = nested_vid {
+                                println!("{}", nested_vid);
+                            }
+                            break;
+                        }
+                        ReceivedTspMessage::CancelRelationship { sender } => {
+                            info!("received cancel relationship from {sender}");
+                            break;
+                        }
+                        ReceivedTspMessage::ForwardRequest { sender, .. } => {
+                            info!("received forward request from {sender}")
+                        }
+                        ReceivedTspMessage::NewIdentifier { sender, new_vid } => {
+                            info!("received new identifier for {sender}: {new_vid}")
+                        }
+                        ReceivedTspMessage::Referral {
+                            sender,
+                            referred_vid,
+                        } => info!("received referral from {sender} for {referred_vid}"),
+                        ReceivedTspMessage::PendingMessage { unknown_vid, .. } => {
+                            info!("received pending message from {unknown_vid}")
+                        }
                     }
                 }
             }

@@ -299,7 +299,8 @@ async fn new_message(
                         .db
                         .read()
                         .await
-                        .set_relation_for_vid(&next_hop, Some(receiver))
+                        .send_relationship_request(&next_hop, receiver, None)
+                        .await
                     {
                         tracing::error!("error setting relation with {next_hop}: {e}");
                         return (

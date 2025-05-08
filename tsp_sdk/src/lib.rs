@@ -26,8 +26,8 @@
 //! The following example demonstrates how to send a message from Alice to Bob
 //!
 //! ```rust
-//! use tsp_sdk::{AsyncSecureStore, OwnedVid, Error, ReceivedTspMessage};
 //! use futures::StreamExt;
+//! use tsp_sdk::{AsyncSecureStore, Error, OwnedVid, ReceivedTspMessage};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Error> {
@@ -53,7 +53,13 @@
 //!         b"hello world",
 //!     ).await?;
 //!
-//!     // receive a message
+//!    // first, receive a Relationship request as this is the first contact
+//!     let Some(Ok(ReceivedTspMessage::RequestRelationship { .. }))=
+//!         bobs_messages.next().await else {
+//!         panic!("bob did not receive a relationship request message")
+//!     };
+//!
+//!     // receive a generic message
 //!     let Some(Ok(ReceivedTspMessage::GenericMessage { message, .. }))=
 //!         bobs_messages.next().await else {
 //!         panic!("bob did not receive a generic message")
