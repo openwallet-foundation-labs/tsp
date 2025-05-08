@@ -104,6 +104,10 @@ impl Store {
         Ok(())
     }
 
+    pub fn forget_vid(&self, vid: &str) -> PyResult<()> {
+        self.inner.forget_vid(vid).map_err(py_exception)
+    }
+
     #[pyo3(signature = (vid, alias=None))]
     fn add_verified_owned_vid(&self, vid: OwnedVid, alias: Option<String>) -> PyResult<()> {
         self.inner

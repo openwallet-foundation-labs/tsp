@@ -34,6 +34,10 @@ class SecureStore:
         with Wallet(self):
             return self.inner.add_private_vid(*args, **kwargs)
 
+    def forget_vid(self, *args, **kwargs):
+        with Wallet(self):
+            return self.inner.forget_vid(*args, **kwargs)
+
     def add_verified_owned_vid(self, *args, **kwargs):
         with Wallet(self):
             return self.inner.add_verified_owned_vid(*args, **kwargs)
