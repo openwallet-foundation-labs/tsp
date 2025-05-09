@@ -5,7 +5,7 @@
 //! The Trust Spanning Protocol (TSP) is a protocol for secure communication
 //! between entities identified by their Verified Identities (VIDs).
 //!
-//! The primary API this crates exposes is the [AsyncStore] struct, which
+//! The primary API this crates exposes is the [AsyncSecureStore] struct, which
 //! is used to manage and resolve VIDs, as well as send and receive messages
 //! between them.
 //!
@@ -17,9 +17,9 @@
 //! If your use-case only requires the core protocol, you can disable the
 //! `async` feature to remove the transport layer and resolve methods.
 //!
-//! The [AsyncStore] uses the tokio async runtime and offers a high level API.
+//! The [AsyncSecureStore] uses the tokio async runtime and offers a high level API.
 //!
-//! The [Store] struct implements managing VIDs and sealing / opening
+//! The [SecureStore] struct implements managing VIDs and sealing / opening
 //! TSP messages (low level API), it does not require an async runtime.
 //! ## Example
 //!
