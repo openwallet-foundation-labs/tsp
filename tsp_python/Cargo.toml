@@ -11,7 +11,7 @@ publish = true
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.24.0" }
+pyo3.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tsp_sdk.workspace = true
