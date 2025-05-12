@@ -9,8 +9,8 @@ and establishing a relationship between those identifiers.
 
 ### Establishing an outer relationship
 
-To send a nested TSP message both sender and receiver should first establish a
-direct relationship. This can be initiated by one party verifying the VID of the other,
+To send a nested TSP message, both sender and receiver should first establish a
+direct relationship. This can be initiated by one party verifying the VID of the other 
 and sending a relationship request.
 
 We use the same __alice__ and __bob__ example as in the previous chapter.
@@ -22,9 +22,9 @@ First, __alice__ will have to learn about __bob__'s existence:
  INFO tsp: did:web:did.teaspoon.world:endpoint:bob is verified and added to the wallet alice
 ```
 Then she can send a relationship request message. This requires __bob__ to be listening as
-shown in the previous chapter (i.e. running `tsp -w bob receive` in a separate window):
+shown in the previous chapter (i.e., running `tsp -w bob receive` in a separate window):
 ```sh
-> tsp -w alice request --sender-vid did:web:did.teaspoon.world:endpoint:alice --receiver-vid did:web:did.teaspoon.world:endpoint:bob
+> tsp -w alice request --sender-vid did:web:did.teaspoon.world:endpoint:alice --receiver-vid did:web:did.teaspoon.world:endpoint:bob --wait
  INFO tsp::async_store: sending message to https://did.teaspoon.world/endpoint/bob
  INFO tsp: sent relationship request from did:web:did.teaspoon.world:endpoint:alice to did:web:did.teaspoon.world:endpoint:bob, waiting for response...
 ```
@@ -37,7 +37,7 @@ do you want to read a message from 'did:web:did.teaspoon.world:endpoint:alice'? 
  INFO tsp: received relationship request from did:web:did.teaspoon.world:endpoint:alice, thread-id 'JZla6+N6FP/In7ywOp8yQD2GfXemCn1e4b6tFVWaLxg'
 ```
 
-Notice how a thread-id was generated, we need this to confirm the relationship.  This can be done by sending a relationship acceptance message (this requires __alice__ to be listening, which the CLI does automatically after sending a relationship request):
+Notice how a thread-id was generated; we need this to confirm the relationship.  This can be done by sending a relationship acceptance message (this requires __alice__ to be listening, which the CLI does automatically after sending a relationship request):
 
 ```sh
 > tsp -w bob accept --sender-vid did:web:did.teaspoon.world:endpoint:bob --receiver-vid did:web:did.teaspoon.world:endpoint:alice --thread-id 'JZla6+N6FP/In7ywOp8yQD2GfXemCn1e4b6tFVWaLxg'
@@ -45,7 +45,6 @@ Notice how a thread-id was generated, we need this to confirm the relationship. 
 
 On __alice__'s side, this will look like:
 ```sh
-> tsp -w alice receive --one did:web:did.teaspoon.world:endpoint:alice
  INFO tsp: received accept relationship from did:web:did.teaspoon.world:endpoint:bob
 ```
 
@@ -59,7 +58,7 @@ have to be passed the `--nested` parameter.
 Let's say that __alice__ again takes the initiative to nest the relationship, which starts the same as before:
 
 ```sh
-> tsp -w alice request --nested --sender-vid did:web:did.teaspoon.world:endpoint:alice --receiver-vid did:web:did.teaspoon.world:endpoint:bob
+> tsp -w alice request --nested --sender-vid did:web:did.teaspoon.world:endpoint:alice --receiver-vid did:web:did.teaspoon.world:endpoint:bob --wait
  INFO tsp: sent a nested relationship request to did:web:did.teaspoon.world:endpoint:bob with new identity 'did:peer:2.Vz6Mv3HRDr8nQ28LZxXHrU1zaUdXVJVjQzhuVcFB4pyF5rweQ.Ez6Lc6URPHMVN1vswnk32ND5zNcAb5o2QA1Hs4NThH2YzAuVL.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0'
 ```
 Notice that a new `did:peer` identifier was created. This will have a transport set to `tsp://`. Let's create an alias for it:
@@ -95,7 +94,7 @@ echo "Hello Bob" | tsp -w alice send --sender-vid inner_alice --receiver-vid inn
 
 ## Nested mode (manual setup)
 
-To send a nested TSP message both sender and receiver should
+To send a nested TSP message, both sender and receiver should
 establish a pair of VIDs. One VID is used for the inner message and one for the outer.
 
 We use the same __alice__ and __bob__ example as in the previous chapter.
@@ -185,11 +184,11 @@ Output:
 ```
 
 We need to configure the association between __alice__ and __bob__'s inner VIDs.
-Use the `set-relation` command to specify which VID should be used to send messages
+Use the `request` command to specify which VID should be used to send messages
 a certain VID:
 
 ```sh
-tsp -w alice set-relation bob-inner alice-inner
+tsp -w alice request --sender bob-inner --receiver alice-inner
 ```
 
 Then set the parent/child relationship of __bob__'s VIDs in __alice__'s wallet:

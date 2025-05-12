@@ -19,7 +19,7 @@ messages to the final recipient `b`. This can be achieved in two ways:
 
   ```sh
   > tsp -w q create --alias q2 q2
-  > tsp -w q set-relation q2 b
+  > tsp -w q request --sender q2 --receiver b
   ```
 
 When this set up is done, the only thing left to send a routed message from `a` to `b`, is to set up a route.
@@ -92,25 +92,16 @@ The sender `a` resolves and verifies the receiver `b`:
 tsp -w b print b | xargs tsp -w a verify --alias b
 ```
 
-The sender `a` also resolves and verifies the first intermediary `p`, and requests a relationship with this intermediary:
+The sender `a` also resolves and verifies the first intermediary `p`:
 ```sh
 tsp -w a verify did:web:p.teaspoon.world --alias p
-tsp -w a request -s a -r p
 ```
 
 Our public demo intermediaries are configured to accept all incoming relationship requests.
 
-> Note that instead of requesting a relationship with `p`, `a` could also only set the relationship for itself, as for this example only one-way communication from `a` to `p` is needed.
-> Passing the `--sender` argument configures which sender VID is used when sending messages to the passed VID. This is equivalent with an extra call to the `set-relation` command.
-> So, instead of the previous two commands, you could also do the following instead:
-> ```
-> tsp -w a verify did:web:p.teaspoon.world --alias p --sender a
-> ```
-
 The receiver `b` resolves and verifies the second intermediary `q`, and requests a relationship with this second intermediary:
 ```sh
 tsp -w b verify did:web:q.teaspoon.world --alias q
-tsp -w b request -s b -r q
 ```
 
 In order for the final drop-off to work, `b` needs to set up a nested relation with `q`, otherwise `q` would have no way of knowing were to deliver the message to in the last hop. The following command will read the nested DIDs into the bash environment variables `DID_B2` and `DID_Q2`:
