@@ -36,7 +36,7 @@ async = [
     "dep:rustls-pemfile",
     "dep:quinn",
 ]
-resolve = ["serialize", "dep:reqwest"]
+resolve = ["serialize", "dep:reqwest", "dep:didwebvh-resolver"]
 serialize = ["dep:serde", "dep:serde_with"]
 use_local_certificate = []
 postgres = ["async", "aries-askar/postgres"]
@@ -96,3 +96,6 @@ features = ["js"]
 serial_test = { version = "3.0" }
 arbitrary = { workspace = true }
 wasm-bindgen-test = "0.3.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+didwebvh-resolver = { workspace = true, optional = true }
