@@ -120,10 +120,10 @@ tsp -w a set-route b "p,did:web:q.teaspoon.world,$DID_Q2"
 
 Sending the routed message is trivial, now we have configured the relations and route.
 
-Let `b` listen for one message:
+Let `b` listen for messages:
 
 ```sh
-tsp -w b receive --one b
+tsp -w b receive b
 ```
 
 Let `a` sent a message:

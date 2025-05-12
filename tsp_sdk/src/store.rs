@@ -215,8 +215,8 @@ impl SecureStore {
         let local_vid = self.try_resolve_alias(local_vid)?;
         let remote_vid = self.try_resolve_alias(remote_vid)?;
 
-        if let Some((_, context)) = self.vids.read()?.iter().find(|(l_vid, context)| {
-            (**l_vid == local_vid) && (context.relation_vid.as_deref() == Some(&remote_vid))
+        if let Some((_, context)) = self.vids.read()?.iter().find(|(r_vid, context)| {
+            (**r_vid == remote_vid) && (context.relation_vid.as_deref() == Some(&local_vid))
         }) {
             Ok(context.relation_status.clone())
         } else {

@@ -112,11 +112,13 @@ async fn test_large_messages() {
             .unwrap();
 
         // first, receive a Relationship request as this is the first contact
-        let crate::definitions::ReceivedTspMessage::RequestRelationship { .. } =
-            bobs_messages.next().await.unwrap().unwrap()
-        else {
-            panic!("bob did not receive a relationship request message")
-        };
+        if i == 1 {
+            let crate::definitions::ReceivedTspMessage::RequestRelationship { .. } =
+                bobs_messages.next().await.unwrap().unwrap()
+            else {
+                panic!("bob did not receive a relationship request message")
+            };
+        }
 
         // second, receive a message
         let crate::definitions::ReceivedTspMessage::GenericMessage {
