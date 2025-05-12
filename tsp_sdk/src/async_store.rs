@@ -1,5 +1,5 @@
 use crate::{
-    ExportVid, OwnedVid, PrivateVid,
+    ExportVid, OwnedVid, PrivateVid, RelationshipStatus,
     definitions::{Digest, ReceivedTspMessage, TSPStream, VerifiedVid},
     error::Error,
     store::{Aliases, SecureStore},
@@ -62,8 +62,14 @@ impl AsyncSecureStore {
     }
 
     /// Adds a relation to an already existing VID, making it a nested VID
-    pub fn set_relation_for_vid(&self, vid: &str, relation_vid: Option<&str>) -> Result<(), Error> {
-        self.inner.set_relation_for_vid(vid, relation_vid)
+    pub fn set_relation_and_status_for_vid(
+        &self,
+        vid: &str,
+        status: RelationshipStatus,
+        relation_vid: &str,
+    ) -> Result<(), Error> {
+        self.inner
+            .set_relation_and_status_for_vid(vid, status, relation_vid)
     }
 
     /// Adds a route to an already existing VID, making it a nested VID
@@ -172,6 +178,20 @@ impl AsyncSecureStore {
         nonconfidential_data: Option<&[u8]>,
         message: &[u8],
     ) -> Result<(), Error> {
+        match self.inner.relation_status_for_vid_pair(sender, receiver) {
+            Ok(relation) => {
+                if matches!(relation, RelationshipStatus::Unrelated) {
+                    self.send_relationship_request(sender, receiver, None)
+                        .await?
+                }
+            }
+            Err(Error::Relationship(_)) => {
+                self.send_relationship_request(sender, receiver, None)
+                    .await?
+            }
+            Err(e) => return Err(e),
+        };
+
         let (endpoint, message) =
             self.inner
                 .seal_message(sender, receiver, nonconfidential_data, message)?;
@@ -400,10 +420,12 @@ impl AsyncSecureStore {
     pub async fn receive(&self, vid: &str) -> Result<TSPStream<ReceivedTspMessage, Error>, Error> {
         let receiver = self.inner.get_private_vid(vid)?;
         let mut transport = receiver.endpoint().clone();
-        let path = transport.path().replace("[vid_placeholder]", vid);
+        let path = transport
+            .path()
+            .replace("[vid_placeholder]", &self.inner.try_resolve_alias(vid)?);
         transport.set_path(&path);
 
-        tracing::trace!("Listening for {vid} to {transport}");
+        tracing::trace!("Listening for {vid} on {transport}");
 
         let messages = crate::transport::receive_messages(&transport).await?;
 

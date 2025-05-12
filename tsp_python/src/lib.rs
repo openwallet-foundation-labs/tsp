@@ -135,13 +135,6 @@ impl Store {
         Ok(endpoint)
     }
 
-    #[pyo3(signature = (vid, relation_vid=None))]
-    fn set_relation_for_vid(&self, vid: String, relation_vid: Option<String>) -> PyResult<()> {
-        self.inner
-            .set_relation_for_vid(&vid, relation_vid.as_deref())
-            .map_err(py_exception)
-    }
-
     fn set_route_for_vid(&self, vid: String, route: Vec<String>) -> PyResult<()> {
         let borrowed: Vec<_> = route.iter().map(|s| s.as_str()).collect();
         self.inner

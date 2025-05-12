@@ -52,10 +52,6 @@ class SecureStore:
         with Wallet(self):
             return self.inner.get_vid_endpoint(*args, **kwargs)
 
-    def set_relation_for_vid(self, *args, **kwargs):
-        with Wallet(self):
-            return self.inner.set_relation_for_vid(*args, **kwargs)
-
     def set_route_for_vid(self, *args, **kwargs):
         with Wallet(self):
             return self.inner.set_route_for_vid(*args, **kwargs)

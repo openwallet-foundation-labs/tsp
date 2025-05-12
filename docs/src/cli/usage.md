@@ -148,12 +148,10 @@ tsp --wallet bob verify did:web:did.teaspoon.world:endpoint:alice --alias alice
 Let __bob__  start listening for a message:
 
 ```sh
-tsp --wallet bob receive --one bob
+tsp --wallet bob receive bob
 ```
 
-The `--one` argument makes the command exit when the first message is received.
-
-Since the above command will block / wait for a first message we should use
+Since the above command will block / wait for messages we should use
 a new / different terminal to send the message from __alice__.
 
 To send a message run the following:
@@ -165,21 +163,11 @@ echo "Hello Bob!" | tsp --wallet alice send --sender-vid alice --receiver-vid bo
 Note that `alice` and `bob` are aliases of `did:web:did.teaspoon.world:endpoint:alice`
 and `did:web:did.teaspoon.world:endpoint:bob`.
 
-We can also use aliases for the argument, for example:
-
-```sh
-echo "Hello Bob!" | tsp -w alice send -s alice -r bob
+On the receiving side you should see:
 ```
-
-In the other terminal window the message should appear:
-
-```sh
-tsp --wallet bob receive --one bob
-```
-
-```
- INFO tsp: listening for messages...
- INFO tsp: received message (11 bytes) from did:web:did.teaspoon.world:endpoint:alice
+ INFO tsp: received relationship request from did:web:did.teaspoon.world:endpoint:alice3, thread-id 'lrQoJ1qYIK6HEHZKvpq3p+it6djYE2YIe++5mqhASnE'
+did:web:did.teaspoon.world:endpoint:alice3      lrQoJ1qYIK6HEHZKvpq3p+it6djYE2YIe++5mqhASnE
+ INFO tsp: received confidential message (11 bytes) from did:web:did.teaspoon.world:endpoint:alice3 (HPKE Auth, Ed25519 signature)
 Hello Bob!
 ```
 

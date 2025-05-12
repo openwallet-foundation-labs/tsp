@@ -12,6 +12,7 @@ use crate::{
 #[cfg(feature = "async")]
 use bytes::Bytes;
 use bytes::BytesMut;
+use std::fmt::Display;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
@@ -206,21 +207,24 @@ impl SecureStore {
         })
     }
 
-    /// Set the relation VID for the VID.
-    ///
-    /// The relation VID will be used as sender VID when sending messages to this VID.
-    pub fn set_relation_for_vid(&self, vid: &str, relation_vid: Option<&str>) -> Result<(), Error> {
-        let relation_vid = if let Some(relation_vid) = relation_vid {
-            Some(self.try_resolve_alias(relation_vid)?)
+    pub fn relation_status_for_vid_pair(
+        &self,
+        local_vid: &str,
+        remote_vid: &str,
+    ) -> Result<RelationshipStatus, Error> {
+        let local_vid = self.try_resolve_alias(local_vid)?;
+        let remote_vid = self.try_resolve_alias(remote_vid)?;
+
+        if let Some((_, context)) = self.vids.read()?.iter().find(|(r_vid, context)| {
+            (**r_vid == remote_vid) && (context.relation_vid.as_deref() == Some(&local_vid))
+        }) {
+            Ok(context.relation_status.clone())
         } else {
-            None
-        };
-
-        self.modify_vid(vid, |resolved| {
-            resolved.set_relation_vid(relation_vid.as_deref());
-
-            Ok(())
-        })
+            Err(Error::Relationship(format!(
+                "{} and {} do not have a relationship",
+                local_vid, remote_vid
+            )))
+        }
     }
 
     /// List all VIDs in the wallet
@@ -269,7 +273,7 @@ impl SecureStore {
     pub fn set_route_for_vid(
         &self,
         vid: &str,
-        route: impl IntoIterator<Item: ToString, IntoIter: ExactSizeIterator>,
+        route: impl IntoIterator<Item: ToString, IntoIter: ExactSizeIterator<Item = impl Display>>,
     ) -> Result<(), Error> {
         let route = route.into_iter();
         if route.len() == 1 {
@@ -531,7 +535,7 @@ impl SecureStore {
         Ok((next_hop, path))
     }
 
-    /// Pass along a in-transit routed TSP `opaque_message` that is not meant for us, given earlier resolved VIDs.
+    /// Pass along an in-transit routed TSP `opaque_message` that is not meant for us, given earlier resolved VIDs.
     /// The message is routed through the route that has been established with `receiver`.
     pub fn forward_routed_message(
         &self,
@@ -767,8 +771,16 @@ impl SecureStore {
 
                         self.set_parent_for_vid(&vid, Some(&sender))?;
                         self.add_nested_relation(&sender, &vid, thread_id)?;
-                        self.set_relation_for_vid(&connect_to_vid, Some(&vid))?;
-                        self.set_relation_for_vid(&vid, Some(&connect_to_vid))?;
+                        self.set_relation_and_status_for_vid(
+                            &connect_to_vid,
+                            RelationshipStatus::bi_default(),
+                            &vid,
+                        )?;
+                        self.set_relation_and_status_for_vid(
+                            &vid,
+                            RelationshipStatus::bi_default(),
+                            &connect_to_vid,
+                        )?;
 
                         Ok(ReceivedTspMessage::AcceptRelationship {
                             sender,
@@ -874,9 +886,10 @@ impl SecureStore {
             (receiver.endpoint().clone(), tsp_message)
         };
 
-        self.set_relation_status_for_vid(
+        self.set_relation_and_status_for_vid(
             receiver.identifier(),
             RelationshipStatus::Unidirectional { thread_id },
+            sender.identifier(),
         )?;
 
         Ok((transport, tsp_message.to_owned()))
@@ -987,8 +1000,16 @@ impl SecureStore {
         thread_id: Digest,
     ) -> Result<((Url, Vec<u8>), OwnedVid), Error> {
         let nested_vid = self.make_propositioning_vid(parent_sender)?;
-        self.set_relation_for_vid(nested_vid.identifier(), Some(nested_receiver))?;
-        self.set_relation_for_vid(nested_receiver, Some(nested_vid.identifier()))?;
+        self.set_relation_and_status_for_vid(
+            nested_vid.identifier(),
+            RelationshipStatus::bi(thread_id),
+            nested_receiver,
+        )?;
+        self.set_relation_and_status_for_vid(
+            nested_receiver,
+            RelationshipStatus::bi(thread_id),
+            nested_vid.identifier(),
+        )?;
 
         let receiver_vid = self.get_vid(nested_receiver)?;
         let parent_receiver = receiver_vid
@@ -1213,7 +1234,7 @@ impl SecureStore {
 mod test {
     use wasm_bindgen_test::wasm_bindgen_test;
 
-    use crate::{OwnedVid, ReceivedTspMessage, SecureStore, VerifiedVid};
+    use crate::{OwnedVid, ReceivedTspMessage, RelationshipStatus, SecureStore, VerifiedVid};
 
     fn new_vid() -> OwnedVid {
         OwnedVid::new_did_peer("tcp://127.0.0.1:1337".parse().unwrap())
@@ -1430,10 +1451,7 @@ mod test {
         a_store.add_verified_vid(bob.clone()).unwrap();
         b_store.add_verified_vid(alice.clone()).unwrap();
 
-        let status = super::RelationshipStatus::Bidirectional {
-            thread_id: Default::default(),
-            outstanding_nested_thread_ids: vec![],
-        };
+        let status = super::RelationshipStatus::bi_default();
 
         a_store
             .replace_relation_status_for_vid(bob.identifier(), status.clone())
@@ -1528,11 +1546,23 @@ mod test {
         d_store.add_verified_vid(mailbox_c.clone()).unwrap();
 
         a_store
-            .set_relation_for_vid(b.identifier(), Some(nette_a.identifier()))
+            .set_relation_and_status_for_vid(
+                b.identifier(),
+                RelationshipStatus::Unidirectional {
+                    thread_id: Default::default(),
+                },
+                nette_a.identifier(),
+            )
             .unwrap();
 
         a_store
-            .set_relation_for_vid(sneaky_d.identifier(), Some(sneaky_a.identifier()))
+            .set_relation_and_status_for_vid(
+                sneaky_d.identifier(),
+                RelationshipStatus::Unidirectional {
+                    thread_id: Default::default(),
+                },
+                sneaky_a.identifier(),
+            )
             .unwrap();
 
         a_store
@@ -1543,11 +1573,23 @@ mod test {
             .unwrap();
 
         b_store
-            .set_relation_for_vid(c.identifier(), Some(b.identifier()))
+            .set_relation_and_status_for_vid(
+                c.identifier(),
+                RelationshipStatus::Unidirectional {
+                    thread_id: Default::default(),
+                },
+                b.identifier(),
+            )
             .unwrap();
 
         c_store
-            .set_relation_for_vid(mailbox_c.identifier(), Some(nette_d.identifier()))
+            .set_relation_and_status_for_vid(
+                mailbox_c.identifier(),
+                RelationshipStatus::Unidirectional {
+                    thread_id: Default::default(),
+                },
+                nette_d.identifier(),
+            )
             .unwrap();
 
         let hello_world = b"hello world";
@@ -1654,7 +1696,13 @@ mod test {
             .unwrap();
 
         a_store
-            .set_relation_for_vid(nested_b.identifier(), Some(nested_a.identifier()))
+            .set_relation_and_status_for_vid(
+                nested_b.identifier(),
+                RelationshipStatus::Unidirectional {
+                    thread_id: Default::default(),
+                },
+                nested_a.identifier(),
+            )
             .unwrap();
 
         a_store

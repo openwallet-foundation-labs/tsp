@@ -47,7 +47,6 @@ Commands:
   set-alias     
   set-route     
   set-parent    
-  set-relation  
   send          send a message
   receive       listen for messages
   request       propose a relationship

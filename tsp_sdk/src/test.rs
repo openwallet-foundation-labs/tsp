@@ -1,4 +1,4 @@
-use crate::{AsyncSecureStore, OwnedVid, VerifiedVid};
+use crate::{AsyncSecureStore, OwnedVid, RelationshipStatus, VerifiedVid};
 use futures::StreamExt;
 
 #[tokio::test]
@@ -42,7 +42,14 @@ async fn test_direct_mode() {
         .await
         .unwrap();
 
-    // receive a message
+    // first, receive a Relationship request as this is the first contact
+    let crate::definitions::ReceivedTspMessage::RequestRelationship { .. } =
+        bobs_messages.next().await.unwrap().unwrap()
+    else {
+        panic!("bob did not receive a relationship request message")
+    };
+
+    // second, receive a generic message
     let crate::definitions::ReceivedTspMessage::GenericMessage {
         message,
         message_type,
@@ -104,7 +111,16 @@ async fn test_large_messages() {
             .await
             .unwrap();
 
-        // receive a message
+        // first, receive a Relationship request as this is the first contact
+        if i == 1 {
+            let crate::definitions::ReceivedTspMessage::RequestRelationship { .. } =
+                bobs_messages.next().await.unwrap().unwrap()
+            else {
+                panic!("bob did not receive a relationship request message")
+            };
+        }
+
+        // second, receive a message
         let crate::definitions::ReceivedTspMessage::GenericMessage {
             message,
             message_type,
@@ -231,9 +247,10 @@ async fn test_nested_mode() {
         .set_parent_for_vid(nested_bob_vid.identifier(), Some(bob_vid.identifier()))
         .unwrap();
     alice_db
-        .set_relation_for_vid(
+        .set_relation_and_status_for_vid(
             nested_bob_vid.identifier(),
-            Some(nested_alice_vid.identifier()),
+            RelationshipStatus::Unrelated,
+            nested_alice_vid.identifier(),
         )
         .unwrap();
 
@@ -256,7 +273,14 @@ async fn test_nested_mode() {
         .await
         .unwrap();
 
-    // receive message using inner vid
+    // first, receive a Relationship request as this is the first contact
+    let crate::definitions::ReceivedTspMessage::RequestRelationship { .. } =
+        bobs_inner_messages.next().await.unwrap().unwrap()
+    else {
+        panic!("bob did not receive a relationship request message")
+    };
+
+    // second, receive a generic message using inner vid
     let crate::definitions::ReceivedTspMessage::GenericMessage {
         message,
         message_type,
@@ -318,15 +342,17 @@ async fn test_routed_mode() {
         )
         .unwrap();
     alice_db
-        .set_relation_for_vid(
+        .set_relation_and_status_for_vid(
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
-            Some("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"),
+            RelationshipStatus::Bidirectional { thread_id: Default::default(), outstanding_nested_thread_ids: vec![] },
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
         )
         .unwrap();
     alice_db
-        .set_relation_for_vid(
+        .set_relation_and_status_for_vid(
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
-            Some("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"),
+            RelationshipStatus::Bidirectional { thread_id: Default::default(), outstanding_nested_thread_ids: vec![] },
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
         )
         .unwrap();
 
@@ -376,9 +402,10 @@ async fn test_routed_mode() {
 
     // bob is going to forward to alice three times; once using an incorrect intermediary, once with a correct, and once without
     bob_db
-        .set_relation_for_vid(
+        .set_relation_and_status_for_vid(
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
-            Some("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob"),
+            RelationshipStatus::Unrelated,
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
         )
         .unwrap();
 
@@ -447,9 +474,10 @@ async fn test_routed_mode() {
 
     // test3: alice is the recipient (using "bob" as the 'final hop')
     bob_db
-        .set_relation_for_vid(
+        .set_relation_and_status_for_vid(
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
-            Some("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"),
+            RelationshipStatus::Unrelated,
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
         )
         .unwrap();
     bob_db

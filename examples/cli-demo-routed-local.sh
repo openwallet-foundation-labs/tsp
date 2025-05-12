@@ -37,14 +37,14 @@ tsp --wallet a verify --alias b "$DID_B"
 
 echo "---- establish outer relation a<->p"
 tsp --wallet a verify --alias p "$DID_P"
-sleep 2 && tsp --wallet a request -s a -r p
+sleep 2 && tsp --wallet a request --wait -s a -r p
 
 echo "---- establish outer relation q<->b"
 tsp --wallet b verify --alias q "$DID_Q"
-sleep 2 && tsp --wallet b request -s b -r q
+sleep 2 && tsp --wallet b request --wait -s b -r q
 
 echo "---- establish nested outer relation q<->b" # required for drop-off
-sleep 2 && read -d '' DID_B2 DID_Q2 <<< $(tsp --wallet b request --nested -s b -r q)
+sleep 2 && read -d '' DID_B2 DID_Q2 <<< $(tsp --wallet b request --wait --nested -s b -r q)
 
 echo "DID_B2=$DID_B2"
 echo "DID_Q2=$DID_Q2"

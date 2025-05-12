@@ -1,8 +1,11 @@
 import unittest
+
 from tsp_python import *
 
+
 def new_vid():
-        return OwnedVid.new_did_peer("tcp://127.0.0.1:1337")
+    return OwnedVid.new_did_peer("tcp://127.0.0.1:1337")
+
 
 class AliceBob(unittest.TestCase):
     def setUp(self):
@@ -58,7 +61,8 @@ class AliceBob(unittest.TestCase):
             case other:
                 self.fail(f"unexpected message type {other}")
 
-        url, sealed = self.store.make_relationship_accept(self.bob.identifier(), self.alice.identifier(), thread_id, None)
+        url, sealed = self.store.make_relationship_accept(self.bob.identifier(), self.alice.identifier(), thread_id,
+                                                          None)
         self.assertEqual(url, "tcp://127.0.0.1:1337")
 
         received = self.store.open_message(sealed)
@@ -81,7 +85,8 @@ class AliceBob(unittest.TestCase):
             case other:
                 self.fail(f"unexpected message type {other}")
 
-        url, sealed = self.store.make_relationship_accept(self.bob.identifier(), self.alice.identifier(), thread_id, None)
+        url, sealed = self.store.make_relationship_accept(self.bob.identifier(), self.alice.identifier(), thread_id,
+                                                          None)
         self.assertEqual(url, "tcp://127.0.0.1:1337")
 
         received = self.store.open_message(sealed)
@@ -142,18 +147,18 @@ class AliceBob(unittest.TestCase):
 
         # relations
 
-        a_store.set_relation_for_vid(b.identifier(), nette_a.identifier())
+        a_store.make_relationship_request(nette_a.identifier(), b.identifier(), None)
 
-        a_store.set_relation_for_vid(sneaky_d.identifier(), sneaky_a.identifier())
+        a_store.make_relationship_request(sneaky_a.identifier(), sneaky_d.identifier(), None)
 
         a_store.set_route_for_vid(
             sneaky_d.identifier(),
             [b.identifier(), c.identifier(), mailbox_c.identifier()],
         )
 
-        b_store.set_relation_for_vid(c.identifier(), b.identifier())
+        b_store.make_relationship_request(b.identifier(), c.identifier(), None)
 
-        c_store.set_relation_for_vid(mailbox_c.identifier(), nette_d.identifier())
+        c_store.make_relationship_request(nette_d.identifier(), mailbox_c.identifier(), None)
 
         # that was all the setup, now let's run some things
 
@@ -264,6 +269,7 @@ class AliceBob(unittest.TestCase):
 
             case other:
                 self.fail(f"unexpected message type {other}")
+
 
 if __name__ == '__main__':
     unittest.main()
