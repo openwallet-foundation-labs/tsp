@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-import requests
 
 from tsp_python import tsp_python
 
@@ -28,12 +27,16 @@ class Wallet:
 class SecureStore:
     inner: tsp_python.Store
 
-    def __init__(self):
-        self.inner = tsp_python.Store()
+    def __init__(self, *args, **kwargs):
+        self.inner = tsp_python.Store(*args, **kwargs)
 
     def add_private_vid(self, *args, **kwargs):
         with Wallet(self):
             return self.inner.add_private_vid(*args, **kwargs)
+
+    def forget_vid(self, *args, **kwargs):
+        with Wallet(self):
+            return self.inner.forget_vid(*args, **kwargs)
 
     def add_verified_owned_vid(self, *args, **kwargs):
         with Wallet(self):
@@ -60,23 +63,13 @@ class SecureStore:
         with Wallet(self):
             return self.inner.seal_message(*args, **kwargs)
 
-    def send_message(
-        self,
-        sender: str,
-        receiver: str,
-        message: bytes,
-        nonconfidential_data: bytes | None = None,
-    ) -> requests.Response:
+    def send(self, *args, **kwargs):
         with Wallet(self):
-            url, message = self.inner.seal_message(
-                sender, receiver, message, nonconfidential_data
-            )
-            if not url.startswith("http"):
-                raise Exception(
-                    "The Python SDK currently only supports HTTP(S) transport"
-                )
+            return self.inner.send(*args, **kwargs)
 
-            return requests.post(url, data=message)
+    def receive(self, *args, **kwargs):
+        with Wallet(self):
+            return self.inner.receive(*args, **kwargs)
 
     def get_sender_receiver(self, *args, **kwargs):
         with Wallet(self):
