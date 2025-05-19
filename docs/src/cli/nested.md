@@ -188,7 +188,7 @@ Use the `request` command to specify which VID should be used to send messages
 a certain VID:
 
 ```sh
-tsp -w alice request --sender bob-inner --receiver alice-inner
+tsp -w alice request --sender-vid bob-inner --receiver-vid alice-inner
 ```
 
 Then set the parent/child relationship of __bob__'s VIDs in __alice__'s wallet:
