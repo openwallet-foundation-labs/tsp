@@ -83,7 +83,12 @@ pub(crate) async fn receive_messages(
     .await
     {
         Ok((stream, _)) => stream,
-        Err(e) => return Err(TransportError::Websocket(ws_address.to_string(), e)),
+        Err(e) => {
+            return Err(TransportError::Websocket(
+                ws_address.to_string(),
+                Box::new(e),
+            ));
+        }
     };
 
     let (_, mut receiver) = ws_stream.split();
