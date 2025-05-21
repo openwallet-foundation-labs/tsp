@@ -126,7 +126,7 @@ fn test_send_command_unverified_receiver_default() {
 }
 
 #[test]
-fn test_send_command_ask_flag() {
+fn test_send_command_unverified_receiver_ask_flag() {
     // clean the wallet
     StdCommand::new("rm")
         .args(&["-f", "marlon.sqlite", "marc.sqlite"])
