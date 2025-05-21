@@ -109,7 +109,7 @@ enum Commands {
     #[command(arg_required_else_help = true, about = "listen for messages")]
     Receive {
         vid: String,
-        #[arg(short, long)]
+        #[arg(short, long, help = "Receive only one message")]
         one: bool,
     },
     #[command(arg_required_else_help = true, about = "propose a relationship")]
