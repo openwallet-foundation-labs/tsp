@@ -13,6 +13,23 @@ fn random_string(n: usize) -> String {
         .collect()
 }
 
+fn create_wallet(alias: &str) -> String {
+    let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
+    let random_name = format!("test_wallet_{}", random_string(8));
+    cmd.args(&[
+        "--wallet",
+        random_name.as_str(),
+        "create",
+        "--alias",
+        alias,
+        random_name.as_str(),
+    ])
+    .assert()
+    .success();
+
+    random_name
+}
+
 fn clean_wallet() {
     StdCommand::new("sh")
         .arg("-c")
@@ -26,32 +43,10 @@ fn test_send_command_unverified_receiver_default() {
     clean_wallet();
 
     // create a new sender identity
-    let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
-    let random_sender_name = format!("test_wallet_{}", random_string(8));
-    cmd.args(&[
-        "--wallet",
-        random_sender_name.as_str(),
-        "create",
-        "--alias",
-        "marlon",
-        random_sender_name.as_str(),
-    ])
-    .assert()
-    .success();
+    let random_sender_name = create_wallet("marlon");
 
     // create a new receiver identity
-    let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
-    let random_receiver_name = format!("test_wallet_{}", random_string(8));
-    cmd.args(&[
-        "--wallet",
-        random_receiver_name.as_str(),
-        "create",
-        "--alias",
-        "marc",
-        random_receiver_name.as_str(),
-    ])
-    .assert()
-    .success();
+    let random_receiver_name = create_wallet("marc");
 
     // print the sender's DID
     let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
@@ -128,32 +123,10 @@ fn test_send_command_unverified_receiver_ask_flag() {
     clean_wallet();
 
     // create a new sender identity
-    let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
-    let random_sender_name = format!("test_wallet_{}", random_string(8));
-    cmd.args(&[
-        "--wallet",
-        random_sender_name.as_str(),
-        "create",
-        "--alias",
-        "marlon",
-        random_sender_name.as_str(),
-    ])
-    .assert()
-    .success();
+    let random_sender_name = create_wallet("marlon");
 
     // create a new receiver identity
-    let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
-    let random_receiver_name = format!("test_wallet_{}", random_string(8));
-    cmd.args(&[
-        "--wallet",
-        random_receiver_name.as_str(),
-        "create",
-        "--alias",
-        "marc",
-        random_receiver_name.as_str(),
-    ])
-    .assert()
-    .success();
+    let random_receiver_name = create_wallet("marc");
 
     // print the sender's DID
     let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
