@@ -13,14 +13,17 @@ fn random_string(n: usize) -> String {
         .collect()
 }
 
-#[test]
-fn test_send_command_unverified_receiver_default() {
-    // clean the wallet
+fn clean_wallet() {
     StdCommand::new("sh")
         .arg("-c")
-        .arg("rm -f test_wallet_*.sqlite")
+        .arg("rm -f test_wallet_*.sqlite*")
         .status()
         .expect("Failed to clean wallet files");
+}
+
+#[test]
+fn test_send_command_unverified_receiver_default() {
+    clean_wallet();
 
     // create a new sender identity
     let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
@@ -117,21 +120,12 @@ fn test_send_command_unverified_receiver_default() {
         });
     });
 
-    // clean the wallet
-    StdCommand::new("sh")
-        .arg("-c")
-        .arg("rm -f test_wallet_*.sqlite")
-        .status()
-        .expect("Failed to clean wallet files");
+    clean_wallet();
 }
 
 #[test]
 fn test_send_command_unverified_receiver_ask_flag() {
-    // clean the wallet
-    StdCommand::new("rm")
-        .args(&["-f", "marlon.sqlite", "marc.sqlite"])
-        .status()
-        .expect("Failed to clean wallet files");
+    clean_wallet();
 
     // create a new sender identity
     let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
@@ -254,9 +248,5 @@ fn test_send_command_unverified_receiver_ask_flag() {
         });
     });
 
-    // clean the wallet
-    StdCommand::new("rm")
-        .args(&["-f", "marlon.sqlite", "marc.sqlite"])
-        .status()
-        .expect("Failed to clean wallet files");
+    clean_wallet();
 }
