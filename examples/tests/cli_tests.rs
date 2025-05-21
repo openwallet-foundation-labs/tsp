@@ -30,6 +30,19 @@ fn create_wallet(alias: &str) -> String {
     random_name
 }
 
+fn print_did(wallet_name: &str, alias: &str) -> String {
+    let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
+    let output = cmd
+        .args(&["--wallet", wallet_name, "print", alias])
+        .output()
+        .expect("failed to execute print command");
+    let did = std::str::from_utf8(&output.stdout)
+        .expect("invalid utf-8")
+        .trim()
+        .to_string();
+    did
+}
+
 fn clean_wallet() {
     StdCommand::new("sh")
         .arg("-c")
@@ -49,24 +62,10 @@ fn test_send_command_unverified_receiver_default() {
     let random_receiver_name = create_wallet("marc");
 
     // print the sender's DID
-    let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
-    let output = cmd
-        .args(&["--wallet", random_sender_name.as_str(), "print", "marlon"])
-        .output()
-        .expect("failed to execute print command");
-    let marlon_did: &str = std::str::from_utf8(&output.stdout)
-        .expect("invalid utf-8")
-        .trim();
+    let marlon_did = print_did(&random_sender_name, "marlon");
 
     // print the receiver's DID
-    let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
-    let output = cmd
-        .args(&["--wallet", random_receiver_name.as_str(), "print", "marc"])
-        .output()
-        .expect("failed to execute print command");
-    let marc_did: &str = std::str::from_utf8(&output.stdout)
-        .expect("invalid utf-8")
-        .trim();
+    let marc_did = print_did(&random_receiver_name, "marc");
 
     // receiver verifies the address of the sender
     let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
@@ -129,26 +128,11 @@ fn test_send_command_unverified_receiver_ask_flag() {
     let random_receiver_name = create_wallet("marc");
 
     // print the sender's DID
-    let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
-    let output = cmd
-        .args(&["--wallet", random_sender_name.as_str(), "print", "marlon"])
-        .output()
-        .expect("failed to execute print command");
-    let marlon_did: &str = std::str::from_utf8(&output.stdout)
-        .expect("invalid utf-8")
-        .trim();
+    let marlon_did = print_did(&random_sender_name, "marlon");
 
     // print the receiver's DID
-    let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
-    let output = cmd
-        .args(&["--wallet", random_receiver_name.as_str(), "print", "marc"])
-        .output()
-        .expect("failed to execute print command");
-    let marc_did: &str = std::str::from_utf8(&output.stdout)
-        .expect("invalid utf-8")
-        .trim();
+    let marc_did = print_did(&random_receiver_name, "marc");
 
-    // receiver verifies the address of the sender
     // receiver verifies the address of the sender
     let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
     cmd.args(&[
