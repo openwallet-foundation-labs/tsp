@@ -544,31 +544,29 @@ async fn run() -> Result<(), Error> {
                             sender,
                             thread_id,
                             route: _,
-                            nested_vid: None,
+                            nested_vid,
                         } => {
                             let thread_id = Base64Unpadded::encode_string(&thread_id);
-                            info!(
-                                "received relationship request from {sender}, thread-id '{thread_id}'",
-                            );
-                            println!("{sender}\t{thread_id}");
+                            match nested_vid {
+                                Some(vid) => {
+                                    info!(
+                                        "received nested relationship request from '{vid}' (new identity for {sender}), thread-id '{thread_id}'"
+                                    );
+                                    println!("{vid}\t{thread_id}");
+                                }
+                                None => {
+                                    info!(
+                                        "received relationship request from {sender}, thread-id '{thread_id}'"
+                                    );
+                                    println!("{sender}\t{thread_id}");
+                                }
+                            }
                         }
                         ReceivedTspMessage::AcceptRelationship {
                             sender,
                             nested_vid: None,
                         } => {
                             info!("received accept relationship from {}", sender);
-                        }
-                        ReceivedTspMessage::RequestRelationship {
-                            sender,
-                            thread_id,
-                            route: _,
-                            nested_vid: Some(vid),
-                        } => {
-                            let thread_id = Base64Unpadded::encode_string(&thread_id);
-                            info!(
-                                "received nested relationship request from '{vid}' (new identity for {sender}), thread-id '{thread_id}'"
-                            );
-                            println!("{vid}\t{thread_id}");
                         }
                         ReceivedTspMessage::AcceptRelationship {
                             sender,
