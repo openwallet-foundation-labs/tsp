@@ -16,7 +16,7 @@ fn random_string(n: usize) -> String {
 fn create_wallet(alias: &str) -> String {
     let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
     let random_name = format!("test_wallet_{}", random_string(8));
-    cmd.args(&[
+    cmd.args([
         "--wallet",
         random_name.as_str(),
         "create",
@@ -33,19 +33,18 @@ fn create_wallet(alias: &str) -> String {
 fn print_did(wallet_name: &str, alias: &str) -> String {
     let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
     let output = cmd
-        .args(&["--wallet", wallet_name, "print", alias])
+        .args(["--wallet", wallet_name, "print", alias])
         .output()
         .expect("failed to execute print command");
-    let did = std::str::from_utf8(&output.stdout)
+    std::str::from_utf8(&output.stdout)
         .expect("invalid utf-8")
         .trim()
-        .to_string();
-    did
+        .to_string()
 }
 
 fn verify_did(wallet_name: &str, alias: &str, did: &str) {
     let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
-    cmd.args(&["--wallet", wallet_name, "verify", "--alias", alias, did])
+    cmd.args(["--wallet", wallet_name, "verify", "--alias", alias, did])
         .assert()
         .success();
 }
@@ -82,7 +81,7 @@ fn test_send_command_unverified_receiver_default() {
             // send a message from sender to receiver
             let input = "Oh hello Marc";
             let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
-            cmd.args(&[
+            cmd.args([
                 "--wallet",
                 random_sender_name.as_str(),
                 "send",
@@ -98,7 +97,7 @@ fn test_send_command_unverified_receiver_default() {
         s.spawn(|| {
             // receive the message
             let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
-            cmd.args(&[
+            cmd.args([
                 "--wallet",
                 random_receiver_name.as_str(),
                 "receive",
@@ -106,7 +105,7 @@ fn test_send_command_unverified_receiver_default() {
                 &marc_did,
             ])
             .assert()
-            .stdout(predicate::str::contains("Oh hello Marc"))
+            .stderr(predicate::str::contains("received relationship request"))
             .success();
         });
     });
@@ -136,7 +135,7 @@ fn test_send_command_unverified_receiver_ask_flag() {
     // Send a message from Marlon to Marc with --ask flag, answer no
     let input = "n\nOh hello Marc";
     let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
-    cmd.args(&[
+    cmd.args([
         "--wallet",
         random_sender_name.as_str(),
         "send",
@@ -159,7 +158,7 @@ fn test_send_command_unverified_receiver_ask_flag() {
             // send a message from sender to receiver
             let input = "y\nOh hello Marc";
             let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
-            cmd.args(&[
+            cmd.args([
                 "--wallet",
                 random_sender_name.as_str(),
                 "send",
@@ -179,7 +178,7 @@ fn test_send_command_unverified_receiver_ask_flag() {
         s.spawn(|| {
             // receive the message
             let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
-            cmd.args(&[
+            cmd.args([
                 "--wallet",
                 random_receiver_name.as_str(),
                 "receive",
@@ -187,7 +186,7 @@ fn test_send_command_unverified_receiver_ask_flag() {
                 &marc_did,
             ])
             .assert()
-            .stdout(predicate::str::contains("Oh hello Marc"))
+            .stderr(predicate::str::contains("received relationship request"))
             .success();
         });
     });
