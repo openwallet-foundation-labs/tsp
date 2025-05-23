@@ -653,3 +653,44 @@ async fn test_relation_forming() {
         "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob"
     );
 }
+
+#[tokio::test]
+#[serial_test::serial(tcp)]
+async fn test_unverified_receiver_in_direct_mode() {
+    // bob wallet (unverified receiver)
+    let mut bob_db = AsyncSecureStore::new();
+    let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
+        .await
+        .unwrap();
+    bob_db.add_private_vid(bob_vid.clone()).unwrap();
+    bob_db
+        .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice", None)
+        .await
+        .unwrap();
+
+    // bob listens
+    let _ = bob_db
+        .receive("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob")
+        .await
+        .unwrap();
+
+    // alice wallet
+    let alice_db = AsyncSecureStore::new();
+    let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
+        .await
+        .unwrap();
+    alice_db.add_private_vid(alice_vid.clone()).unwrap();
+
+    // send a message
+    let err= alice_db
+        .send(
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
+            Some(b"extra non-confidential data"),
+            b"hello world",
+        )
+        .await
+        .unwrap_err();
+
+    assert!(matches!(err, crate::Error::UnverifiedVid(_)));
+}
