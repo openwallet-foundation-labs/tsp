@@ -901,11 +901,6 @@ fn show_local(vids: &[ExportVid], aliases: &Aliases) -> Result<(), Error> {
             vid.transport.as_str().to_string()
         };
 
-        let did_doc = if vid.id.starts_with("did:web") {
-            tsp_sdk::vid::did::get_resolve_url(&vid.id)?.to_string()
-        } else {
-            "None".to_string()
-        };
         let alias = aliases
             .iter()
             .find_map(|(a, id)| if id == &vid.id { Some(a.clone()) } else { None })
@@ -914,7 +909,26 @@ fn show_local(vids: &[ExportVid], aliases: &Aliases) -> Result<(), Error> {
         println!("{}", &vid.id);
         println!("\t Alias: {}", alias);
         println!("\t Transport: {}", transport);
-        println!("\t DID doc: {}", did_doc);
+        if vid.id.starts_with("did:web") {
+            println!(
+                "\t DID doc: {}",
+                tsp_sdk::vid::did::get_resolve_url(&vid.id)?
+            )
+        }
+        if vid.id.starts_with("did:webvh") {
+            println!(
+                "\t DID history: {}l",
+                tsp_sdk::vid::did::get_resolve_url(&vid.id)?
+            );
+            println!(
+                "\t DID version: {}",
+                vid.metadata
+                    .as_ref()
+                    .and_then(|m| m.get("version_id"))
+                    .map(|v| v.to_string())
+                    .unwrap_or("None".to_string())
+            )
+        }
         println!(
             "\t public enc key: ({enc_key_type}): {}",
             Base64::encode_string(vid.public_enckey.deref())
