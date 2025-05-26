@@ -448,6 +448,9 @@ async fn run() -> Result<(), Error> {
                             }
                         };
                         info!("published DID history");
+                        if let Some(alias) = alias {
+                            vid_wallet.set_alias(alias, private_vid.identifier().to_string())?;
+                        }
                     }
                     private_vid
                 }

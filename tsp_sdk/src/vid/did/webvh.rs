@@ -38,6 +38,7 @@ mod create_webvh {
         version_time: String,
         parameters: serde_json::Value,
         state: DidDocument,
+        proof: Vec<serde_json::Value>,
     }
 
     pub async fn create_webvh(
@@ -69,13 +70,15 @@ mod create_webvh {
             // TODO handle jsonl correctly
             let genesis_doc: HistoryEntry =
                 serde_json::from_str(&genesis_doc).expect("Invalid genesis doc");
-            println!("{:?}", genesis_doc);
+            // println!("{:?}", genesis_doc);
 
             Ok(genesis_doc)
         })?;
 
         let id = genesis_doc.state.id.clone();
-        let history = serde_json::to_value([&genesis_doc]).expect("Cannot serialize history");
+        // TODO propper jsonl support.
+        //  Currently, we just rely on the fact that serde_json will serialize it to a single line
+        let history = serde_json::to_value(&genesis_doc).expect("Cannot serialize history");
         let new_vid = resolve_document(genesis_doc.state, &id)?;
 
         vid.vid = new_vid;
@@ -127,14 +130,15 @@ def placeholder_id(domain_path: str) -> str:
     
 
 async def tsp_provision_did(genesis_document: dict) -> str:
-    pass_key = "password"
+    pass_key = "unsecure"
 
     update_key = AskarSigningKey.generate("ed25519")
 
     # the SCID in the transport does get percent encoded in Rust, but we need the original value to make the {SCID} replacement work.
     genesis_document['service'][0]['serviceEndpoint'] = genesis_document['service'][0]['serviceEndpoint'].replace('%7B', '{').replace('%7D', '}')
 
-    state = provision_did(genesis_document, hash_name="sha2-256")
+    params = dict(updateKeys=[update_key.multikey])
+    state = provision_did(genesis_document, params=params, hash_name="sha2-256")
     doc_dir = Path(f"{state.scid}")
     doc_dir.mkdir(exist_ok=True)
 
@@ -154,8 +158,7 @@ async def tsp_provision_did(genesis_document: dict) -> str:
     write_document_state(doc_dir, state)
 
     # verify log
-    # TODO verify proofs
-    await load_local_history(doc_dir.joinpath(HISTORY_FILENAME), verify_proofs=False)
+    await load_local_history(doc_dir.joinpath(HISTORY_FILENAME), verify_proofs=True)
 
     return state.history_json()
                             "#
