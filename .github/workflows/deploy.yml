@@ -44,12 +44,12 @@ jobs:
           target: server
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: Build and push did-web-server
+      - name: Build and push did-server
         uses: docker/build-push-action@v6
         with:
           push: true
-          tags: "ghcr.io/openwallet-foundation-labs/tsp/did-web-server:${{ env.tag }}"
-          target: did-web
+          tags: "ghcr.io/openwallet-foundation-labs/tsp/did-server:${{ env.tag }}"
+          target: did-server
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -89,7 +89,7 @@ jobs:
           export SERVICE="did-server"
           export TRANSPORT="https://demo.teaspoon.world/endpoint"
           export DOMAIN="did.teaspoon.world"
-          envsubst < deploy/did-web.template.yaml > did-server.yaml
+          envsubst < deploy/did-server.template.yaml > did-server.yaml
       - name: Deploy intermediary p
         uses: 'google-github-actions/deploy-cloudrun@v2'
         with:

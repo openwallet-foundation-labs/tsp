@@ -1,8 +1,11 @@
-use crate::vid::did::web::{resolve_document, DidDocument};
-use crate::vid::VidError;
 use crate::Vid;
+use crate::vid::VidError;
+use crate::vid::did::web::{DidDocument, resolve_document};
 use didwebvh_resolver;
 use didwebvh_resolver::{DefaultHttpClient, ResolutionOptions};
+
+#[cfg(feature = "create-webvh")]
+pub use create_webvh::create_webvh;
 
 pub(crate) const SCHEME: &str = "webvh";
 
@@ -18,66 +21,121 @@ pub async fn resolve(id: &str) -> Result<Vid, VidError> {
 
 #[cfg(feature = "create-webvh")]
 mod create_webvh {
-    use pyo3::ffi::c_str;
     use crate::OwnedVid;
+    use crate::vid::did::web::{DidDocument, resolve_document};
+    use crate::vid::{VidError, vid_to_did_document};
+    use pyo3::ffi::c_str;
     use pyo3::prelude::*;
-    use pyo3::py_run;
-    use pyo3::types::PyList;
+    use serde::Deserialize;
+    use serde_pyobject::to_pyobject;
+    use serde_with::serde_derive::Serialize;
+    use url::Url;
 
-    pub async fn create_did_webvh(
-        path: &str,
-        domain: &str,
-        transport: &str,
-    ) -> (serde_json::Value, serde_json::Value, OwnedVid) {
-        todo!()
+    #[derive(Serialize, Deserialize, Debug)]
+    #[serde(rename_all = "camelCase")]
+    pub struct HistoryEntry {
+        version_id: String,
+        version_time: String,
+        parameters: serde_json::Value,
+        state: DidDocument,
     }
 
-    pub fn load_python(py: Python<'_>) -> PyResult<Bound<PyAny>> {
-            let tsp_did = PyModule::from_code(
-                py,
-                c_str!(
-                    r#"
-import argparse
-import asyncio
-import base64
-import json
-import re
-from copy import deepcopy
-from datetime import datetime
-from hashlib import sha256
+    pub async fn create_webvh(
+        did_server: &str,
+        transport: Url,
+        name: &str,
+    ) -> Result<(OwnedVid, serde_json::Value), VidError> {
+        let tsp_mod = load_python()?;
+
+        let placeholder = Python::with_gil(|py| -> String {
+            placeholder_id(py, &tsp_mod, &format!("{did_server}/endpoint/{name}"))
+        });
+
+        let transport = transport
+            .as_str()
+            .replace("[vid_placeholder]", &placeholder.replace("%", "%25"));
+
+        let mut vid = OwnedVid::bind(&placeholder, transport.parse()?);
+        let genesis_document = vid_to_did_document(vid.vid());
+
+        let fut = Python::with_gil(|py| -> PyResult<_> {
+            pyo3_async_runtimes::tokio::into_future(provision(tsp_mod.bind(py), genesis_document)?)
+        })?;
+
+        let res = fut.await?;
+
+        let genesis_doc = Python::with_gil(|py| -> PyResult<_> {
+            let genesis_doc: String = res.extract(py)?;
+            // TODO handle jsonl correctly
+            let genesis_doc: HistoryEntry =
+                serde_json::from_str(&genesis_doc).expect("Invalid genesis doc");
+            println!("{:?}", genesis_doc);
+
+            Ok(genesis_doc)
+        })?;
+
+        let id = genesis_doc.state.id.clone();
+        let history = serde_json::to_value([&genesis_doc]).expect("Cannot serialize history");
+        let new_vid = resolve_document(genesis_doc.state, &id)?;
+
+        vid.vid = new_vid;
+
+        Ok((vid, history))
+    }
+
+    fn provision<'py>(
+        tsp_mod: &Bound<'py, PyAny>,
+        genesis_document: serde_json::Value,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        tsp_mod.call_method1(
+            "tsp_provision_did",
+            (to_pyobject(tsp_mod.py(), &genesis_document)?,),
+        )
+    }
+
+    fn placeholder_id(py: Python, tsp_mod: &PyObject, domain: &str) -> String {
+        let placeholder_id: String = tsp_mod
+            .call_method1(py, "placeholder_id", (domain,))
+            .expect("Cannot create placeholder ID")
+            .extract(py)
+            .expect("Cannot extract placeholder ID");
+        placeholder_id
+    }
+
+    fn load_python() -> PyResult<PyObject> {
+        Python::with_gil(|py| -> PyResult<PyObject> {
+            Ok(PyModule::from_code(
+                    py,
+                    c_str!(
+                        r#"
 from pathlib import Path
-from typing import Optional, Union
 
 import aries_askar
-import jsoncanon
-
 from did_webvh.askar import AskarSigningKey
 from did_webvh.const import (
     ASKAR_STORE_FILENAME,
-    DOCUMENT_FILENAME,
     HISTORY_FILENAME,
     METHOD_NAME,
-    METHOD_VERSION,
 )
-from did_webvh.core.hash_utils import DEFAULT_HASH, HashInfo
-from did_webvh.core.proof import VerifyingKey
-from did_webvh.core.state import DocumentState
 from did_webvh.domain_path import DomainPath
 from did_webvh.history import load_local_history, write_document_state
-from did_webvh.provision import genesis_document, provision_did
-import did_webvh
+from did_webvh.provision import provision_did
 
-async def tsp_provision_did(domain_path):
+def placeholder_id(domain_path: str) -> str:
+    pathinfo = DomainPath.parse_normalized(domain_path)
+    return f"did:{METHOD_NAME}:{pathinfo.identifier}"
+    
+
+async def tsp_provision_did(genesis_document: dict) -> str:
     pass_key = "password"
 
-    pathinfo = DomainPath.parse_normalized(domain_path)
     update_key = AskarSigningKey.generate("ed25519")
-    placeholder_id = f"did:{METHOD_NAME}:{pathinfo.identifier}"
-    print(placeholder_id)
-    genesis = genesis_document(placeholder_id)
 
-    state = provision_did(genesis, hash_name="sha2-256")
-    doc_dir = Path(f"{pathinfo.domain}_{state.scid}")
+    # the SCID in the transport does get percent encoded in Rust, but we need the original value to make the {SCID} replacement work.
+    genesis_document['service'][0]['serviceEndpoint'] = genesis_document['service'][0]['serviceEndpoint'].replace('%7B', '{').replace('%7D', '}')
+
+    state = provision_did(genesis_document, hash_name="sha2-256")
+    doc_dir = Path(f"{state.scid}")
     doc_dir.mkdir(exist_ok=True)
 
     store = await aries_askar.Store.provision(
@@ -98,13 +156,15 @@ async def tsp_provision_did(domain_path):
     # verify log
     # TODO verify proofs
     await load_local_history(doc_dir.joinpath(HISTORY_FILENAME), verify_proofs=False)
-                        "#
-                ),
-                c_str!("tsp_provision_did.py"),
-                c_str!("tsp_provision_did"),
-            )?;
 
-            tsp_did.call_method1("tsp_provision_did", ("test.domain",))
+    return state.history_json()
+                            "#
+                    ),
+                    c_str!("tsp_provision_did.py"),
+                    c_str!("tsp_provision_did"),
+                )?
+                    .into())
+        })
     }
 
     #[cfg(test)]
@@ -113,18 +173,16 @@ async def tsp_provision_did(domain_path):
 
         #[pyo3_async_runtimes::tokio::main]
         #[test]
-        async fn main() -> PyResult<()> {
-            // PyO3 is initialized - Ready to go
-
-            let fut = Python::with_gil(|py| -> PyResult<_> {
-                
-                // convert asyncio.run into a Rust Future
-                pyo3_async_runtimes::tokio::into_future(
-                    load_python(py)?
-                )
-            })?;
-
-            fut.await?;
+        async fn main() -> Result<(), PyErr> {
+            create_webvh(
+                "demo.teaspoon.world",
+                "https://demo.teaspoon.world/endpoint/[vid_placeholder]"
+                    .parse()
+                    .unwrap(),
+                "foo",
+            )
+            .await
+            .unwrap();
 
             Ok(())
         }

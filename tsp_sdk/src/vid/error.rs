@@ -1,5 +1,7 @@
 #[cfg(not(target_arch = "wasm32"))]
 use didwebvh_resolver::ResolutionError;
+#[cfg(feature = "create-webvh")]
+use pyo3::PyErr;
 
 #[derive(thiserror::Error, Debug)]
 pub enum VidError {
@@ -22,6 +24,11 @@ pub enum VidError {
     InternalError(String),
     #[error("{0}")]
     Verification(String),
+    #[cfg(feature = "create-webvh")]
+    #[error("error in the underlying Python code base: {0}")]
+    Python(#[from] PyErr),
+    #[error("invalid URL")]
+    Url(#[from] url::ParseError),
 }
 
 #[cfg(not(target_arch = "wasm32"))]
