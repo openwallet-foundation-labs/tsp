@@ -70,7 +70,6 @@ mod create_webvh {
             // TODO handle jsonl correctly
             let genesis_doc: HistoryEntry =
                 serde_json::from_str(&genesis_doc).expect("Invalid genesis doc");
-            // println!("{:?}", genesis_doc);
 
             Ok(genesis_doc)
         })?;

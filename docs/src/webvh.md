@@ -3,7 +3,7 @@
 The TSP SDK and CLI can resolve DID:webvh natively.
 To create a new webvh identity, we use the official [Python implementation](https://github.com/decentralized-identity/didwebvh-py) 
 by the Decentralized Identity Foundation.
-As we rely on a Rust to Python interface, you have to compile the SDK or CLI with the `create-webvh` feature flag to
+As we rely on a Rust-to-Python interface, you have to compile the SDK or CLI with the `create-webvh` feature flag to
 be able to create webvh identities.
 Additionally, you have to prepare the Python environment to run the CLI in.
 

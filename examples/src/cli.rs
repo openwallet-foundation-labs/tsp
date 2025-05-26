@@ -89,9 +89,7 @@ enum Commands {
         alias: Option<String>,
     },
     #[command(arg_required_else_help = true)]
-    Print {
-        alias: String,
-    },
+    Print { alias: String },
     #[command(
         arg_required_else_help = true,
         about = "create and register a did:web identifier"
@@ -125,24 +123,12 @@ enum Commands {
     },
     #[command(about = "Discover DIDs from the DID support server")]
     Discover,
-    ExportPiv {
-        vid: String,
-    },
     #[command(arg_required_else_help = true)]
-    SetAlias {
-        alias: String,
-        vid: String,
-    },
+    SetAlias { alias: String, vid: String },
     #[command(arg_required_else_help = true)]
-    SetRoute {
-        vid: String,
-        route: String,
-    },
+    SetRoute { vid: String, route: String },
     #[command(arg_required_else_help = true)]
-    SetParent {
-        vid: String,
-        other_vid: String,
-    },
+    SetParent { vid: String, other_vid: String },
     #[command(arg_required_else_help = true, about = "send a message")]
     Send {
         #[arg(short, long, required = true)]
@@ -467,10 +453,6 @@ async fn run() -> Result<(), Error> {
             }
 
             info!("created identity from file {}", private_vid.identifier());
-        }
-        Commands::ExportPiv { vid } => {
-            let exported = vid_wallet.export()?.0.into_iter().find(|e| e.id == vid);
-            println!("{}", serde_json::to_string_pretty(&exported).unwrap());
         }
         Commands::Discover => {
             let url = format!("https://{did_server}/.well-known/endpoints.json");
