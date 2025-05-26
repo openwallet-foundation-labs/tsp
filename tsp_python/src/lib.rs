@@ -24,12 +24,12 @@ fn py_exception<E: std::fmt::Debug>(e: E) -> PyErr {
 
 /// Run async functions with blocking since PyO3 doesn't support async yet
 /// https://pyo3.rs/v0.24.2/ecosystem/async-await
-fn wait_for<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
+fn wait_for<F: std::future::Future>(future: F) -> PyResult<F::Output> {
+    Ok(tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .unwrap()
-        .block_on(future)
+        .map_err(py_exception)?
+        .block_on(future))
 }
 
 #[pyfunction]
@@ -67,14 +67,14 @@ impl Store {
                     Ok(Self { inner, vault })
                 }
             }
-        })
+        })?
     }
 
     fn read_wallet(&mut self) -> PyResult<()> {
         wait_for(async {
             let (vids, aliases, keys) = self.vault.read().await.map_err(py_exception)?;
             self.inner.import(vids, aliases, keys).map_err(py_exception)
-        })
+        })?
     }
 
     fn write_wallet(&self) -> PyResult<()> {
@@ -83,7 +83,7 @@ impl Store {
                 .persist(self.inner.export().map_err(py_exception)?)
                 .await
                 .map_err(py_exception)
-        })
+        })?
     }
 
     fn resolve_alias(&self, alias: &str) -> PyResult<Option<String>> {
@@ -145,7 +145,7 @@ impl Store {
     /// Verify did document, add vid to store, and return endpoint
     #[pyo3(signature = (did, alias=None))]
     fn verify_vid(&self, did: &str, alias: Option<String>) -> PyResult<String> {
-        let (vid, metadata) = wait_for(tsp_sdk::vid::verify_vid(did)).map_err(py_exception)?;
+        let (vid, metadata) = wait_for(tsp_sdk::vid::verify_vid(did))?.map_err(py_exception)?;
         let endpoint = vid.endpoint().to_string();
 
         self.inner
@@ -202,7 +202,7 @@ impl Store {
             &receiver,
             nonconfidential_data.as_deref(),
             &message,
-        ))
+        ))?
         .map_err(py_exception)
     }
 
@@ -214,7 +214,7 @@ impl Store {
                 .await
                 .map_or(Ok(None), |m| m.map(FlatReceivedTspMessage::from).map(Some))
                 .map_err(py_exception)
-        })
+        })?
     }
 
     #[pyo3(signature = (sender, receiver, route))]
@@ -565,6 +565,25 @@ impl OwnedVid {
     #[staticmethod]
     fn new_did_peer(url: String) -> Self {
         OwnedVid(tsp_sdk::OwnedVid::new_did_peer(url.parse().unwrap()))
+    }
+
+    #[cfg(feature = "create-webvh")]
+    #[staticmethod]
+    fn new_did_webvh(did_name: String, transport: String) -> PyResult<(Self, String)> {
+        wait_for(async {
+            let (private_vid, history, _update_kid, _update_key) =
+                tsp_sdk::vid::did::webvh::create_webvh(
+                    &did_name,
+                    transport.parse().map_err(py_exception)?,
+                )
+                .await
+                .map_err(py_exception)?;
+
+            Ok((
+                OwnedVid(private_vid),
+                serde_json::to_string(&history).map_err(py_exception)?,
+            ))
+        })?
     }
 
     #[staticmethod]

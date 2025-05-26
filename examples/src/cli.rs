@@ -351,8 +351,11 @@ async fn run() -> Result<(), Error> {
                 #[cfg(feature = "create-webvh")]
                 DidType::Webvh => {
                     let (private_vid, history, update_kid, update_key) =
-                        tsp_sdk::vid::did::webvh::create_webvh(&did_server, transport, &username)
-                            .await?;
+                        tsp_sdk::vid::did::webvh::create_webvh(
+                            &format!("{did_server}/endpoint/{username}"),
+                            transport,
+                        )
+                        .await?;
 
                     let client = reqwest::ClientBuilder::new();
 

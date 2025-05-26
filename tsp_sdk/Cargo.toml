@@ -40,7 +40,7 @@ resolve = ["serialize", "dep:reqwest", "dep:didwebvh-resolver"]
 serialize = ["dep:serde", "dep:serde_with"]
 use_local_certificate = []
 postgres = ["async", "aries-askar/postgres"]
-create-webvh = ["dep:pyo3", "dep:pyo3-async-runtimes", "dep:serde-pyobject"]
+create-webvh = ["dep:pyo3", "dep:serde-pyobject"]
 
 [dependencies]
 # generic
@@ -88,7 +88,6 @@ async-trait = "0.1.88"
 
 # webvh
 pyo3 = { workspace = true, features = ["auto-initialize"], optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true , features = ["attributes", "tokio-runtime", "testing"]}
 serde-pyobject = { workspace = true, optional = true }
 
 # not used directly, but we need to configure

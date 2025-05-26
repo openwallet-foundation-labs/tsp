@@ -10,6 +10,10 @@ publish = true
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+default = ["create-webvh"]
+create-webvh = ["tsp_sdk/create-webvh"]
+
 [dependencies]
 pyo3.workspace = true
 serde_json.workspace = true

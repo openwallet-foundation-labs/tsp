@@ -4,11 +4,7 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
-    "did-webvh",
-    "aries-askar",
-    "jsoncanon",
-]
+dependencies = ["did-webvh"]
 
 [tool.uv.sources]
 did-webvh = { git = "https://github.com/decentralized-identity/didwebvh-py.git" }

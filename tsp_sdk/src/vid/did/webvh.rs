@@ -54,15 +54,13 @@ mod create_webvh {
     }
 
     pub async fn create_webvh(
-        did_server: &str,
+        did_name: &str,
         transport: Url,
-        name: &str,
     ) -> Result<(OwnedVid, serde_json::Value, String, Vec<u8>), VidError> {
         let tsp_mod = load_python()?;
 
-        let placeholder = Python::with_gil(|py| -> String {
-            placeholder_id(py, &tsp_mod, &format!("{did_server}/endpoint/{name}"))
-        });
+        let placeholder =
+            Python::with_gil(|py| -> String { placeholder_id(py, &tsp_mod, did_name) });
 
         let transport = transport
             .as_str()
@@ -122,26 +120,5 @@ mod create_webvh {
             )?
             .into())
         })
-    }
-
-    #[cfg(test)]
-    mod test {
-        use super::*;
-
-        #[pyo3_async_runtimes::tokio::main]
-        #[test]
-        async fn main() -> Result<(), PyErr> {
-            create_webvh(
-                "demo.teaspoon.world",
-                "https://demo.teaspoon.world/endpoint/[vid_placeholder]"
-                    .parse()
-                    .unwrap(),
-                "foo",
-            )
-            .await
-            .unwrap();
-
-            Ok(())
-        }
     }
 }
