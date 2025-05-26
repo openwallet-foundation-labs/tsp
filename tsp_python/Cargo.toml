@@ -16,3 +16,4 @@ serde_json.workspace = true
 tokio.workspace = true
 tsp_sdk.workspace = true
 futures.workspace = true
+serde-pyobject.workspace = true

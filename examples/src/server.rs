@@ -81,7 +81,7 @@ async fn main() {
     let timestamp_server = SecureStore::new();
     let piv: OwnedVid =
         serde_json::from_str(include_str!("../test/timestamp-server/piv.json")).unwrap();
-    timestamp_server.add_private_vid(piv).unwrap();
+    timestamp_server.add_private_vid(piv, None).unwrap();
 
     let state = Arc::new(AppState {
         domain: args.domain,
@@ -293,12 +293,12 @@ async fn sign_timestamp(
 
     tracing::info!("timestamp delta ok: {delta} seconds");
 
-    let verified_vid = tsp_sdk::vid::verify_vid(receiver)
+    let (verified_vid, metadata) = tsp_sdk::vid::verify_vid(receiver)
         .await
         .map_err(|_| (StatusCode::BAD_REQUEST, "Error verifying vid").into_response())?;
     state
         .timestamp_server
-        .add_verified_vid(verified_vid)
+        .add_verified_vid(verified_vid, metadata)
         .map_err(|_| (StatusCode::BAD_REQUEST, "Error adding verified vid").into_response())?;
 
     let (_url, response_bytes) = state
@@ -334,7 +334,7 @@ async fn route_message(State(state): State<Arc<AppState>>, body: Bytes) -> Respo
     // that are not intended for you --- but that will allow building interesting demo cases
     // since the unintended recipient cannot read the message: the security of TSP is not based
     // on security of the transport layer.
-    if let Ok(vid) = tsp_sdk::vid::resolve::verify_vid(&receiver).await {
+    if let Ok((vid, _metadata)) = tsp_sdk::vid::resolve::verify_vid(&receiver).await {
         vid.endpoint().to_string()
     } else {
         return (StatusCode::BAD_REQUEST, "unknown receiver").into_response();

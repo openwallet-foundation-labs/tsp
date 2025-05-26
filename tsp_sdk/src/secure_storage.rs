@@ -52,6 +52,7 @@ pub(crate) struct Metadata {
     relation_vid: Option<String>,
     parent_vid: Option<String>,
     tunnel: Option<Box<[String]>>,
+    metadata: Option<serde_json::Value>,
 }
 
 #[async_trait]
@@ -166,6 +167,7 @@ impl SecureStorage for AskarSecureStorage {
                 relation_vid: export.relation_vid,
                 parent_vid: export.parent_vid,
                 tunnel: export.tunnel,
+                metadata: export.metadata,
             }) {
                 if let Err(e) = conn.insert("vid", &id, data.as_bytes(), None, None).await {
                     if e.kind() == ErrorKind::Duplicate {
@@ -273,6 +275,7 @@ impl SecureStorage for AskarSecureStorage {
                 relation_vid: data.relation_vid,
                 parent_vid: data.parent_vid,
                 tunnel: data.tunnel,
+                metadata: data.metadata,
             };
 
             let signing_key_name = format!("{id}#signing-key");
@@ -348,7 +351,7 @@ mod test {
 
             let store = SecureStore::new();
             let vid = OwnedVid::new_did_peer("tcp://127.0.0.1:1337".parse().unwrap());
-            store.add_private_vid(vid.clone()).unwrap();
+            store.add_private_vid(vid.clone(), None).unwrap();
 
             store.aliases.write().unwrap().insert(
                 "pigeon".to_string(),

@@ -23,7 +23,7 @@ use url::Url;
 ///     // alice wallet
 ///     let mut db = AsyncSecureStore::new();
 ///     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json").await.unwrap();
-///     db.add_private_vid(alice_vid).unwrap();
+///     db.add_private_vid(alice_vid, None).unwrap();
 ///     db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob", None).await.unwrap();
 ///
 ///     // send a message
@@ -91,8 +91,9 @@ impl AsyncSecureStore {
     pub fn add_private_vid(
         &self,
         private_vid: impl PrivateVid + Clone + 'static,
+        metadata: Option<serde_json::Value>,
     ) -> Result<(), Error> {
-        self.inner.add_private_vid(private_vid)
+        self.inner.add_private_vid(private_vid, metadata)
     }
 
     /// Remove a VID from the [`AsyncSecureStore`]
@@ -101,8 +102,12 @@ impl AsyncSecureStore {
     }
 
     /// Add the already resolved `verified_vid` to the wallet as a relationship
-    pub fn add_verified_vid(&self, verified_vid: impl VerifiedVid + 'static) -> Result<(), Error> {
-        self.inner.add_verified_vid(verified_vid)
+    pub fn add_verified_vid(
+        &self,
+        verified_vid: impl VerifiedVid + 'static,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<(), Error> {
+        self.inner.add_verified_vid(verified_vid, metadata)
     }
 
     /// Check whether the [PrivateVid] identified by `vid` exists in the wallet
@@ -117,9 +122,9 @@ impl AsyncSecureStore {
 
     /// Resolve and verify public key material for a VID identified by `vid` and add it to the wallet as a relationship
     pub async fn verify_vid(&mut self, vid: &str, alias: Option<String>) -> Result<(), Error> {
-        let verified_vid = crate::vid::verify_vid(vid).await?;
+        let (verified_vid, metadata) = crate::vid::verify_vid(vid).await?;
 
-        self.inner.add_verified_vid(verified_vid)?;
+        self.inner.add_verified_vid(verified_vid, metadata)?;
 
         if let Some(alias) = alias {
             self.set_alias(alias, vid.to_owned())?;
@@ -173,7 +178,7 @@ impl AsyncSecureStore {
     /// async fn main() {
     ///     let mut db = AsyncSecureStore::new();
     ///     let private_vid = OwnedVid::from_file("../examples/test/bob/piv.json").await.unwrap();
-    ///     db.add_private_vid(private_vid).unwrap();
+    ///     db.add_private_vid(private_vid, None).unwrap();
     ///     db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice", None).await.unwrap();
     ///
     ///     let sender = "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob";
@@ -241,7 +246,7 @@ impl AsyncSecureStore {
     /// async fn main() {
     ///     let mut db = AsyncSecureStore::new();
     ///     let private_vid = OwnedVid::from_file("../examples/test/bob/piv.json").await.unwrap();
-    ///     db.add_private_vid(private_vid).unwrap();
+    ///     db.add_private_vid(private_vid, None).unwrap();
     ///     db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice", None).await.unwrap();
     ///
     ///     let sender = "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob";

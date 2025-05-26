@@ -156,14 +156,14 @@ describe('tsp node tests', function() {
         d_store.add_private_vid(nette_d);
 
         // Set verified relations
-        a_store.add_private_as_verified_vid(b);
-        a_store.add_private_as_verified_vid(sneaky_d);
-        b_store.add_private_as_verified_vid(nette_a);
-        b_store.add_private_as_verified_vid(c);
-        c_store.add_private_as_verified_vid(b);
-        c_store.add_private_as_verified_vid(nette_d);
-        d_store.add_private_as_verified_vid(sneaky_a);
-        d_store.add_private_as_verified_vid(mailbox_c);
+        a_store.add_private_vid(b);
+        a_store.add_private_vid(sneaky_d);
+        b_store.add_private_vid(nette_a);
+        b_store.add_private_vid(c);
+        c_store.add_private_vid(b);
+        c_store.add_private_vid(nette_d);
+        d_store.add_private_vid(sneaky_a);
+        d_store.add_private_vid(mailbox_c);
 
         // Set relations and routes
         a_store.make_relationship_request(nette_a.identifier(), b.identifier());
@@ -236,8 +236,8 @@ describe('tsp node tests', function() {
         a_store.add_private_vid(a);
         b_store.add_private_vid(b);
 
-        a_store.add_private_as_verified_vid(b);
-        b_store.add_private_as_verified_vid(a);
+        a_store.add_private_vid(b);
+        b_store.add_private_vid(a);
 
         // Make relationship request from 'a' to 'b'
         let {url, sealed} = a_store.make_relationship_request(a.identifier(), b.identifier(), null);

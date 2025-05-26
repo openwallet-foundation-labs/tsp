@@ -1,4 +1,5 @@
 use futures::StreamExt;
+use pyo3::types::PyDict;
 use pyo3::{exceptions::PyException, prelude::*};
 use tsp_sdk::{AskarSecureStorage, AsyncSecureStore, SecureStorage, VerifiedVid};
 
@@ -89,10 +90,19 @@ impl Store {
         self.inner.resolve_alias(alias).map_err(py_exception)
     }
 
-    #[pyo3(signature = (vid, alias=None))]
-    fn add_private_vid(&self, vid: OwnedVid, alias: Option<String>) -> PyResult<()> {
+    #[pyo3(signature = (vid, alias=None, metadata=None))]
+    fn add_private_vid<'py>(
+        &self,
+        vid: OwnedVid,
+        alias: Option<String>,
+        metadata: Option<Bound<'py, PyDict>>,
+    ) -> PyResult<()> {
+        let metadata = metadata
+            .map(|m| serde_pyobject::from_pyobject(m))
+            .transpose()?;
+
         self.inner
-            .add_private_vid(vid.0.clone())
+            .add_private_vid(vid.0.clone(), metadata)
             .map_err(py_exception)?;
 
         if let Some(alias) = alias {
@@ -108,10 +118,19 @@ impl Store {
         self.inner.forget_vid(vid).map_err(py_exception)
     }
 
-    #[pyo3(signature = (vid, alias=None))]
-    fn add_verified_owned_vid(&self, vid: OwnedVid, alias: Option<String>) -> PyResult<()> {
+    #[pyo3(signature = (vid, alias=None, metadata=None))]
+    fn add_verified_owned_vid<'py>(
+        &self,
+        vid: OwnedVid,
+        alias: Option<String>,
+        metadata: Option<Bound<'py, PyDict>>,
+    ) -> PyResult<()> {
+        let metadata = metadata
+            .map(|m| serde_pyobject::from_pyobject(m))
+            .transpose()?;
+
         self.inner
-            .add_verified_vid(vid.0.clone())
+            .add_verified_vid(vid.0.clone(), metadata)
             .map_err(py_exception)?;
 
         if let Some(alias) = alias {
@@ -126,10 +145,12 @@ impl Store {
     /// Verify did document, add vid to store, and return endpoint
     #[pyo3(signature = (did, alias=None))]
     fn verify_vid(&self, did: &str, alias: Option<String>) -> PyResult<String> {
-        let vid = wait_for(tsp_sdk::vid::verify_vid(did)).map_err(py_exception)?;
+        let (vid, metadata) = wait_for(tsp_sdk::vid::verify_vid(did)).map_err(py_exception)?;
         let endpoint = vid.endpoint().to_string();
 
-        self.inner.add_verified_vid(vid).map_err(py_exception)?;
+        self.inner
+            .add_verified_vid(vid, metadata)
+            .map_err(py_exception)?;
 
         if let Some(alias) = alias {
             self.inner

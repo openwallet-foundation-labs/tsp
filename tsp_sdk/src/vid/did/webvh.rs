@@ -1,22 +1,34 @@
 use crate::Vid;
 use crate::vid::VidError;
 use crate::vid::did::web::{DidDocument, resolve_document};
-use didwebvh_resolver;
-use didwebvh_resolver::{DefaultHttpClient, ResolutionOptions};
-
 #[cfg(feature = "create-webvh")]
 pub use create_webvh::create_webvh;
+use didwebvh_resolver;
+use didwebvh_resolver::{DefaultHttpClient, ResolutionOptions};
+use serde::Serialize;
 
 pub(crate) const SCHEME: &str = "webvh";
 
-pub async fn resolve(id: &str) -> Result<Vid, VidError> {
+#[derive(Debug, Serialize)]
+struct WebvhMetadata {
+    version_id: Option<String>,
+    updated: Option<String>,
+}
+
+pub async fn resolve(id: &str) -> Result<(Vid, serde_json::Value), VidError> {
     let http = DefaultHttpClient::new();
     let resolver = didwebvh_resolver::resolver::WebVHResolver::new(http);
     let resolved = resolver.resolve(id, &ResolutionOptions::default()).await?;
-
+    let metadata = WebvhMetadata {
+        version_id: resolved.did_document_metadata.version_id,
+        updated: resolved.did_document_metadata.updated,
+    };
     let did_doc: DidDocument = serde_json::from_value(resolved.did_document)?;
 
-    resolve_document(did_doc, id)
+    Ok((
+        resolve_document(did_doc, id)?,
+        serde_json::to_value(&metadata)?,
+    ))
 }
 
 #[cfg(feature = "create-webvh")]

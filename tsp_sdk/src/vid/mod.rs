@@ -185,6 +185,7 @@ pub struct ExportVid {
     pub relation_vid: Option<String>,
     pub parent_vid: Option<String>,
     pub tunnel: Option<Box<[String]>>,
+    pub metadata: Option<serde_json::Value>,
 }
 
 impl ExportVid {

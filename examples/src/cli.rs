@@ -12,7 +12,7 @@ use tokio::io::AsyncReadExt;
 use tracing::{debug, error, info, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::cesr::color_print;
-use tsp_sdk::vid::{VidError, vid_to_did_document};
+use tsp_sdk::vid::{VidError, verify_vid, vid_to_did_document};
 use tsp_sdk::{
     Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
     RelationshipStatus, SecureStorage, VerifiedVid, Vid,
@@ -441,12 +441,14 @@ async fn run() -> Result<(), Error> {
                     private_vid
                 }
             };
-
-            vid_wallet.add_private_vid(private_vid.clone())?;
+            let (_, metadata) = verify_vid(private_vid.identifier())
+                .await
+                .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
+            vid_wallet.add_private_vid(private_vid.clone(), metadata)?;
         }
         Commands::ImportPiv { file, alias } => {
             let private_vid = OwnedVid::from_file(file).await?;
-            vid_wallet.add_private_vid(private_vid.clone())?;
+            vid_wallet.add_private_vid(private_vid.clone(), None)?;
 
             if let Some(alias) = alias {
                 vid_wallet.set_alias(alias, private_vid.identifier().to_string())?;

@@ -9,7 +9,7 @@ async fn test_direct_mode() {
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
-    bob_db.add_private_vid(bob_vid.clone()).unwrap();
+    bob_db.add_private_vid(bob_vid.clone(), None).unwrap();
     bob_db
         .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice", None)
         .await
@@ -25,7 +25,7 @@ async fn test_direct_mode() {
     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
-    alice_db.add_private_vid(alice_vid.clone()).unwrap();
+    alice_db.add_private_vid(alice_vid.clone(), None).unwrap();
     alice_db
         .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob", None)
         .await
@@ -76,7 +76,7 @@ async fn test_large_messages() {
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
-    bob_db.add_private_vid(bob_vid.clone()).unwrap();
+    bob_db.add_private_vid(bob_vid.clone(), None).unwrap();
     bob_db
         .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice", None)
         .await
@@ -92,7 +92,7 @@ async fn test_large_messages() {
     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
-    alice_db.add_private_vid(alice_vid.clone()).unwrap();
+    alice_db.add_private_vid(alice_vid.clone(), None).unwrap();
     alice_db
         .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob", None)
         .await
@@ -148,7 +148,7 @@ async fn test_anycast() {
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
-    bob_db.add_private_vid(bob_vid.clone()).unwrap();
+    bob_db.add_private_vid(bob_vid.clone(), None).unwrap();
     bob_db
         .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice", None)
         .await
@@ -164,7 +164,7 @@ async fn test_anycast() {
     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
-    alice_db.add_private_vid(alice_vid.clone()).unwrap();
+    alice_db.add_private_vid(alice_vid.clone(), None).unwrap();
     alice_db
         .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob", None)
         .await
@@ -207,7 +207,7 @@ async fn test_nested_mode() {
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
-    bob_db.add_private_vid(bob_vid.clone()).unwrap();
+    bob_db.add_private_vid(bob_vid.clone(), None).unwrap();
     bob_db
         .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice", None)
         .await
@@ -218,7 +218,7 @@ async fn test_nested_mode() {
     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
-    alice_db.add_private_vid(alice_vid.clone()).unwrap();
+    alice_db.add_private_vid(alice_vid.clone(), None).unwrap();
     alice_db
         .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob", None)
         .await
@@ -226,7 +226,9 @@ async fn test_nested_mode() {
 
     // create nested id's
     let nested_bob_vid = OwnedVid::new_did_peer(bob_vid.endpoint().clone());
-    bob_db.add_private_vid(nested_bob_vid.clone()).unwrap();
+    bob_db
+        .add_private_vid(nested_bob_vid.clone(), None)
+        .unwrap();
     bob_db
         .set_parent_for_vid(nested_bob_vid.identifier(), Some(bob_vid.identifier()))
         .unwrap();
@@ -235,7 +237,9 @@ async fn test_nested_mode() {
     let mut bobs_inner_messages = bob_db.receive(nested_bob_vid.identifier()).await.unwrap();
 
     let nested_alice_vid = OwnedVid::new_did_peer(alice_vid.endpoint().clone());
-    alice_db.add_private_vid(nested_alice_vid.clone()).unwrap();
+    alice_db
+        .add_private_vid(nested_alice_vid.clone(), None)
+        .unwrap();
     alice_db
         .set_parent_for_vid(nested_alice_vid.identifier(), Some(alice_vid.identifier()))
         .unwrap();
@@ -306,13 +310,13 @@ async fn test_routed_mode() {
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
-    bob_db.add_private_vid(bob_vid.clone()).unwrap();
+    bob_db.add_private_vid(bob_vid.clone(), None).unwrap();
 
     let mut alice_db = AsyncSecureStore::new();
     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
-    alice_db.add_private_vid(alice_vid.clone()).unwrap();
+    alice_db.add_private_vid(alice_vid.clone(), None).unwrap();
 
     // inform bob about alice
     bob_db
@@ -518,7 +522,7 @@ async fn attack_failures() {
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
-    bob_db.add_private_vid(bob_vid.clone()).unwrap();
+    bob_db.add_private_vid(bob_vid.clone(), None).unwrap();
 
     bob_db
         .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice", None)
@@ -529,7 +533,7 @@ async fn attack_failures() {
         .await
         .unwrap();
 
-    let bob = crate::vid::verify_vid(
+    let (bob, _metadata) = crate::vid::verify_vid(
         "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
     )
     .await
@@ -580,7 +584,7 @@ async fn test_relation_forming() {
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
-    bob_db.add_private_vid(bob_vid.clone()).unwrap();
+    bob_db.add_private_vid(bob_vid.clone(), None).unwrap();
     bob_db
         .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice", None)
         .await
@@ -596,7 +600,7 @@ async fn test_relation_forming() {
     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
-    alice_db.add_private_vid(alice_vid.clone()).unwrap();
+    alice_db.add_private_vid(alice_vid.clone(), None).unwrap();
     alice_db
         .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob", None)
         .await
