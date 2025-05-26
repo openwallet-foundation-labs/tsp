@@ -11,7 +11,7 @@ pub enum TransportError {
     #[error("invalid transport scheme '{0}'")]
     InvalidTransportScheme(String),
     #[error("websocket '{0}' failed: {1}")]
-    Websocket(String, tokio_tungstenite::tungstenite::Error),
+    Websocket(String, Box<tokio_tungstenite::tungstenite::Error>),
     #[error("invalid message received '{0}'")]
     InvalidMessageReceived(String),
     #[error("missing TSP_TLS_CERT and TSP_TLS_KEY environment variables")]
