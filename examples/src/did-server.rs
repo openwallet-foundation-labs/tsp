@@ -256,7 +256,14 @@ async fn get_endpoints(State(state): State<Arc<AppState>>) -> Response {
     }
 }
 
-async fn add_history(Path(name): Path<String>, history: String) -> Response {
+async fn add_history(Path(vid): Path<String>, history: String) -> Response {
+    let name = match vid.split(':').next_back().ok_or("invalid name") {
+        Ok(name) => name,
+        Err(err) => {
+            tracing::debug!("error extracting name from VID: {err:?}");
+            return (StatusCode::BAD_REQUEST, "Invalid VID").into_response();
+        }
+    };
     let path = format!("data/{name}.jsonl");
 
     if std::path::Path::new(&path).exists() {

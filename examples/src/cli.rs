@@ -423,7 +423,10 @@ async fn run() -> Result<(), Error> {
                         );
 
                         match client
-                            .post(format!("https://{did_server}/add-history"))
+                            .post(format!(
+                                "https://{did_server}/add-history/{}",
+                                private_vid.vid().identifier()
+                            ))
                             .json(&history)
                             .send()
                             .await
