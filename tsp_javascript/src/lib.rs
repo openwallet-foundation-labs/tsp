@@ -15,6 +15,10 @@ impl From<Error> for JsValue {
 #[wasm_bindgen]
 pub struct Store(tsp_sdk::SecureStore);
 
+#[derive(Default, Clone)]
+#[wasm_bindgen]
+pub struct JsonValue(serde_json::Value);
+
 #[wasm_bindgen]
 pub struct SealedMessage {
     #[wasm_bindgen(getter_with_clone)]
@@ -41,18 +45,21 @@ impl Store {
     }
 
     #[wasm_bindgen]
-    pub fn add_private_vid(&self, vid: &OwnedVid) -> Result<(), Error> {
-        self.0.add_private_vid(vid.0.clone()).map_err(Error)
+    pub fn add_private_vid(
+        &self,
+        vid: &OwnedVid,
+        metadata: Option<JsonValue>,
+    ) -> Result<(), Error> {
+        self.0
+            .add_private_vid(vid.0.clone(), metadata.map(|j| j.0))
+            .map_err(Error)
     }
 
     #[wasm_bindgen]
-    pub fn add_verified_vid(&self, vid: &Vid) -> Result<(), Error> {
-        self.0.add_verified_vid(vid.0.clone()).map_err(Error)
-    }
-
-    #[wasm_bindgen]
-    pub fn add_private_as_verified_vid(&self, vid: &OwnedVid) -> Result<(), Error> {
-        self.0.add_verified_vid(vid.0.clone()).map_err(Error)
+    pub fn add_verified_vid(&self, vid: &Vid, metadata: Option<JsonValue>) -> Result<(), Error> {
+        self.0
+            .add_verified_vid(vid.0.clone(), metadata.map(|j| j.0))
+            .map_err(Error)
     }
 
     #[wasm_bindgen]
@@ -325,11 +332,12 @@ impl OwnedVid {
     }
 }
 
+// TODO return metadata
 #[wasm_bindgen]
 pub async fn verify_vid(did: &str) -> Result<Vid, Error> {
     tsp_sdk::vid::resolve::verify_vid(did)
         .await
-        .map(Vid)
+        .map(|(vid, _metadata)| Vid(vid))
         .map_err(|e| Error(e.into()))
 }
 

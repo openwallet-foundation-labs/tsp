@@ -1,6 +1,6 @@
 use axum::extract::ws::Message;
 use axum::extract::{DefaultBodyLimit, Path, State, WebSocketUpgrade};
-use axum::http::{Method, StatusCode};
+use axum::http::{Method, StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Form, Json, Router};
@@ -118,7 +118,9 @@ async fn main() {
         .route("/logs", get(log_websocket_handler))
         .route("/create-identity", post(create_identity))
         .route("/add-vid", post(add_vid))
+        .route("/add-history/{id}", post(add_history))
         .route("/endpoint/{name}/did.json", get(get_did_doc))
+        .route("/endpoint/{name}/did.jsonl", get(get_did_history))
         .route("/.well-known/endpoints.json", get(get_endpoints))
         .layer(DefaultBodyLimit::max(50 * 1024 * 1024))
         .layer(cors)
@@ -229,6 +231,20 @@ async fn get_did_doc(State(state): State<Arc<AppState>>, Path(name): Path<String
     }
 }
 
+/// Get the history of an webvh endpoint
+async fn get_did_history(Path(name): Path<String>) -> Response {
+    match read_history(&name).await {
+        Ok(history) => {
+            tracing::debug!("served did.jsonl for {name}");
+            ([(header::CONTENT_TYPE, "application/json")], history).into_response()
+        }
+        Err(e) => {
+            tracing::error!("{name} not found: {e}");
+            (StatusCode::NOT_FOUND, "no endpoint found").into_response()
+        }
+    }
+}
+
 async fn get_endpoints(State(state): State<Arc<AppState>>) -> Response {
     let domain = state.domain.replace(":", "%3A");
     match list_all_ids(domain).await {
@@ -237,6 +253,29 @@ async fn get_endpoints(State(state): State<Arc<AppState>>) -> Response {
             tracing::error!("Could not load endpoints: {}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, "error loading dids").into_response()
         }
+    }
+}
+
+async fn add_history(Path(vid): Path<String>, history: String) -> Response {
+    let name = match vid.split(':').next_back().ok_or("invalid name") {
+        Ok(name) => name,
+        Err(err) => {
+            tracing::debug!("error extracting name from VID: {err:?}");
+            return (StatusCode::BAD_REQUEST, "Invalid VID").into_response();
+        }
+    };
+    let path = format!("data/{name}.jsonl");
+
+    if std::path::Path::new(&path).exists() {
+        tracing::error!("error writing identity '{name}': Name already exists");
+        return (StatusCode::INTERNAL_SERVER_ERROR, "error writing identity").into_response();
+    }
+
+    if let Err(err) = tokio::fs::write(path, history).await {
+        tracing::error!("error writing identity '{name}': {err}");
+        (StatusCode::INTERNAL_SERVER_ERROR, "error writing identity").into_response()
+    } else {
+        StatusCode::OK.into_response()
     }
 }
 
@@ -275,6 +314,13 @@ async fn read_id(vid: &str) -> Result<Identity, Box<dyn std::error::Error>> {
     let id = serde_json::from_str(&did)?;
 
     Ok(id)
+}
+
+async fn read_history(name: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let path = format!("data/{name}.jsonl");
+    let history = tokio::fs::read_to_string(path).await?;
+
+    Ok(history)
 }
 
 async fn list_all_ids(domain: String) -> Result<Vec<String>, Box<dyn std::error::Error>> {

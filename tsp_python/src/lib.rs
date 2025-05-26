@@ -1,4 +1,5 @@
 use futures::StreamExt;
+use pyo3::types::PyDict;
 use pyo3::{exceptions::PyException, prelude::*};
 use tsp_sdk::{AskarSecureStorage, AsyncSecureStore, SecureStorage, VerifiedVid};
 
@@ -23,12 +24,12 @@ fn py_exception<E: std::fmt::Debug>(e: E) -> PyErr {
 
 /// Run async functions with blocking since PyO3 doesn't support async yet
 /// https://pyo3.rs/v0.24.2/ecosystem/async-await
-fn wait_for<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
+fn wait_for<F: std::future::Future>(future: F) -> PyResult<F::Output> {
+    Ok(tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .unwrap()
-        .block_on(future)
+        .map_err(py_exception)?
+        .block_on(future))
 }
 
 #[pyfunction]
@@ -51,10 +52,10 @@ impl Store {
         wait_for(async {
             match AskarSecureStorage::open(wallet_url, wallet_password).await {
                 Ok(vault) => {
-                    let (vids, aliases) = vault.read().await.map_err(py_exception)?;
+                    let (vids, aliases, keys) = vault.read().await.map_err(py_exception)?;
 
                     let inner = AsyncSecureStore::new();
-                    inner.import(vids, aliases).map_err(py_exception)?;
+                    inner.import(vids, aliases, keys).map_err(py_exception)?;
 
                     Ok(Self { inner, vault })
                 }
@@ -66,14 +67,14 @@ impl Store {
                     Ok(Self { inner, vault })
                 }
             }
-        })
+        })?
     }
 
     fn read_wallet(&mut self) -> PyResult<()> {
         wait_for(async {
-            let (vids, aliases) = self.vault.read().await.map_err(py_exception)?;
-            self.inner.import(vids, aliases).map_err(py_exception)
-        })
+            let (vids, aliases, keys) = self.vault.read().await.map_err(py_exception)?;
+            self.inner.import(vids, aliases, keys).map_err(py_exception)
+        })?
     }
 
     fn write_wallet(&self) -> PyResult<()> {
@@ -82,17 +83,26 @@ impl Store {
                 .persist(self.inner.export().map_err(py_exception)?)
                 .await
                 .map_err(py_exception)
-        })
+        })?
     }
 
     fn resolve_alias(&self, alias: &str) -> PyResult<Option<String>> {
         self.inner.resolve_alias(alias).map_err(py_exception)
     }
 
-    #[pyo3(signature = (vid, alias=None))]
-    fn add_private_vid(&self, vid: OwnedVid, alias: Option<String>) -> PyResult<()> {
+    #[pyo3(signature = (vid, alias=None, metadata=None))]
+    fn add_private_vid<'py>(
+        &self,
+        vid: OwnedVid,
+        alias: Option<String>,
+        metadata: Option<Bound<'py, PyDict>>,
+    ) -> PyResult<()> {
+        let metadata = metadata
+            .map(|m| serde_pyobject::from_pyobject(m))
+            .transpose()?;
+
         self.inner
-            .add_private_vid(vid.0.clone())
+            .add_private_vid(vid.0.clone(), metadata)
             .map_err(py_exception)?;
 
         if let Some(alias) = alias {
@@ -108,10 +118,19 @@ impl Store {
         self.inner.forget_vid(vid).map_err(py_exception)
     }
 
-    #[pyo3(signature = (vid, alias=None))]
-    fn add_verified_owned_vid(&self, vid: OwnedVid, alias: Option<String>) -> PyResult<()> {
+    #[pyo3(signature = (vid, alias=None, metadata=None))]
+    fn add_verified_owned_vid<'py>(
+        &self,
+        vid: OwnedVid,
+        alias: Option<String>,
+        metadata: Option<Bound<'py, PyDict>>,
+    ) -> PyResult<()> {
+        let metadata = metadata
+            .map(|m| serde_pyobject::from_pyobject(m))
+            .transpose()?;
+
         self.inner
-            .add_verified_vid(vid.0.clone())
+            .add_verified_vid(vid.0.clone(), metadata)
             .map_err(py_exception)?;
 
         if let Some(alias) = alias {
@@ -126,10 +145,12 @@ impl Store {
     /// Verify did document, add vid to store, and return endpoint
     #[pyo3(signature = (did, alias=None))]
     fn verify_vid(&self, did: &str, alias: Option<String>) -> PyResult<String> {
-        let vid = wait_for(tsp_sdk::vid::verify_vid(did)).map_err(py_exception)?;
+        let (vid, metadata) = wait_for(tsp_sdk::vid::verify_vid(did))?.map_err(py_exception)?;
         let endpoint = vid.endpoint().to_string();
 
-        self.inner.add_verified_vid(vid).map_err(py_exception)?;
+        self.inner
+            .add_verified_vid(vid, metadata)
+            .map_err(py_exception)?;
 
         if let Some(alias) = alias {
             self.inner
@@ -181,7 +202,7 @@ impl Store {
             &receiver,
             nonconfidential_data.as_deref(),
             &message,
-        ))
+        ))?
         .map_err(py_exception)
     }
 
@@ -193,7 +214,7 @@ impl Store {
                 .await
                 .map_or(Ok(None), |m| m.map(FlatReceivedTspMessage::from).map(Some))
                 .map_err(py_exception)
-        })
+        })?
     }
 
     #[pyo3(signature = (sender, receiver, route))]
@@ -544,6 +565,25 @@ impl OwnedVid {
     #[staticmethod]
     fn new_did_peer(url: String) -> Self {
         OwnedVid(tsp_sdk::OwnedVid::new_did_peer(url.parse().unwrap()))
+    }
+
+    #[cfg(feature = "create-webvh")]
+    #[staticmethod]
+    fn new_did_webvh(did_name: String, transport: String) -> PyResult<(Self, String)> {
+        wait_for(async {
+            let (private_vid, history, _update_kid, _update_key) =
+                tsp_sdk::vid::did::webvh::create_webvh(
+                    &did_name,
+                    transport.parse().map_err(py_exception)?,
+                )
+                .await
+                .map_err(py_exception)?;
+
+            Ok((
+                OwnedVid(private_vid),
+                serde_json::to_string(&history).map_err(py_exception)?,
+            ))
+        })?
     }
 
     #[staticmethod]

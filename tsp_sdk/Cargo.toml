@@ -36,10 +36,11 @@ async = [
     "dep:rustls-pemfile",
     "dep:quinn",
 ]
-resolve = ["serialize", "dep:reqwest"]
+resolve = ["serialize", "dep:reqwest", "dep:didwebvh-resolver"]
 serialize = ["dep:serde", "dep:serde_with"]
 use_local_certificate = []
 postgres = ["async", "aries-askar/postgres"]
+create-webvh = ["dep:pyo3", "dep:serde-pyobject"]
 
 [dependencies]
 # generic
@@ -85,6 +86,10 @@ bs58 = { workspace = true, optional = false }
 arbitrary = { workspace = true, optional = true }
 async-trait = "0.1.88"
 
+# webvh
+pyo3 = { workspace = true, features = ["auto-initialize"], optional = true }
+serde-pyobject = { workspace = true, optional = true }
+
 # not used directly, but we need to configure
 # the JS feature in this transitive dependency
 # required for compiling to wasm32-unknown-unknown
@@ -96,3 +101,6 @@ features = ["js"]
 serial_test = { version = "3.0" }
 arbitrary = { workspace = true }
 wasm-bindgen-test = "0.3.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+didwebvh-resolver = { workspace = true, optional = true }

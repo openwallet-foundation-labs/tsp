@@ -83,10 +83,13 @@ impl IntermediaryState {
     }
 
     async fn verify_vid(&self, vid: &str) -> Result<(), tsp_sdk::Error> {
-        let verified_vid = tsp_sdk::vid::verify_vid(vid).await?;
+        let (verified_vid, metadata) = tsp_sdk::vid::verify_vid(vid).await?;
 
         // Immediately releases write lock
-        self.db.write().await.add_verified_vid(verified_vid)?;
+        self.db
+            .write()
+            .await
+            .add_verified_vid(verified_vid, metadata)?;
 
         Ok(())
     }
@@ -118,7 +121,7 @@ async fn main() {
     let did_doc = vid_to_did_document(private_vid.vid()).to_string();
 
     let db = AsyncSecureStore::new();
-    db.add_private_vid(private_vid).unwrap();
+    db.add_private_vid(private_vid, None).unwrap();
 
     let state = Arc::new(IntermediaryState {
         domain: args.domain.to_owned(),

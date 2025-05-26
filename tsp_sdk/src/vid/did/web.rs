@@ -1,6 +1,6 @@
 use crate::definitions::{PUBLIC_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE, VerifiedVid};
 use base64ct::{Base64UrlUnpadded, Encoding};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use url::Url;
 
@@ -13,7 +13,7 @@ const DEFAULT_PATH: &str = ".well-known";
 const DOCUMENT: &str = "did.json";
 
 #[allow(dead_code)]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DidDocument {
     #[serde(rename = "@context")]
@@ -26,7 +26,7 @@ pub struct DidDocument {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Service {
     pub id: String,
@@ -36,7 +36,7 @@ pub struct Service {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VerificationMethod {
     pub controller: String,
@@ -47,7 +47,7 @@ pub struct VerificationMethod {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicKeyJwk {
     pub crv: String,
@@ -119,6 +119,17 @@ fn resolve_url(parts: &[&str]) -> Result<Url, VidError> {
             domain.replace("%3A", ":")
         ),
         ["did", "web", domain, path @ ..] => {
+            format!(
+                "{PROTOCOL}{}/{}/{DOCUMENT}",
+                domain.replace("%3A", ":"),
+                path.join("/")
+            )
+        }
+        ["did", "webvh", _scid, domain] => format!(
+            "{PROTOCOL}{}/{DEFAULT_PATH}/{DOCUMENT}",
+            domain.replace("%3A", ":")
+        ),
+        ["did", "webvh", _scid, domain, path @ ..] => {
             format!(
                 "{PROTOCOL}{}/{}/{DOCUMENT}",
                 domain.replace("%3A", ":"),
