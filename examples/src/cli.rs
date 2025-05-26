@@ -2,8 +2,6 @@ use base64ct::{Base64, Base64Unpadded, Encoding};
 use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use futures::StreamExt;
-#[cfg(feature = "create-webvh")]
-use pyo3::PyResult;
 use rustls::crypto::CryptoProvider;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -12,7 +10,7 @@ use tokio::io::AsyncReadExt;
 use tracing::{debug, error, info, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::cesr::color_print;
-use tsp_sdk::vid::{VidError, verify_vid, vid_to_did_document};
+use tsp_sdk::vid::{VidError, verify_vid};
 use tsp_sdk::{
     Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
     RelationshipStatus, SecureStorage, VerifiedVid, Vid,
@@ -105,12 +103,6 @@ enum Commands {
             help = "Specify a network address and port instead of HTTPS transport"
         )]
         tcp: Option<String>,
-        #[arg(
-            short,
-            long,
-            help = "Do not publish the DID on the DID server but print it to the console"
-        )]
-        local: bool,
     },
     #[command(
         arg_required_else_help = true,
@@ -226,10 +218,10 @@ async fn read_wallet(
     let url = format!("sqlite://{wallet_name}.sqlite");
     match AskarSecureStorage::open(&url, password.as_bytes()).await {
         Ok(vault) => {
-            let (vids, aliases) = vault.read().await?;
+            let (vids, aliases, keys) = vault.read().await?;
 
             let db = AsyncSecureStore::new();
-            db.import(vids, aliases)?;
+            db.import(vids, aliases, keys)?;
 
             trace!("opened wallet {wallet_name}");
 
@@ -291,7 +283,7 @@ async fn run() -> Result<(), Error> {
 
     match args.command {
         Commands::Show { sub } => {
-            let (mut vids, aliases) = vid_wallet.export()?;
+            let (mut vids, aliases, _keys) = vid_wallet.export()?;
             vids.sort_by(|a, b| a.id.cmp(&b.id));
 
             if let Some(ShowCommands::Local) = sub {
@@ -334,7 +326,6 @@ async fn run() -> Result<(), Error> {
             r#type,
             username,
             alias,
-            local,
             tcp,
         } => {
             let transport = if let Some(address) = tcp {
@@ -345,8 +336,7 @@ async fn run() -> Result<(), Error> {
 
             let private_vid = match r#type {
                 DidType::Web => {
-                    create_did_web(&did_server, transport, &vid_wallet, &username, alias, local)
-                        .await?
+                    create_did_web(&did_server, transport, &vid_wallet, &username, alias).await?
                 }
                 DidType::Peer => {
                     let private_vid = OwnedVid::new_did_peer(transport);
@@ -360,84 +350,81 @@ async fn run() -> Result<(), Error> {
                 }
                 #[cfg(feature = "create-webvh")]
                 DidType::Webvh => {
-                    let (private_vid, history) =
+                    let (private_vid, history, update_kid, update_key) =
                         tsp_sdk::vid::did::webvh::create_webvh(&did_server, transport, &username)
                             .await?;
 
-                    if local {
-                        println!("{}", vid_to_did_document(private_vid.vid()));
-                    } else {
-                        let client = reqwest::ClientBuilder::new();
+                    let client = reqwest::ClientBuilder::new();
 
-                        #[cfg(feature = "use_local_certificate")]
-                        let client = client.add_root_certificate({
-                            tracing::warn!(
-                                "Using local root CA! (should only be used for local testing)"
-                            );
-                            reqwest::Certificate::from_pem(include_bytes!("../test/root-ca.pem"))
-                                .unwrap()
-                        });
+                    vid_wallet
+                        .add_secret_key(update_kid, update_key)
+                        .expect("Cannot store update key");
 
-                        let client = client.build().unwrap();
-
-                        let _: Vid = match client
-                            .post(format!("https://{did_server}/add-vid"))
-                            .json(&private_vid.vid())
-                            .send()
-                            .await
-                            .inspect(|r| {
-                                debug!("DID server responded with status code {}", r.status())
-                            })
-                            .expect("Could not publish VID on server")
-                            .error_for_status()
-                        {
-                            Ok(response) => response.json().await.expect("Could not decode VID"),
-                            Err(e) => {
-                                error!(
-                                    "{e}\nAn error occurred while publishing the DID. Maybe this DID exists already?"
-                                );
-                                return Err(Error::Vid(VidError::InvalidVid(
-                                    "An error occurred while publishing the DID. Maybe this DID exists already?"
-                                        .to_string(),
-                                )));
-                            }
-                        };
-                        info!(
-                            "published DID document at {}",
-                            tsp_sdk::vid::did::get_resolve_url(private_vid.vid().identifier())?
-                                .to_string()
+                    #[cfg(feature = "use_local_certificate")]
+                    let client = client.add_root_certificate({
+                        tracing::warn!(
+                            "Using local root CA! (should only be used for local testing)"
                         );
+                        reqwest::Certificate::from_pem(include_bytes!("../test/root-ca.pem"))
+                            .unwrap()
+                    });
 
-                        match client
-                            .post(format!(
-                                "https://{did_server}/add-history/{}",
-                                private_vid.vid().identifier()
-                            ))
-                            .json(&history)
-                            .send()
-                            .await
-                            .inspect(|r| {
-                                debug!("DID server responded with status code {}", r.status())
-                            })
-                            .expect("Could not publish history on server")
-                            .error_for_status()
-                        {
-                            Ok(_) => {}
-                            Err(e) => {
-                                error!(
-                                    "{e}\nAn error occurred while publishing the DID. Maybe this DID exists already?"
-                                );
-                                return Err(Error::Vid(VidError::InvalidVid(
+                    let client = client.build().unwrap();
+
+                    let _: Vid = match client
+                        .post(format!("https://{did_server}/add-vid"))
+                        .json(&private_vid.vid())
+                        .send()
+                        .await
+                        .inspect(|r| debug!("DID server responded with status code {}", r.status()))
+                        .expect("Could not publish VID on server")
+                        .error_for_status()
+                    {
+                        Ok(response) => response.json().await.expect("Could not decode VID"),
+                        Err(e) => {
+                            error!(
+                                "{e}\nAn error occurred while publishing the DID. Maybe this DID exists already?"
+                            );
+                            return Err(Error::Vid(VidError::InvalidVid(
                                     "An error occurred while publishing the DID. Maybe this DID exists already?"
                                         .to_string(),
                                 )));
-                            }
-                        };
-                        info!("published DID history");
-                        if let Some(alias) = alias {
-                            vid_wallet.set_alias(alias, private_vid.identifier().to_string())?;
                         }
+                    };
+                    info!(
+                        "published DID document at {}",
+                        tsp_sdk::vid::did::get_resolve_url(private_vid.vid().identifier())?
+                            .to_string()
+                    );
+
+                    match client
+                        .post(format!(
+                            "https://{did_server}/add-history/{}",
+                            private_vid.vid().identifier()
+                        ))
+                        .json(&history)
+                        .send()
+                        .await
+                        .inspect(|r| debug!("DID server responded with status code {}", r.status()))
+                        .expect("Could not publish history on server")
+                        .error_for_status()
+                    {
+                        Ok(_) => {}
+                        Err(e) => {
+                            error!(
+                                "{e}\nAn error occurred while publishing the DID. Maybe this DID exists already?"
+                            );
+                            return Err(Error::Vid(VidError::InvalidVid(
+                                    "An error occurred while publishing the DID. Maybe this DID exists already?"
+                                        .to_string(),
+                                )));
+                        }
+                    };
+                    info!("published DID history");
+                    if let Some(alias) = alias {
+                        vid_wallet.set_alias(alias, private_vid.identifier().to_string())?;
                     }
+
                     private_vid
                 }
             };
@@ -949,7 +936,6 @@ async fn create_did_web(
     vid_wallet: &AsyncSecureStore,
     username: &str,
     alias: Option<String>,
-    local: bool,
 ) -> Result<OwnedVid, Error> {
     let did = format!(
         "did:web:{}:endpoint:{username}",
@@ -971,44 +957,41 @@ async fn create_did_web(
     let private_vid = OwnedVid::bind(&did, transport);
     info!("created identity {}", private_vid.identifier());
 
-    if local {
-        println!("{}", vid_to_did_document(private_vid.vid()));
-    } else {
-        let client = reqwest::ClientBuilder::new();
+    let client = reqwest::ClientBuilder::new();
 
-        #[cfg(feature = "use_local_certificate")]
-        let client = client.add_root_certificate({
-            tracing::warn!("Using local root CA! (should only be used for local testing)");
-            reqwest::Certificate::from_pem(include_bytes!("../test/root-ca.pem")).unwrap()
-        });
+    #[cfg(feature = "use_local_certificate")]
+    let client = client.add_root_certificate({
+        tracing::warn!("Using local root CA! (should only be used for local testing)");
+        reqwest::Certificate::from_pem(include_bytes!("../test/root-ca.pem")).unwrap()
+    });
 
-        let _: Vid = match client
-            .build()
-            .unwrap()
-            .post(format!("https://{did_server}/add-vid"))
-            .json(&private_vid.vid())
-            .send()
-            .await
-            .inspect(|r| debug!("DID server responded with status code {}", r.status()))
-            .expect("Could not publish VID on server")
-            .error_for_status()
-        {
-            Ok(response) => response.json().await.expect("Could not decode VID"),
-            Err(e) => {
-                error!(
-                    "{e}\nAn error occurred while publishing the DID. Maybe this DID exists already?"
-                );
-                return Err(Error::Vid(VidError::InvalidVid(
-                    "An error occurred while publishing the DID. Maybe this DID exists already?"
-                        .to_string(),
-                )));
-            }
-        };
-        info!(
-            "published DID document at {}",
-            tsp_sdk::vid::did::get_resolve_url(&did)?.to_string()
-        );
-    }
+    let _: Vid = match client
+        .build()
+        .unwrap()
+        .post(format!("https://{did_server}/add-vid"))
+        .json(&private_vid.vid())
+        .send()
+        .await
+        .inspect(|r| debug!("DID server responded with status code {}", r.status()))
+        .expect("Could not publish VID on server")
+        .error_for_status()
+    {
+        Ok(response) => response.json().await.expect("Could not decode VID"),
+        Err(e) => {
+            error!(
+                "{e}\nAn error occurred while publishing the DID. Maybe this DID exists already?"
+            );
+            return Err(Error::Vid(VidError::InvalidVid(
+                "An error occurred while publishing the DID. Maybe this DID exists already?"
+                    .to_string(),
+            )));
+        }
+    };
+    info!(
+        "published DID document at {}",
+        tsp_sdk::vid::did::get_resolve_url(&did)?.to_string()
+    );
+
     Ok(private_vid)
 }
 
@@ -1067,15 +1050,10 @@ fn show_relations(vids: &[ExportVid], vid: Option<String>, aliases: &Aliases) ->
     Ok(())
 }
 
-#[cfg(not(feature = "create-webvh"))]
-type PyResult<T> = Result<T, ()>;
-
-#[cfg_attr(not(feature = "create-webvh"), tokio::main)]
-#[cfg_attr(feature = "create-webvh", pyo3_async_runtimes::tokio::main)]
-async fn main() -> PyResult<()> {
+#[tokio::main]
+async fn main() {
     if let Err(e) = run().await {
         eprintln!("{e}");
         std::process::exit(1);
     }
-    Ok(())
 }

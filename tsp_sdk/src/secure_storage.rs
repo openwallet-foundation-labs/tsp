@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::store::WebvhUpdateKeys;
 use crate::{
     Error, ExportVid, RelationshipStatus,
     definitions::{
@@ -25,10 +26,13 @@ pub trait SecureStorage: Sized {
     async fn open(url: &str, password: &[u8]) -> Result<Self, Error>;
 
     /// Write data from memory to secure storage
-    async fn persist(&self, (vids, aliases): (Vec<ExportVid>, Aliases)) -> Result<(), Error>;
+    async fn persist(
+        &self,
+        (vids, aliases, update_keys): (Vec<ExportVid>, Aliases, WebvhUpdateKeys),
+    ) -> Result<(), Error>;
 
     /// Read data from secure storage to memory
-    async fn read(&self) -> Result<(Vec<ExportVid>, Aliases), Error>;
+    async fn read(&self) -> Result<(Vec<ExportVid>, Aliases, WebvhUpdateKeys), Error>;
 
     /// Close the secure storage
     async fn close(self) -> Result<(), Error>;
@@ -82,7 +86,10 @@ impl SecureStorage for AskarSecureStorage {
         })
     }
 
-    async fn persist(&self, (vids, aliases): (Vec<ExportVid>, Aliases)) -> Result<(), Error> {
+    async fn persist(
+        &self,
+        (vids, aliases, keys): (Vec<ExportVid>, Aliases, WebvhUpdateKeys),
+    ) -> Result<(), Error> {
         let mut conn = self.inner.session(None).await?;
 
         for export in vids {
@@ -214,12 +221,39 @@ impl SecureStorage for AskarSecureStorage {
             }
         }
 
+        if let Ok(update_keys) = serde_json::to_value(&keys) {
+            if let Err(e) = conn
+                .insert(
+                    "webvh_update_keys",
+                    "all",
+                    update_keys.to_string().as_bytes(),
+                    None,
+                    None,
+                )
+                .await
+            {
+                if e.kind() == ErrorKind::Duplicate {
+                    conn.update(
+                        EntryOperation::Replace,
+                        "webvh_update_keys",
+                        "all",
+                        Some(update_keys.to_string().as_bytes()),
+                        None,
+                        None,
+                    )
+                    .await?;
+                } else {
+                    Err(Error::from(e))?;
+                }
+            }
+        }
+
         conn.commit().await?;
 
         Ok(())
     }
 
-    async fn read(&self) -> Result<(Vec<ExportVid>, Aliases), Error> {
+    async fn read(&self) -> Result<(Vec<ExportVid>, Aliases, WebvhUpdateKeys), Error> {
         let mut vids = Vec::new();
 
         let mut conn = self.inner.session(None).await?;
@@ -316,9 +350,15 @@ impl SecureStorage for AskarSecureStorage {
             None => HashMap::new(),
         };
 
+        let keys = match conn.fetch("webvh_update_keys", "all", false).await? {
+            Some(data) => serde_json::from_slice(&data.value)
+                .map_err(|_| Error::DecodeState("could not webvh keys from storage"))?,
+            None => HashMap::new(),
+        };
+
         conn.commit().await?;
 
-        Ok((vids, aliases))
+        Ok((vids, aliases, keys))
     }
 
     async fn close(self) -> Result<(), Error> {
@@ -367,7 +407,7 @@ mod test {
             let vault = AskarSecureStorage::open("sqlite://test.sqlite", b"password")
                 .await
                 .unwrap();
-            let (vids, aliases) = vault.read().await.unwrap();
+            let (vids, aliases, keys) = vault.read().await.unwrap();
 
             assert_eq!(
                 aliases.get("pigeon"),
@@ -375,7 +415,7 @@ mod test {
             );
 
             let store = SecureStore::new();
-            store.import(vids, aliases).unwrap();
+            store.import(vids, aliases, keys).unwrap();
             assert!(store.has_private_vid(&id).unwrap());
 
             vault.destroy().await.unwrap();

@@ -1,3 +1,4 @@
+use crate::store::WebvhUpdateKeys;
 use crate::{
     ExportVid, OwnedVid, PrivateVid, RelationshipStatus,
     definitions::{Digest, ReceivedTspMessage, TSPStream, VerifiedVid},
@@ -47,7 +48,7 @@ impl AsyncSecureStore {
     }
 
     /// Export the wallet to serializable default types
-    pub fn export(&self) -> Result<(Vec<ExportVid>, Aliases), Error> {
+    pub fn export(&self) -> Result<(Vec<ExportVid>, Aliases, WebvhUpdateKeys), Error> {
         self.inner.export()
     }
 
@@ -57,8 +58,13 @@ impl AsyncSecureStore {
     }
 
     /// Import the wallet from serializable default types
-    pub fn import(&self, vids: Vec<ExportVid>, aliases: Aliases) -> Result<(), Error> {
-        self.inner.import(vids, aliases)
+    pub fn import(
+        &self,
+        vids: Vec<ExportVid>,
+        aliases: Aliases,
+        keys: WebvhUpdateKeys,
+    ) -> Result<(), Error> {
+        self.inner.import(vids, aliases, keys)
     }
 
     /// Adds a relation to an already existing VID, making it a nested VID
@@ -146,6 +152,14 @@ impl AsyncSecureStore {
     /// Set alias for a DID
     pub fn set_alias(&self, alias: String, did: String) -> Result<(), Error> {
         self.inner.set_alias(alias, did)
+    }
+
+    pub fn add_secret_key(&self, kid: String, secret_key: Vec<u8>) -> Result<(), Error> {
+        self.inner.add_secret_key(kid, secret_key)
+    }
+
+    pub fn get_secret_key(&self, kid: &str) -> Result<Option<Vec<u8>>, Error> {
+        self.inner.get_secret_key(kid)
     }
 
     pub fn seal_message(

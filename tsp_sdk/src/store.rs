@@ -77,6 +77,7 @@ impl VidContext {
 }
 
 pub type Aliases = HashMap<String, String>;
+pub type WebvhUpdateKeys = HashMap<String, Vec<u8>>;
 
 /// Holds private and verified VIDs
 ///
@@ -89,6 +90,7 @@ pub type Aliases = HashMap<String, String>;
 pub struct SecureStore {
     pub(crate) vids: Arc<RwLock<HashMap<String, VidContext>>>,
     pub(crate) aliases: Arc<RwLock<Aliases>>,
+    pub(crate) keys: Arc<RwLock<WebvhUpdateKeys>>,
 }
 
 /// This wallet is used to store and resolve VIDs
@@ -99,7 +101,7 @@ impl SecureStore {
     }
 
     /// Export the wallet to serializable default types
-    pub fn export(&self) -> Result<(Vec<ExportVid>, Aliases), Error> {
+    pub fn export(&self) -> Result<(Vec<ExportVid>, Aliases, WebvhUpdateKeys), Error> {
         let vids = self
             .vids
             .read()?
@@ -119,11 +121,20 @@ impl SecureStore {
             })
             .collect::<Vec<_>>();
 
-        Ok((vids, self.aliases.read()?.clone()))
+        Ok((
+            vids,
+            self.aliases.read()?.clone(),
+            self.keys.read()?.clone(),
+        ))
     }
 
     /// Import the wallet from serializable default types
-    pub fn import(&self, vids: Vec<ExportVid>, aliases: Aliases) -> Result<(), Error> {
+    pub fn import(
+        &self,
+        vids: Vec<ExportVid>,
+        aliases: Aliases,
+        keys: WebvhUpdateKeys,
+    ) -> Result<(), Error> {
         vids.into_iter().try_for_each(|vid| {
             self.vids.write()?.insert(
                 vid.id.to_string(),
@@ -144,10 +155,24 @@ impl SecureStore {
             Ok::<(), Error>(())
         })?;
 
+        keys.into_iter().try_for_each(|(k, v)| {
+            self.add_secret_key(k, v)?;
+            Ok::<(), Error>(())
+        })?;
+
         aliases.into_iter().try_for_each(|(k, v)| {
             self.set_alias(k, v)?;
             Ok(())
         })
+    }
+
+    pub fn add_secret_key(&self, kid: String, secret_key: Vec<u8>) -> Result<(), Error> {
+        self.keys.write()?.insert(kid, secret_key);
+        Ok(())
+    }
+
+    pub fn get_secret_key(&self, kid: &str) -> Result<Option<Vec<u8>>, Error> {
+        Ok(self.keys.read()?.get(kid).cloned())
     }
 
     /// Add the already resolved `verified_vid` to the wallet as a relationship

@@ -52,10 +52,10 @@ impl Store {
         wait_for(async {
             match AskarSecureStorage::open(wallet_url, wallet_password).await {
                 Ok(vault) => {
-                    let (vids, aliases) = vault.read().await.map_err(py_exception)?;
+                    let (vids, aliases, keys) = vault.read().await.map_err(py_exception)?;
 
                     let inner = AsyncSecureStore::new();
-                    inner.import(vids, aliases).map_err(py_exception)?;
+                    inner.import(vids, aliases, keys).map_err(py_exception)?;
 
                     Ok(Self { inner, vault })
                 }
@@ -72,8 +72,8 @@ impl Store {
 
     fn read_wallet(&mut self) -> PyResult<()> {
         wait_for(async {
-            let (vids, aliases) = self.vault.read().await.map_err(py_exception)?;
-            self.inner.import(vids, aliases).map_err(py_exception)
+            let (vids, aliases, keys) = self.vault.read().await.map_err(py_exception)?;
+            self.inner.import(vids, aliases, keys).map_err(py_exception)
         })
     }
 
