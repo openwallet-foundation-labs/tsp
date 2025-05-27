@@ -1,12 +1,10 @@
-use crate::definitions::MessageType;
 use crate::definitions::{
-    Digest, NonConfidentialData, Payload, PrivateKeyData, PrivateSigningKeyData, PrivateVid,
-    PublicKeyData, PublicVerificationKeyData, TSPMessage, VerifiedVid,
+    Digest, MessageType, NonConfidentialData, Payload, PrivateKeyData, PrivateSigningKeyData,
+    PrivateVid, PublicKeyData, PublicVerificationKeyData, TSPMessage, VerifiedVid,
 };
 use rand_core::OsRng;
 
-pub use digest::blake2b256;
-pub use digest::sha256;
+pub use digest::{blake2b256, sha256};
 
 mod digest;
 pub mod error;
