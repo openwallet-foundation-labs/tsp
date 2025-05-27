@@ -666,7 +666,7 @@ async fn test_unverified_receiver_in_direct_mode() {
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
-    bob_db.add_private_vid(bob_vid.clone()).unwrap();
+    bob_db.add_private_vid(bob_vid.clone(), None).unwrap();
     bob_db
         .verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice", None)
         .await
@@ -683,7 +683,7 @@ async fn test_unverified_receiver_in_direct_mode() {
     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
-    alice_db.add_private_vid(alice_vid.clone()).unwrap();
+    alice_db.add_private_vid(alice_vid.clone(), None).unwrap();
 
     // send a message
     let err= alice_db

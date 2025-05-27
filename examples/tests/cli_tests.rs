@@ -21,6 +21,8 @@ fn create_wallet(alias: &str) -> String {
         "--wallet",
         random_name.as_str(),
         "create",
+        "--type",
+        "web",
         "--alias",
         alias,
         random_name.as_str(),
