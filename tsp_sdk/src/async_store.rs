@@ -1,10 +1,9 @@
-use crate::crypto::CryptoError;
-use crate::store::WebvhUpdateKeys;
 use crate::{
-    ExportVid, OwnedVid, PrivateVid, RelationshipStatus,
-    definitions::{Digest, ReceivedTspMessage, TSPStream, VerifiedVid},
-    error::Error,
-    store::{Aliases, SecureStore},
+    crypto::CryptoError, definitions::{Digest, ReceivedTspMessage, TSPStream, VerifiedVid}, error::Error, store::{Aliases, SecureStore, WebvhUpdateKeys},
+    ExportVid,
+    OwnedVid,
+    PrivateVid,
+    RelationshipStatus,
 };
 use bytes::BytesMut;
 use futures::StreamExt;
@@ -67,6 +66,16 @@ impl AsyncSecureStore {
         keys: WebvhUpdateKeys,
     ) -> Result<(), Error> {
         self.inner.import(vids, aliases, keys)
+    }
+
+    /// Get the current relationship status for a VID pair
+    pub fn get_relation_status_for_vid_pair(
+        &self,
+        local_vid: &str,
+        remote_vid: &str,
+    ) -> Result<RelationshipStatus, Error> {
+        self.inner
+            .relation_status_for_vid_pair(local_vid, remote_vid)
     }
 
     /// Adds a relation to an already existing VID, making it a nested VID

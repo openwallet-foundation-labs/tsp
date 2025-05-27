@@ -1,22 +1,22 @@
-use axum::extract::ws::Message;
-use axum::extract::{DefaultBodyLimit, Path, State, WebSocketUpgrade};
-use axum::http::{Method, StatusCode, header};
-use axum::response::{Html, IntoResponse, Response};
-use axum::routing::{get, post};
-use axum::{Form, Json, Router};
+use axum::{
+    Form, Json, Router,
+    extract::{DefaultBodyLimit, Path, State, WebSocketUpgrade, ws::Message},
+    http::{Method, StatusCode, header},
+    response::{Html, IntoResponse, Response},
+    routing::{get, post},
+};
 use clap::Parser;
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
-use std::net::SocketAddrV4;
-use std::sync::Arc;
+use std::{collections::VecDeque, net::SocketAddrV4, sync::Arc};
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
-use tokio::signal;
-use tokio::sync::{RwLock, broadcast};
+use tokio::{
+    signal,
+    sync::{RwLock, broadcast},
+};
 use tower_http::cors::{Any, CorsLayer};
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{VerifiedVid, Vid};
 
 #[derive(Debug, Parser)]

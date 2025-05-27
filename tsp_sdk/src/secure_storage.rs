@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 
-use crate::store::WebvhUpdateKeys;
 use crate::{
     Error, ExportVid, RelationshipStatus,
     definitions::{
         PRIVATE_KEY_SIZE, PRIVATE_SIGNING_KEY_SIZE, PUBLIC_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE,
     },
-    store::Aliases,
+    store::{Aliases, WebvhUpdateKeys},
 };
 use aries_askar::{
     ErrorKind, StoreKeyMethod,

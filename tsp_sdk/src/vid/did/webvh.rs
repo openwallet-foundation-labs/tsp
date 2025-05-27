@@ -1,10 +1,13 @@
-use crate::Vid;
-use crate::vid::VidError;
-use crate::vid::did::web::{DidDocument, resolve_document};
+use crate::{
+    Vid,
+    vid::{
+        VidError,
+        did::web::{DidDocument, resolve_document},
+    },
+};
 #[cfg(feature = "create-webvh")]
 pub use create_webvh::{create_webvh, update};
-use didwebvh_resolver;
-use didwebvh_resolver::{DefaultHttpClient, ResolutionOptions};
+use didwebvh_resolver::{self, DefaultHttpClient, ResolutionOptions};
 use serde::{Deserialize, Serialize};
 
 pub(crate) const SCHEME: &str = "webvh";
@@ -35,11 +38,15 @@ pub async fn resolve(id: &str) -> Result<(Vid, serde_json::Value), VidError> {
 
 #[cfg(feature = "create-webvh")]
 mod create_webvh {
-    use crate::OwnedVid;
-    use crate::vid::did::web::{DidDocument, resolve_document};
-    use crate::vid::{VidError, vid_to_did_document};
-    use pyo3::ffi::c_str;
-    use pyo3::prelude::*;
+    use crate::{
+        OwnedVid,
+        vid::{
+            VidError,
+            did::web::{DidDocument, resolve_document},
+            vid_to_did_document,
+        },
+    };
+    use pyo3::{ffi::c_str, prelude::*};
     use serde::Deserialize;
     use serde_pyobject::to_pyobject;
     use serde_with::serde_derive::Serialize;
