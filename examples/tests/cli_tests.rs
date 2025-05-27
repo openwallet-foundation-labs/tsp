@@ -4,6 +4,7 @@ use rand::distributions::Alphanumeric;
 use rand::{Rng, thread_rng};
 use std::process::Command as StdCommand;
 use std::thread;
+use std::time::Duration;
 
 fn random_string(n: usize) -> String {
     thread_rng()
@@ -101,12 +102,13 @@ fn test_send_command_unverified_receiver_default() {
                 "--wallet",
                 random_receiver_name.as_str(),
                 "receive",
-                "--one",
                 &marc_did,
             ])
+            .timeout(Duration::from_secs(3))
             .assert()
             .stderr(predicate::str::contains("received relationship request"))
-            .success();
+            .stdout(predicate::str::contains("Oh hello Marc"))
+            .failure();
         });
     });
 
