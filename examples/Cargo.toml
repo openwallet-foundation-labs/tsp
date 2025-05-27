@@ -11,6 +11,7 @@ rust-version.workspace = true
 [features]
 nacl = ["tsp_sdk/nacl"]
 use_local_certificate = ["tsp_sdk/use_local_certificate"]
+create-webvh = ["tsp_sdk/create-webvh", "dep:pyo3"]
 
 [[bin]]
 name = "create-did-web"
@@ -29,8 +30,8 @@ name = "demo-intermediary"
 path = "src/intermediary.rs"
 
 [[bin]]
-name = "did-web"
-path = "src/did-web.rs"
+name = "did-server"
+path = "src/did-server.rs"
 
 [dependencies]
 tsp_sdk = { path = "../tsp_sdk", features = ["async", "resolve"] }
@@ -48,6 +49,9 @@ bytes = { workspace = true }
 url = { workspace = true }
 rustls = { workspace = true }
 tower-http = { workspace = true }
+
+# create webvh
+pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 assert_cmd = "2.0.17"

@@ -19,8 +19,8 @@ spec:
       containerConcurrency: 80
       timeoutSeconds: 300
       containers:
-        - name: did-web-server
-          image: us-central1-docker.pkg.dev/teaspoon-world-demo/tsp/openwallet-foundation-labs/tsp/did-web-server:${TAG}
+        - name: did-server
+          image: us-central1-docker.pkg.dev/teaspoon-world-demo/tsp/openwallet-foundation-labs/tsp/did-server:${TAG}
           args: [ "--transport", "${TRANSPORT}", "${DOMAIN}" ]
           ports:
             - name: http1

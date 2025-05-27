@@ -5,14 +5,41 @@ use futures::StreamExt;
 use rustls::crypto::CryptoProvider;
 use std::ops::Deref;
 use std::path::PathBuf;
+use std::str::FromStr;
 use tokio::io::AsyncReadExt;
 use tracing::{debug, error, info, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tsp_sdk::cesr::color_print;
+use tsp_sdk::vid::{VidError, verify_vid};
 use tsp_sdk::{
     Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
     RelationshipStatus, SecureStorage, VerifiedVid, Vid,
-    cesr::{self, color_print},
+    cesr::{self},
 };
+use url::Url;
+
+#[derive(Default, Debug, Clone)]
+enum DidType {
+    #[default]
+    Web,
+    Peer,
+    #[cfg(feature = "create-webvh")]
+    Webvh,
+}
+
+impl FromStr for DidType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "web" => Ok(DidType::Web),
+            "peer" => Ok(DidType::Peer),
+            #[cfg(feature = "create-webvh")]
+            "webvh" => Ok(DidType::Webvh),
+            _ => Err(format!("invalid did type: {}", s)),
+        }
+    }
+}
 
 #[derive(Debug, Parser)]
 #[command(name = "tsp", version)]
@@ -66,12 +93,11 @@ enum Commands {
         about = "create and register a did:web identifier"
     )]
     Create {
+        #[arg(short, long)]
+        r#type: DidType,
         username: String,
         #[arg(short, long)]
         alias: Option<String>,
-    },
-    CreatePeer {
-        alias: String,
         #[arg(
             long,
             help = "Specify a network address and port instead of HTTPS transport"
@@ -197,10 +223,10 @@ async fn read_wallet(
     let url = format!("sqlite://{wallet_name}.sqlite");
     match AskarSecureStorage::open(&url, password.as_bytes()).await {
         Ok(vault) => {
-            let (vids, aliases) = vault.read().await?;
+            let (vids, aliases, keys) = vault.read().await?;
 
             let db = AsyncSecureStore::new();
-            db.import(vids, aliases)?;
+            db.import(vids, aliases, keys)?;
 
             trace!("opened wallet {wallet_name}");
 
@@ -262,7 +288,7 @@ async fn run() -> Result<(), Error> {
 
     match args.command {
         Commands::Show { sub } => {
-            let (mut vids, aliases) = vid_wallet.export()?;
+            let (mut vids, aliases, _keys) = vid_wallet.export()?;
             vids.sort_by(|a, b| a.id.cmp(&b.id));
 
             if let Some(ShowCommands::Local) = sub {
@@ -301,79 +327,123 @@ async fn run() -> Result<(), Error> {
 
             print!("{vid}");
         }
-        Commands::Create { username, alias } => {
-            let did = format!(
-                "did:web:{}:endpoint:{username}",
-                did_server.replace(":", "%3A")
-            );
+        Commands::Create {
+            r#type,
+            username,
+            alias,
+            tcp,
+        } => {
+            let transport = if let Some(address) = tcp {
+                Url::parse(&format!("tcp://{address}")).unwrap()
+            } else {
+                Url::parse(&format!("https://{server}/endpoint/[vid_placeholder]",)).unwrap()
+            };
 
-            if let Some(alias) = alias {
-                vid_wallet.set_alias(alias.clone(), did.clone())?;
-                info!("added alias {alias} -> {did}");
-            }
+            let private_vid = match r#type {
+                DidType::Web => {
+                    create_did_web(&did_server, transport, &vid_wallet, &username, alias).await?
+                }
+                DidType::Peer => {
+                    let private_vid = OwnedVid::new_did_peer(transport);
 
-            let transport = url::Url::parse(&format!(
-                "https://{server}/endpoint/{}",
-                did.replace("%", "%25")
-            ))
-            .unwrap();
+                    if let Some(alias) = alias {
+                        vid_wallet.set_alias(alias, private_vid.identifier().to_string())?;
+                    }
 
-            let private_vid = OwnedVid::bind(&did, transport);
-            info!("created identity {}", private_vid.identifier());
+                    info!("created peer identity {}", private_vid.identifier());
+                    private_vid
+                }
+                #[cfg(feature = "create-webvh")]
+                DidType::Webvh => {
+                    let (private_vid, history, update_kid, update_key) =
+                        tsp_sdk::vid::did::webvh::create_webvh(
+                            &format!("{did_server}/endpoint/{username}"),
+                            transport,
+                        )
+                        .await?;
 
-            let client = reqwest::ClientBuilder::new();
+                    let client = reqwest::ClientBuilder::new();
 
-            #[cfg(feature = "use_local_certificate")]
-            let client = client.add_root_certificate({
-                tracing::warn!("Using local root CA! (should only be used for local testing)");
-                reqwest::Certificate::from_pem(include_bytes!("../test/root-ca.pem")).unwrap()
-            });
+                    vid_wallet
+                        .add_secret_key(update_kid, update_key)
+                        .expect("Cannot store update key");
 
-            let _: Vid = match client
-                .build()
-                .unwrap()
-                .post(format!("https://{did_server}/add-vid"))
-                .json(&private_vid.vid())
-                .send()
-                .await
-                .inspect(|r| debug!("DID server responded with status code {}", r.status()))
-                .expect("Could not publish VID on server")
-                .error_for_status()
-            {
-                Ok(response) => response.json().await.expect("Could not decode VID"),
-                Err(e) => {
-                    error!(
-                        "{e}\nAn error occurred while publishing the DID. Maybe this DID exists already?"
+                    #[cfg(feature = "use_local_certificate")]
+                    let client = client.add_root_certificate({
+                        tracing::warn!(
+                            "Using local root CA! (should only be used for local testing)"
+                        );
+                        reqwest::Certificate::from_pem(include_bytes!("../test/root-ca.pem"))
+                            .unwrap()
+                    });
+
+                    let client = client.build().unwrap();
+
+                    let _: Vid = match client
+                        .post(format!("https://{did_server}/add-vid"))
+                        .json(&private_vid.vid())
+                        .send()
+                        .await
+                        .inspect(|r| debug!("DID server responded with status code {}", r.status()))
+                        .expect("Could not publish VID on server")
+                        .error_for_status()
+                    {
+                        Ok(response) => response.json().await.expect("Could not decode VID"),
+                        Err(e) => {
+                            error!(
+                                "{e}\nAn error occurred while publishing the DID. Maybe this DID exists already?"
+                            );
+                            return Err(Error::Vid(VidError::InvalidVid(
+                                    "An error occurred while publishing the DID. Maybe this DID exists already?"
+                                        .to_string(),
+                                )));
+                        }
+                    };
+                    info!(
+                        "published DID document at {}",
+                        tsp_sdk::vid::did::get_resolve_url(private_vid.vid().identifier())?
+                            .to_string()
                     );
-                    return Ok(());
+
+                    match client
+                        .post(format!(
+                            "https://{did_server}/add-history/{}",
+                            private_vid.vid().identifier()
+                        ))
+                        .json(&history)
+                        .send()
+                        .await
+                        .inspect(|r| debug!("DID server responded with status code {}", r.status()))
+                        .expect("Could not publish history on server")
+                        .error_for_status()
+                    {
+                        Ok(_) => {}
+                        Err(e) => {
+                            error!(
+                                "{e}\nAn error occurred while publishing the DID. Maybe this DID exists already?"
+                            );
+                            return Err(Error::Vid(VidError::InvalidVid(
+                                    "An error occurred while publishing the DID. Maybe this DID exists already?"
+                                        .to_string(),
+                                )));
+                        }
+                    };
+                    info!("published DID history");
+                    if let Some(alias) = alias {
+                        vid_wallet.set_alias(alias, private_vid.identifier().to_string())?;
+                    }
+
+                    private_vid
                 }
             };
-
-            info!(
-                "published DID document at {}",
-                tsp_sdk::vid::did::get_resolve_url(&did)
-                    .unwrap()
-                    .to_string()
-            );
-
-            vid_wallet.add_private_vid(private_vid.clone())?;
-        }
-        Commands::CreatePeer { alias, tcp } => {
-            let transport = if let Some(address) = tcp {
-                url::Url::parse(&format!("tcp://{address}")).unwrap()
-            } else {
-                url::Url::parse(&format!("https://{server}/endpoint/[vid_placeholder]",)).unwrap()
-            };
-            let private_vid = OwnedVid::new_did_peer(transport);
-
-            vid_wallet.set_alias(alias, private_vid.identifier().to_string())?;
-
-            vid_wallet.add_private_vid(private_vid.clone())?;
-            info!("created peer identity {}", private_vid.identifier());
+            let (_, metadata) = verify_vid(private_vid.identifier())
+                .await
+                .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
+            vid_wallet.add_private_vid(private_vid.clone(), metadata)?;
         }
         Commands::ImportPiv { file, alias } => {
             let private_vid = OwnedVid::from_file(file).await?;
-            vid_wallet.add_private_vid(private_vid.clone())?;
+            vid_wallet.add_private_vid(private_vid.clone(), None)?;
 
             if let Some(alias) = alias {
                 vid_wallet.set_alias(alias, private_vid.identifier().to_string())?;
@@ -851,11 +921,6 @@ fn show_local(vids: &[ExportVid], aliases: &Aliases) -> Result<(), Error> {
             vid.transport.as_str().to_string()
         };
 
-        let did_doc = if vid.id.starts_with("did:web") {
-            tsp_sdk::vid::did::get_resolve_url(&vid.id)?.to_string()
-        } else {
-            "None".to_string()
-        };
         let alias = aliases
             .iter()
             .find_map(|(a, id)| if id == &vid.id { Some(a.clone()) } else { None })
@@ -864,7 +929,26 @@ fn show_local(vids: &[ExportVid], aliases: &Aliases) -> Result<(), Error> {
         println!("{}", &vid.id);
         println!("\t Alias: {}", alias);
         println!("\t Transport: {}", transport);
-        println!("\t DID doc: {}", did_doc);
+        if vid.id.starts_with("did:web") {
+            println!(
+                "\t DID doc: {}",
+                tsp_sdk::vid::did::get_resolve_url(&vid.id)?
+            )
+        }
+        if vid.id.starts_with("did:webvh") {
+            println!(
+                "\t DID history: {}l",
+                tsp_sdk::vid::did::get_resolve_url(&vid.id)?
+            );
+            println!(
+                "\t DID version: {}",
+                vid.metadata
+                    .as_ref()
+                    .and_then(|m| m.get("version_id"))
+                    .map(|v| v.to_string())
+                    .unwrap_or("None".to_string())
+            )
+        }
         println!(
             "\t public enc key: ({enc_key_type}): {}",
             Base64::encode_string(vid.public_enckey.deref())
@@ -878,6 +962,71 @@ fn show_local(vids: &[ExportVid], aliases: &Aliases) -> Result<(), Error> {
     println!();
 
     Ok(())
+}
+
+async fn create_did_web(
+    did_server: &str,
+    transport: Url,
+    vid_wallet: &AsyncSecureStore,
+    username: &str,
+    alias: Option<String>,
+) -> Result<OwnedVid, Error> {
+    let did = format!(
+        "did:web:{}:endpoint:{username}",
+        did_server.replace(":", "%3A").replace("/", ":")
+    );
+
+    if let Some(alias) = alias {
+        vid_wallet.set_alias(alias.clone(), did.clone())?;
+        info!("added alias {alias} -> {did}");
+    }
+
+    let transport = Url::parse(
+        &transport
+            .as_str()
+            .replace("[vid_placeholder]", &did.replace("%", "%25")),
+    )
+    .unwrap();
+
+    let private_vid = OwnedVid::bind(&did, transport);
+    info!("created identity {}", private_vid.identifier());
+
+    let client = reqwest::ClientBuilder::new();
+
+    #[cfg(feature = "use_local_certificate")]
+    let client = client.add_root_certificate({
+        tracing::warn!("Using local root CA! (should only be used for local testing)");
+        reqwest::Certificate::from_pem(include_bytes!("../test/root-ca.pem")).unwrap()
+    });
+
+    let _: Vid = match client
+        .build()
+        .unwrap()
+        .post(format!("https://{did_server}/add-vid"))
+        .json(&private_vid.vid())
+        .send()
+        .await
+        .inspect(|r| debug!("DID server responded with status code {}", r.status()))
+        .expect("Could not publish VID on server")
+        .error_for_status()
+    {
+        Ok(response) => response.json().await.expect("Could not decode VID"),
+        Err(e) => {
+            error!(
+                "{e}\nAn error occurred while publishing the DID. Maybe this DID exists already?"
+            );
+            return Err(Error::Vid(VidError::InvalidVid(
+                "An error occurred while publishing the DID. Maybe this DID exists already?"
+                    .to_string(),
+            )));
+        }
+    };
+    info!(
+        "published DID document at {}",
+        tsp_sdk::vid::did::get_resolve_url(&did)?.to_string()
+    );
+
+    Ok(private_vid)
 }
 
 fn show_relations(vids: &[ExportVid], vid: Option<String>, aliases: &Aliases) -> Result<(), Error> {

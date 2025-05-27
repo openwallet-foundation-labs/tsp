@@ -27,6 +27,7 @@ pub(crate) struct VidContext {
     relation_vid: Option<String>,
     parent_vid: Option<String>,
     tunnel: Option<Box<[String]>>,
+    metadata: Option<serde_json::Value>,
 }
 
 impl VidContext {
@@ -76,6 +77,7 @@ impl VidContext {
 }
 
 pub type Aliases = HashMap<String, String>;
+pub type WebvhUpdateKeys = HashMap<String, Vec<u8>>;
 
 /// Holds private and verified VIDs
 ///
@@ -88,6 +90,7 @@ pub type Aliases = HashMap<String, String>;
 pub struct SecureStore {
     pub(crate) vids: Arc<RwLock<HashMap<String, VidContext>>>,
     pub(crate) aliases: Arc<RwLock<Aliases>>,
+    pub(crate) keys: Arc<RwLock<WebvhUpdateKeys>>,
 }
 
 /// This wallet is used to store and resolve VIDs
@@ -98,7 +101,7 @@ impl SecureStore {
     }
 
     /// Export the wallet to serializable default types
-    pub fn export(&self) -> Result<(Vec<ExportVid>, Aliases), Error> {
+    pub fn export(&self) -> Result<(Vec<ExportVid>, Aliases, WebvhUpdateKeys), Error> {
         let vids = self
             .vids
             .read()?
@@ -114,14 +117,24 @@ impl SecureStore {
                 relation_vid: context.relation_vid.clone(),
                 parent_vid: context.parent_vid.clone(),
                 tunnel: context.tunnel.clone(),
+                metadata: context.metadata.clone(),
             })
             .collect::<Vec<_>>();
 
-        Ok((vids, self.aliases.read()?.clone()))
+        Ok((
+            vids,
+            self.aliases.read()?.clone(),
+            self.keys.read()?.clone(),
+        ))
     }
 
     /// Import the wallet from serializable default types
-    pub fn import(&self, vids: Vec<ExportVid>, aliases: Aliases) -> Result<(), Error> {
+    pub fn import(
+        &self,
+        vids: Vec<ExportVid>,
+        aliases: Aliases,
+        keys: WebvhUpdateKeys,
+    ) -> Result<(), Error> {
         vids.into_iter().try_for_each(|vid| {
             self.vids.write()?.insert(
                 vid.id.to_string(),
@@ -135,9 +148,15 @@ impl SecureStore {
                     relation_vid: vid.relation_vid,
                     parent_vid: vid.parent_vid,
                     tunnel: vid.tunnel,
+                    metadata: vid.metadata,
                 },
             );
 
+            Ok::<(), Error>(())
+        })?;
+
+        keys.into_iter().try_for_each(|(k, v)| {
+            self.add_secret_key(k, v)?;
             Ok::<(), Error>(())
         })?;
 
@@ -147,8 +166,21 @@ impl SecureStore {
         })
     }
 
+    pub fn add_secret_key(&self, kid: String, secret_key: Vec<u8>) -> Result<(), Error> {
+        self.keys.write()?.insert(kid, secret_key);
+        Ok(())
+    }
+
+    pub fn get_secret_key(&self, kid: &str) -> Result<Option<Vec<u8>>, Error> {
+        Ok(self.keys.read()?.get(kid).cloned())
+    }
+
     /// Add the already resolved `verified_vid` to the wallet as a relationship
-    pub fn add_verified_vid(&self, verified_vid: impl VerifiedVid + 'static) -> Result<(), Error> {
+    pub fn add_verified_vid(
+        &self,
+        verified_vid: impl VerifiedVid + 'static,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<(), Error> {
         let did = verified_vid.identifier().to_string();
 
         self.vids.write()?.insert(
@@ -160,6 +192,7 @@ impl SecureStore {
                 relation_vid: None,
                 parent_vid: None,
                 tunnel: None,
+                metadata,
             },
         );
 
@@ -167,7 +200,11 @@ impl SecureStore {
     }
 
     /// Adds `private_vid` to the wallet
-    pub fn add_private_vid(&self, private_vid: impl PrivateVid + 'static) -> Result<(), Error> {
+    pub fn add_private_vid(
+        &self,
+        private_vid: impl PrivateVid + 'static,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<(), Error> {
         let vid = Arc::new(private_vid);
 
         self.vids.write()?.insert(
@@ -179,6 +216,10 @@ impl SecureStore {
                 relation_vid: None,
                 parent_vid: None,
                 tunnel: None,
+                metadata: metadata
+                    .map(serde_json::to_value)
+                    .transpose()
+                    .map_err(|_| Error::Internal)?,
             },
         );
 
@@ -1097,7 +1138,7 @@ impl SecureStore {
         let transport = Url::parse("tsp://").expect("error generating a URL");
 
         let vid = OwnedVid::new_did_peer(transport);
-        self.add_private_vid(vid.clone())?;
+        self.add_private_vid(vid.clone(), None::<serde_json::Value>)?;
         self.set_parent_for_vid(vid.identifier(), Some(parent_vid))?;
 
         Ok(vid)
@@ -1117,7 +1158,7 @@ impl SecureStore {
     fn add_nested_vid(&self, vid: &str) -> Result<(), Error> {
         let nested_vid = verify_vid_offline(vid)?;
 
-        self.add_verified_vid(nested_vid)
+        self.add_verified_vid(nested_vid, None)
     }
 
     fn upgrade_relation(
@@ -1246,7 +1287,7 @@ mod test {
         let store = SecureStore::new();
         let vid = new_vid();
 
-        store.add_private_vid(vid.clone()).unwrap();
+        store.add_private_vid(vid.clone(), None).unwrap();
 
         assert!(store.has_private_vid(vid.identifier()).unwrap());
     }
@@ -1257,7 +1298,9 @@ mod test {
         let store = SecureStore::new();
         let owned_vid = new_vid();
 
-        store.add_verified_vid(owned_vid.vid().clone()).unwrap();
+        store
+            .add_verified_vid(owned_vid.vid().clone(), None)
+            .unwrap();
 
         assert!(store.get_verified_vid(owned_vid.identifier()).is_ok());
     }
@@ -1268,7 +1311,7 @@ mod test {
         let store = SecureStore::new();
         let vid = new_vid();
 
-        store.add_private_vid(vid.clone()).unwrap();
+        store.add_private_vid(vid.clone(), None).unwrap();
 
         assert!(store.has_private_vid(vid.identifier()).unwrap());
 
@@ -1284,8 +1327,8 @@ mod test {
         let alice = new_vid();
         let bob = new_vid();
 
-        store.add_private_vid(alice.clone()).unwrap();
-        store.add_private_vid(bob.clone()).unwrap();
+        store.add_private_vid(alice.clone(), None).unwrap();
+        store.add_private_vid(bob.clone(), None).unwrap();
 
         let message = b"hello world";
 
@@ -1323,8 +1366,8 @@ mod test {
         let alice = new_vid();
         let bob = new_vid();
 
-        store.add_private_vid(alice.clone()).unwrap();
-        store.add_private_vid(bob.clone()).unwrap();
+        store.add_private_vid(alice.clone(), None).unwrap();
+        store.add_private_vid(bob.clone(), None).unwrap();
 
         let (url, mut sealed) = store
             .make_relationship_request(alice.identifier(), bob.identifier(), None)
@@ -1348,8 +1391,8 @@ mod test {
         let alice = new_vid();
         let bob = new_vid();
 
-        store.add_private_vid(alice.clone()).unwrap();
-        store.add_private_vid(bob.clone()).unwrap();
+        store.add_private_vid(alice.clone(), None).unwrap();
+        store.add_private_vid(bob.clone(), None).unwrap();
 
         // alice wants to establish a relation
         let (url, mut sealed) = store
@@ -1389,8 +1432,8 @@ mod test {
         let alice = new_vid();
         let bob = new_vid();
 
-        store.add_private_vid(alice.clone()).unwrap();
-        store.add_private_vid(bob.clone()).unwrap();
+        store.add_private_vid(alice.clone(), None).unwrap();
+        store.add_private_vid(bob.clone(), None).unwrap();
 
         // alice wants to establish a relation
         let (url, mut sealed) = store
@@ -1444,12 +1487,12 @@ mod test {
         let bob = new_vid();
         let charles = new_vid();
 
-        a_store.add_private_vid(alice.clone()).unwrap();
-        b_store.add_private_vid(bob.clone()).unwrap();
-        a_store.add_private_vid(charles.clone()).unwrap();
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        a_store.add_private_vid(charles.clone(), None).unwrap();
 
-        a_store.add_verified_vid(bob.clone()).unwrap();
-        b_store.add_verified_vid(alice.clone()).unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
 
         let status = super::RelationshipStatus::bi_default();
 
@@ -1483,9 +1526,9 @@ mod test {
         let bob = new_vid();
         let charles = new_vid();
 
-        store.add_private_vid(alice.clone()).unwrap();
-        store.add_private_vid(bob.clone()).unwrap();
-        store.add_verified_vid(charles.clone()).unwrap();
+        store.add_private_vid(alice.clone(), None).unwrap();
+        store.add_private_vid(bob.clone(), None).unwrap();
+        store.add_verified_vid(charles.clone(), None).unwrap();
 
         // alice vouches for charlies to bob
         let (url, mut sealed) = store
@@ -1525,25 +1568,25 @@ mod test {
         let sneaky_d = new_vid();
         let nette_d = new_vid();
 
-        a_store.add_private_vid(nette_a.clone()).unwrap();
-        a_store.add_private_vid(sneaky_a.clone()).unwrap();
-        b_store.add_private_vid(b.clone()).unwrap();
-        c_store.add_private_vid(mailbox_c.clone()).unwrap();
-        c_store.add_private_vid(c.clone()).unwrap();
-        d_store.add_private_vid(sneaky_d.clone()).unwrap();
-        d_store.add_private_vid(nette_d.clone()).unwrap();
+        a_store.add_private_vid(nette_a.clone(), None).unwrap();
+        a_store.add_private_vid(sneaky_a.clone(), None).unwrap();
+        b_store.add_private_vid(b.clone(), None).unwrap();
+        c_store.add_private_vid(mailbox_c.clone(), None).unwrap();
+        c_store.add_private_vid(c.clone(), None).unwrap();
+        d_store.add_private_vid(sneaky_d.clone(), None).unwrap();
+        d_store.add_private_vid(nette_d.clone(), None).unwrap();
 
-        a_store.add_verified_vid(b.clone()).unwrap();
-        a_store.add_verified_vid(sneaky_d.clone()).unwrap();
+        a_store.add_verified_vid(b.clone(), None).unwrap();
+        a_store.add_verified_vid(sneaky_d.clone(), None).unwrap();
 
-        b_store.add_verified_vid(nette_a.clone()).unwrap();
-        b_store.add_verified_vid(c.clone()).unwrap();
+        b_store.add_verified_vid(nette_a.clone(), None).unwrap();
+        b_store.add_verified_vid(c.clone(), None).unwrap();
 
-        c_store.add_verified_vid(b.clone()).unwrap();
-        c_store.add_verified_vid(nette_d.clone()).unwrap();
+        c_store.add_verified_vid(b.clone(), None).unwrap();
+        c_store.add_verified_vid(nette_d.clone(), None).unwrap();
 
-        d_store.add_verified_vid(sneaky_a.clone()).unwrap();
-        d_store.add_verified_vid(mailbox_c.clone()).unwrap();
+        d_store.add_verified_vid(sneaky_a.clone(), None).unwrap();
+        d_store.add_verified_vid(mailbox_c.clone(), None).unwrap();
 
         a_store
             .set_relation_and_status_for_vid(
@@ -1679,17 +1722,17 @@ mod test {
         let nested_a = new_vid();
         let nested_b = new_vid();
 
-        a_store.add_private_vid(a.clone()).unwrap();
-        a_store.add_private_vid(nested_a.clone()).unwrap();
+        a_store.add_private_vid(a.clone(), None).unwrap();
+        a_store.add_private_vid(nested_a.clone(), None).unwrap();
 
-        b_store.add_private_vid(b.clone()).unwrap();
-        b_store.add_private_vid(nested_b.clone()).unwrap();
+        b_store.add_private_vid(b.clone(), None).unwrap();
+        b_store.add_private_vid(nested_b.clone(), None).unwrap();
 
-        a_store.add_verified_vid(b.clone()).unwrap();
-        a_store.add_verified_vid(nested_b.clone()).unwrap();
+        a_store.add_verified_vid(b.clone(), None).unwrap();
+        a_store.add_verified_vid(nested_b.clone(), None).unwrap();
 
-        b_store.add_verified_vid(a.clone()).unwrap();
-        b_store.add_verified_vid(nested_a.clone()).unwrap();
+        b_store.add_verified_vid(a.clone(), None).unwrap();
+        b_store.add_verified_vid(nested_a.clone(), None).unwrap();
 
         a_store
             .set_parent_for_vid(nested_b.identifier(), Some(b.identifier()))
@@ -1756,11 +1799,11 @@ mod test {
         let a = new_vid();
         let b = new_vid();
 
-        a_store.add_private_vid(a.clone()).unwrap();
-        b_store.add_private_vid(b.clone()).unwrap();
+        a_store.add_private_vid(a.clone(), None).unwrap();
+        b_store.add_private_vid(b.clone(), None).unwrap();
 
-        a_store.add_verified_vid(b.clone()).unwrap();
-        b_store.add_verified_vid(a.clone()).unwrap();
+        a_store.add_verified_vid(b.clone(), None).unwrap();
+        b_store.add_verified_vid(a.clone(), None).unwrap();
 
         let (_url, mut sealed) = a_store
             .make_relationship_request(a.identifier(), b.identifier(), None)

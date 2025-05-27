@@ -50,7 +50,7 @@ services:
   did-server:
     build:
       context: .
-      target: did-web
+      target: did-server
       args:
         FEATURE_FLAGS: use_local_certificate
     command: [ "localhost:3003", "--port", "3013", "--transport", "https://localhost:3000" ]

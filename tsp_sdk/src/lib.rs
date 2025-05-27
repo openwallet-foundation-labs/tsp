@@ -34,7 +34,7 @@
 //!     // bob wallet
 //!     let mut bob_db = AsyncSecureStore::new();
 //!     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json").await?;
-//!     bob_db.add_private_vid(bob_vid)?;
+//!     bob_db.add_private_vid(bob_vid, None)?;
 //!     bob_db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice", Some("alice".into())).await?;
 //!
 //!     let mut bobs_messages = bob_db.receive("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob").await?;
@@ -42,7 +42,7 @@
 //!     // alice wallet
 //!     let mut alice_db = AsyncSecureStore::new();
 //!     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json").await?;
-//!     alice_db.add_private_vid(alice_vid)?;
+//!     alice_db.add_private_vid(alice_vid, None)?;
 //!     alice_db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob", Some("bob".into())).await?;
 //!
 //!     // send a message
