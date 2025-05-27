@@ -2,7 +2,7 @@ FROM rust:1.85 AS builder
 WORKDIR /app
 COPY ./ ./
 ARG FEATURE_FLAGS=""
-RUN cargo build --release --bin demo-intermediary --bin demo-server --bin did-server --features=$FEATURE_FLAGS
+RUN cargo build --release --bin demo-intermediary --bin demo-server --bin did-server --features=$FEATURE_FLAGS --no-default-features
 
 FROM debian AS intermediary
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
