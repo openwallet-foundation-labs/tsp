@@ -40,7 +40,7 @@ resolve = ["serialize", "dep:reqwest", "dep:didwebvh-resolver"]
 serialize = ["dep:serde", "dep:serde_with"]
 use_local_certificate = []
 postgres = ["async", "aries-askar/postgres"]
-create-webvh = ["dep:pyo3", "dep:serde-pyobject"]
+create-webvh = ["dep:pyo3", "dep:serde-pyobject", "dep:pyo3-async-runtimes"]
 
 [dependencies]
 # generic
@@ -89,6 +89,7 @@ async-trait = "0.1.88"
 # webvh
 pyo3 = { workspace = true, features = ["auto-initialize"], optional = true }
 serde-pyobject = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
 
 # not used directly, but we need to configure
 # the JS feature in this transitive dependency

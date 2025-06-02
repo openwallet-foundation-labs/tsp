@@ -2,6 +2,8 @@ use base64ct::{Base64, Base64Unpadded, Encoding};
 use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use futures::StreamExt;
+#[cfg(feature = "create-webvh")]
+use pyo3::PyResult;
 use rustls::crypto::CryptoProvider;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -10,7 +12,8 @@ use tokio::io::AsyncReadExt;
 use tracing::{debug, error, info, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::cesr::color_print;
-use tsp_sdk::vid::{VidError, verify_vid};
+use tsp_sdk::vid::did::webvh::WebvhMetadata;
+use tsp_sdk::vid::{VidError, verify_vid, vid_to_did_document};
 use tsp_sdk::{
     Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
     RelationshipStatus, SecureStorage, VerifiedVid, Vid,
@@ -103,6 +106,10 @@ enum Commands {
             help = "Specify a network address and port instead of HTTPS transport"
         )]
         tcp: Option<String>,
+    },
+    Update {
+        #[arg(help = "VID or Alias to update")]
+        vid: String,
     },
     #[command(
         arg_required_else_help = true,
@@ -286,6 +293,15 @@ async fn run() -> Result<(), Error> {
     let server: String = args.server;
     let did_server = args.did_server;
 
+    let client = reqwest::ClientBuilder::new();
+    #[cfg(feature = "use_local_certificate")]
+    let client = client.add_root_certificate({
+        tracing::warn!("Using local root CA! (should only be used for local testing)");
+        reqwest::Certificate::from_pem(include_bytes!("../test/root-ca.pem")).unwrap()
+    });
+
+    let client = client.build().unwrap();
+
     match args.command {
         Commands::Show { sub } => {
             let (mut vids, aliases, _keys) = vid_wallet.export()?;
@@ -341,7 +357,15 @@ async fn run() -> Result<(), Error> {
 
             let private_vid = match r#type {
                 DidType::Web => {
-                    create_did_web(&did_server, transport, &vid_wallet, &username, alias).await?
+                    create_did_web(
+                        &did_server,
+                        transport,
+                        &vid_wallet,
+                        &username,
+                        alias,
+                        &client,
+                    )
+                    .await?
                 }
                 DidType::Peer => {
                     let private_vid = OwnedVid::new_did_peer(transport);
@@ -362,22 +386,9 @@ async fn run() -> Result<(), Error> {
                         )
                         .await?;
 
-                    let client = reqwest::ClientBuilder::new();
-
                     vid_wallet
                         .add_secret_key(update_kid, update_key)
                         .expect("Cannot store update key");
-
-                    #[cfg(feature = "use_local_certificate")]
-                    let client = client.add_root_certificate({
-                        tracing::warn!(
-                            "Using local root CA! (should only be used for local testing)"
-                        );
-                        reqwest::Certificate::from_pem(include_bytes!("../test/root-ca.pem"))
-                            .unwrap()
-                    });
-
-                    let client = client.build().unwrap();
 
                     let _: Vid = match client
                         .post(format!("https://{did_server}/add-vid"))
@@ -441,6 +452,40 @@ async fn run() -> Result<(), Error> {
                 .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
             vid_wallet.add_private_vid(private_vid.clone(), metadata)?;
         }
+        Commands::Update { vid } => {
+            let (_, _, keys) = vid_wallet.export()?;
+            let vid = vid_wallet.try_resolve_alias(&vid)?;
+            let (vid, metadata) = tsp_sdk::vid::did::webvh::resolve(&vid).await?;
+            let metadata: WebvhMetadata = serde_json::from_value(metadata)
+                .expect("metadata should be of type 'WebvhMetadata'");
+
+            if let Some(update_keys) = metadata.update_keys {
+                let update_key = keys
+                    .get(&update_keys[0])
+                    .expect("Cannot find update keys to update the DID");
+                let history_entry =
+                    tsp_sdk::vid::did::webvh::update(vid_to_did_document(&vid), update_key).await?;
+
+                client
+                    .put(format!(
+                        "https://{did_server}/add-history/{}",
+                        vid.identifier()
+                    ))
+                    .json(&history_entry)
+                    .send()
+                    .await
+                    .expect("Could not append history");
+
+                client
+                    .put(format!("https://{did_server}/add-vid/"))
+                    .json(&history_entry.state)
+                    .send()
+                    .await
+                    .expect("Could not update DID");
+            } else {
+                error!("Cannot find update keys to update the DID")
+            }
+        }
         Commands::ImportPiv { file, alias } => {
             let private_vid = OwnedVid::from_file(file).await?;
             vid_wallet.add_private_vid(private_vid.clone(), None)?;
@@ -455,17 +500,7 @@ async fn run() -> Result<(), Error> {
             let url = format!("https://{did_server}/.well-known/endpoints.json");
             info!("discovering DIDs from {}", url);
 
-            let client = reqwest::Client::builder();
-
-            #[cfg(feature = "use_local_certificate")]
-            let client = client.add_root_certificate({
-                tracing::warn!("Using local root CA! (should only be used for local testing)");
-                reqwest::Certificate::from_pem(include_bytes!("../test/root-ca.pem")).unwrap()
-            });
-
             let dids = match client
-                .build()
-                .unwrap()
                 .get(url)
                 .send()
                 .await
@@ -970,6 +1005,7 @@ async fn create_did_web(
     vid_wallet: &AsyncSecureStore,
     username: &str,
     alias: Option<String>,
+    client: &reqwest::Client,
 ) -> Result<OwnedVid, Error> {
     let did = format!(
         "did:web:{}:endpoint:{username}",
@@ -991,17 +1027,7 @@ async fn create_did_web(
     let private_vid = OwnedVid::bind(&did, transport);
     info!("created identity {}", private_vid.identifier());
 
-    let client = reqwest::ClientBuilder::new();
-
-    #[cfg(feature = "use_local_certificate")]
-    let client = client.add_root_certificate({
-        tracing::warn!("Using local root CA! (should only be used for local testing)");
-        reqwest::Certificate::from_pem(include_bytes!("../test/root-ca.pem")).unwrap()
-    });
-
     let _: Vid = match client
-        .build()
-        .unwrap()
         .post(format!("https://{did_server}/add-vid"))
         .json(&private_vid.vid())
         .send()
@@ -1084,10 +1110,16 @@ fn show_relations(vids: &[ExportVid], vid: Option<String>, aliases: &Aliases) ->
     Ok(())
 }
 
-#[tokio::main]
-async fn main() {
+#[cfg(not(feature = "create-webvh"))]
+type PyResult<T> = Result<T, ()>;
+
+#[cfg_attr(not(feature = "create-webvh"), tokio::main)]
+#[cfg_attr(feature = "create-webvh", pyo3_async_runtimes::tokio::main)]
+async fn main() -> PyResult<()> {
     if let Err(e) = run().await {
         eprintln!("{e}");
         std::process::exit(1);
     }
+
+    Ok(())
 }

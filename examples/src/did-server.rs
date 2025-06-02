@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::net::SocketAddrV4;
 use std::sync::Arc;
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 use tokio::signal;
 use tokio::sync::{RwLock, broadcast};
 use tower_http::cors::{Any, CorsLayer};
@@ -117,8 +119,8 @@ async fn main() {
         .route("/", get(index))
         .route("/logs", get(log_websocket_handler))
         .route("/create-identity", post(create_identity))
-        .route("/add-vid", post(add_vid))
-        .route("/add-history/{id}", post(add_history))
+        .route("/add-vid", post(add_vid).put(replace_vid))
+        .route("/add-history/{id}", post(add_history).put(append_history))
         .route("/endpoint/{name}/did.json", get(get_did_doc))
         .route("/endpoint/{name}/did.jsonl", get(get_did_history))
         .route("/.well-known/endpoints.json", get(get_endpoints))
@@ -189,10 +191,13 @@ async fn create_identity(
 
     let key = private_vid.identifier();
 
-    if let Err(e) = write_id(Identity {
-        did_doc: did_doc.clone(),
-        vid: private_vid.vid().clone(),
-    })
+    if let Err(e) = write_id(
+        Identity {
+            did_doc: did_doc.clone(),
+            vid: private_vid.vid().clone(),
+        },
+        false,
+    )
     .await
     {
         tracing::error!("error writing identity {key}: {e}");
@@ -279,6 +284,61 @@ async fn add_history(Path(vid): Path<String>, history: String) -> Response {
     }
 }
 
+async fn append_history(Path(vid): Path<String>, history: String) -> Response {
+    let name = match vid.split(':').next_back().ok_or("invalid name") {
+        Ok(name) => name,
+        Err(err) => {
+            tracing::debug!("error extracting name from VID: {err:?}");
+            return (StatusCode::BAD_REQUEST, "Invalid VID").into_response();
+        }
+    };
+    let path = format!("data/{name}.jsonl");
+
+    match File::options().append(true).open(path).await {
+        Err(err) => {
+            tracing::error!("error writing identity '{name}': {err}");
+            (StatusCode::INTERNAL_SERVER_ERROR, "error writing identity").into_response()
+        }
+        Ok(mut file) => {
+            let history = format!("\n{history}");
+            if let Err(err) = file.write_all(history.as_bytes()).await {
+                tracing::error!("error writing identity '{name}': {err}");
+            }
+            StatusCode::OK.into_response()
+        }
+    }
+}
+
+async fn replace_vid(State(state): State<Arc<AppState>>, Json(vid): Json<Vid>) -> Response {
+    let name = vid.identifier().split(':').next_back().unwrap_or_default();
+
+    if !verify_name(name) {
+        return (StatusCode::BAD_REQUEST, "invalid name").into_response();
+    }
+
+    let did_doc = tsp_sdk::vid::vid_to_did_document(&vid);
+
+    if let Err(e) = write_id(
+        Identity {
+            did_doc,
+            vid: vid.clone(),
+        },
+        true,
+    )
+    .await
+    {
+        tracing::error!("error writing identity {}: {e}", vid.identifier());
+
+        return (StatusCode::INTERNAL_SERVER_ERROR, "error writing identity").into_response();
+    }
+
+    let did = vid.identifier();
+    tracing::debug!("modified VID {}", did);
+    state.announce_new_did(did).await;
+
+    Json(&vid).into_response()
+}
+
 /// Add did document to the local state
 async fn add_vid(State(state): State<Arc<AppState>>, Json(vid): Json<Vid>) -> Response {
     let name = vid.identifier().split(':').next_back().unwrap_or_default();
@@ -289,10 +349,13 @@ async fn add_vid(State(state): State<Arc<AppState>>, Json(vid): Json<Vid>) -> Re
 
     let did_doc = tsp_sdk::vid::vid_to_did_document(&vid);
 
-    if let Err(e) = write_id(Identity {
-        did_doc,
-        vid: vid.clone(),
-    })
+    if let Err(e) = write_id(
+        Identity {
+            did_doc,
+            vid: vid.clone(),
+        },
+        false,
+    )
     .await
     {
         tracing::error!("error writing identity {}: {e}", vid.identifier());
@@ -357,7 +420,7 @@ struct Identity {
     vid: Vid,
 }
 
-async fn write_id(id: Identity) -> Result<(), Box<dyn std::error::Error>> {
+async fn write_id(id: Identity, replace: bool) -> Result<(), Box<dyn std::error::Error>> {
     let name = id
         .vid
         .identifier()
@@ -367,7 +430,7 @@ async fn write_id(id: Identity) -> Result<(), Box<dyn std::error::Error>> {
     let did = serde_json::to_string_pretty(&id)?;
     let path = format!("data/{name}.json");
 
-    if std::path::Path::new(&path).exists() {
+    if !replace && std::path::Path::new(&path).exists() {
         return Err("identity already exists".into());
     }
 
