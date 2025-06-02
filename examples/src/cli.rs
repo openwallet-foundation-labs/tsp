@@ -455,6 +455,7 @@ async fn run() -> Result<(), Error> {
         Commands::Update { vid } => {
             let (_, _, keys) = vid_wallet.export()?;
             let vid = vid_wallet.try_resolve_alias(&vid)?;
+            info!("Updating VID {vid}");
             let (vid, metadata) = tsp_sdk::vid::did::webvh::resolve(&vid).await?;
             let vid = OwnedVid::bind(vid.identifier(), vid.endpoint().clone());
             let metadata: WebvhMetadata = serde_json::from_value(metadata)
