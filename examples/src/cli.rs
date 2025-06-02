@@ -456,6 +456,7 @@ async fn run() -> Result<(), Error> {
             let (_, _, keys) = vid_wallet.export()?;
             let vid = vid_wallet.try_resolve_alias(&vid)?;
             let (vid, metadata) = tsp_sdk::vid::did::webvh::resolve(&vid).await?;
+            let vid = OwnedVid::bind(vid.identifier(), vid.endpoint().clone());
             let metadata: WebvhMetadata = serde_json::from_value(metadata)
                 .expect("metadata should be of type 'WebvhMetadata'");
 
@@ -463,8 +464,11 @@ async fn run() -> Result<(), Error> {
                 let update_key = keys
                     .get(&update_keys[0])
                     .expect("Cannot find update keys to update the DID");
-                let history_entry =
-                    tsp_sdk::vid::did::webvh::update(vid_to_did_document(&vid), update_key).await?;
+                let history_entry = tsp_sdk::vid::did::webvh::update(
+                    dbg!(vid_to_did_document(vid.vid())),
+                    update_key,
+                )
+                .await?;
 
                 client
                     .put(format!(
@@ -476,12 +480,22 @@ async fn run() -> Result<(), Error> {
                     .await
                     .expect("Could not append history");
 
-                client
-                    .put(format!("https://{did_server}/add-vid/"))
-                    .json(&history_entry.state)
+                let update_response = client
+                    .put(format!("https://{did_server}/add-vid"))
+                    .json(vid.vid())
                     .send()
                     .await
-                    .expect("Could not update DID");
+                    .expect("Could not update DID")
+                    .text()
+                    .await
+                    .expect("cannot extract text from server response");
+
+                debug!("did server responded: {}", update_response);
+
+                let (_, metadata) = verify_vid(vid.identifier())
+                    .await
+                    .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
+                vid_wallet.add_private_vid(vid, metadata)?;
             } else {
                 error!("Cannot find update keys to update the DID")
             }
@@ -1079,12 +1093,6 @@ fn show_relations(vids: &[ExportVid], vid: Option<String>, aliases: &Aliases) ->
     };
 
     for vid in filtered_vids {
-        let did_doc = if vid.id.starts_with("did:web") {
-            tsp_sdk::vid::did::get_resolve_url(&vid.id)?.to_string()
-        } else {
-            "None".to_string()
-        };
-
         let alias = aliases
             .iter()
             .find_map(|(a, id)| if id == &vid.id { Some(a.clone()) } else { None })
@@ -1093,8 +1101,27 @@ fn show_relations(vids: &[ExportVid], vid: Option<String>, aliases: &Aliases) ->
         println!("{}", &vid.id);
         println!("\t Relation Status: {}", vid.relation_status);
         println!("\t Alias: {}", alias);
+        if vid.id.starts_with("did:web") {
+            println!(
+                "\t DID doc: {}",
+                tsp_sdk::vid::did::get_resolve_url(&vid.id)?
+            )
+        }
+        if vid.id.starts_with("did:webvh") {
+            println!(
+                "\t DID history: {}l",
+                tsp_sdk::vid::did::get_resolve_url(&vid.id)?
+            );
+            println!(
+                "\t DID version: {}",
+                vid.metadata
+                    .as_ref()
+                    .and_then(|m| m.get("version_id"))
+                    .map(|v| v.to_string())
+                    .unwrap_or("None".to_string())
+            )
+        }
         println!("\t Transport: {}", vid.transport);
-        println!("\t DID doc: {}", did_doc);
         println!(
             "\t public enc key: ({enc_key_type}) {}",
             Base64::encode_string(vid.public_enckey.deref())

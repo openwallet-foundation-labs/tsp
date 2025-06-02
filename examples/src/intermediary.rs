@@ -6,6 +6,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
     routing::{get, post},
 };
+use bytes::BytesMut;
 use clap::Parser;
 use futures::{sink::SinkExt, stream::StreamExt};
 use reqwest::header;
@@ -172,7 +173,9 @@ async fn new_message(
     Path(_did): Path<String>,
     body: Bytes,
 ) -> Response {
-    let Ok((sender, Some(receiver))) = cesr::get_sender_receiver(&body) else {
+    let mut message: BytesMut = body.into();
+
+    let Ok((sender, Some(receiver))) = cesr::get_sender_receiver(&message) else {
         tracing::error!(
             "{} encountered invalid message, receiver missing",
             state.domain,
@@ -184,19 +187,19 @@ async fn new_message(
     let Ok(sender) = std::str::from_utf8(sender) else {
         return (StatusCode::BAD_REQUEST, "invalid sender").into_response();
     };
+    let sender = sender.to_string();
 
     let Ok(receiver) = std::str::from_utf8(receiver) else {
         return (StatusCode::BAD_REQUEST, "invalid receiver").into_response();
     };
-
-    let mut message: Vec<u8> = body.to_vec();
+    let receiver = receiver.to_string();
 
     // yes, this must be a separate variable https://github.com/rust-lang/rust/issues/37612
-    let has_private_vid = state.db.read().await.has_private_vid(receiver);
+    let has_private_vid = state.db.read().await.has_private_vid(&receiver);
     if matches!(has_private_vid, Ok(true)) {
         tracing::debug!("verifying VID {sender} for {receiver}");
 
-        if let Err(e) = state.verify_vid(sender).await {
+        if let Err(e) = state.verify_vid(&sender).await {
             tracing::error!("error verifying VID {sender}: {e}");
             return (StatusCode::BAD_REQUEST, "error verifying VID").into_response();
         }
@@ -211,7 +214,7 @@ async fn new_message(
                     .db
                     .read()
                     .await
-                    .make_nested_relationship_accept(receiver, &nested_vid, thread_id)?;
+                    .make_nested_relationship_accept(&receiver, &nested_vid, thread_id)?;
 
                 transport::send_message(&endpoint, &message).await?;
 
@@ -228,7 +231,7 @@ async fn new_message(
                         .collect()
                 });
                 let (endpoint, message) = state.db.read().await.make_relationship_accept(
-                    receiver,
+                    &receiver,
                     &sender,
                     thread_id,
                     route.as_deref(),
@@ -241,7 +244,7 @@ async fn new_message(
         };
 
         // yes, this must be a separate variable https://github.com/rust-lang/rust/issues/37612
-        let res = state.db.read().await.open_message(&mut message);
+        let res = state.db.read().await.open_message(message.as_mut());
         match res {
             Err(e) => {
                 tracing::error!("received opening message from {sender}: {e}")
@@ -343,7 +346,9 @@ async fn new_message(
             ))
             .await;
         // insert message in queue
-        let _ = state.message_tx.send((receiver.to_owned(), message));
+        let _ = state
+            .message_tx
+            .send((receiver.to_owned(), Vec::from(message)));
     }
 
     StatusCode::OK.into_response()

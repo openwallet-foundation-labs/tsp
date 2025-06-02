@@ -1,4 +1,5 @@
 use crate::{AsyncSecureStore, OwnedVid, RelationshipStatus, VerifiedVid};
+use bytes::BytesMut;
 use futures::StreamExt;
 
 #[tokio::test]

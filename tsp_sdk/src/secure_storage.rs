@@ -103,7 +103,11 @@ impl SecureStorage for AskarSecureStorage {
                     .insert_key(&signing_key_name, &signing_key, None, None, None, None)
                     .await
                 {
-                    if e.kind() != ErrorKind::Duplicate {
+                    if e.kind() == ErrorKind::Duplicate {
+                        conn.remove_key(&signing_key_name).await?;
+                        conn.insert_key(&signing_key_name, &signing_key, None, None, None, None)
+                            .await?;
+                    } else {
                         Err(Error::from(e))?;
                     }
                 }
@@ -123,7 +127,18 @@ impl SecureStorage for AskarSecureStorage {
                     )
                     .await
                 {
-                    if e.kind() != ErrorKind::Duplicate {
+                    if e.kind() == ErrorKind::Duplicate {
+                        conn.remove_key(&decryption_key_name).await?;
+                        conn.insert_key(
+                            &decryption_key_name,
+                            &decryption_key,
+                            None,
+                            None,
+                            None,
+                            None,
+                        )
+                        .await?;
+                    } else {
                         Err(Error::from(e))?;
                     }
                 }
@@ -143,7 +158,18 @@ impl SecureStorage for AskarSecureStorage {
                 )
                 .await
             {
-                if e.kind() != ErrorKind::Duplicate {
+                if e.kind() == ErrorKind::Duplicate {
+                    conn.remove_key(&verification_key_name).await?;
+                    conn.insert_key(
+                        &verification_key_name,
+                        &verification_key,
+                        None,
+                        None,
+                        None,
+                        None,
+                    )
+                    .await?;
+                } else {
                     Err(Error::from(e))?;
                 }
             }
@@ -162,7 +188,18 @@ impl SecureStorage for AskarSecureStorage {
                 )
                 .await
             {
-                if e.kind() != ErrorKind::Duplicate {
+                if e.kind() == ErrorKind::Duplicate {
+                    conn.remove_key(&encryption_key_name).await?;
+                    conn.insert_key(
+                        &encryption_key_name,
+                        &encryption_key,
+                        None,
+                        None,
+                        None,
+                        None,
+                    )
+                    .await?;
+                } else {
                     Err(Error::from(e))?;
                 }
             }
