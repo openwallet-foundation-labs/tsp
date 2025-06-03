@@ -614,6 +614,7 @@ async fn run() -> Result<(), Error> {
         }
         Commands::Receive { vid, one } => {
             let mut messages = vid_wallet.receive(&vid).await?;
+            let vid = vid_wallet.try_resolve_alias(&vid)?;
 
             info!("listening for messages...");
 
@@ -782,10 +783,11 @@ async fn run() -> Result<(), Error> {
                             vid_wallet.get_relation_status_for_vid_pair(&vid, &remote_vid),
                             Ok(RelationshipStatus::Unrelated)
                         ) {
+                            debug!(remote_vid, "setting default relationship");
                             vid_wallet.set_relation_and_status_for_vid(
-                                &vid,
-                                RelationshipStatus::ReverseUnidirectional { thread_id },
                                 &remote_vid,
+                                RelationshipStatus::ReverseUnidirectional { thread_id },
+                                &vid,
                             )?;
                         }
                     }
@@ -1140,6 +1142,26 @@ fn show_relations(vids: &[ExportVid], vid: Option<String>, aliases: &Aliases) ->
             )
         }
         println!("\t Transport: {}", vid.transport);
+        if vid.id.starts_with("did:web") {
+            println!(
+                "\t DID doc: {}",
+                tsp_sdk::vid::did::get_resolve_url(&vid.id)?
+            )
+        }
+        if vid.id.starts_with("did:webvh") {
+            println!(
+                "\t DID history: {}l",
+                tsp_sdk::vid::did::get_resolve_url(&vid.id)?
+            );
+            println!(
+                "\t DID version: {}",
+                vid.metadata
+                    .as_ref()
+                    .and_then(|m| m.get("version_id"))
+                    .map(|v| v.to_string())
+                    .unwrap_or("None".to_string())
+            )
+        }
         println!(
             "\t public enc key: ({enc_key_type}) {}",
             Base64::encode_string(vid.public_enckey.deref())
