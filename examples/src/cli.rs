@@ -5,19 +5,20 @@ use futures::StreamExt;
 #[cfg(feature = "create-webvh")]
 use pyo3::PyResult;
 use rustls::crypto::CryptoProvider;
-use std::ops::Deref;
-use std::path::PathBuf;
-use std::str::FromStr;
+use std::{ops::Deref, path::PathBuf, str::FromStr};
 use tokio::io::AsyncReadExt;
 use tracing::{debug, error, info, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use tsp_sdk::cesr::color_print;
 use tsp_sdk::vid::did::webvh::WebvhMetadata;
-use tsp_sdk::vid::{VidError, verify_vid, vid_to_did_document};
+use tsp_sdk::vid::vid_to_did_document;
 use tsp_sdk::{
     Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
     RelationshipStatus, SecureStorage, VerifiedVid, Vid,
-    cesr::{self},
+    cesr::{
+        color_print, {self},
+    },
+    definitions::Digest,
+    vid::{VidError, verify_vid},
 };
 use url::Url;
 
@@ -614,6 +615,7 @@ async fn run() -> Result<(), Error> {
         }
         Commands::Receive { vid, one } => {
             let mut messages = vid_wallet.receive(&vid).await?;
+            let vid = vid_wallet.try_resolve_alias(&vid)?;
 
             info!("listening for messages...");
 
@@ -623,6 +625,7 @@ async fn run() -> Result<(), Error> {
                 Verify(String),
                 VerifyAndOpen(String, BytesMut),
                 Forward(String, Vec<BytesMut>, BytesMut),
+                AssignDefaultRelation(String, Digest),
             }
 
             while let Some(message) = messages.next().await {
@@ -667,21 +670,23 @@ async fn run() -> Result<(), Error> {
                             route: _,
                             nested_vid,
                         } => {
-                            let thread_id = Base64Unpadded::encode_string(&thread_id);
+                            let thread_id_string = Base64Unpadded::encode_string(&thread_id);
                             match nested_vid {
                                 Some(vid) => {
                                     info!(
-                                        "received nested relationship request from '{vid}' (new identity for {sender}), thread-id '{thread_id}'"
+                                        "received nested relationship request from '{vid}' (new identity for {sender}), thread-id '{thread_id_string}'"
                                     );
-                                    println!("{vid}\t{thread_id}");
+                                    println!("{vid}\t{thread_id_string}");
                                 }
                                 None => {
                                     info!(
-                                        "received relationship request from {sender}, thread-id '{thread_id}'"
+                                        "received relationship request from {sender}, thread-id '{thread_id_string}'"
                                     );
-                                    println!("{sender}\t{thread_id}");
+                                    println!("{sender}\t{thread_id_string}");
                                 }
                             }
+
+                            return Action::AssignDefaultRelation(sender, thread_id);
                         }
                         ReceivedTspMessage::AcceptRelationship {
                             sender,
@@ -755,8 +760,8 @@ async fn run() -> Result<(), Error> {
 
                 match handle_message(message) {
                     Action::Nothing => {}
-                    Action::VerifyAndOpen(vid, payload) => {
-                        let message = vid_wallet.verify_and_open(&vid, payload).await?;
+                    Action::VerifyAndOpen(remote_vid, payload) => {
+                        let message = vid_wallet.verify_and_open(&remote_vid, payload).await?;
 
                         info!("{vid} is verified and added to the wallet {}", &args.wallet);
 
@@ -772,6 +777,20 @@ async fn run() -> Result<(), Error> {
                             .forward_routed_message(&next_hop, route, &payload)
                             .await?;
                         info!("forwarding to next hop: {next_hop}");
+                    }
+                    Action::AssignDefaultRelation(remote_vid, thread_id) => {
+                        // if we do not yet have a relationship with the remote VID, create a reverse unidirectional relationship
+                        if matches!(
+                            vid_wallet.get_relation_status_for_vid_pair(&vid, &remote_vid),
+                            Ok(RelationshipStatus::Unrelated)
+                        ) {
+                            debug!(remote_vid, "setting default relationship");
+                            vid_wallet.set_relation_and_status_for_vid(
+                                &remote_vid,
+                                RelationshipStatus::ReverseUnidirectional { thread_id },
+                                &vid,
+                            )?;
+                        }
                     }
                 }
 
@@ -1124,6 +1143,26 @@ fn show_relations(vids: &[ExportVid], vid: Option<String>, aliases: &Aliases) ->
             )
         }
         println!("\t Transport: {}", vid.transport);
+        if vid.id.starts_with("did:web") {
+            println!(
+                "\t DID doc: {}",
+                tsp_sdk::vid::did::get_resolve_url(&vid.id)?
+            )
+        }
+        if vid.id.starts_with("did:webvh") {
+            println!(
+                "\t DID history: {}l",
+                tsp_sdk::vid::did::get_resolve_url(&vid.id)?
+            );
+            println!(
+                "\t DID version: {}",
+                vid.metadata
+                    .as_ref()
+                    .and_then(|m| m.get("version_id"))
+                    .map(|v| v.to_string())
+                    .unwrap_or("None".to_string())
+            )
+        }
         println!(
             "\t public enc key: ({enc_key_type}) {}",
             Base64::encode_string(vid.public_enckey.deref())

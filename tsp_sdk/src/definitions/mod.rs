@@ -1,7 +1,9 @@
 use bytes::BytesMut;
 use core::fmt;
-use std::fmt::Display;
-use std::{fmt::Debug, ops::Deref};
+use std::{
+    fmt::{Debug, Display},
+    ops::Deref,
+};
 use zeroize::Zeroize;
 
 #[cfg(feature = "async")]
@@ -64,6 +66,9 @@ pub enum RelationshipStatus {
     Unidirectional {
         thread_id: Digest,
     },
+    ReverseUnidirectional {
+        thread_id: Digest,
+    },
     Unrelated,
 }
 
@@ -89,6 +94,7 @@ impl Display for RelationshipStatus {
             RelationshipStatus::_Controlled => write!(f, "Controlled"),
             RelationshipStatus::Bidirectional { .. } => write!(f, "Bidirectional"),
             RelationshipStatus::Unidirectional { .. } => write!(f, "Unidirectional"),
+            RelationshipStatus::ReverseUnidirectional { .. } => write!(f, "ReverseUnidirectional"),
             RelationshipStatus::Unrelated => write!(f, "Unrelated"),
         }
     }

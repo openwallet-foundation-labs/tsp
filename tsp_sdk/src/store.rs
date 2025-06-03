@@ -12,9 +12,9 @@ use crate::{
 #[cfg(feature = "async")]
 use bytes::Bytes;
 use bytes::BytesMut;
-use std::fmt::Display;
 use std::{
     collections::HashMap,
+    fmt::Display,
     sync::{Arc, RwLock},
 };
 use url::Url;
@@ -261,10 +261,7 @@ impl SecureStore {
         }) {
             Ok(context.relation_status.clone())
         } else {
-            Err(Error::Relationship(format!(
-                "{} and {} do not have a relationship",
-                local_vid, remote_vid
-            )))
+            Ok(RelationshipStatus::Unrelated)
         }
     }
 
@@ -743,7 +740,9 @@ impl SecureStore {
                                 RelationshipStatus::Bidirectional {
                                     thread_id: digest, ..
                                 }
-                                | RelationshipStatus::Unidirectional { thread_id: digest } => {
+                                | RelationshipStatus::Unidirectional { thread_id: digest }
+                                | RelationshipStatus::ReverseUnidirectional { thread_id: digest } =>
+                                {
                                     if thread_id != digest {
                                         return Err(Error::Relationship(
                                             "invalid attempt to end the relationship, wrong thread_id".into(),
@@ -985,6 +984,7 @@ impl SecureStore {
         let thread_id = match old_relationship {
             RelationshipStatus::Bidirectional { thread_id, .. } => thread_id,
             RelationshipStatus::Unidirectional { thread_id } => thread_id,
+            RelationshipStatus::ReverseUnidirectional { thread_id } => thread_id,
             RelationshipStatus::_Controlled | RelationshipStatus::Unrelated => {
                 return Err(Error::Relationship("no relationship to cancel".into()));
             }

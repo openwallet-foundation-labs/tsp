@@ -1,6 +1,5 @@
 use futures::StreamExt;
-use pyo3::types::PyDict;
-use pyo3::{exceptions::PyException, prelude::*};
+use pyo3::{exceptions::PyException, prelude::*, types::PyDict};
 use tsp_sdk::{AskarSecureStorage, AsyncSecureStore, SecureStorage, VerifiedVid};
 
 #[pymodule]
