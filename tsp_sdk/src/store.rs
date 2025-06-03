@@ -17,7 +17,6 @@ use std::{
     fmt::Display,
     sync::{Arc, RwLock},
 };
-use tracing::trace;
 use url::Url;
 
 #[derive(Clone)]
@@ -280,13 +279,7 @@ impl SecureStore {
     ) -> Result<(), Error> {
         self.modify_vid(vid, |resolved| {
             resolved.set_relation_vid(Some(relation_vid));
-            let old_relationship_status = resolved.replace_relation_status(relation_status.clone());
-            trace!(
-                vid,
-                relation_status = relation_status.to_string(),
-                old_relationship_status = old_relationship_status.to_string(),
-                "replaced relation status"
-            );
+            let _ = resolved.replace_relation_status(relation_status);
 
             Ok(())
         })

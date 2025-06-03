@@ -1,9 +1,9 @@
 use crate::{
-    crypto::CryptoError, definitions::{Digest, ReceivedTspMessage, TSPStream, VerifiedVid}, error::Error, store::{Aliases, SecureStore, WebvhUpdateKeys},
-    ExportVid,
-    OwnedVid,
-    PrivateVid,
-    RelationshipStatus,
+    ExportVid, OwnedVid, PrivateVid, RelationshipStatus,
+    crypto::CryptoError,
+    definitions::{Digest, ReceivedTspMessage, TSPStream, VerifiedVid},
+    error::Error,
+    store::{Aliases, SecureStore, WebvhUpdateKeys},
 };
 use bytes::BytesMut;
 use futures::StreamExt;
