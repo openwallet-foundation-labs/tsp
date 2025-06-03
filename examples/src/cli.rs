@@ -107,6 +107,7 @@ enum Commands {
         )]
         tcp: Option<String>,
     },
+    #[command(about = "Update the DID:WEBVH. Currently, only a rotation of TSP keys is supported")]
     Update {
         #[arg(help = "VID or Alias to update")]
         vid: String,
@@ -461,45 +462,45 @@ async fn run() -> Result<(), Error> {
             let metadata: WebvhMetadata = serde_json::from_value(metadata)
                 .expect("metadata should be of type 'WebvhMetadata'");
 
-            if let Some(update_keys) = metadata.update_keys {
-                let update_key = keys
-                    .get(&update_keys[0])
-                    .expect("Cannot find update keys to update the DID");
-                let history_entry = tsp_sdk::vid::did::webvh::update(
-                    dbg!(vid_to_did_document(vid.vid())),
-                    update_key,
-                )
-                .await?;
+            let Some(update_keys) = metadata.update_keys else {
+                error!("Cannot find update keys to update the DID");
+                return Err(Error::MissingPrivateVid(
+                    "Cannot find update keys to update the DID".to_string(),
+                ));
+            };
+            let update_key = keys
+                .get(&update_keys[0])
+                .expect("Cannot find update keys to update the DID");
+            let history_entry =
+                tsp_sdk::vid::did::webvh::update(vid_to_did_document(vid.vid()), update_key)
+                    .await?;
 
-                client
-                    .put(format!(
-                        "https://{did_server}/add-history/{}",
-                        vid.identifier()
-                    ))
-                    .json(&history_entry)
-                    .send()
-                    .await
-                    .expect("Could not append history");
+            client
+                .put(format!(
+                    "https://{did_server}/add-history/{}",
+                    vid.identifier()
+                ))
+                .json(&history_entry)
+                .send()
+                .await
+                .expect("Could not append history");
 
-                let update_response = client
-                    .put(format!("https://{did_server}/add-vid"))
-                    .json(vid.vid())
-                    .send()
-                    .await
-                    .expect("Could not update DID")
-                    .text()
-                    .await
-                    .expect("cannot extract text from server response");
+            let update_response = client
+                .put(format!("https://{did_server}/add-vid"))
+                .json(vid.vid())
+                .send()
+                .await
+                .expect("Could not update DID")
+                .text()
+                .await
+                .expect("cannot extract text from server response");
 
-                debug!("did server responded: {}", update_response);
+            debug!("did server responded: {}", update_response);
 
-                let (_, metadata) = verify_vid(vid.identifier())
-                    .await
-                    .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
-                vid_wallet.add_private_vid(vid, metadata)?;
-            } else {
-                error!("Cannot find update keys to update the DID")
-            }
+            let (_, metadata) = verify_vid(vid.identifier())
+                .await
+                .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
+            vid_wallet.add_private_vid(vid, metadata)?;
         }
         Commands::ImportPiv { file, alias } => {
             let private_vid = OwnedVid::from_file(file).await?;
