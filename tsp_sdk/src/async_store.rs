@@ -1,3 +1,4 @@
+use crate::crypto::CryptoError;
 use crate::store::WebvhUpdateKeys;
 use crate::{
     ExportVid, OwnedVid, PrivateVid, RelationshipStatus,
@@ -7,6 +8,7 @@ use crate::{
 };
 use bytes::BytesMut;
 use futures::StreamExt;
+use tracing::debug;
 use url::Url;
 
 /// Holds private and verified VIDs
@@ -36,7 +38,7 @@ use url::Url;
 ///     ).await;
 /// }
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct AsyncSecureStore {
     inner: SecureStore,
 }
@@ -494,7 +496,10 @@ impl AsyncSecureStore {
     /// Receive TSP messages for the private VID identified by `vid`, using the appropriate transport mechanism for it.
     /// Messages will be queued in a channel
     /// The returned channel contains a maximum of 16 messages
-    pub async fn receive(&self, vid: &str) -> Result<TSPStream<ReceivedTspMessage, Error>, Error> {
+    pub async fn receive(
+        &mut self,
+        vid: &str,
+    ) -> Result<TSPStream<ReceivedTspMessage, Error>, Error> {
         let receiver = self.inner.get_private_vid(vid)?;
         let mut transport = receiver.endpoint().clone();
         let path = transport
@@ -507,22 +512,30 @@ impl AsyncSecureStore {
         let messages = crate::transport::receive_messages(&transport).await?;
 
         let db = self.inner.clone();
+        let self_clone = self.clone();
         Ok(Box::pin(messages.then(move |message| {
             let db_inner = db.clone();
+            let mut self_inner = self_clone.clone();
             async move {
                 match message {
                     Ok(mut m) => match db_inner.open_message(&mut m) {
-                        Err(Error::UnverifiedSource(unknown_vid, opaque_data)) => {
-                            Ok(ReceivedTspMessage::PendingMessage {
-                                unknown_vid,
-                                payload: opaque_data.unwrap_or(m),
-                            })
+                        Err(Error::UnverifiedSource(unknown_vid, _)) => {
+                            debug!("Verifying VID: {}", unknown_vid);
+                            self_inner.verify_vid(&unknown_vid, None).await?;
+                            db_inner.open_message(&mut m)
                         }
-                        maybe_message => maybe_message.map(|msg| msg.into_owned()).map_err(|e| {
-                            tracing::error!("{}", e);
-                            e
-                        }),
-                    },
+                        Err(Error::Crypto(CryptoError::Verify(vid, _))) => {
+                            debug!("Re-verifying VID: {}", vid);
+                            self_inner.verify_vid(&vid, None).await?;
+                            db_inner.open_message(&mut m)
+                        }
+                        maybe_message => maybe_message,
+                    }
+                    .map(|msg| msg.into_owned())
+                    .map_err(|e| {
+                        tracing::error!("{}", e);
+                        e
+                    }),
                     Err(e) => Err(e.into()),
                 }
             }

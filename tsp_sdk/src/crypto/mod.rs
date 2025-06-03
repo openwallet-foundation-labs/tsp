@@ -20,6 +20,7 @@ pub use error::CryptoError;
 
 #[cfg(not(feature = "pq"))]
 use crate::cesr::CryptoType;
+use crate::crypto::CryptoError::Verify;
 
 #[cfg(not(feature = "pq"))]
 pub type Aead = hpke::aead::ChaCha20Poly1305;
@@ -85,8 +86,11 @@ pub fn open<'a>(
     // verify outer signature
     let verification_challenge = view.as_challenge();
     let signature = ed25519_dalek::Signature::from(verification_challenge.signature);
-    let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(sender.verifying_key())?;
-    verifying_key.verify_strict(verification_challenge.signed_data, &signature)?;
+    let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(sender.verifying_key())
+        .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+    verifying_key
+        .verify_strict(verification_challenge.signed_data, &signature)
+        .map_err(|err| Verify(sender.identifier().to_string(), err))?;
 
     // decode envelope
     let crate::cesr::DecodedEnvelope {

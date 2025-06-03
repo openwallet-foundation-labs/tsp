@@ -2,19 +2,20 @@ use crate::Vid;
 use crate::vid::VidError;
 use crate::vid::did::web::{DidDocument, resolve_document};
 #[cfg(feature = "create-webvh")]
-pub use create_webvh::create_webvh;
+pub use create_webvh::{create_webvh, update};
 use didwebvh_resolver;
 use didwebvh_resolver::{DefaultHttpClient, ResolutionOptions};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub(crate) const SCHEME: &str = "webvh";
 
-#[derive(Debug, Serialize)]
-struct WebvhMetadata {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WebvhMetadata {
     version_id: Option<String>,
     updated: Option<String>,
+    pub update_keys: Option<Vec<String>>,
 }
-
+/// Returns the Vid and [`WebvhMetadata`] for the given `id`.
 pub async fn resolve(id: &str) -> Result<(Vid, serde_json::Value), VidError> {
     let http = DefaultHttpClient::new();
     let resolver = didwebvh_resolver::resolver::WebVHResolver::new(http);
@@ -22,6 +23,7 @@ pub async fn resolve(id: &str) -> Result<(Vid, serde_json::Value), VidError> {
     let metadata = WebvhMetadata {
         version_id: resolved.did_document_metadata.version_id,
         updated: resolved.did_document_metadata.updated,
+        update_keys: resolved.did_document_metadata.update_keys,
     };
     let did_doc: DidDocument = serde_json::from_value(resolved.did_document)?;
 
@@ -49,7 +51,7 @@ mod create_webvh {
         version_id: String,
         version_time: String,
         parameters: serde_json::Value,
-        state: DidDocument,
+        pub state: DidDocument,
         proof: Vec<serde_json::Value>,
     }
 
@@ -87,6 +89,41 @@ mod create_webvh {
         vid.vid = new_vid;
 
         Ok((vid, history, update_kid, update_key))
+    }
+
+    pub async fn update(
+        updated_document: serde_json::Value,
+        update_key: &[u8],
+    ) -> Result<HistoryEntry, VidError> {
+        let tsp_mod = load_python()?;
+
+        let fut = Python::with_gil(|py| -> PyResult<_> {
+            pyo3_async_runtimes::tokio::into_future(update_future(
+                tsp_mod.bind(py),
+                updated_document,
+                update_key,
+            )?)
+        })?;
+
+        let res = fut.await?;
+
+        Ok(Python::with_gil(|py| -> PyResult<_> {
+            let updated_history: String = res.extract(py)?;
+            let updated_history =
+                serde_json::from_str(&updated_history).expect("Invalid history entry");
+            Ok(updated_history)
+        })?)
+    }
+
+    fn update_future<'py>(
+        tsp_mod: &Bound<'py, PyAny>,
+        updated_document: serde_json::Value,
+        update_key: &[u8],
+    ) -> PyResult<Bound<'py, PyAny>> {
+        tsp_mod.call_method1(
+            "tsp_update_did",
+            (to_pyobject(tsp_mod.py(), &updated_document)?, update_key),
+        )
     }
 
     fn provision(

@@ -217,7 +217,7 @@ pub fn resolve_document(did_document: DidDocument, target_id: &str) -> Result<Vi
     })
 }
 
-pub fn vid_to_did_document(vid: &Vid) -> serde_json::Value {
+pub fn vid_to_did_document(vid: &impl VerifiedVid) -> serde_json::Value {
     let id = vid.identifier();
 
     json!({
@@ -259,7 +259,7 @@ pub fn vid_to_did_document(vid: &Vid) -> serde_json::Value {
         "service": [{
             "id": "#tsp-transport",
             "type": "TSPTransport",
-            "serviceEndpoint": vid.transport.to_string()
+            "serviceEndpoint": vid.endpoint()
         }]
     })
 }

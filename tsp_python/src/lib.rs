@@ -206,7 +206,7 @@ impl Store {
         .map_err(py_exception)
     }
 
-    fn receive(&self, vid: String) -> PyResult<Option<FlatReceivedTspMessage>> {
+    fn receive(&mut self, vid: String) -> PyResult<Option<FlatReceivedTspMessage>> {
         wait_for(async {
             let mut messages = self.inner.receive(&vid).await.map_err(py_exception)?;
             messages

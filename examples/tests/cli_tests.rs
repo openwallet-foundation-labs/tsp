@@ -1,11 +1,10 @@
-use assert_cmd::Command;
+use assert_cmd::{Command, cargo_bin};
 use predicates::prelude::*;
 use rand::distributions::Alphanumeric;
 use rand::{Rng, thread_rng};
 use std::process::Command as StdCommand;
 use std::thread;
 use std::time::Duration;
-
 fn random_string(n: usize) -> String {
     thread_rng()
         .sample_iter(&Alphanumeric)
@@ -14,15 +13,15 @@ fn random_string(n: usize) -> String {
         .collect()
 }
 
-fn create_wallet(alias: &str) -> String {
-    let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
+fn create_wallet(alias: &str, did_type: &str) -> String {
+    let mut cmd: Command = Command::new(cargo_bin!("tsp"));
     let random_name = format!("test_wallet_{}", random_string(8));
     cmd.args([
         "--wallet",
         random_name.as_str(),
         "create",
         "--type",
-        "web",
+        did_type,
         "--alias",
         alias,
         random_name.as_str(),
@@ -34,7 +33,7 @@ fn create_wallet(alias: &str) -> String {
 }
 
 fn print_did(wallet_name: &str, alias: &str) -> String {
-    let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
+    let mut cmd: Command = Command::new(cargo_bin!("tsp"));
     let output = cmd
         .args(["--wallet", wallet_name, "print", alias])
         .output()
@@ -46,8 +45,16 @@ fn print_did(wallet_name: &str, alias: &str) -> String {
 }
 
 fn verify_did(wallet_name: &str, alias: &str, did: &str) {
-    let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
+    let mut cmd: Command = Command::new(cargo_bin!("tsp"));
     cmd.args(["--wallet", wallet_name, "verify", "--alias", alias, did])
+        .assert()
+        .success();
+}
+
+#[cfg(feature = "create-webvh")]
+fn rotate_keys(wallet_name: &str, alias: &str) {
+    let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+    cmd.args(["--wallet", wallet_name, "update", alias])
         .assert()
         .success();
 }
@@ -61,14 +68,15 @@ fn clean_wallet() {
 }
 
 #[test]
+#[serial_test::serial(clean_wallet)]
 fn test_send_command_unverified_receiver_default() {
     clean_wallet();
 
     // create a new sender identity
-    let random_sender_name = create_wallet("marlon");
+    let random_sender_name = create_wallet("marlon", "web");
 
     // create a new receiver identity
-    let random_receiver_name = create_wallet("marc");
+    let random_receiver_name = create_wallet("marc", "web");
 
     // print the sender's DID
     let marlon_did = print_did(&random_sender_name, "marlon");
@@ -83,7 +91,7 @@ fn test_send_command_unverified_receiver_default() {
         s.spawn(|| {
             // send a message from sender to receiver
             let input = "Oh hello Marc";
-            let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
+            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
             cmd.args([
                 "--wallet",
                 random_sender_name.as_str(),
@@ -99,14 +107,14 @@ fn test_send_command_unverified_receiver_default() {
         });
         s.spawn(|| {
             // receive the message
-            let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
+            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
             cmd.args([
                 "--wallet",
                 random_receiver_name.as_str(),
                 "receive",
                 &marc_did,
             ])
-            .timeout(Duration::from_secs(3))
+            .timeout(Duration::from_secs(2))
             .assert()
             .stderr(predicate::str::contains("received relationship request"))
             .stdout(predicate::str::contains("Oh hello Marc"))
@@ -118,14 +126,15 @@ fn test_send_command_unverified_receiver_default() {
 }
 
 #[test]
+#[serial_test::serial(clean_wallet)]
 fn test_send_command_unverified_receiver_ask_flag() {
     clean_wallet();
 
     // create a new sender identity
-    let random_sender_name = create_wallet("marlon");
+    let random_sender_name = create_wallet("marlon", "web");
 
     // create a new receiver identity
-    let random_receiver_name = create_wallet("marc");
+    let random_receiver_name = create_wallet("marc", "web");
 
     // print the sender's DID
     let marlon_did = print_did(&random_sender_name, "marlon");
@@ -138,7 +147,7 @@ fn test_send_command_unverified_receiver_ask_flag() {
 
     // Send a message from Marlon to Marc with --ask flag, answer no
     let input = "n\nOh hello Marc";
-    let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
+    let mut cmd: Command = Command::new(cargo_bin!("tsp"));
     cmd.args([
         "--wallet",
         random_sender_name.as_str(),
@@ -161,7 +170,7 @@ fn test_send_command_unverified_receiver_ask_flag() {
         s.spawn(|| {
             // send a message from sender to receiver
             let input = "y\nOh hello Marc";
-            let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
+            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
             cmd.args([
                 "--wallet",
                 random_sender_name.as_str(),
@@ -181,7 +190,7 @@ fn test_send_command_unverified_receiver_ask_flag() {
         });
         s.spawn(|| {
             // receive the message
-            let mut cmd: Command = Command::cargo_bin("tsp").expect("tsp binary exists");
+            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
             cmd.args([
                 "--wallet",
                 random_receiver_name.as_str(),
@@ -192,6 +201,101 @@ fn test_send_command_unverified_receiver_ask_flag() {
             .assert()
             .stderr(predicate::str::contains("received relationship request"))
             .success();
+        });
+    });
+
+    clean_wallet();
+}
+
+#[test]
+#[cfg(feature = "create-webvh")]
+#[serial_test::serial(clean_wallet)]
+fn test_webvh_creation_key_rotation() {
+    clean_wallet();
+
+    // create a new sender identity
+    let random_sender_name = create_wallet("foo", "webvh");
+
+    // create a new receiver identity
+    let random_receiver_name = create_wallet("bar", "web");
+
+    // print the sender's DID
+    let foo_did = print_did(&random_sender_name, "foo");
+
+    // print the receiver's DID
+    let bar_did = print_did(&random_receiver_name, "bar");
+
+    // receiver verifies the address of the sender
+    verify_did(&random_receiver_name, "foo", &foo_did);
+
+    thread::scope(|s| {
+        s.spawn(|| {
+            // send a message from sender to receiver
+            let input = "Oh hello Marc";
+            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            cmd.args([
+                "--wallet",
+                random_sender_name.as_str(),
+                "send",
+                "-s",
+                "foo",
+                "-r",
+                &bar_did,
+            ])
+            .write_stdin(input)
+            .assert()
+            .success();
+        });
+        s.spawn(|| {
+            // receive the message
+            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            cmd.args([
+                "--wallet",
+                random_receiver_name.as_str(),
+                "receive",
+                &bar_did,
+            ])
+            .timeout(Duration::from_secs(2))
+            .assert()
+            .stderr(predicate::str::contains("received relationship request"))
+            .stdout(predicate::str::contains("Oh hello Marc"))
+            .failure();
+        });
+    });
+
+    rotate_keys(&random_sender_name, "foo");
+
+    thread::scope(|s| {
+        s.spawn(|| {
+            // send a message from sender to receiver
+            let input = "Oh hello Marc";
+            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            cmd.args([
+                "--wallet",
+                random_sender_name.as_str(),
+                "send",
+                "-s",
+                "foo",
+                "-r",
+                &bar_did,
+            ])
+            .write_stdin(input)
+            .assert()
+            .success();
+        });
+        s.spawn(|| {
+            // receive the message
+            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            cmd.args([
+                "--wallet",
+                random_receiver_name.as_str(),
+                "receive",
+                &bar_did,
+            ])
+            .timeout(Duration::from_secs(2))
+            .assert()
+            .stdout(predicate::str::contains("Oh hello Marc"))
+            .failure();
         });
     });
 

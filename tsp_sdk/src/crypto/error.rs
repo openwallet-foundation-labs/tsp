@@ -11,8 +11,8 @@ pub enum CryptoError {
     CryptographicHpke(#[from] hpke::HpkeError),
     #[error("encryption or decryption failed")]
     CryptographicNacl(#[from] crypto_box::aead::Error),
-    #[error("could not verify signature: {0}")]
-    Verify(#[from] ed25519_dalek::ed25519::Error),
+    #[error("could not verify signature for sender VID {0}: {1}")]
+    Verify(String, ed25519_dalek::ed25519::Error),
     #[error("unexpected recipient")]
     UnexpectedRecipient,
     #[error("no ciphertext found in encrypted message")]
