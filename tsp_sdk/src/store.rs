@@ -182,19 +182,24 @@ impl SecureStore {
         metadata: Option<serde_json::Value>,
     ) -> Result<(), Error> {
         let did = verified_vid.identifier().to_string();
+        let verified_vid = Arc::new(verified_vid);
 
-        self.vids.write()?.insert(
-            did.clone(),
-            VidContext {
-                vid: Arc::new(verified_vid),
+        self.vids
+            .write()?
+            .entry(did.clone())
+            .and_modify(|context| {
+                context.vid = verified_vid.clone();
+                context.metadata = metadata.clone();
+            })
+            .or_insert(VidContext {
+                vid: verified_vid,
                 private: None,
                 relation_status: RelationshipStatus::Unrelated,
                 relation_vid: None,
                 parent_vid: None,
                 tunnel: None,
                 metadata,
-            },
-        );
+            });
 
         Ok(())
     }
@@ -207,9 +212,15 @@ impl SecureStore {
     ) -> Result<(), Error> {
         let vid = Arc::new(private_vid);
 
-        self.vids.write()?.insert(
-            vid.identifier().to_string(),
-            VidContext {
+        self.vids
+            .write()?
+            .entry(vid.identifier().to_string())
+            .and_modify(|context| {
+                context.vid = vid.clone();
+                context.private = Some(vid.clone());
+                context.metadata = metadata.clone();
+            })
+            .or_insert(VidContext {
                 vid: vid.clone(),
                 private: Some(vid),
                 relation_status: RelationshipStatus::Unrelated,
@@ -220,8 +231,7 @@ impl SecureStore {
                     .map(serde_json::to_value)
                     .transpose()
                     .map_err(|_| Error::Internal)?,
-            },
-        );
+            });
 
         Ok(())
     }

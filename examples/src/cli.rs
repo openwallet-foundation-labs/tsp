@@ -9,8 +9,8 @@ use std::{ops::Deref, path::PathBuf, str::FromStr};
 use tokio::io::AsyncReadExt;
 use tracing::{debug, error, info, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use tsp_sdk::vid::did::webvh::WebvhMetadata;
-use tsp_sdk::vid::vid_to_did_document;
+#[cfg(feature = "create-webvh")]
+use tsp_sdk::vid::{did::webvh::WebvhMetadata, vid_to_did_document};
 use tsp_sdk::{
     Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
     RelationshipStatus, SecureStorage, VerifiedVid, Vid,
@@ -108,6 +108,7 @@ enum Commands {
         )]
         tcp: Option<String>,
     },
+    #[cfg(feature = "create-webvh")]
     #[command(about = "Update the DID:WEBVH. Currently, only a rotation of TSP keys is supported")]
     Update {
         #[arg(help = "VID or Alias to update")]
@@ -454,6 +455,7 @@ async fn run() -> Result<(), Error> {
                 .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
             vid_wallet.add_private_vid(private_vid.clone(), metadata)?;
         }
+        #[cfg(feature = "create-webvh")]
         Commands::Update { vid } => {
             let (_, _, keys) = vid_wallet.export()?;
             let vid = vid_wallet.try_resolve_alias(&vid)?;
@@ -1143,26 +1145,6 @@ fn show_relations(vids: &[ExportVid], vid: Option<String>, aliases: &Aliases) ->
             )
         }
         println!("\t Transport: {}", vid.transport);
-        if vid.id.starts_with("did:web") {
-            println!(
-                "\t DID doc: {}",
-                tsp_sdk::vid::did::get_resolve_url(&vid.id)?
-            )
-        }
-        if vid.id.starts_with("did:webvh") {
-            println!(
-                "\t DID history: {}l",
-                tsp_sdk::vid::did::get_resolve_url(&vid.id)?
-            );
-            println!(
-                "\t DID version: {}",
-                vid.metadata
-                    .as_ref()
-                    .and_then(|m| m.get("version_id"))
-                    .map(|v| v.to_string())
-                    .unwrap_or("None".to_string())
-            )
-        }
         println!(
             "\t public enc key: ({enc_key_type}) {}",
             Base64::encode_string(vid.public_enckey.deref())
