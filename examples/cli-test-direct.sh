@@ -11,10 +11,10 @@ echo "---- cleanup the wallet"
 rm -f marlon.sqlite marc.sqlite
 
 echo "---- create a new sender identity"
-tsp --wallet marlon create --alias marlon `randuser`
+tsp --wallet marlon create --type web --alias marlon `randuser`
 
 echo "---- create a new receiver identity"
-tsp --wallet marc create --alias marc `randuser`
+tsp --wallet marc create --type web --alias marc `randuser`
 
 DID_MARC=$(tsp --wallet marc print marc)
 DID_MARLON=$(tsp --wallet marlon print marlon)

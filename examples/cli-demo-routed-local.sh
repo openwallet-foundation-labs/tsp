@@ -20,7 +20,7 @@ echo "==== create sender and receiver"
 for entity in a b; do
     echo "------ $entity (identifier for ${entity%%[0-9]*}) uses did:peer with local transport"
     port=$((${port:-1024} + RANDOM % 1000))
-    tsp --wallet "${entity%%[0-9]*}" create-peer --tcp localhost:$port $entity
+    tsp --wallet "${entity%%[0-9]*}" create --type peer --tcp localhost:$port $entity
 done
 DID_A=$(tsp --wallet a print a)
 DID_P="did:web:localhost%3A3001"

@@ -19,7 +19,7 @@ echo
 echo "==== create sender and receiver"
 for entity in a b; do
 	echo "------ $entity (identifier for ${entity%%[0-9]*}) uses did:web"
-	tsp --wallet "${entity%%[0-9]*}" create --alias $entity `randuser`
+	tsp --wallet "${entity%%[0-9]*}" create --type web --alias $entity `randuser`
 done
 DID_A=$(tsp --wallet a print a)
 DID_P="did:web:p.teaspoon.world"

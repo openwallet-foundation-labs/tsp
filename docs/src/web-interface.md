@@ -33,7 +33,7 @@ loaded automatically.
 
 To resolve a VID, follow the instructions below.
 
-Note that only VIDs of the type `did:web` or `did:peer` are supported.
+Note that VIDs of the type `did:webvh`, `did:web` and `did:peer` are supported.
 
 In order to be able to resolve a VID you could open the web interface
 in an "Incognito" browser window and create a new VID. You should use

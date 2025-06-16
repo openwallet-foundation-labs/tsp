@@ -27,15 +27,15 @@ fi
 for entity in a p q $Q2 b; do
     if cointoss; then
 	echo "------ $entity (identifier for ${entity%%[0-9]*}) uses did:web"
-	tsp --wallet "${entity%%[0-9]*}" create --alias $entity `randuser`
+	tsp --wallet "${entity%%[0-9]*}" create --type web --alias $entity `randuser`
     else
 	if cointoss; then
 	    echo "------ $entity (identifier for ${entity%%[0-9]*}) uses did:peer with https:// transport"
-	    tsp --wallet "${entity%%[0-9]*}" create-peer $entity
+	    tsp --wallet "${entity%%[0-9]*}" create --type peer $entity
 	else
 	    echo "------ $entity (identifier for ${entity%%[0-9]*}) uses did:peer with local transport"
 	    port=$((${port:-1024} + RANDOM % 1000))
-	    tsp --wallet "${entity%%[0-9]*}" create-peer --tcp localhost:$port $entity
+	    tsp --wallet "${entity%%[0-9]*}" create --type peer --tcp localhost:$port $entity
 	fi
     fi
 done
