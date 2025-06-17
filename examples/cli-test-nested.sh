@@ -8,12 +8,12 @@ rm -f a.sqlite b.sqlite
 
 echo "---- load the sender identity"
 tsp --wallet a import-piv --alias a test/a/piv.json
-tsp --wallet a create-peer a-inner
+tsp --wallet a create --type peer a-inner
 tsp --wallet a set-parent a-inner a
 
 echo "---- load the receiver identity"
 tsp --wallet b import-piv --alias b test/b/piv.json
-tsp --wallet b create-peer b-inner
+tsp --wallet b create --type peer b-inner
 
 echo "---- verify sender vids"
 tsp --wallet a print a | xargs tsp --wallet b verify --alias a

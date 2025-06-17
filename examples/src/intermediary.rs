@@ -300,6 +300,22 @@ async fn new_message(
                         return (StatusCode::BAD_REQUEST, "error verifying next hop VID")
                             .into_response();
                     }
+                    tracing::debug!(
+                        "Sending relationship request from {} to {next_hop}",
+                        state.did
+                    );
+                    if let Err(err) = state
+                        .db
+                        .read()
+                        .await
+                        .send_relationship_request(&state.did, &next_hop, None)
+                        .await
+                    {
+                        let err = format!("error forming relation with VID {next_hop}: {err}");
+                        state.log_error(err).await;
+                        return (StatusCode::BAD_REQUEST, "error forwarding message")
+                            .into_response();
+                    }
                 }
 
                 let (transport, message) = match state.db.read().await.make_next_routed_message(

@@ -22,7 +22,7 @@ First, __alice__ will have to learn about __bob__'s existence:
  INFO tsp: did:web:did.teaspoon.world:endpoint:bob is verified and added to the wallet alice
 ```
 Then she can send a relationship request message. This requires __bob__ to be listening as
-shown in the previous chapter (i.e., running `tsp -w bob receive` in a separate window):
+shown in the previous chapter (i.e., running `tsp -w bob receive bob` in a separate window):
 ```sh
 > tsp -w alice request --sender-vid did:web:did.teaspoon.world:endpoint:alice --receiver-vid did:web:did.teaspoon.world:endpoint:bob --wait
  INFO tsp::async_store: sending message to https://did.teaspoon.world/endpoint/bob
@@ -65,7 +65,7 @@ Notice that a new `did:peer` identifier was created. This will have a transport 
 
 On __bob__'s side, this message will appear:
 ```sh
-> tsp -w bob receive --one
+> tsp -w bob receive bob --one
  INFO tsp: received nested relationship request from 'did:peer:2.Vz6Mv3HRDr8nQ28LZxXHrU1zaUdXVJVjQzhuVcFB4pyF5rweQ.Ez6Lc6URPHMVN1vswnk32ND5zNcAb5o2QA1Hs4NThH2YzAuVL.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0' (new identity for did:web:did.teaspoon.world:endpoint:alice), thread-id 'cR9RznAELgbp9XZ+VFFjq7vYv4v+ITaGrxa7L2ddCPw'
 ```
 
@@ -102,7 +102,7 @@ We use the same __alice__ and __bob__ example as in the previous chapter.
 First, we create an inner or nested VID for __alice__:
 
 ```sh
-tsp -w alice create-peer alice-inner
+tsp -w alice create --type peer alice-inner
 ```
 
 Output:
@@ -112,9 +112,9 @@ Output:
  VyaSI6Imh0dHBzOi8vdHNwLXRlc3Qub3JnL3VzZXIvYWxpY2UtaW5uZXIifSwidCI6InRzcCJ9
 ```
 
-The `create-peer` command creates a new identity and key material in the `did:peer` format.
+This command creates a new identity and key material in the `did:peer` format.
 
-Next we configure the newly created did:peer as a child of our main identity:
+Next, we configure the newly created did:peer as a child of our main identity:
 
 ```sh
 tsp -w alice set-parent alice-inner alice
@@ -132,7 +132,7 @@ We do the same for __bob__:
 
 
 ```sh
-tsp -w bob create-peer bob-inner
+tsp -w bob create --type peer bob-inner
 ```
 
 Output:
@@ -188,7 +188,7 @@ Use the `request` command to specify which VID should be used to send messages
 a certain VID:
 
 ```sh
-tsp -w alice request --sender-vid bob-inner --receiver-vid alice-inner
+tsp -w alice request --sender-vid alice-inner --receiver-vid bob-inner
 ```
 
 Then set the parent/child relationship of __bob__'s VIDs in __alice__'s wallet:

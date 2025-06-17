@@ -17,10 +17,10 @@ echo "---- cleanup the wallet"
 rm -f marlon.sqlite marc.sqlite
 
 echo "---- create a new sender identity"
-$HPKE_TSP --wallet marlon create --alias marlon `randuser`
+$HPKE_TSP --wallet marlon create --type web --alias marlon `randuser`
 
 echo "---- create a new receiver identity"
-$NACL_TSP --wallet marc create --alias marc `randuser`
+$NACL_TSP --wallet marc create --type web --alias marc `randuser`
 
 DID_MARC=$($NACL_TSP --wallet marc print marc)
 DID_MARLON=$($HPKE_TSP --wallet marlon print marlon)

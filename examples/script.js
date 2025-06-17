@@ -267,7 +267,7 @@ async function resolveVid(formData) {
 
   if (response.ok) {
     resolveForm.reset();
-    const identity = await response.json();
+    const identity = (await response.json())[0];
     const key = identity.id;
     window.localStorage.setItem(key, JSON.stringify(identity));
     updateIdentities();

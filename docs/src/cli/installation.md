@@ -24,6 +24,10 @@ Installing the TSP CLI program:
 cargo install --git https://github.com/openwallet-foundation-labs/tsp.git examples --bin tsp
 ```
 
+If you want to manage DIDs of type WebVH, you have to compile the CLI with the feature flag `create-webvh`.
+Simply add `--features create-webvh` to the above command.
+You can always verify WebVH, even without enabling the feature flag.
+
 You should be able to run `tsp`:
 
 ```sh
@@ -37,24 +41,24 @@ Send and receive TSP messages
 Usage: tsp [OPTIONS] <COMMAND>
 
 Commands:
-  show          Show information stored in the wallet
-  verify        verify and add a identifier to the wallet
-  print         
-  create        create and register a did:web identifier
-  create-peer   
-  import-piv    import an identity from a file (for demo purposes only)
-  discover      Discover DIDs from the DID support server
-  set-alias     
-  set-route     
-  set-parent    
-  send          send a message
-  receive       listen for messages
-  request       propose a relationship
-  accept        accept a relationship
-  cancel        break up a relationship
-  refer         send an identity referral
-  publish       publish a new own identity
-  help          Print this message or the help of the given subcommand(s)
+  show        Show information stored in the wallet
+  verify      verify and add a identifier to the wallet
+  print       
+  create      create and register a did:web identifier
+  update      Update the DID:WEBVH. Currently, only a rotation of TSP keys is supported
+  import-piv  import an identity from a file (for demo purposes only)
+  discover    Discover DIDs from the DID support server
+  set-alias   
+  set-route   
+  set-parent  
+  send        send a message
+  receive     listen for messages
+  request     propose a relationship
+  accept      accept a relationship
+  cancel      break up a relationship
+  refer       send an identity referral
+  publish     publish a new own identity
+  help        Print this message or the help of the given subcommand(s)
 
 Options:
   -w, --wallet <WALLET>          Wallet name to use [default: wallet]

@@ -11,10 +11,10 @@ echo "---- cleanup the wallet"
 rm -f marlon.sqlite marc.sqlite
 
 echo "---- create identities"
-tsp --wallet marlon create --alias marlon `randuser`
+tsp --wallet marlon create --type web --alias marlon `randuser`
 DID_MARLON=$(tsp --wallet marlon print marlon)
 
-tsp --wallet marc create --alias marc `randuser`
+tsp --wallet marc create --type web --alias marc `randuser`
 DID_MARC=$(tsp --wallet marc print marc)
 
 echo "---- make the initial connection"
