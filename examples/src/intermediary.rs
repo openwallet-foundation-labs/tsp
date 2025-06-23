@@ -1,10 +1,10 @@
 use axum::{
-    Router,
     body::Bytes,
-    extract::{Path, State, WebSocketUpgrade, ws::Message},
+    extract::{ws::Message, Path, State, WebSocketUpgrade},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
     routing::{get, post},
+    Router,
 };
 use bytes::BytesMut;
 use clap::Parser;
@@ -12,11 +12,11 @@ use futures::{sink::SinkExt, stream::StreamExt};
 use reqwest::header;
 use serde::Serialize;
 use std::{collections::VecDeque, sync::Arc};
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::{broadcast, RwLock};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{
-    AsyncSecureStore, OwnedVid, ReceivedTspMessage, VerifiedVid, cesr, definitions::Digest,
-    transport, vid::vid_to_did_document,
+    cesr, definitions::Digest, transport, vid::vid_to_did_document, AsyncSecureStore, OwnedVid,
+    ReceivedTspMessage, VerifiedVid,
 };
 use url::Url;
 
@@ -84,6 +84,10 @@ impl IntermediaryState {
     }
 
     async fn verify_vid(&self, vid: &str) -> Result<(), tsp_sdk::Error> {
+        if self.db.read().await.has_verified_vid(vid)? {
+            return Ok(());
+        }
+
         let (verified_vid, metadata) = tsp_sdk::vid::verify_vid(vid).await?;
 
         // Immediately releases write lock
@@ -210,6 +214,7 @@ async fn new_message(
                                                  thread_id: Digest|
                -> Result<(), tsp_sdk::Error> {
             if let Some(nested_vid) = nested_vid {
+                tracing::debug!("Requested new nested relationship");
                 let ((endpoint, message), my_new_nested_vid) = state
                     .db
                     .read()
@@ -225,17 +230,25 @@ async fn new_message(
 
                 Ok(())
             } else {
+                tracing::debug!("Received relationship request from {}", sender);
                 let route: Option<Vec<&str>> = route.as_ref().map(|vec| {
                     vec.iter()
                         .map(|vid| std::str::from_utf8(vid).unwrap())
                         .collect()
                 });
-                let (endpoint, message) = state.db.read().await.make_relationship_accept(
+                tracing::debug!("Requesting read lock to accept relationship request");
+                let store = state.db.read().await;
+                tracing::debug!("Acquired read lock to accept relationship request");
+
+                let (endpoint, message) = store.make_relationship_accept(
                     &receiver,
                     &sender,
                     thread_id,
                     route.as_deref(),
                 )?;
+
+                tracing::debug!("Dropped read lock to accept relationship request");
+                drop(store);
 
                 transport::send_message(&endpoint, &message).await?;
 
@@ -300,14 +313,14 @@ async fn new_message(
                         return (StatusCode::BAD_REQUEST, "error verifying next hop VID")
                             .into_response();
                     }
+
+                    tracing::debug!("Acquiring read lock on AsyncStore");
+                    let store = state.db.read().await;
                     tracing::debug!(
                         "Sending relationship request from {} to {next_hop}",
                         state.did
                     );
-                    if let Err(err) = state
-                        .db
-                        .read()
-                        .await
+                    if let Err(err) = store
                         .send_relationship_request(&state.did, &next_hop, None)
                         .await
                     {
@@ -316,6 +329,8 @@ async fn new_message(
                         return (StatusCode::BAD_REQUEST, "error forwarding message")
                             .into_response();
                     }
+                    tracing::debug!("Releasing lock guard on AsyncStore");
+                    drop(store);
                 }
 
                 let (transport, message) = match state.db.read().await.make_next_routed_message(
