@@ -38,7 +38,7 @@ Here is a list of main software modules:
 - A subset of the above for application who only wants an implementation TSP the communication protocol.
 - Various language bindings of the TSP SDK: Python, Javascript, Node.js
 - A selection of supported VIDs: `did:peer`, `did:web`, `did:webvh`
-- A selection of supported transports: HTTP, WebSocket, TLS, QUIC, TCP, UDP
+- A selection of supported transports: HTTP (with WebSockets), TLS, QUIC, TCP
 - A CLI for testing endpoints
 - A cloud based testbed hosted at `teaspoon.world`.
 
@@ -56,9 +56,9 @@ flowchart LR
 
 As shown above, the two endpoints `A` and `B` can communicate through TSP directly or through the intermediaries. Not shown in the diagram (for simplicity) is the case where there is only one intermediary between them.
 
-Also not known but provided by the testbed is a *Support System* `did.teaspoon.world` for VID verification, and also an *Out Of Band* discovery site `www.teaspoon.world`.
+Also, not shown but provided by the testbed is a *Support System* `did.teaspoon.world` for VID verification, and an *Out Of Band* discovery site `www.teaspoon.world`.
 
-The endpoints may be simulated in the testbed but a more useful way is to run endpoints locally using the provided CLI.
+The endpoints may be simulated in the [testbed](https://demo.teaspoon.world), but a more useful way is to run endpoints locally using the provided CLI.
 
 The testbed is provided for contributing developers only. Please contact project maintainers in the Discord channel for access. The testbed is limited in its capacity of course and is not reliable for anything other than testing.
 
