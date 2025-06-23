@@ -105,9 +105,11 @@ echo
 echo "==== send a routed message"
 
 sleep 2 && echo -n "Indirect Message from A to B was received!" | tsp --wallet a send -s a -r b &
-tsp --yes --wallet p receive --one p &
-tsp --yes --wallet q receive --one q &
-tsp --yes --wallet b receive --one b
+tsp --yes --wallet p receive p &
+tsp --yes --wallet q receive q &
+tsp --yes --wallet b receive b
+
+sleep 5
 
 echo "---- cleanup wallets"
 rm -f a.sqlite b.sqlite p.sqlite q.sqlite

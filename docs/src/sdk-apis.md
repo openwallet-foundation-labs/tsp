@@ -9,7 +9,7 @@ A [`SecureStore`](https://docs.rs/tsp_sdk/latest/tsp_sdk/struct.SecureStore.html
 
 A `SecureStore` the data in memory. `SecureStorage` can be used to persist this data in a wallet.
 We provide the `AskarSecureStorage` implementation, which uses [Aries Askar](https://github.com/openwallet-foundation/askar) to securely store the data.
-See the [custom secure storage](../custom-secure-storage.md) page for documentation about how to implement custom secure storage solutions.
+See the [custom secure storage](./custom-secure-storage.md) page for documentation about how to implement custom secure storage solutions.
 
 The SDK also has the [`AsyncSecureStore`](https://docs.rs/tsp_sdk/latest/tsp_sdk/struct.AsyncSecureStore.html) interface that provides an asynchronous version of the `SecureStore`.
 The `AsyncSecureStore` is a higher level interface which also includes [`send`](https://docs.rs/tsp_sdk/latest/tsp_sdk/struct.AsyncSecureStore.html#method.send) and [`receive`](https://docs.rs/tsp_sdk/latest/tsp_sdk/struct.AsyncSecureStore.html#method.receive) functions to send or receive TSP messages using the built-in [transport layers](./transport.md).

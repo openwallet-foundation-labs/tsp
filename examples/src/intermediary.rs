@@ -1,10 +1,10 @@
 use axum::{
+    Router,
     body::Bytes,
-    extract::{ws::Message, Path, State, WebSocketUpgrade},
+    extract::{Path, State, WebSocketUpgrade, ws::Message},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
     routing::{get, post},
-    Router,
 };
 use bytes::BytesMut;
 use clap::Parser;
@@ -12,11 +12,11 @@ use futures::{sink::SinkExt, stream::StreamExt};
 use reqwest::header;
 use serde::Serialize;
 use std::{collections::VecDeque, sync::Arc};
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{RwLock, broadcast};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{
-    cesr, definitions::Digest, transport, vid::vid_to_did_document, AsyncSecureStore, OwnedVid,
-    ReceivedTspMessage, VerifiedVid,
+    AsyncSecureStore, OwnedVid, ReceivedTspMessage, VerifiedVid, cesr, definitions::Digest,
+    transport, vid::vid_to_did_document,
 };
 use url::Url;
 
@@ -85,17 +85,20 @@ impl IntermediaryState {
 
     async fn verify_vid(&self, vid: &str) -> Result<(), tsp_sdk::Error> {
         if self.db.read().await.has_verified_vid(vid)? {
+            tracing::trace!("VID {} already verified", vid);
             return Ok(());
         }
 
+        tracing::trace!("Resolving vid, {vid}");
         let (verified_vid, metadata) = tsp_sdk::vid::verify_vid(vid).await?;
 
+        tracing::trace!("storing resolved vid {vid}");
         // Immediately releases write lock
         self.db
             .write()
             .await
             .add_verified_vid(verified_vid, metadata)?;
-
+        tracing::trace!("stored resolved vid: {vid}");
         Ok(())
     }
 }
@@ -214,7 +217,7 @@ async fn new_message(
                                                  thread_id: Digest|
                -> Result<(), tsp_sdk::Error> {
             if let Some(nested_vid) = nested_vid {
-                tracing::debug!("Requested new nested relationship");
+                tracing::trace!("Requested new nested relationship");
                 let ((endpoint, message), my_new_nested_vid) = state
                     .db
                     .read()
@@ -230,15 +233,15 @@ async fn new_message(
 
                 Ok(())
             } else {
-                tracing::debug!("Received relationship request from {}", sender);
+                tracing::trace!("Received relationship request from {}", sender);
                 let route: Option<Vec<&str>> = route.as_ref().map(|vec| {
                     vec.iter()
                         .map(|vid| std::str::from_utf8(vid).unwrap())
                         .collect()
                 });
-                tracing::debug!("Requesting read lock to accept relationship request");
+                tracing::trace!("Requesting read lock to accept relationship request");
                 let store = state.db.read().await;
-                tracing::debug!("Acquired read lock to accept relationship request");
+                tracing::trace!("Acquired read lock to accept relationship request");
 
                 let (endpoint, message) = store.make_relationship_accept(
                     &receiver,
@@ -247,7 +250,7 @@ async fn new_message(
                     route.as_deref(),
                 )?;
 
-                tracing::debug!("Dropped read lock to accept relationship request");
+                tracing::trace!("Dropped read lock to accept relationship request");
                 drop(store);
 
                 transport::send_message(&endpoint, &message).await?;
@@ -314,9 +317,9 @@ async fn new_message(
                             .into_response();
                     }
 
-                    tracing::debug!("Acquiring read lock on AsyncStore");
+                    tracing::trace!("Acquiring read lock on AsyncStore");
                     let store = state.db.read().await;
-                    tracing::debug!(
+                    tracing::trace!(
                         "Sending relationship request from {} to {next_hop}",
                         state.did
                     );
@@ -329,7 +332,7 @@ async fn new_message(
                         return (StatusCode::BAD_REQUEST, "error forwarding message")
                             .into_response();
                     }
-                    tracing::debug!("Releasing lock guard on AsyncStore");
+                    tracing::trace!("Releasing lock guard on AsyncStore");
                     drop(store);
                 }
 
