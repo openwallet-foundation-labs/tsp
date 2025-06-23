@@ -1,37 +1,33 @@
-## API overview
+# API overview
 
-The `rust-tsp` library should allow endpoints to seal and open TSP messages. Note that the provided code is pseudo-Rust
-code;
-we abstract away from some implementation details.
-For a detailed and complete API reference, please take a look at <https://docs.rs/tsp-sdk/>.
+The `tsp_sdk` library should allow endpoints to seal and open TSP messages. Note that the provided code is pseudo-Rust code; we abstract away from some implementation details.
+For a detailed and complete API reference, please take a look at <https://docs.rs/tsp_sdk/>.
 
-### Secure Store
+## Secure Store
 
-A `SecureStore` allows the endpoint to store VID-public-key pairs and optionally metadata related to the VID, like a name or transport specification.
- 
+A [`SecureStore`](https://docs.rs/tsp_sdk/latest/tsp_sdk/struct.SecureStore.html) allows the endpoint to store VID-public-key pairs and optionally metadata related to the VID, like a name or transport specification.
+
 A `SecureStore` the data in memory. `SecureStorage` can be used to persist this data in a wallet.
 We provide the `AskarSecureStorage` implementation, which uses [Aries Askar](https://github.com/openwallet-foundation/askar) to securely store the data.
 See the [custom secure storage](../custom-secure-storage.md) page for documentation about how to implement custom secure storage solutions.
 
-The SDK also has the `AsyncSecureStore` interface that provides an asynchronous version of the `SecureStore`.
+The SDK also has the [`AsyncSecureStore`](https://docs.rs/tsp_sdk/latest/tsp_sdk/struct.AsyncSecureStore.html) interface that provides an asynchronous version of the `SecureStore`.
+The `AsyncSecureStore` is a higher level interface which also includes [`send`](https://docs.rs/tsp_sdk/latest/tsp_sdk/struct.AsyncSecureStore.html#method.send) and [`receive`](https://docs.rs/tsp_sdk/latest/tsp_sdk/struct.AsyncSecureStore.html#method.receive) functions to send or receive TSP messages using the built-in [transport layers](./transport.md).
 
-### Seal and open a TSP message
+## Seal and open a TSP message
 
-Seal means encrypting, authenticating, signing, and encoding a message; open is the reverse operation. Note that the
-Header may contain additional authenticated data. The sender and receiver VID are added to the header by this
-method.
+Seal means encrypting, authenticating, signing, and encoding a message; open is the reverse operation. Note that the header may contain additional authenticated data. The sender and receiver VID are added to the header by this method.
 All the methods below work on a `SecureStore` instance, which holds the cryptographic details and relations.
 
 ```rust
 {{#include ../../tsp_sdk/src/store.rs:seal_message-mbBook}}
-
 
 {{#include ../../tsp_sdk/src/store.rs:open_message-mbBook}}
 
 {{#include ../../tsp_sdk/src/store.rs:probe_sender-mbBook}}
 ```
 
-### Sign messages
+## Sign messages
 
 The following methods allow encoding and signing a message without an encrypted payload.
 
@@ -40,7 +36,7 @@ The following methods allow encoding and signing a message without an encrypted 
 pub fn sign_anycast(&self, sender: &str, message: &[u8]) -> Result<Vec<u8>, Error>;
 ```
 
-### Managing VID's
+## Managing VID's
 
 The `SecureStore` supports the following methods to manage the VIDs. This is just an extraction of the most relevant methods;
 see the [API docs](https://docs.rs/tsp_sdk/) for the full list.
@@ -96,7 +92,6 @@ We use the following Rust crates (library dependencies) in our implementation:
 
 ### Bindings
 
-The library is usable in other languages. 
+The library is usable in other languages.
 We designed the API in a way that allows the use with C, Python, and JavaScript.
 The SDK contains bindings for JavaScript, Node.js, and Python.
-

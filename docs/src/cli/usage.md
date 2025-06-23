@@ -181,13 +181,15 @@ The TSP CLI example application supports two types of decentralized identifiers:
 
 The TSP CLI can use two types of transport:
 
-* `https`, which forces the use of a broadcast server application (see `demo-server.rs`),
+* `https`, which forces the use of a broadcast server application (see `server.rs`),
    but will work well across firewalls.
 
 * `tcp`, which requires a direct network connection between two instances of the TSP CLI.
    In practice, you can use this only on a local network (or the same machine, if you use different ports), but
    this functionality is added to demonstrate the flexibility of having multiple transports.
    To use TCP transport, use the `--tcp address:port` flag to `tcp create`.
+
+The TSP SDK also provides a couple more transport types and provides methods to use custom transport solutions (see [transport layers](../transport.md)), although these are not available through the CLI.
 
 ### Pretty print messages
 

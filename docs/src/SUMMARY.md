@@ -15,9 +15,9 @@
 - [TSP technical specification](./TSP-technical-specification.md)
   - [CESR encoding](./cesr.md)
 - [SDK APIs](./sdk-apis.md)
+- [Transport layers](./transport.md)
 - [Custom VIDs](custom-vids.md)
   - [WebVH](webvh.md)
-- [Custom transport]()
 - [Custom secure storage](custom-secure-storage.md)
 - [Benchmark](benchmark.md)
 
