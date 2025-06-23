@@ -84,14 +84,21 @@ impl IntermediaryState {
     }
 
     async fn verify_vid(&self, vid: &str) -> Result<(), tsp_sdk::Error> {
+        if self.db.read().await.has_verified_vid(vid)? {
+            tracing::trace!("VID {} already verified", vid);
+            return Ok(());
+        }
+
+        tracing::trace!("Resolving vid, {vid}");
         let (verified_vid, metadata) = tsp_sdk::vid::verify_vid(vid).await?;
 
+        tracing::trace!("storing resolved vid {vid}");
         // Immediately releases write lock
         self.db
             .write()
             .await
             .add_verified_vid(verified_vid, metadata)?;
-
+        tracing::trace!("stored resolved vid: {vid}");
         Ok(())
     }
 }
@@ -210,6 +217,7 @@ async fn new_message(
                                                  thread_id: Digest|
                -> Result<(), tsp_sdk::Error> {
             if let Some(nested_vid) = nested_vid {
+                tracing::trace!("Requested new nested relationship");
                 let ((endpoint, message), my_new_nested_vid) = state
                     .db
                     .read()
@@ -225,17 +233,25 @@ async fn new_message(
 
                 Ok(())
             } else {
+                tracing::trace!("Received relationship request from {}", sender);
                 let route: Option<Vec<&str>> = route.as_ref().map(|vec| {
                     vec.iter()
                         .map(|vid| std::str::from_utf8(vid).unwrap())
                         .collect()
                 });
-                let (endpoint, message) = state.db.read().await.make_relationship_accept(
+                tracing::trace!("Requesting read lock to accept relationship request");
+                let store = state.db.read().await;
+                tracing::trace!("Acquired read lock to accept relationship request");
+
+                let (endpoint, message) = store.make_relationship_accept(
                     &receiver,
                     &sender,
                     thread_id,
                     route.as_deref(),
                 )?;
+
+                tracing::trace!("Dropped read lock to accept relationship request");
+                drop(store);
 
                 transport::send_message(&endpoint, &message).await?;
 
@@ -300,6 +316,24 @@ async fn new_message(
                         return (StatusCode::BAD_REQUEST, "error verifying next hop VID")
                             .into_response();
                     }
+
+                    tracing::trace!("Acquiring read lock on AsyncStore");
+                    let store = state.db.read().await;
+                    tracing::trace!(
+                        "Sending relationship request from {} to {next_hop}",
+                        state.did
+                    );
+                    if let Err(err) = store
+                        .send_relationship_request(&state.did, &next_hop, None)
+                        .await
+                    {
+                        let err = format!("error forming relation with VID {next_hop}: {err}");
+                        state.log_error(err).await;
+                        return (StatusCode::BAD_REQUEST, "error forwarding message")
+                            .into_response();
+                    }
+                    tracing::trace!("Releasing lock guard on AsyncStore");
+                    drop(store);
                 }
 
                 let (transport, message) = match state.db.read().await.make_next_routed_message(

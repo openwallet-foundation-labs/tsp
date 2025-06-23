@@ -14,7 +14,7 @@ should it used to build production applications.
 To create a test `did:web` identity run the following command:
 
 ```sh
-tsp create example
+tsp create --type web example
 ```
 
 Output:
@@ -28,7 +28,7 @@ INFO tsp: created identity did:web:did.teaspoon.world:endpoint:example
 We can add an alias to a VID using the --alias argument:
 
 ```sh
-tsp create example --alias example
+tsp create --type web example --alias example
 ```
 
 In subsequent commands we can type `example` instead of `did:web:did.teaspoon.world:endpoint:example`.
@@ -36,7 +36,7 @@ In subsequent commands we can type `example` instead of `did:web:did.teaspoon.wo
 Every `tsp` subcommand also supports the `--verbose` flag for a more verbose output:
 
 ```sh
-tsp --verbose create example --alias example
+tsp --verbose create --type web example --alias example
 ```
 
 Output:
@@ -50,7 +50,7 @@ TRACE tsp: persisted wallet
 ```
 
 ## Show wallet content
-In some cases it might be helpful to check what the wallet contains to understand the behavior of TSP.
+In some cases, it might be helpful to check what the wallet contains to understand the behavior of TSP.
 Therefore, the CLI provides a `show` command.
 The `show local` command will print all the local VIDs stored in the wallet,
 including their alias, transport, and parent.
@@ -88,7 +88,7 @@ did:web:q.teaspoon.world
 ## Resolve a VID
 
 VIDs created with the `tsp` tool are published on __did.teaspoon.world__ (unless you specify a different DID support server using the `--did-server` option).
-Currently, Rust TSP is able to verify `did:web` and `did:peer` VIDs.
+Currently, Rust TSP is able to verify `did:webvh`, `did:web` and `did:peer` VIDs.
 
 You can use the `tsp discover` command to discover DIDs that are hosted the DID server:
 ```sh
@@ -106,7 +106,7 @@ Output:
  INFO tsp: did:web:did.teaspoon.world:endpoint:example is verified and added to the wallet
 ```
 
-The verify command also support the alias argument:
+The verify command also supports the alias argument:
 
 ```sh
 tsp verify did:web:did.teaspoon.world:endpoint:example --alias example
@@ -114,7 +114,7 @@ tsp verify did:web:did.teaspoon.world:endpoint:example --alias example
 
 ## Send a message
 
-For this example we will create two identities with separate wallets - __alice__ and __bob__.
+For this example, we will create two identities with separate wallets - __alice__ and __bob__.
 
 You could perform the operations for __alice__ and __bob__ on different computers, for this example
 we will separate them by using distinct wallets.
@@ -124,13 +124,13 @@ Use the `--wallet` flag to specify the file name of the wallet.
 First create the identity for __alice__:
 
 ```sh
-tsp --wallet alice create alice --alias alice
+tsp --wallet alice create --type web alice --alias alice
 ```
 
 Then create the identity for __bob__:
 
 ```sh
-tsp --wallet bob create bob --alias bob
+tsp --wallet bob create --type web bob --alias bob
 ```
 
 Let __alice__ verify __bob__'s VID and add it to the wallet `alice`:
@@ -171,12 +171,13 @@ did:web:did.teaspoon.world:endpoint:alice3      lrQoJ1qYIK6HEHZKvpq3p+it6djYE2YI
 Hello Bob!
 ```
 
-### DID types supported
+### Supported DID types
 
 The TSP CLI example application supports two types of decentralized identifiers:
 
-* `did:web`, created using `tsp create`. These are resolved by finding a `.json` file on a server and checking its contents.
-* `did:peer`, created using `tsp create-peer`. These are essentially self-signed identifiers.
+* `did:web`, created using `tsp create --type web`. These are resolved by finding a `.json` file on a server and checking its contents.
+* `did:webvh`, created using `tsp create --type webvh`. These are resolved by finding a `.json` file on a server and checking its contents.
+* `did:peer`, created using `tsp create --type peer`. These are essentially self-signed identifiers.
 
 The TSP CLI can use two types of transport:
 
@@ -185,8 +186,8 @@ The TSP CLI can use two types of transport:
 
 * `tcp`, which requires a direct network connection between two instances of the TSP CLI.
    In practice, you can use this only on a local network (or the same machine, if you use different ports), but
-   this functionality is added to demonstrate the flexibility of having multiple transports. This transport mode
-   is only available to `did:peer`. To use TCP transport, use the `--tcp address:port` flag to `tcp create-peer`.
+   this functionality is added to demonstrate the flexibility of having multiple transports.
+   To use TCP transport, use the `--tcp address:port` flag to `tcp create`.
 
 The TSP SDK also provides a couple more transport types and provides methods to use custom transport solutions (see [transport layers](../transport.md)), although these are not available through the CLI.
 
@@ -209,7 +210,7 @@ CESR-encoded message:
  INFO tsp: sent message (11 bytes) from did:web:did.teaspoon.world:endpoint:alice to did:web:did.teaspoon.world:endpoint:bob
 ```
 
-In a terminal window supporting colors this will look like the following:
+In a terminal window supporting colors, this will look like the following:
 
 <code style="display: block; line-break: anywhere; padding: 1rem;">
 <strong style="color: #F66151;">-EABXAAA</strong><span style="color: #C061CB;"><strong>9VIDAAALAAA</strong>ZGlkOndlYjp0c3AtdGVzdC5vcmc6dXNlcjphbGljZQ</span><span style="color: #2A7BDE;"><strong>8VIDAAAKAA</strong>ZGlkOndlYjp0c3AtdGVzdC5vcmc6dXNlcjpib2I</span><span style="color: #E9AD0C;"><strong>4CAX</strong>5I7ozAGaFVqTxz8PJve0Tscor80fvds6hCf3yDUtOnHpXZ84uXFGXM-PcfLDWsRWvH7SoOG4UwQU8H-zEfBFs0skhjtk</span><span style="color: #33C7DE;"><strong>0BA</strong>trMgdWXM9Mfdgiq2awx6VAWCUUYCfjv1tdQqnjNc4eB-IOdBVA459uAFX2EGfdWWGp2OxxwbAutneudE9zYUBg</span>

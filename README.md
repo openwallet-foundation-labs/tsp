@@ -19,7 +19,7 @@ Then, you can use these commands to check out and test the repository:
 
 ```sh
 git clone https://github.com/openwallet-foundation-labs/tsp.git
-cd rust-tsp
+cd tsp
 cargo test
 ```
 
@@ -39,14 +39,14 @@ At this point in time, this repository is organized using [Cargo workspaces](htt
 The code is organizes is various directories:
 
 - `examples/` contains example programs
-- `tsp/` contains the TSP library, the source code is divided in the following modules / folders:
+- `tsp_sdk/` contains the TSP library, the source code is divided in the following modules / folders:
   - `cesr/` provides minimalist CESR encoding/decoding support that is sufficient for generating and parsing TSP messages; to keep complexity to a minimum, we explicitly do not provide a full CESR decoder/encoder.
   - `crypto/` contains the cryptographic core:
     - generating non-confidential messages signed using Ed25519
     - generating confidential messages encrypted using [HPKE-Auth](https://datatracker.ietf.org/doc/rfc9180/); using DHKEM(X25519, HKDF-SHA256) as asymmetric primitives and ChaCha20/Poly1305 as underlying AEAD encrypting scheme, and signed using Ed25519 to achieve **non-repudiation** (more precisely "strong receiver-unforgeability under chosen ciphertext" or [RUF-CTXT](https://eprint.iacr.org/2001/079) or [Insider-Auth](https://eprint.iacr.org/2020/1499.pdf)).
   - `definitions/` defines several common data structures, traits and error types that are used throughout the project.
   - `transport/` code (built using [tokio](https://tokio.rs/) foundations) for actually sending and receiving data over a transport layer.
-  - `vid/` contains code for handling _verified identifiers_ and identities. Currently, only an extended form of `did:web` is supported.
+  - `vid/` contains code for handling _verified identifiers_ and identities. Currently, `did:web` and `did:webvh` are supported.
 
 ## Documentation
 
@@ -68,7 +68,7 @@ cargo install --path examples/ --bin tsp
 To create an identity:
 
 ```sh
-tsp create --alias bob bob
+tsp create --type web --alias bob bob
 ```
 
 To verify a VID:
@@ -77,7 +77,7 @@ To verify a VID:
 tsp verify --alias alice did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice
 ```
 
-To listen for - and receive messages:
+To listen for, and receive messages:
 
 ```sh
 tsp receive --one bob
@@ -93,12 +93,12 @@ See <https://openwallet-foundation-labs.github.io/tsp/> for the full documentati
 
 ## Implement custom VIDs
 
-See [the documentation](/docs/src/custom-vids.md) on how to implement custom VIDs.
+See [the documentation](https://openwallet-foundation-labs.github.io/tsp/custom-vids.html) on how to implement custom VIDs.
 
 ## Intermediary server
 
-See [the documentation](/docs/src/intermediary.md) on how to create / set up an intermediary server.
+See [the documentation](https://openwallet-foundation-labs.github.io/tsp/intermediary.html) on how to create / set up an intermediary server.
 
 ## Technical specification
 
-See [the documentation](/docs/src/TSP-technical-specification.md) for the technical specification.
+See [the documentation](https://openwallet-foundation-labs.github.io/tsp/TSP-technical-specification.html) for the technical specification.

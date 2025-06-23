@@ -296,7 +296,8 @@ async fn run() -> Result<(), Error> {
     let server: String = args.server;
     let did_server = args.did_server;
 
-    let client = reqwest::ClientBuilder::new();
+    let client = reqwest::ClientBuilder::new()
+        .user_agent(format!("TSP CLI / {}", env!("CARGO_PKG_VERSION")));
     #[cfg(feature = "use_local_certificate")]
     let client = client.add_root_certificate({
         tracing::warn!("Using local root CA! (should only be used for local testing)");
@@ -342,7 +343,9 @@ async fn run() -> Result<(), Error> {
             info!("{vid} is verified and added to the wallet {}", &args.wallet);
         }
         Commands::Print { alias } => {
-            let vid = vid_wallet.try_resolve_alias(&alias)?;
+            let vid = vid_wallet
+                .resolve_alias(&alias)?
+                .ok_or(Error::MissingVid("Cannot find this alias".to_string()))?;
 
             print!("{vid}");
         }
@@ -373,9 +376,7 @@ async fn run() -> Result<(), Error> {
                 DidType::Peer => {
                     let private_vid = OwnedVid::new_did_peer(transport);
 
-                    if let Some(alias) = alias {
-                        vid_wallet.set_alias(alias, private_vid.identifier().to_string())?;
-                    }
+                    vid_wallet.set_alias(username, private_vid.identifier().to_string())?;
 
                     info!("created peer identity {}", private_vid.identifier());
                     private_vid
@@ -567,6 +568,7 @@ async fn run() -> Result<(), Error> {
             ask,
         } => {
             let non_confidential_data = non_confidential_data.as_deref().map(|s| s.as_bytes());
+            let receiver_vid = vid_wallet.try_resolve_alias(&receiver_vid)?;
 
             if !vid_wallet.has_verified_vid(&receiver_vid)? {
                 if !ask || prompt(format!("Do you want to verify receiver DID {receiver_vid}")) {
@@ -987,11 +989,12 @@ fn show_local(vids: &[ExportVid], aliases: &Aliases) -> Result<(), Error> {
         "X25519"
     };
     for vid in vids.iter().filter(|v| v.is_private()) {
-        let transport = if vid.transport.as_str() == "tsp://" {
+        let transport = if vid.transport.as_str() == "tsp://" || vid.parent_vid.is_some() {
             vid.parent_vid.clone().unwrap_or("None".to_string())
         } else {
             vid.transport.as_str().to_string()
         };
+        let transport = transport.replace("[vid_placeholder]", &vid.id);
 
         let alias = aliases
             .iter()
@@ -1116,6 +1119,14 @@ fn show_relations(vids: &[ExportVid], vid: Option<String>, aliases: &Aliases) ->
     };
 
     for vid in filtered_vids {
+        let transport = if vid.transport.as_str() == "tsp://" || vid.parent_vid.is_some() {
+            vid.parent_vid.clone().unwrap_or("None".to_string())
+        } else {
+            vid.transport.as_str().to_string()
+        };
+
+        let transport = transport.replace("[vid_placeholder]", &vid.id);
+
         let alias = aliases
             .iter()
             .find_map(|(a, id)| if id == &vid.id { Some(a.clone()) } else { None })
@@ -1144,7 +1155,8 @@ fn show_relations(vids: &[ExportVid], vid: Option<String>, aliases: &Aliases) ->
                     .unwrap_or("None".to_string())
             )
         }
-        println!("\t Transport: {}", vid.transport);
+        println!("\t Transport: {}", transport);
+        println!("\t Intermediaries: {:?}", vid.tunnel);
         println!(
             "\t public enc key: ({enc_key_type}) {}",
             Base64::encode_string(vid.public_enckey.deref())

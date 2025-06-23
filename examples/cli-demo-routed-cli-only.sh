@@ -27,15 +27,15 @@ fi
 for entity in a p q $Q2 b; do
     if cointoss; then
 	echo "------ $entity (identifier for ${entity%%[0-9]*}) uses did:web"
-	tsp --wallet "${entity%%[0-9]*}" create --alias $entity `randuser`
+	tsp --wallet "${entity%%[0-9]*}" create --type web --alias $entity `randuser`
     else
 	if cointoss; then
 	    echo "------ $entity (identifier for ${entity%%[0-9]*}) uses did:peer with https:// transport"
-	    tsp --wallet "${entity%%[0-9]*}" create-peer $entity
+	    tsp --wallet "${entity%%[0-9]*}" create --type peer $entity
 	else
 	    echo "------ $entity (identifier for ${entity%%[0-9]*}) uses did:peer with local transport"
 	    port=$((${port:-1024} + RANDOM % 1000))
-	    tsp --wallet "${entity%%[0-9]*}" create-peer --tcp localhost:$port $entity
+	    tsp --wallet "${entity%%[0-9]*}" create --type peer --tcp localhost:$port $entity
 	fi
     fi
 done
@@ -105,9 +105,11 @@ echo
 echo "==== send a routed message"
 
 sleep 2 && echo -n "Indirect Message from A to B was received!" | tsp --wallet a send -s a -r b &
-tsp --yes --wallet p receive --one p &
-tsp --yes --wallet q receive --one q &
-tsp --yes --wallet b receive --one b
+tsp --yes --wallet p receive p &
+tsp --yes --wallet q receive q &
+tsp --yes --wallet b receive b
+
+sleep 5
 
 echo "---- cleanup wallets"
 rm -f a.sqlite b.sqlite p.sqlite q.sqlite
