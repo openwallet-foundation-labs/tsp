@@ -23,31 +23,12 @@ method.
 All the methods below work on a `SecureStore` instance, which holds the cryptographic details and relations.
 
 ```rust
-/// Seal a TSP message.
-/// The message is encrypted, encoded, and signed using the key material
-/// of the sender and receiver, specified by their VIDs.
-///
-/// Note that the corresponding VIDs should first be added and configured
-/// using this secure store.
-/// 
-/// *Returns:* The receiver VID endpoint and TSP message
-pub fn seal_message(
-    &self,
-    sender: &str,
-    receiver: &str,
-    nonconfidential_data: Option<&[u8]>,
-    message: &[u8],
-) -> Result<(Url, Vec<u8>), Error>;
+{{#include ../../tsp_sdk/src/store.rs:seal_message-mbBook}}
 
-/// Decode an encrypted `message`, which has to be addressed to one of the VIDs in `receivers`, and has to have
-/// `verified_vids` as one of the senders.
-pub fn open_message<'a>(
-    &self,
-    message: &'a mut [u8],
-) -> Result<ReceivedTspMessage<&'a [u8]>, Error>;
 
-/// Get the sender from a CESR message
-fn probe_sender(message: &mut [u8]) -> Result<&str, Error>;
+{{#include ../../tsp_sdk/src/store.rs:open_message-mbBook}}
+
+{{#include ../../tsp_sdk/src/store.rs:probe_sender-mbBook}}
 ```
 
 ### Sign messages

@@ -412,6 +412,7 @@ impl SecureStore {
         Ok(())
     }
 
+    // ANCHOR: seal_message-mbBook
     /// Seal a TSP message.
     /// The message is encrypted, encoded, and signed using the key material
     /// of the sender and receiver, specified by their VIDs.
@@ -424,7 +425,8 @@ impl SecureStore {
         receiver: &str,
         nonconfidential_data: Option<&[u8]>,
         message: &[u8],
-    ) -> Result<(url::Url, Vec<u8>), Error> {
+    ) -> Result<(Url, Vec<u8>), Error> {
+        // ANCHOR_END: seal_message-mbBook
         self.seal_message_payload(
             sender,
             receiver,
@@ -630,20 +632,24 @@ impl SecureStore {
         }
     }
 
+    // ANCHOR: probe_sender-mbBook
     /// Get the sender from a CESR message
     fn probe_sender(message: &mut [u8]) -> Result<&str, Error> {
+        // ANCHOR_END: probe_sender-mbBook
         Ok(match crate::cesr::probe(message)? {
             EnvelopeType::EncryptedMessage { sender, .. } => std::str::from_utf8(sender)?,
             EnvelopeType::SignedMessage { sender, .. } => std::str::from_utf8(sender)?,
         })
     }
 
+    // ANCHOR: open_message-mbBook
     /// Decode an encrypted `message`, which has to be addressed to one of the VIDs in `receivers`, and has to have
     /// `verified_vids` as one of the senders.
     pub fn open_message<'a>(
         &self,
         message: &'a mut [u8],
     ) -> Result<ReceivedTspMessage<&'a [u8]>, Error> {
+        // ANCHOR_END: open_message-mbBook
         let probed_message = crate::cesr::probe(message)?;
 
         match probed_message {

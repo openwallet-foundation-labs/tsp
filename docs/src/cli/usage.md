@@ -186,8 +186,8 @@ The TSP CLI can use two types of transport:
 
 * `tcp`, which requires a direct network connection between two instances of the TSP CLI.
    In practice, you can use this only on a local network (or the same machine, if you use different ports), but
-   this functionality is added to demonstrate the flexibility of having multiple transports. This transport mode
-   is only available to `did:peer`. To use TCP transport, use the `--tcp address:port` flag to `tcp create-peer`.
+   this functionality is added to demonstrate the flexibility of having multiple transports.
+   To use TCP transport, use the `--tcp address:port` flag to `tcp create`.
 
 ### Pretty print messages
 
