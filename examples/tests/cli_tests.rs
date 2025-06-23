@@ -5,6 +5,7 @@ use rand::{Rng, thread_rng};
 use std::process::Command as StdCommand;
 use std::thread;
 use std::time::Duration;
+
 fn random_string(n: usize) -> String {
     thread_rng()
         .sample_iter(&Alphanumeric)
@@ -204,6 +205,60 @@ fn test_send_command_unverified_receiver_ask_flag() {
             .stderr(predicate::str::contains("received relationship request"))
             .success();
         });
+    });
+
+    clean_wallet();
+}
+
+#[test]
+#[serial_test::serial(clean_wallet)]
+fn test_request_command_unverified_receiver_default() {
+    clean_wallet();
+
+    // create a new sender identity to send the request
+    let random_sender_name = create_wallet("alice", "web");
+
+    // create a new receiver identity
+    let random_receiver_name = create_wallet("bob", "web");
+
+    // print the sender's DID
+    let alice_did = print_did(&random_sender_name, "alice");
+
+    // print the receiver's DID
+    let bob_did = print_did(&random_receiver_name, "bob");
+
+    thread::scope(|s| {
+        s.spawn(|| {
+            // send a relationship request from alice to bob
+            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            cmd.args([
+                "--wallet",
+                random_sender_name.as_str(),
+                "request",
+                "-s",
+                "alice",
+                "-r",
+                &bob_did,
+            ])
+            .assert()
+            .stderr(predicate::str::contains("sent relationship request"))
+            .success();
+        });
+        // s.spawn(|| {
+        //     // receive the relationship request
+        //     let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+        //     cmd.args([
+        //         "--wallet",
+        //         random_receiver_name.as_str(),
+        //         "receive",
+        //         "--one",
+        //         &bob_did,
+        //     ])
+        //     .assert()
+        //     .stderr(predicate::str::contains("received relationship request"))
+        //     .stdout(predicate::str::contains(&alice_did))
+        //     .success();
+        // });
     });
 
     clean_wallet();
