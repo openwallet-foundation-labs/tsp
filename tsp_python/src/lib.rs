@@ -32,8 +32,8 @@ fn wait_for<F: std::future::Future>(future: F) -> PyResult<F::Output> {
 }
 
 #[pyfunction]
-fn color_print(message: &[u8]) -> PyResult<()> {
-    tsp_sdk::cesr::color_print(message).map_err(py_exception)
+fn color_print(message: &[u8]) -> PyResult<String> {
+    tsp_sdk::cesr::color_format(message).map_err(py_exception)
 }
 
 #[pyclass]

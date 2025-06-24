@@ -9,7 +9,7 @@ CryptoType = tsp_python.CryptoType
 SignatureType = tsp_python.SignatureType
 
 
-def color_print(message: bytes):
+def color_print(message: bytes) -> str:
     return tsp_python.color_print(message)
 
 
