@@ -123,30 +123,30 @@ pub fn probe(stream: &mut [u8]) -> Result<EnvelopeType, error::DecodeError> {
     })
 }
 
-fn color_print_part(part: Option<Part>, color: u8) {
-    if let Some(Part { prefix, data }) = part {
-        print!(
-            "\x1b[1;{color}m{}\x1b[0;{color}m{}\x1b[0m",
-            Base64UrlUnpadded::encode_string(prefix),
-            Base64UrlUnpadded::encode_string(data)
-        )
-    }
-}
-
-#[allow(clippy::option_map_unit_fn)]
-pub fn color_print(message: &[u8]) -> Result<(), DecodeError> {
+/// Format a TSP message using ANSI escape codes to color the different parts
+pub fn color_format(message: &[u8]) -> Result<String, DecodeError> {
     let parts = open_message_into_parts(message)?;
+    let parts = [
+        (Some(parts.prefix), 31),
+        (Some(parts.sender), 35),
+        (parts.receiver, 34),
+        (parts.nonconfidential_data, 32),
+        (parts.ciphertext, 33),
+        (Some(parts.signature), 36),
+    ];
 
-    color_print_part(Some(parts.prefix), 31);
-    color_print_part(Some(parts.sender), 35);
-    color_print_part(parts.receiver, 34);
-    color_print_part(parts.nonconfidential_data, 32);
-    color_print_part(parts.ciphertext, 33);
-    color_print_part(Some(parts.signature), 36);
+    let mut out = String::new();
+    for (part, color) in parts {
+        if let Some(part) = part {
+            out.push_str(&format!(
+                "\x1b[1;{color}m{}\x1b[0;{color}m{}\x1b[0m",
+                Base64UrlUnpadded::encode_string(part.prefix),
+                Base64UrlUnpadded::encode_string(part.data)
+            ));
+        }
+    }
 
-    println!();
-
-    Ok(())
+    Ok(out)
 }
 
 #[cfg(test)]

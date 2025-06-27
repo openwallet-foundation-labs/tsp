@@ -15,7 +15,7 @@ use tsp_sdk::{
     Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
     RelationshipStatus, SecureStorage, VerifiedVid, Vid,
     cesr::{
-        color_print, {self},
+        color_format, {self},
     },
     definitions::Digest,
     vid::{VidError, verify_vid},
@@ -609,7 +609,7 @@ async fn run() -> Result<(), Error> {
                     .seal_message(&sender_vid, &receiver_vid, non_confidential_data, &message)?
                     .1;
                 println!("CESR-encoded message:");
-                color_print(&cesr_message).unwrap();
+                println!("{}", color_format(&cesr_message).unwrap());
             }
 
             info!(
