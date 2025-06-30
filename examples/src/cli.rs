@@ -40,7 +40,7 @@ impl FromStr for DidType {
             "peer" => Ok(DidType::Peer),
             #[cfg(feature = "create-webvh")]
             "webvh" => Ok(DidType::Webvh),
-            _ => Err(format!("invalid did type: {}", s)),
+            _ => Err(format!("invalid did type: {s}")),
         }
     }
 }
@@ -878,7 +878,7 @@ async fn run() -> Result<(), Error> {
                                 nested_vid.clone().unwrap_or("none".to_string())
                             );
                             if let Some(nested_vid) = nested_vid {
-                                println!("{}", nested_vid);
+                                println!("{nested_vid}");
                             }
                             break;
                         }
@@ -1002,8 +1002,8 @@ fn show_local(vids: &[ExportVid], aliases: &Aliases) -> Result<(), Error> {
             .unwrap_or("None".to_string());
 
         println!("{}", &vid.id);
-        println!("\t Alias: {}", alias);
-        println!("\t Transport: {}", transport);
+        println!("\t Alias: {alias}");
+        println!("\t Transport: {transport}");
         if vid.id.starts_with("did:web") {
             println!(
                 "\t DID doc: {}",
@@ -1134,7 +1134,7 @@ fn show_relations(vids: &[ExportVid], vid: Option<String>, aliases: &Aliases) ->
 
         println!("{}", &vid.id);
         println!("\t Relation Status: {}", vid.relation_status);
-        println!("\t Alias: {}", alias);
+        println!("\t Alias: {alias}");
         if vid.id.starts_with("did:web") {
             println!(
                 "\t DID doc: {}",
@@ -1155,7 +1155,7 @@ fn show_relations(vids: &[ExportVid], vid: Option<String>, aliases: &Aliases) ->
                     .unwrap_or("None".to_string())
             )
         }
-        println!("\t Transport: {}", transport);
+        println!("\t Transport: {transport}");
         println!("\t Intermediaries: {:?}", vid.tunnel);
         println!(
             "\t public enc key: ({enc_key_type}) {}",

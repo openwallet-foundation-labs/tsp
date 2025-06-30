@@ -863,8 +863,7 @@ impl SecureStore {
                                 }
                             }
                             _ => Err(Error::Relationship(format!(
-                                "no bidirectional relationship with {}, not accepting new identifier",
-                                sender
+                                "no bidirectional relationship with {sender}, not accepting new identifier"
                             ))),
                         }
                     }
@@ -1111,8 +1110,7 @@ impl SecureStore {
             self.get_vid(receiver)?.relation_status
         else {
             return Err(Error::Relationship(format!(
-                "no relationship with {}",
-                receiver
+                "no relationship with {receiver}"
             )));
         };
 
@@ -1186,16 +1184,14 @@ impl SecureStore {
         let mut vids = self.vids.write()?;
         let Some(context) = vids.get_mut(other_vid) else {
             return Err(Error::Relationship(format!(
-                "unknown other vid {}",
-                other_vid
+                "unknown other vid {other_vid}"
             )));
         };
 
         let RelationshipStatus::Unidirectional { thread_id: digest } = context.relation_status
         else {
             return Err(Error::Relationship(format!(
-                "no unidirectional relationship with {}, cannot upgrade",
-                other_vid
+                "no unidirectional relationship with {other_vid}, cannot upgrade"
             )));
         };
 
@@ -1226,7 +1222,7 @@ impl SecureStore {
             ..
         } = context.relation_status
         else {
-            return Err(Error::Relationship(format!("no relationship with {}", vid)));
+            return Err(Error::Relationship(format!("no relationship with {vid}")));
         };
 
         outstanding_nested_thread_ids.push(thread_id);
@@ -1243,8 +1239,7 @@ impl SecureStore {
         let mut vids = self.vids.write()?;
         let Some(context) = vids.get_mut(parent_vid) else {
             return Err(Error::Relationship(format!(
-                "unknown parent vid {}",
-                parent_vid
+                "unknown parent vid {parent_vid}"
             )));
         };
 
@@ -1254,8 +1249,7 @@ impl SecureStore {
         } = context.relation_status
         else {
             return Err(Error::Relationship(format!(
-                "no relationship set for parent vid {}",
-                parent_vid
+                "no relationship set for parent vid {parent_vid}"
             )));
         };
 
@@ -1265,16 +1259,14 @@ impl SecureStore {
             .position(|&x| x == thread_id)
         else {
             return Err(Error::Relationship(format!(
-                "cannot find thread_id for nested vid {}",
-                nested_vid
+                "cannot find thread_id for nested vid {nested_vid}"
             )));
         };
         outstanding_nested_thread_ids.remove(index);
 
         let Some(context) = vids.get_mut(nested_vid) else {
             return Err(Error::Relationship(format!(
-                "unknown nested vid {}",
-                nested_vid
+                "unknown nested vid {nested_vid}"
             )));
         };
 
