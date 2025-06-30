@@ -451,8 +451,8 @@ async fn run() -> Result<(), Error> {
                     private_vid
                 }
             };
-            let (_, metadata) = verify_vid(private_vid.identifier())
-                .await
+            let (_, metadata) = dbg!(verify_vid(private_vid.identifier())
+                .await)
                 .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
             vid_wallet.add_private_vid(private_vid.clone(), metadata)?;
         }
@@ -1066,6 +1066,7 @@ async fn create_did_web(
 
     let private_vid = OwnedVid::bind(&did, transport);
     info!("created identity {}", private_vid.identifier());
+    println!("{}", serde_json::to_string_pretty(&private_vid).unwrap());
 
     let _: Vid = match client
         .post(format!("https://{did_server}/add-vid"))

@@ -4,7 +4,7 @@ services:
       context: .
       target: server
       args:
-        FEATURE_FLAGS: use_local_certificate
+        FEATURE_FLAGS: use_local_certificate,pq
     command: ["localhost:3000", "--port", "3010", "--did-server", "https://localhost:3001"]
     network_mode: host
 
@@ -20,7 +20,7 @@ services:
       context: .
       target: intermediary
       args:
-        FEATURE_FLAGS: use_local_certificate
+        FEATURE_FLAGS: use_local_certificate,pq
     command: [ "--port", "3011", "localhost:3001" ]
     network_mode: host
 
@@ -36,7 +36,7 @@ services:
       context: .
       target: intermediary
       args:
-        FEATURE_FLAGS: use_local_certificate
+        FEATURE_FLAGS: use_local_certificate,pq
     command: [ "--port", "3012", "localhost:3002" ]
     network_mode: host
 
@@ -52,7 +52,7 @@ services:
       context: .
       target: did-server
       args:
-        FEATURE_FLAGS: use_local_certificate
+        FEATURE_FLAGS: use_local_certificate,pq
     command: [ "localhost:3003", "--port", "3013", "--transport", "https://localhost:3000" ]
     network_mode: host
 

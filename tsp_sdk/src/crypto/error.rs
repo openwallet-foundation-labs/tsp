@@ -1,3 +1,5 @@
+use std::array::TryFromSliceError;
+
 #[derive(thiserror::Error, Debug)]
 pub enum CryptoError {
     #[error("failed to encode message {0}")]
@@ -11,6 +13,8 @@ pub enum CryptoError {
     CryptographicHpke(#[from] hpke::HpkeError),
     #[error("encryption or decryption failed")]
     CryptographicNacl(#[from] crypto_box::aead::Error),
+    #[error("Wrong key length")]
+    Key(#[from] TryFromSliceError),
     #[error("could not verify signature for sender VID {0}: {1}")]
     Verify(String, ed25519_dalek::ed25519::Error),
     #[error("unexpected recipient")]

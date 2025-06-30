@@ -14,23 +14,23 @@ use serde::{Deserialize, Serialize};
 
 pub type Digest = [u8; 32];
 
-#[cfg(feature = "pq")]
-pub const PRIVATE_KEY_SIZE: usize = 2432;
-
-#[cfg(feature = "pq")]
-pub const PUBLIC_KEY_SIZE: usize = 1216;
-
-#[cfg(not(feature = "pq"))]
-pub const PRIVATE_KEY_SIZE: usize = 32;
-
-#[cfg(not(feature = "pq"))]
-pub const PUBLIC_KEY_SIZE: usize = 32;
+// #[cfg(feature = "pq")]
+// pub const PRIVATE_KEY_SIZE: usize = 2432;
+//
+// #[cfg(feature = "pq")]
+// pub const PUBLIC_KEY_SIZE: usize = 1216;
+//
+// #[cfg(not(feature = "pq"))]
+// pub const PRIVATE_KEY_SIZE: usize = 32;
+//
+// #[cfg(not(feature = "pq"))]
+// pub const PUBLIC_KEY_SIZE: usize = 32;
 
 #[derive(Clone, Zeroize)]
-pub struct PrivateKeyData([u8; PRIVATE_KEY_SIZE]);
+pub struct PrivateKeyData(Vec<u8>);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PublicKeyData([u8; PUBLIC_KEY_SIZE]);
+pub struct PublicKeyData(Vec<u8>);
 
 pub const PRIVATE_SIGNING_KEY_SIZE: usize = 32;
 
@@ -226,6 +226,12 @@ impl<Bytes: AsRef<[u8]>> fmt::Display for Payload<'_, Bytes> {
     }
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Deserialize, Serialize)]
+pub enum VidEncryptionKeyType {
+    X25519,
+    X25519Kyber768Draft00
+}
+
 // ANCHOR: custom-vid-mbBook
 pub trait VerifiedVid: Send + Sync {
     /// A identifier of the Vid as bytes (for inclusion in TSP packets)
@@ -239,6 +245,9 @@ pub trait VerifiedVid: Send + Sync {
 
     /// The encryption key associated with this Vid
     fn encryption_key(&self) -> &PublicKeyData;
+    
+    /// The encryption key type associated with this Vid
+    fn encryption_key_type(&self) -> VidEncryptionKeyType;
 }
 
 pub trait PrivateVid: VerifiedVid + Send + Sync {
@@ -292,20 +301,20 @@ impl From<[u8; PUBLIC_VERIFICATION_KEY_SIZE]> for PublicVerificationKeyData {
     }
 }
 
-impl From<[u8; PRIVATE_KEY_SIZE]> for PrivateKeyData {
-    fn from(data: [u8; PRIVATE_KEY_SIZE]) -> PrivateKeyData {
+impl From<Vec<u8>> for PrivateKeyData {
+    fn from(data: Vec<u8>) -> PrivateKeyData {
         PrivateKeyData(data)
     }
 }
 
-impl From<[u8; PUBLIC_KEY_SIZE]> for PublicKeyData {
-    fn from(data: [u8; PUBLIC_KEY_SIZE]) -> PublicKeyData {
+impl From<Vec<u8>> for PublicKeyData {
+    fn from(data: Vec<u8>) -> PublicKeyData {
         PublicKeyData(data)
     }
 }
 
 impl Deref for PublicKeyData {
-    type Target = [u8; PUBLIC_KEY_SIZE];
+    type Target = Vec<u8>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -313,7 +322,7 @@ impl Deref for PublicKeyData {
 }
 
 impl Deref for PrivateKeyData {
-    type Target = [u8; PRIVATE_KEY_SIZE];
+    type Target = Vec<u8>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

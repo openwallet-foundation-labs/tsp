@@ -2,12 +2,12 @@ use base64ct::{Base64UrlUnpadded, Encoding};
 use serde::{Deserialize, Serialize};
 
 use crate::definitions::{
-    PRIVATE_KEY_SIZE, PRIVATE_SIGNING_KEY_SIZE, PUBLIC_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE,
     PrivateKeyData, PrivateSigningKeyData, PublicKeyData, PublicVerificationKeyData,
+    PRIVATE_SIGNING_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE,
 };
 
 #[cfg(feature = "async")]
-use super::{OwnedVid, error::VidError};
+use super::{error::VidError, OwnedVid};
 
 #[cfg(feature = "async")]
 use std::path::Path;
@@ -74,9 +74,6 @@ impl<'de> Deserialize<'de> for PublicKeyData {
     {
         let encoded: &str = Deserialize::deserialize(deserializer)?;
         let key = Base64UrlUnpadded::decode_vec(encoded).map_err(serde::de::Error::custom)?;
-        let key: [u8; PUBLIC_KEY_SIZE] = key
-            .try_into()
-            .map_err(|_| serde::de::Error::custom("key data has incorrect length"))?;
 
         Ok(key.into())
     }
@@ -104,9 +101,6 @@ impl<'de> Deserialize<'de> for PrivateKeyData {
     {
         let encoded: &str = Deserialize::deserialize(deserializer)?;
         let key = Base64UrlUnpadded::decode_vec(encoded).map_err(serde::de::Error::custom)?;
-        let key: [u8; PRIVATE_KEY_SIZE] = key
-            .try_into()
-            .map_err(|_| serde::de::Error::custom("key data has incorrect length"))?;
 
         Ok(key.into())
     }
