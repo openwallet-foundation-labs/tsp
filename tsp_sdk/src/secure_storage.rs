@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     Error, ExportVid, RelationshipStatus,
     definitions::{
-        PRIVATE_KEY_SIZE, PRIVATE_SIGNING_KEY_SIZE, PUBLIC_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE,
+        PRIVATE_SIGNING_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE,
     },
     store::{Aliases, WebvhUpdateKeys},
 };
@@ -14,6 +14,7 @@ use aries_askar::{
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use crate::definitions::VidEncryptionKeyType;
 
 // ANCHOR: custom-secure-storage-mbBook
 #[async_trait]
@@ -50,6 +51,7 @@ pub struct AskarSecureStorage {
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct Metadata {
     id: String,
+    enc_key_type: VidEncryptionKeyType,
     transport: String,
     relation_status: RelationshipStatus,
     relation_vid: Option<String>,
@@ -205,6 +207,7 @@ impl SecureStorage for AskarSecureStorage {
 
             if let Ok(data) = serde_json::to_string(&Metadata {
                 id: id.to_string(),
+                enc_key_type: export.enc_key_type,
                 transport: export.transport.to_string(),
                 relation_status: export.relation_status,
                 relation_vid: export.relation_vid,
@@ -323,7 +326,7 @@ impl SecureStorage for AskarSecureStorage {
                     Error::DecodeState("could not parse verification key bytes from storage")
                 })?;
 
-            let encryption_bytes: [u8; PUBLIC_KEY_SIZE] = encryption_key
+            let encryption_bytes: Vec<u8> = encryption_key
                 .load_local_key()?
                 .to_public_bytes()?
                 .as_ref()
@@ -339,6 +342,7 @@ impl SecureStorage for AskarSecureStorage {
                 })?,
                 public_sigkey: verification_bytes.into(),
                 public_enckey: encryption_bytes.into(),
+                enc_key_type: data.enc_key_type,
                 sigkey: None,
                 enckey: None,
                 relation_status: data.relation_status,
@@ -364,7 +368,7 @@ impl SecureStorage for AskarSecureStorage {
                         Error::DecodeState("could not parse signing key bytes from storage")
                     })?;
 
-                let decryption_key: [u8; PRIVATE_KEY_SIZE] = decryption_key
+                let decryption_key: Vec<u8> = decryption_key
                     .load_local_key()?
                     .to_secret_bytes()?
                     .as_ref()

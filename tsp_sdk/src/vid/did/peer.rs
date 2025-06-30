@@ -1,6 +1,8 @@
-use crate::{Vid, definitions::VerifiedVid, vid::error::VidError};
+use crate::definitions::VidEncryptionKeyType;
+use crate::{definitions::VerifiedVid, vid::error::VidError, Vid};
 use base64ct::{Base64UrlUnpadded, Encoding};
 use serde_json::json;
+use tracing::log::trace;
 use url::Url;
 
 pub(crate) const SCHEME: &str = "peer";
@@ -21,10 +23,23 @@ pub fn encode_did_peer(vid: &Vid) -> String {
         .into_string();
 
     v.clear();
-    // multicodec for x25519-pub
-    v.push(0xec);
-    // key bytes length
-    v.push(0x20);
+    match vid.enc_key_type {
+        VidEncryptionKeyType::X25519 => {
+            trace!("serializing x25519 encryption key");
+            // multicodec for x25519-pub
+            v.push(0xec);
+            // key bytes length
+            v.push(0x20);
+        }
+        VidEncryptionKeyType::X25519Kyber768Draft00 => {
+            trace!("serializing X25519Kyber768Draft00 encryption key");
+            // private use area (0x300000) => encoded as unsigned varint, see: https://github.com/multiformats/unsigned-varint
+            v.extend_from_slice(&0x8080c001u32.to_le_bytes());
+            // key bytes length (1216 bytes) => encoded as unsigned varint, see: https://github.com/multiformats/unsigned-varint
+            v.extend_from_slice(&0xc009u16.to_le_bytes());
+        }
+    }
+
     v.extend_from_slice(vid.encryption_key().as_ref());
 
     let encryption_key = bs58::encode(&v)
@@ -57,9 +72,10 @@ pub fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
 
     let mut public_sigkey = None;
     let mut public_enckey = None;
+    let mut enc_key_type = None;
     let mut transport = None;
 
-    let mut buf = [0; 34];
+    let mut buf = [0; 1222];
 
     for part in peer_parts {
         match &part[0..2] {
@@ -71,16 +87,35 @@ pub fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
                     .map_err(|_| {
                         VidError::ResolveVid("invalid encoded encryption key in did:peer")
                     })?;
+                
+                dbg!(count);
+                dbg!(&buf[..5]);
 
-                debug_assert_eq!(count, 34);
-
-                // multicodec for x25519-pub + length 32 bytes
-                if let [0xec, 0x20, rest @ ..] = buf {
-                    public_enckey = rest.last_chunk().map(|c| (*c).into())
-                } else {
-                    return Err(VidError::ResolveVid(
-                        "invalid encryption key type in did:peer",
-                    ));
+                match buf {
+                    // multicodec for x25519-pub + length 32 bytes
+                    [0xec, 0x20, rest @ ..] => {
+                        trace!("found x25519 encryption key");
+                        public_enckey = rest[..0x20].to_vec().into();
+                        enc_key_type = Some(VidEncryptionKeyType::X25519)
+                    }
+                    [
+                        0b10000000,
+                        0b10000000,
+                        0b11000000,
+                        0b00000001,
+                        0b11000000,
+                        0b00001001,
+                        rest @ ..,
+                    ] => {
+                        trace!("found X25519Kyber768Draft00 encryption key");
+                        public_enckey = rest[..1216].to_vec().into();
+                        enc_key_type = Some(VidEncryptionKeyType::X25519Kyber768Draft00)
+                    }
+                    _ => {
+                        return Err(VidError::ResolveVid(
+                            "invalid encryption key type in did:peer",
+                        ));
+                    }
                 }
             }
             // Authentication (Verification) + base58 multibase prefix
@@ -137,7 +172,8 @@ pub fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
                 id: parts.join(":"),
                 transport,
                 public_sigkey,
-                public_enckey,
+                enc_key_type: enc_key_type.unwrap_or(VidEncryptionKeyType::X25519),
+                public_enckey: public_enckey.into(),
             })
         }
         (None, _, _) => Err(VidError::ResolveVid("missing verification key in did:peer")),

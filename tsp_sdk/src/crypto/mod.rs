@@ -147,15 +147,14 @@ pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
     let (private, public) = <Kem as hpke::Kem>::gen_keypair(&mut OsRng);
 
     (
-        Into::<[u8; 32]>::into(private.to_bytes()).into(),
-        Into::<[u8; 32]>::into(public.to_bytes()).into(),
+        private.to_bytes().to_vec().into(),
+        public.to_bytes().to_vec().into(),
     )
 }
 
 #[cfg(feature = "pq")]
 /// Generate a new encryption / decryption key pair
 pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
-    use crate::definitions::{PRIVATE_KEY_SIZE, PUBLIC_KEY_SIZE};
     use hpke_pq::Serializable;
 
     let (private, public) = <Kem as hpke_pq::Kem>::gen_keypair(&mut OsRng);
@@ -164,12 +163,8 @@ pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
     let public = public.to_bytes();
 
     (
-        TryInto::<[u8; PRIVATE_KEY_SIZE]>::try_into(private.as_slice())
-            .unwrap()
-            .into(),
-        TryInto::<[u8; PUBLIC_KEY_SIZE]>::try_into(public.as_slice())
-            .unwrap()
-            .into(),
+        private.as_slice().to_vec().into(),
+        public.as_slice().to_vec().into(),
     )
 }
 
