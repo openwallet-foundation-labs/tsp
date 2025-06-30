@@ -30,84 +30,119 @@ class SecureStore:
     def __init__(self, *args, **kwargs):
         self.inner = tsp_python.Store(*args, **kwargs)
 
-    def add_private_vid(self, *args, **kwargs):
+    def add_private_vid(
+        self, vid: str, alias: str | None = None, metadata: dict[str, any] | None = None
+    ):
         with Wallet(self):
-            return self.inner.add_private_vid(*args, **kwargs)
+            self.inner.add_private_vid(vid, alias, metadata)
 
-    def forget_vid(self, *args, **kwargs):
+    def forget_vid(self, vid: str):
         with Wallet(self):
-            return self.inner.forget_vid(*args, **kwargs)
+            self.inner.forget_vid(vid)
 
-    def add_verified_owned_vid(self, *args, **kwargs):
+    def add_verified_owned_vid(
+        self, vid: str, alias: str | None = None, metadata: dict | None = None
+    ):
         with Wallet(self):
-            return self.inner.add_verified_owned_vid(*args, **kwargs)
+            self.inner.add_verified_owned_vid(vid, alias, metadata)
 
-    def resolve_alias(self, *args, **kwargs):
+    def resolve_alias(self, alias: str) -> str | None:
         with Wallet(self):
-            return self.inner.resolve_alias(*args, **kwargs)
+            return self.inner.resolve_alias(alias)
 
-    def verify_vid(self, did: str, alias=None) -> str:
+    def verify_vid(self, did: str, alias: str | None = None) -> str:
         """Verify did document, add vid to store, and return endpoint"""
         with Wallet(self):
             return self.inner.verify_vid(did, alias)
 
-    def get_vid_endpoint(self, *args, **kwargs):
+    def set_route_for_vid(self, vid: str, route: list[str]):
         with Wallet(self):
-            return self.inner.get_vid_endpoint(*args, **kwargs)
+            self.inner.set_route_for_vid(vid, route)
 
-    def set_route_for_vid(self, *args, **kwargs):
+    def seal_message(
+        self,
+        sender: str,
+        receiver: str,
+        message: bytes,
+        nonconfidential_data: bytes | None = None,
+    ) -> tuple[str, bytes]:
         with Wallet(self):
-            return self.inner.set_route_for_vid(*args, **kwargs)
+            return self.inner.seal_message(
+                sender, receiver, message, nonconfidential_data
+            )
 
-    def seal_message(self, *args, **kwargs):
+    def send(
+        self,
+        sender: str,
+        receiver: str,
+        message: bytes,
+        nonconfidential_data: bytes | None = None,
+    ):
         with Wallet(self):
-            return self.inner.seal_message(*args, **kwargs)
+            self.inner.send(sender, receiver, message, nonconfidential_data)
 
-    def send(self, *args, **kwargs):
+    def receive(self, vid: str):
         with Wallet(self):
-            return self.inner.send(*args, **kwargs)
+            message = self.inner.receive(vid)
+            if message is None:
+                return None
+            return ReceivedTspMessage.from_flat(message)
 
-    def receive(self, *args, **kwargs):
+    def get_sender_receiver(self, message: bytes) -> tuple[str, str]:
         with Wallet(self):
-            return self.inner.receive(*args, **kwargs)
+            return self.inner.get_sender_receiver(message)
 
-    def get_sender_receiver(self, *args, **kwargs):
+    def open_message(self, message: bytes):
         with Wallet(self):
-            return self.inner.get_sender_receiver(*args, **kwargs)
-
-    def open_message(self, *args, **kwargs):
-        with Wallet(self):
-            flat_message = self.inner.open_message(*args, **kwargs)
+            flat_message = self.inner.open_message(message)
             return ReceivedTspMessage.from_flat(flat_message)
 
-    def make_relationship_request(self, *args, **kwargs):
+    def make_relationship_request(
+        self, sender: str, receiver: str, route: list[str] | None = None
+    ) -> tuple[str, bytes]:
         with Wallet(self):
-            return self.inner.make_relationship_request(*args, **kwargs)
+            return self.inner.make_relationship_request(sender, receiver, route)
 
-    def make_relationship_accept(self, *args, **kwargs):
+    def make_relationship_accept(
+        self,
+        sender: str,
+        receiver: str,
+        thread_id: bytes,
+        route: list[str] | None = None,
+    ) -> tuple[str, bytes]:
         with Wallet(self):
-            return self.inner.make_relationship_accept(*args, **kwargs)
+            return self.inner.make_relationship_accept(
+                sender, receiver, thread_id, route
+            )
 
-    def make_relationship_cancel(self, *args, **kwargs):
+    def make_relationship_cancel(self, sender: str, receiver: str) -> tuple[str, bytes]:
         with Wallet(self):
-            return self.inner.make_relationship_cancel(*args, **kwargs)
+            return self.inner.make_relationship_cancel(sender, receiver)
 
-    def make_nested_relationship_request(self, *args, **kwargs):
+    def make_nested_relationship_request(
+        self, parent_sender: str, receiver: str
+    ) -> tuple[tuple[str, bytes], tsp_python.OwnedVid]:
         with Wallet(self):
-            return self.inner.make_nested_relationship_request(*args, **kwargs)
+            return self.inner.make_nested_relationship_request(parent_sender, receiver)
 
-    def make_nested_relationship_accept(self, *args, **kwargs):
+    def make_nested_relationship_accept(
+        self, sender: str, receiver: str, thread_id: bytes
+    ) -> tuple[tuple[str, bytes], tsp_python.OwnedVid]:
         with Wallet(self):
-            return self.inner.make_nested_relationship_accept(*args, **kwargs)
+            return self.inner.make_nested_relationship_accept(
+                sender, receiver, thread_id
+            )
 
-    def forward_routed_message(self, *args, **kwargs):
+    def forward_routed_message(
+        self, next_hop: str, route: list[bytes], opaque_payload: bytes
+    ):
         with Wallet(self):
-            return self.inner.forward_routed_message(*args, **kwargs)
+            return self.inner.forward_routed_message(next_hop, route, opaque_payload)
 
 
 class ReceivedTspMessage:
     @staticmethod
-    def from_flat(msg: FlatReceivedTspMessage):
+    def from_flat(msg: tsp_python.FlatReceivedTspMessage):
         match msg.variant:
             case ReceivedTspMessageVariant.GenericMessage:
                 return GenericMessage(

@@ -355,7 +355,7 @@ fn format_part(title: &str, part: &tsp_sdk::cesr::Part, plain: Option<&[u8]>) ->
 
     json!({
         "title": title,
-        "prefix": part.prefix.iter().map(|b| format!("{:#04x}", b)).collect::<Vec<String>>().join(" "),
+        "prefix": part.prefix.iter().map(|b| format!("{b:#04x}")).collect::<Vec<String>>().join(" "),
         "data": full,
         "plain": plain
             .and_then(|b| std::str::from_utf8(b).ok())
