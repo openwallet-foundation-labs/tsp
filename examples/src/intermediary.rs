@@ -40,6 +40,7 @@ struct IntermediaryState {
     did: String,
     db: RwLock<AsyncSecureStore>,
     message_tx: broadcast::Sender<(String, Vec<u8>)>,
+    // message_buffer: RwLock<VecDeque<(String, Vec<u8>)>>,
     log: RwLock<VecDeque<LogEntry>>,
     log_tx: broadcast::Sender<String>,
 }
@@ -136,6 +137,7 @@ async fn main() {
         did,
         db: RwLock::new(db),
         message_tx: broadcast::channel(100).0,
+        // message_buffer: RwLock::new(VecDeque::with_capacity(100)),
         log: RwLock::new(VecDeque::with_capacity(MAX_LOG_LEN)),
         log_tx: broadcast::channel(100).0,
     });
@@ -144,6 +146,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(index))
         .route("/transport/{did}", post(new_message).get(websocket_handler))
+        .route("/endpoint/{did}", post(new_message).get(websocket_handler))
         .route(
             "/.well-known/did.json",
             get(async || ([(header::CONTENT_TYPE, "application/json")], did_doc)),
@@ -177,7 +180,7 @@ async fn index(State(state): State<Arc<IntermediaryState>>) -> Html<String> {
 
 async fn new_message(
     State(state): State<Arc<IntermediaryState>>,
-    Path(_did): Path<String>,
+    Path(did): Path<String>,
     body: Bytes,
 ) -> Response {
     let mut message: BytesMut = body.into();
@@ -202,153 +205,154 @@ async fn new_message(
     let receiver = receiver.to_string();
 
     // yes, this must be a separate variable https://github.com/rust-lang/rust/issues/37612
-    let has_private_vid = state.db.read().await.has_private_vid(&receiver);
-    if matches!(has_private_vid, Ok(true)) {
-        tracing::debug!("verifying VID {sender} for {receiver}");
+    let message_is_for_me = matches!(state.db.read().await.has_private_vid(&receiver), Ok(true));
+    if !message_is_for_me {
+        // message is not for the intermediary, can't open, so try forwarding via WebSockets instead
+        state
+            .log(format!(
+                "Forwarding message from  {sender} to {receiver} via WebSockets ({} bytes)",
+                message.len()
+            ))
+            .await;
+        // insert message in queue
+        let _ = state.message_tx.send((receiver, Vec::from(message)));
+        return StatusCode::OK.into_response();
+    }
 
-        if let Err(e) = state.verify_vid(&sender).await {
-            tracing::error!("error verifying VID {sender}: {e}");
-            return (StatusCode::BAD_REQUEST, "error verifying VID").into_response();
-        }
+    tracing::debug!("verifying VID {sender} for {receiver}");
+    if let Err(e) = state.verify_vid(&sender).await {
+        tracing::error!("error verifying VID {sender}: {e}");
+        return (StatusCode::BAD_REQUEST, "error verifying VID").into_response();
+    }
 
-        let handle_relationship_request = async |sender: String,
-                                                 route: Option<Vec<Vec<u8>>>,
-                                                 nested_vid: Option<String>,
-                                                 thread_id: Digest|
-               -> Result<(), tsp_sdk::Error> {
-            if let Some(nested_vid) = nested_vid {
-                tracing::trace!("Requested new nested relationship");
-                let ((endpoint, message), my_new_nested_vid) = state
-                    .db
-                    .read()
-                    .await
-                    .make_nested_relationship_accept(&receiver, &nested_vid, thread_id)?;
-
-                transport::send_message(&endpoint, &message).await?;
-
-                tracing::debug!(
-                    "Created nested {} for {nested_vid}",
-                    my_new_nested_vid.vid().identifier()
-                );
-
-                Ok(())
-            } else {
-                tracing::trace!("Received relationship request from {}", sender);
-                let route: Option<Vec<&str>> = route.as_ref().map(|vec| {
-                    vec.iter()
-                        .map(|vid| std::str::from_utf8(vid).unwrap())
-                        .collect()
-                });
-                tracing::trace!("Requesting read lock to accept relationship request");
-                let store = state.db.read().await;
-                tracing::trace!("Acquired read lock to accept relationship request");
-
-                let (endpoint, message) = store.make_relationship_accept(
-                    &receiver,
-                    &sender,
-                    thread_id,
-                    route.as_deref(),
-                )?;
-
-                tracing::trace!("Dropped read lock to accept relationship request");
-                drop(store);
-
-                transport::send_message(&endpoint, &message).await?;
-
-                Ok(())
-            }
-        };
-
-        // yes, this must be a separate variable https://github.com/rust-lang/rust/issues/37612
-        let res = state.db.read().await.open_message(message.as_mut());
-        match res {
-            Err(e) => {
-                tracing::error!("received opening message from {sender}: {e}")
-            }
-            Ok(ReceivedTspMessage::GenericMessage { sender, .. }) => {
-                tracing::error!("received generic message from {sender}")
-            }
-            Ok(ReceivedTspMessage::RequestRelationship {
-                sender,
-                route,
-                nested_vid,
-                thread_id,
-            }) => {
-                if let Err(e) = handle_relationship_request(
-                    sender.clone(),
-                    route,
-                    nested_vid.clone(),
-                    thread_id,
-                )
+    let handle_relationship_request = async |sender: String,
+                                             route: Option<Vec<Vec<u8>>>,
+                                             nested_vid: Option<String>,
+                                             thread_id: Digest|
+           -> Result<(), tsp_sdk::Error> {
+        if let Some(nested_vid) = nested_vid {
+            tracing::trace!("Requested new nested relationship");
+            let ((endpoint, message), my_new_nested_vid) = state
+                .db
+                .read()
                 .await
-                {
-                    state.log_error(e.to_string()).await;
-                    return (StatusCode::BAD_REQUEST, "error accepting relationship")
-                        .into_response();
-                }
+                .make_nested_relationship_accept(&receiver, &nested_vid, thread_id)?;
 
-                state.log(if let Some(nested_vid) = nested_vid {
+            transport::send_message(&endpoint, &message).await?;
+
+            tracing::debug!(
+                "Created nested {} for {nested_vid}",
+                my_new_nested_vid.vid().identifier()
+            );
+
+            Ok(())
+        } else {
+            tracing::trace!("Received relationship request from {}", sender);
+            let route: Option<Vec<&str>> = route.as_ref().map(|vec| {
+                vec.iter()
+                    .map(|vid| std::str::from_utf8(vid).unwrap())
+                    .collect()
+            });
+
+            let (endpoint, message) = state.db.read().await.make_relationship_accept(
+                &receiver,
+                &sender,
+                thread_id,
+                route.as_deref(),
+            )?;
+
+            transport::send_message(&endpoint, &message).await?;
+
+            Ok(())
+        }
+    };
+
+    // yes, this must be a separate variable https://github.com/rust-lang/rust/issues/37612
+    let res = state.db.read().await.open_message(message.as_mut());
+    match res {
+        Err(e) => {
+            tracing::error!("error while opening message from {sender}: {e}")
+        }
+        Ok(ReceivedTspMessage::GenericMessage { sender, .. }) => {
+            tracing::error!("received generic message from {sender}")
+        }
+        Ok(ReceivedTspMessage::RequestRelationship {
+            sender,
+            route,
+            nested_vid,
+            thread_id,
+        }) => {
+            if let Err(e) =
+                handle_relationship_request(sender.clone(), route, nested_vid.clone(), thread_id)
+                    .await
+            {
+                state.log_error(e.to_string()).await;
+                return (StatusCode::BAD_REQUEST, "error accepting relationship").into_response();
+            }
+
+            state.log(if let Some(nested_vid) = nested_vid {
                     format!(
                         "Accepted nested relationship request from {sender} with nested VID {nested_vid}"
                     )
                 } else {
                     format!("Accepted relationship request from {sender}")
                 }).await;
-            }
-            Ok(ReceivedTspMessage::AcceptRelationship { sender, .. }) => {
-                tracing::error!("accept relationship message from {sender}")
-            }
-            Ok(ReceivedTspMessage::CancelRelationship { sender }) => {
-                tracing::error!("cancel relationship message from {sender}")
-            }
-            Ok(ReceivedTspMessage::ForwardRequest {
-                sender,
-                next_hop,
-                route,
-                opaque_payload,
-            }) => {
-                if route.is_empty() {
-                    tracing::debug!("don't need to verify yourself");
-                } else {
-                    tracing::debug!("verifying VID next hop {next_hop}");
-                    if let Err(e) = state.verify_vid(&next_hop).await {
-                        tracing::error!("error verifying VID {next_hop}: {e}");
-                        return (StatusCode::BAD_REQUEST, "error verifying next hop VID")
-                            .into_response();
-                    }
-
-                    tracing::trace!("Acquiring read lock on AsyncStore");
-                    let store = state.db.read().await;
-                    tracing::trace!(
-                        "Sending relationship request from {} to {next_hop}",
-                        state.did
-                    );
-                    if let Err(err) = store
-                        .send_relationship_request(&state.did, &next_hop, None)
-                        .await
-                    {
-                        let err = format!("error forming relation with VID {next_hop}: {err}");
-                        state.log_error(err).await;
-                        return (StatusCode::BAD_REQUEST, "error forwarding message")
-                            .into_response();
-                    }
-                    tracing::trace!("Releasing lock guard on AsyncStore");
-                    drop(store);
+        }
+        Ok(ReceivedTspMessage::AcceptRelationship { sender, .. }) => {
+            tracing::error!("accept relationship message from {sender}")
+        }
+        Ok(ReceivedTspMessage::CancelRelationship { sender }) => {
+            tracing::error!("cancel relationship message from {sender}")
+        }
+        Ok(ReceivedTspMessage::ForwardRequest {
+            sender,
+            next_hop,
+            route,
+            opaque_payload,
+        }) => {
+            if route.is_empty() {
+                tracing::debug!("don't need to verify yourself");
+            } else {
+                tracing::debug!("verifying VID next hop {next_hop}");
+                if let Err(e) = state.verify_vid(&next_hop).await {
+                    tracing::error!("error verifying VID {next_hop}: {e}");
+                    return (StatusCode::BAD_REQUEST, "error verifying next hop VID")
+                        .into_response();
                 }
 
-                let (transport, message) = match state.db.read().await.make_next_routed_message(
-                    &next_hop,
-                    route,
-                    &opaque_payload,
-                ) {
-                    Ok(res) => res,
-                    Err(e) => {
-                        state.log_error(e.to_string()).await;
-                        return (StatusCode::BAD_REQUEST, "error forwarding message")
-                            .into_response();
-                    }
-                };
+                let store = state.db.read().await;
+                tracing::trace!(
+                    "Sending relationship request from {} to {next_hop}",
+                    state.did
+                );
+                if let Err(err) = store
+                    .send_relationship_request(&state.did, &next_hop, None)
+                    .await
+                {
+                    let err = format!("error forming relation with VID {next_hop}: {err}");
+                    state.log_error(err).await;
+                    return (StatusCode::BAD_REQUEST, "error forwarding message").into_response();
+                }
+                tracing::trace!("Releasing lock guard on AsyncStore");
+                drop(store);
+            }
 
+            let (transport, message) = match state.db.read().await.make_next_routed_message(
+                &next_hop,
+                route,
+                &opaque_payload,
+            ) {
+                Ok(res) => res,
+                Err(e) => {
+                    state.log_error(e.to_string()).await;
+                    return (StatusCode::BAD_REQUEST, "error forwarding message").into_response();
+                }
+            };
+
+            if transport.host_str() == Some(&state.domain) {
+                tracing::debug!("Forwarding message to myself...");
+                return Box::pin(new_message(State(state), Path(did), message.into())).await;
+            } else {
                 tracing::debug!("Sending forwarded message...");
 
                 if let Err(e) = transport::send_message(&transport, &message).await {
@@ -361,28 +365,17 @@ async fn new_message(
                     .log(format!("Forwarded message from {sender} to {transport}",))
                     .await;
             }
-            Ok(ReceivedTspMessage::NewIdentifier { sender, new_vid }) => {
-                tracing::error!("new identifier message from {sender}: {new_vid}")
-            }
-            Ok(ReceivedTspMessage::Referral {
-                sender,
-                referred_vid,
-            }) => tracing::error!("referral from {sender}: {referred_vid}"),
-            Ok(ReceivedTspMessage::PendingMessage { unknown_vid, .. }) => {
-                tracing::error!("pending message message from unknown VID {unknown_vid}")
-            }
         }
-    } else {
-        state
-            .log(format!(
-                "Forwarding message from  {sender} to {receiver} via WebSockets ({} bytes)",
-                message.len()
-            ))
-            .await;
-        // insert message in queue
-        let _ = state
-            .message_tx
-            .send((receiver.to_owned(), Vec::from(message)));
+        Ok(ReceivedTspMessage::NewIdentifier { sender, new_vid }) => {
+            tracing::error!("new identifier message from {sender}: {new_vid}")
+        }
+        Ok(ReceivedTspMessage::Referral {
+            sender,
+            referred_vid,
+        }) => tracing::error!("referral from {sender}: {referred_vid}"),
+        Ok(ReceivedTspMessage::PendingMessage { unknown_vid, .. }) => {
+            tracing::error!("pending message message from unknown VID {unknown_vid}")
+        }
     }
 
     StatusCode::OK.into_response()
