@@ -11,19 +11,20 @@ expose all the functionality of the TSP SDK (e.g., TLS or QUICK transport), neit
 should it used to build production applications.
 </div>
 
-To create a test `did:web` identity run the following command:
+To create a test `did:web` identity with the username `example` run the following command:
 
 ```sh
 tsp create --type web example
 ```
 
 Output:
-``` 
+
+```
 INFO tsp: created new wallet
 INFO tsp: created identity did:web:did.teaspoon.world:endpoint:example
 ```
 
-**Note:** the DIDs need to be unique. If you try to create an endpoint that already exists on did.teaspoon.world, you will get an error.
+**Note:** the DIDs need to be unique. You may need to use a different username if `example` already exist on the DID server.
 
 We can add an alias to a VID using the --alias argument:
 
@@ -40,7 +41,8 @@ tsp --verbose create --type web example --alias example
 ```
 
 Output:
-``` 
+
+```
 TRACE tsp: opened wallet wallet
  INFO tsp: added alias example -> did:web:did.teaspoon.world:endpoint:example
  INFO tsp: created identity did:web:did.teaspoon.world:endpoint:example
@@ -50,6 +52,7 @@ TRACE tsp: persisted wallet
 ```
 
 ## Show wallet content
+
 In some cases, it might be helpful to check what the wallet contains to understand the behavior of TSP.
 Therefore, the CLI provides a `show` command.
 The `show local` command will print all the local VIDs stored in the wallet,
@@ -87,10 +90,11 @@ did:web:q.teaspoon.world
 
 ## Resolve a VID
 
-VIDs created with the `tsp` tool are published on __did.teaspoon.world__ (unless you specify a different DID support server using the `--did-server` option).
+VIDs created with the `tsp` tool are published on **did.teaspoon.world** (unless you specify a different DID support server using the `--did-server` option).
 Currently, Rust TSP is able to verify `did:webvh`, `did:web` and `did:peer` VIDs.
 
 You can use the `tsp discover` command to discover DIDs that are hosted the DID server:
+
 ```sh
 tsp discover
 ```
@@ -102,6 +106,7 @@ tsp verify did:web:did.teaspoon.world:endpoint:example
 ```
 
 Output:
+
 ```
  INFO tsp: did:web:did.teaspoon.world:endpoint:example is verified and added to the wallet
 ```
@@ -114,45 +119,45 @@ tsp verify did:web:did.teaspoon.world:endpoint:example --alias example
 
 ## Send a message
 
-For this example, we will create two identities with separate wallets - __alice__ and __bob__.
+For this example, we will create two identities with separate wallets - **alice** and **bob**.
 
-You could perform the operations for __alice__ and __bob__ on different computers, for this example
+You could perform the operations for **alice** and **bob** on different computers, for this example
 we will separate them by using distinct wallets.
 
 Use the `--wallet` flag to specify the file name of the wallet.
 
-First create the identity for __alice__:
+First create the identity for **alice**:
 
 ```sh
 tsp --wallet alice create --type web alice --alias alice
 ```
 
-Then create the identity for __bob__:
+Then create the identity for **bob**:
 
 ```sh
 tsp --wallet bob create --type web bob --alias bob
 ```
 
-Let __alice__ verify __bob__'s VID and add it to the wallet `alice`:
+Let **alice** verify **bob**'s VID and add it to the wallet `alice`:
 
 ```sh
 tsp --wallet alice verify did:web:did.teaspoon.world:endpoint:bob --alias bob
 ```
 
-Let __bob__ verify __alice__'s VID and add it to the wallet `bob`:
+Let **bob** verify **alice**'s VID and add it to the wallet `bob`:
 
 ```sh
 tsp --wallet bob verify did:web:did.teaspoon.world:endpoint:alice --alias alice
 ```
 
-Let __bob__  start listening for a message:
+Let **bob** start listening for a message:
 
 ```sh
 tsp --wallet bob receive bob
 ```
 
 Since the above command will block / wait for messages we should use
-a new / different terminal to send the message from __alice__.
+a new / different terminal to send the message from **alice**.
 
 To send a message run the following:
 
@@ -164,6 +169,7 @@ Note that `alice` and `bob` are aliases of `did:web:did.teaspoon.world:endpoint:
 and `did:web:did.teaspoon.world:endpoint:bob`.
 
 On the receiving side you should see:
+
 ```
  INFO tsp: received relationship request from did:web:did.teaspoon.world:endpoint:alice3, thread-id 'lrQoJ1qYIK6HEHZKvpq3p+it6djYE2YIe++5mqhASnE'
 did:web:did.teaspoon.world:endpoint:alice3      lrQoJ1qYIK6HEHZKvpq3p+it6djYE2YIe++5mqhASnE
@@ -175,19 +181,19 @@ Hello Bob!
 
 The TSP CLI example application supports two types of decentralized identifiers:
 
-* `did:web`, created using `tsp create --type web`. These are resolved by finding a `.json` file on a server and checking its contents.
-* `did:webvh`, created using `tsp create --type webvh`. These are resolved by finding a `.json` file on a server and checking its contents.
-* `did:peer`, created using `tsp create --type peer`. These are essentially self-signed identifiers.
+- `did:web`, created using `tsp create --type web`. These are resolved by finding a `.json` file on a server and checking its contents.
+- `did:webvh`, created using `tsp create --type webvh`. These are resolved by finding a `.json` file on a server and checking its contents.
+- `did:peer`, created using `tsp create --type peer`. These are essentially self-signed identifiers.
 
 The TSP CLI can use two types of transport:
 
-* `https`, which forces the use of a broadcast server application (see `server.rs`),
-   but will work well across firewalls.
+- `https`, which forces the use of a broadcast server application (see `server.rs`),
+  but will work well across firewalls.
 
-* `tcp`, which requires a direct network connection between two instances of the TSP CLI.
-   In practice, you can use this only on a local network (or the same machine, if you use different ports), but
-   this functionality is added to demonstrate the flexibility of having multiple transports.
-   To use TCP transport, use the `--tcp address:port` flag to `tcp create`.
+- `tcp`, which requires a direct network connection between two instances of the TSP CLI.
+  In practice, you can use this only on a local network (or the same machine, if you use different ports), but
+  this functionality is added to demonstrate the flexibility of having multiple transports.
+  To use TCP transport, use the `--tcp address:port` flag to `tcp create`.
 
 The TSP SDK also provides a couple more transport types and provides methods to use custom transport solutions (see [transport layers](../transport.md)), although these are not available through the CLI.
 
@@ -196,13 +202,14 @@ The TSP SDK also provides a couple more transport types and provides methods to 
 The CLI has a `--verbose` flag.
 For the `send` command, this will output the CESR-encoded TSP message that is sent.
 
-Continuing with the __alice__ and __bob__ example:
+Continuing with the **alice** and **bob** example:
 
 ```sh
 echo "Hello Bob!" | tsp --verbose -w alice send -s alice -r bob
 ```
 
 Output:
+
 ```
  INFO tsp::async_store: sending message to https://demo.teaspoon.world/endpoint/did:web:did.teaspoon.world:endpoint:bob
 CESR-encoded message:
