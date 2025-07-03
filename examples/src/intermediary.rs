@@ -12,13 +12,14 @@ use futures::{sink::SinkExt, stream::StreamExt};
 use reqwest::header;
 use serde::Serialize;
 use std::{collections::VecDeque, sync::Arc};
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::{Notify, RwLock, RwLockWriteGuard, broadcast};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{
     AsyncSecureStore, OwnedVid, ReceivedTspMessage, VerifiedVid, cesr, definitions::Digest,
     transport, vid::vid_to_did_document,
 };
 use url::Url;
+use uuid::Uuid;
 
 #[derive(Debug, Parser)]
 #[command(name = "demo-intermediary")]
@@ -35,12 +36,29 @@ struct Cli {
     domain: String,
 }
 
+#[derive(Clone)]
+struct QueuedWsMessage {
+    receiver: String,
+    message: Message,
+    id: Uuid,
+}
+
+impl QueuedWsMessage {
+    pub fn new(message: impl Into<Bytes>, receiver: String) -> Self {
+        QueuedWsMessage {
+            message: Message::Binary(message.into()),
+            receiver,
+            id: Uuid::new_v4(),
+        }
+    }
+}
+
 struct IntermediaryState {
     domain: String,
     did: String,
     db: RwLock<AsyncSecureStore>,
-    message_tx: broadcast::Sender<(String, Vec<u8>)>,
-    // message_buffer: RwLock<VecDeque<(String, Vec<u8>)>>,
+    message_tx: broadcast::Sender<QueuedWsMessage>,
+    message_buffer: RwLock<VecDeque<QueuedWsMessage>>,
     log: RwLock<VecDeque<LogEntry>>,
     log_tx: broadcast::Sender<String>,
 }
@@ -105,6 +123,7 @@ impl IntermediaryState {
 }
 
 const MAX_LOG_LEN: usize = 10;
+const MAX_BUFFER_LEN: usize = 100;
 
 #[tokio::main]
 async fn main() {
@@ -137,7 +156,7 @@ async fn main() {
         did,
         db: RwLock::new(db),
         message_tx: broadcast::channel(100).0,
-        // message_buffer: RwLock::new(VecDeque::with_capacity(100)),
+        message_buffer: RwLock::new(VecDeque::with_capacity(100)),
         log: RwLock::new(VecDeque::with_capacity(MAX_LOG_LEN)),
         log_tx: broadcast::channel(100).0,
     });
@@ -214,8 +233,17 @@ async fn new_message(
                 message.len()
             ))
             .await;
-        // insert message in queue
-        let _ = state.message_tx.send((receiver, Vec::from(message)));
+
+        let queued_message = QueuedWsMessage::new(message, receiver);
+        let mut buffer = state.message_buffer.write().await;
+        buffer.push_back(queued_message.clone());
+        while buffer.len() > MAX_BUFFER_LEN {
+            buffer.pop_front();
+        }
+        tracing::debug!("message buffer now contains {} messages", buffer.len());
+        drop(buffer);
+        let _ = state.message_tx.send(queued_message);
+
         return StatusCode::OK.into_response();
     }
 
@@ -390,25 +418,75 @@ async fn websocket_handler(
     tracing::info!("{} listening for messages intended for {did}", state.domain);
     let mut messages_rx = state.message_tx.subscribe();
 
-    ws.on_upgrade(|socket| {
-        let (mut ws_send, _) = socket.split();
+    ws.on_upgrade(async |socket| {
+        let (mut ws_send, mut ws_receiver) = socket.split();
+        let shutdown_notify = Arc::new(Notify::new());
+        let shutdown_notify_clone = Arc::new(Notify::new());
 
-        async move {
-            while let Ok((receiver, message)) = messages_rx.recv().await {
-                if receiver == did {
-                    tracing::debug!(
-                        "{} forwarding message to {receiver}, {} bytes",
-                        state.domain,
-                        message.len()
-                    );
+        // read from WebSocket (detect disconnection)
+        let recv_task = tokio::spawn(async move {
+            while let Some(Ok(msg)) = ws_receiver.next().await {
+                tracing::debug!("Received from client: {:?}", msg);
+            }
 
-                    let a = ws_send.send(Message::Binary(Bytes::from(message))).await;
-                    if let Err(e) = a {
-                        tracing::error!("Could not send via WS: {e}");
+            // notify sender task to shut down
+            shutdown_notify_clone.notify_one();
+        });
+
+        // listen for new messages
+        let send_task = tokio::spawn(async move {
+            let mut send =
+                async |message: QueuedWsMessage,
+                       buffer: &mut RwLockWriteGuard<'_, VecDeque<QueuedWsMessage>>| {
+                    let res = ws_send.send(message.message).await;
+                    match res {
+                        Ok(()) => {
+                            // successfully delivered, remove message from buffer
+                            buffer.retain(|m| m.id != message.id);
+                            tracing::debug!("message buffer now contains {} messages", buffer.len());
+                        }
+                        Err(ref e) => tracing::error!("Could not send via WS: {e}"),
+                    }
+                    res
+                };
+
+            // send buffered messages for did (if any)
+            let mut buffer = state.message_buffer.write().await;
+            let messages = buffer
+                .iter()
+                .filter(|m| m.receiver == did)
+                .cloned()
+                .collect::<Vec<_>>();
+            for message in messages {
+                let _ = send(message, &mut buffer).await;
+            }
+            drop(buffer);
+
+            loop {
+                tokio::select! {
+                    Ok(queued_message) = messages_rx.recv() => {
+                        if queued_message.receiver == did {
+                            tracing::debug!(
+                                "{} forwarding message to {}",
+                                state.domain,
+                                queued_message.receiver
+                            );
+                            let mut buffer = state.message_buffer.write().await;
+                            if send(queued_message, &mut buffer).await.is_err() {
+                                break;
+                            };
+                            drop(buffer);
+                        }
+                    }
+                    _ = shutdown_notify.notified() => {
+                        // Shutdown signal from recv_task
+                        break;
                     }
                 }
             }
-        }
+        });
+
+        let _ = tokio::join!(recv_task, send_task);
     })
 }
 

@@ -21,7 +21,7 @@ We host two demo intermediaries publicly for testing:
 - [Intermediary P](https://p.teaspoon.world/), which has the identifier `did:web:p.teaspoon.world`
 - [Intermediary Q](https://q.teaspoon.world/), which has the identifier `did:web:q.teaspoon.world`
 
-These two instances both run the `examples/src/intermediary.rs` server.
+These two instances both run the `examples/src/intermediary.rs` server. These intermediaries also support buffering messages, which means they are able to hold messages for clients which are not currently listening (although there are no guarantees for how long the message will be held).
 
 The `cli-demo-routed-external.sh` script in the `examples/` directory creates two local end-points A and B, and then sends a message from A to B via the public intermediaries P and Q. To do this, it first sets up relations between A and P and between B and Q. Additionally, for the final drop-off to work, B creates a nested relation between B and Q, resulting into two nested DIDs B2 and Q2. The final route of the message from A then becomes `P,Q,Q2`, where Q2 will drop off the message at B2.
 
@@ -68,5 +68,3 @@ Note that the sender/receiver VIDs of an incoming message get be retrieved using
 `tsp::cesr::get_sender_receiver`. Another method that might be useful is
 `has_private_vid` to check whether an incoming message is actually addressed to
 the current intermediary.
-
-
