@@ -164,7 +164,7 @@ fn test_send_command_unverified_receiver_ask_flag() {
     .stderr(predicate::str::contains(
         "Message cannot be sent without verifying the receiver's DID",
     ))
-    .success();
+    .failure();
 
     // Send a message from Marlon to Marc with --ask flag, answer yes
     thread::scope(|s| {
