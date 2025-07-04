@@ -6,7 +6,7 @@ name: Deploy mdBook site to Pages
 on:
   # Runs on pushes targeting the default branch
   push:
-    branches: [ "main" ]
+    branches: ["main"]
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
@@ -31,6 +31,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install mdBook
         run: cargo install mdbook
+      - name: Install mdbook-mermaid
+        run: cargo install mdbook-mermaid
+      - name: Initialize mdbook-mermaid
+        run: mdbook-mermaid init
+        working-directory: docs
       - name: Setup Pages
         id: pages
         uses: actions/configure-pages@v5
