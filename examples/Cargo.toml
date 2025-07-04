@@ -49,6 +49,7 @@ bytes = { workspace = true }
 url = { workspace = true }
 rustls = { workspace = true }
 tower-http = { workspace = true }
+uuid = "1.17.0"
 
 # create webvh
 pyo3 = { workspace = true, optional = true }
