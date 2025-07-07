@@ -1,20 +1,18 @@
 use std::collections::HashMap;
 
+use crate::definitions::VidEncryptionKeyType;
 use crate::{
-    Error, ExportVid, RelationshipStatus,
-    definitions::{
-        PRIVATE_SIGNING_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE,
-    },
-    store::{Aliases, WebvhUpdateKeys},
+    definitions::{PRIVATE_SIGNING_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE}, store::{Aliases, WebvhUpdateKeys}, Error,
+    ExportVid,
+    RelationshipStatus,
 };
 use aries_askar::{
-    ErrorKind, StoreKeyMethod,
-    entry::EntryOperation,
-    kms::{KeyAlg, LocalKey},
+    entry::EntryOperation, kms::{KeyAlg, LocalKey},
+    ErrorKind,
+    StoreKeyMethod,
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use crate::definitions::VidEncryptionKeyType;
 
 // ANCHOR: custom-secure-storage-mbBook
 #[async_trait]
@@ -94,9 +92,9 @@ impl SecureStorage for AskarSecureStorage {
         let mut conn = self.inner.session(None).await?;
 
         for export in vids {
-            let id = export.id;
+            let id = export.id.clone();
 
-            if let Some(private) = export.sigkey {
+            if let Some(ref private) = export.sigkey {
                 let signing_key = LocalKey::from_secret_bytes(KeyAlg::Ed25519, private.as_ref())?;
                 let signing_key_name = format!("{id}#signing-key");
 
@@ -115,35 +113,52 @@ impl SecureStorage for AskarSecureStorage {
             }
 
             if let Some(private) = export.enckey {
-                let decryption_key = LocalKey::from_secret_bytes(KeyAlg::X25519, private.as_ref())?;
                 let decryption_key_name = format!("{id}#decryption-key");
+
                 if let Err(e) = conn
-                    .insert_key(
-                        &decryption_key_name,
-                        &decryption_key,
-                        None,
-                        None,
-                        None,
-                        None,
-                    )
+                    .insert("key", &decryption_key_name, private.as_slice(), None, None)
                     .await
                 {
                     if e.kind() == ErrorKind::Duplicate {
-                        conn.remove_key(&decryption_key_name).await?;
-                        conn.insert_key(
-                            &decryption_key_name,
-                            &decryption_key,
-                            None,
-                            None,
-                            None,
-                            None,
-                        )
-                        .await?;
+                        conn.remove("key", &decryption_key_name).await?;
+                        conn.insert("key", &decryption_key_name, private.as_slice(), None, None)
+                            .await?
                     } else {
                         Err(Error::from(e))?;
                     }
                 }
             }
+
+            // if let Some(private) = export.enckey {
+            //     let decryption_key = LocalKey::from_secret_bytes(KeyAlg::X25519, private.as_ref())?;
+            //     let decryption_key_name = format!("{id}#decryption-key");
+            //     if let Err(e) = conn
+            //         .insert_key(
+            //             &decryption_key_name,
+            //             &decryption_key,
+            //             None,
+            //             None,
+            //             None,
+            //             None,
+            //         )
+            //         .await
+            //     {
+            //         if e.kind() == ErrorKind::Duplicate {
+            //             conn.remove_key(&decryption_key_name).await?;
+            //             conn.insert_key(
+            //                 &decryption_key_name,
+            //                 &decryption_key,
+            //                 None,
+            //                 None,
+            //                 None,
+            //                 None,
+            //             )
+            //             .await?;
+            //         } else {
+            //             Err(Error::from(e))?;
+            //         }
+            //     }
+            // }
 
             let verification_key =
                 LocalKey::from_public_bytes(KeyAlg::Ed25519, export.public_sigkey.as_ref())?;
@@ -175,27 +190,23 @@ impl SecureStorage for AskarSecureStorage {
                 }
             }
 
-            let encryption_key =
-                LocalKey::from_public_bytes(KeyAlg::X25519, export.public_enckey.as_ref())?;
             let encryption_key_name = format!("{id}#encryption-key");
             if let Err(e) = conn
-                .insert_key(
+                .insert(
+                    "key",
                     &encryption_key_name,
-                    &encryption_key,
-                    None,
-                    None,
+                    export.public_enckey.as_slice(),
                     None,
                     None,
                 )
                 .await
             {
                 if e.kind() == ErrorKind::Duplicate {
-                    conn.remove_key(&encryption_key_name).await?;
-                    conn.insert_key(
+                    conn.remove("key", &encryption_key_name).await?;
+                    conn.insert(
+                        "key",
                         &encryption_key_name,
-                        &encryption_key,
-                        None,
-                        None,
+                        export.public_enckey.as_slice(),
                         None,
                         None,
                     )
@@ -313,7 +324,11 @@ impl SecureStorage for AskarSecureStorage {
             };
 
             let encryption_key_name = format!("{id}#encryption-key");
-            let Some(encryption_key) = conn.fetch_key(&encryption_key_name, false).await? else {
+            let Some(encryption_bytes) = conn
+                .fetch("key", &encryption_key_name, false)
+                .await?
+                .map(|e| e.value.to_vec())
+            else {
                 continue;
             };
 
@@ -324,15 +339,6 @@ impl SecureStorage for AskarSecureStorage {
                 .try_into()
                 .map_err(|_| {
                     Error::DecodeState("could not parse verification key bytes from storage")
-                })?;
-
-            let encryption_bytes: Vec<u8> = encryption_key
-                .load_local_key()?
-                .to_public_bytes()?
-                .as_ref()
-                .try_into()
-                .map_err(|_| {
-                    Error::DecodeState("could not parse encryption key bytes from storage")
                 })?;
 
             let mut vid = ExportVid {
@@ -356,7 +362,10 @@ impl SecureStorage for AskarSecureStorage {
             let signing_key = conn.fetch_key(&signing_key_name, false).await?;
 
             let decryption_key_name = format!("{id}#decryption-key");
-            let decryption_key = conn.fetch_key(&decryption_key_name, false).await?;
+            let decryption_key = conn
+                .fetch("key", &decryption_key_name, false)
+                .await?
+                .map(|e| e.value.to_vec());
 
             if let (Some(signing_key), Some(decryption_key)) = (signing_key, decryption_key) {
                 let signing_key: [u8; PRIVATE_SIGNING_KEY_SIZE] = signing_key
@@ -366,15 +375,6 @@ impl SecureStorage for AskarSecureStorage {
                     .try_into()
                     .map_err(|_| {
                         Error::DecodeState("could not parse signing key bytes from storage")
-                    })?;
-
-                let decryption_key: Vec<u8> = decryption_key
-                    .load_local_key()?
-                    .to_secret_bytes()?
-                    .as_ref()
-                    .try_into()
-                    .map_err(|_| {
-                        Error::DecodeState("could not parse decryption key bytes from storage")
                     })?;
 
                 vid.sigkey = Some(signing_key.into());

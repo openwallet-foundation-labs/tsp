@@ -46,12 +46,12 @@
 //!     alice_db.verify_vid("did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob", Some("bob".into())).await?;
 //!
 //!     // send a message
-//!     alice_db.send(
+//!     dbg!(alice_db.send(
 //!         "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
 //!         "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
 //!         Some(b"extra non-confidential data"),
 //!         b"hello world",
-//!     ).await?;
+//!     ).await)?;
 //!
 //!    // first, receive a Relationship request as this is the first contact
 //!     let Some(Ok(ReceivedTspMessage::RequestRelationship { .. }))=

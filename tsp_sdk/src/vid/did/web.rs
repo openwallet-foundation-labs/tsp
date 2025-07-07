@@ -1,10 +1,10 @@
-use crate::definitions::{VerifiedVid, VidEncryptionKeyType, PUBLIC_VERIFICATION_KEY_SIZE};
+use crate::definitions::{PUBLIC_VERIFICATION_KEY_SIZE, VerifiedVid, VidEncryptionKeyType};
 use base64ct::{Base64UrlUnpadded, Encoding};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use url::Url;
 
-use crate::vid::{error::VidError, OwnedVid, Vid};
+use crate::vid::{OwnedVid, Vid, error::VidError};
 
 pub(crate) const SCHEME: &str = "web";
 
@@ -57,10 +57,23 @@ pub struct PublicKeyJwk {
     pub x: String,
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivateKeyJwk {
+    pub crv: Curve,
+    pub kty: KeyType,
+    #[serde(rename = "use")]
+    pub usage: Usage,
+    pub x: String,
+    pub y: String,
+}
+
 impl From<VidEncryptionKeyType> for KeyType {
     fn from(value: VidEncryptionKeyType) -> Self {
         match value {
             VidEncryptionKeyType::X25519 => KeyType::OKP,
+            #[cfg(feature = "pq")]
             VidEncryptionKeyType::X25519Kyber768Draft00 => KeyType::X25519Kyber768Draft00,
         }
     }
@@ -76,6 +89,7 @@ impl From<VidEncryptionKeyType> for Curve {
     fn from(value: VidEncryptionKeyType) -> Self {
         match value {
             VidEncryptionKeyType::X25519 => Curve::X25519,
+            #[cfg(feature = "pq")]
             VidEncryptionKeyType::X25519Kyber768Draft00 => Curve::X25519,
         }
     }
@@ -246,7 +260,6 @@ pub fn resolve_document(did_document: DidDocument, target_id: &str) -> Result<Vi
         ));
     };
 
-    // TODO return key type instead of querying for it
     let Some((public_enckey, key_type, curve)) =
         find_first_key(&did_document, &did_document.key_agreement, Usage::Enc)
     else {
@@ -272,6 +285,7 @@ pub fn resolve_document(did_document: DidDocument, target_id: &str) -> Result<Vi
 
     let enc_key_type = match (key_type, curve) {
         (KeyType::OKP, Curve::X25519) => VidEncryptionKeyType::X25519,
+        #[cfg(feature = "pq")]
         (KeyType::X25519Kyber768Draft00, Curve::X25519) => {
             VidEncryptionKeyType::X25519Kyber768Draft00
         }
@@ -312,12 +326,7 @@ pub fn vid_to_did_document(vid: &impl VerifiedVid) -> serde_json::Value {
                 "id": format!("{id}#encryption-key"),
                 "type": "JsonWebKey2020",
                 "controller": format!("{id}"),
-                "publicKeyJwk": {
-                    "kty": Into::<KeyType>::into(vid.encryption_key_type()),
-                    "crv": Into::<Curve>::into(vid.encryption_key_type()),
-                    "use": "enc",
-                    "x": Base64UrlUnpadded::encode_string(vid.encryption_key().as_ref()),
-                }
+                "publicKeyJwk": vid.encryption_key_jwk()
             },
         ],
         "authentication": [
@@ -386,8 +395,8 @@ mod tests {
     #[wasm_bindgen_test]
     fn test_resolve_document() {
         use crate::{
-            vid::did::web::{resolve_document, DidDocument},
             VerifiedVid,
+            vid::did::web::{DidDocument, resolve_document},
         };
 
         let alice_did_doc = include_str!(concat!(

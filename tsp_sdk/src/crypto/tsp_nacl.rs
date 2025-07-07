@@ -2,7 +2,7 @@ use crate::{
     cesr::{CryptoType, DecodedPayload, Envelope},
     definitions::{Payload, PrivateVid, VerifiedVid},
 };
-use crypto_box::{aead::AeadInPlace, ChaChaBox, PublicKey, SecretKey};
+use crypto_box::{ChaChaBox, PublicKey, SecretKey, aead::AeadInPlace};
 
 #[cfg(feature = "nacl")]
 use crate::{
@@ -14,7 +14,7 @@ use crypto_box::aead::{AeadCore, OsRng};
 #[cfg(feature = "nacl")]
 use ed25519_dalek::Signer;
 #[cfg(feature = "nacl")]
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng};
 
 use super::{CryptoError, MessageContents};
 

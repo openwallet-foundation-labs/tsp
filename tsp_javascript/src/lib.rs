@@ -446,6 +446,7 @@ pub enum CryptoType {
     HpkeEssr = 2,
     NaclAuth = 3,
     NaclEssr = 4,
+    X25519Kyber768Draft00 = 5,
 }
 
 #[wasm_bindgen]
@@ -593,6 +594,9 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
                     tsp_sdk::cesr::CryptoType::HpkeEssr => Some(CryptoType::HpkeEssr),
                     tsp_sdk::cesr::CryptoType::NaclAuth => Some(CryptoType::NaclAuth),
                     tsp_sdk::cesr::CryptoType::NaclEssr => Some(CryptoType::NaclEssr),
+                    tsp_sdk::cesr::CryptoType::X25519Kyber768Draft00 => {
+                        Some(CryptoType::X25519Kyber768Draft00)
+                    }
                 };
                 this.signature_type = match message_type.signature_type {
                     tsp_sdk::cesr::SignatureType::NoSignature => Some(SignatureType::NoSignature),

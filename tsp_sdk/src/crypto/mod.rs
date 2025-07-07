@@ -1,7 +1,12 @@
 use crate::definitions::{
     Digest, MessageType, NonConfidentialData, Payload, PrivateKeyData, PrivateSigningKeyData,
     PrivateVid, PublicKeyData, PublicVerificationKeyData, TSPMessage, VerifiedVid,
+    VidEncryptionKeyType,
 };
+#[cfg(not(feature = "pq"))]
+use hpke::kem;
+#[cfg(feature = "pq")]
+use hpke_pq::kem;
 use rand_core::OsRng;
 
 pub use digest::{blake2b256, sha256};
@@ -14,11 +19,9 @@ mod tsp_hpke;
 #[cfg(not(feature = "pq"))]
 mod tsp_nacl;
 
-pub use error::CryptoError;
-
-#[cfg(not(feature = "pq"))]
 use crate::cesr::CryptoType;
 use crate::crypto::CryptoError::Verify;
+pub use error::CryptoError;
 
 #[cfg(not(feature = "pq"))]
 pub type Aead = hpke::aead::ChaCha20Poly1305;
@@ -57,8 +60,25 @@ pub fn seal_and_hash(
     digest: Option<&mut Digest>,
 ) -> Result<TSPMessage, CryptoError> {
     #[cfg(not(feature = "nacl"))]
-    let msg =
-        tsp_hpke::seal::<Aead, Kdf, Kem>(sender, receiver, nonconfidential_data, payload, digest)?;
+    let msg = match receiver.encryption_key_type() {
+        VidEncryptionKeyType::X25519 => tsp_hpke::seal::<Aead, Kdf, kem::X25519HkdfSha256>(
+            sender,
+            receiver,
+            nonconfidential_data,
+            payload,
+            digest,
+        ),
+        #[cfg(feature = "pq")]
+        VidEncryptionKeyType::X25519Kyber768Draft00 => {
+            dbg!(tsp_hpke::seal::<Aead, Kdf, kem::X25519Kyber768Draft00>(
+                sender,
+                receiver,
+                nonconfidential_data,
+                payload,
+                digest,
+            ))
+        }
+    }?;
 
     #[cfg(feature = "nacl")]
     let msg = tsp_nacl::seal(sender, receiver, nonconfidential_data, payload, digest)?;
@@ -108,7 +128,30 @@ pub fn open<'a>(
     }
 
     #[cfg(feature = "pq")]
-    return tsp_hpke::open::<Aead, Kdf, Kem>(receiver, sender, raw_header, envelope, ciphertext);
+    match envelope.crypto_type {
+        CryptoType::Plaintext => {
+            panic!()
+        }
+        CryptoType::HpkeAuth => {
+            return tsp_hpke::open::<Aead, Kdf, kem::X25519HkdfSha256>(
+                receiver, sender, raw_header, envelope, ciphertext,
+            );
+        }
+        CryptoType::HpkeEssr => {
+            panic!()
+        }
+        CryptoType::NaclAuth => {
+            panic!()
+        }
+        CryptoType::NaclEssr => {
+            panic!()
+        }
+        CryptoType::X25519Kyber768Draft00 => {
+            return tsp_hpke::open::<Aead, Kdf, kem::X25519Kyber768Draft00>(
+                receiver, sender, raw_header, envelope, ciphertext,
+            );
+        }
+    }
 
     #[cfg(not(feature = "pq"))]
     match envelope.crypto_type {

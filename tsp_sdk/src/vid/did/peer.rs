@@ -1,5 +1,5 @@
 use crate::definitions::VidEncryptionKeyType;
-use crate::{definitions::VerifiedVid, vid::error::VidError, Vid};
+use crate::{Vid, definitions::VerifiedVid, vid::error::VidError};
 use base64ct::{Base64UrlUnpadded, Encoding};
 use serde_json::json;
 use tracing::log::trace;
@@ -31,6 +31,7 @@ pub fn encode_did_peer(vid: &Vid) -> String {
             // key bytes length
             v.push(0x20);
         }
+        #[cfg(feature = "pq")]
         VidEncryptionKeyType::X25519Kyber768Draft00 => {
             trace!("serializing X25519Kyber768Draft00 encryption key");
             // private use area (0x300000) => encoded as unsigned varint, see: https://github.com/multiformats/unsigned-varint
@@ -87,7 +88,7 @@ pub fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
                     .map_err(|_| {
                         VidError::ResolveVid("invalid encoded encryption key in did:peer")
                     })?;
-                
+
                 dbg!(count);
                 dbg!(&buf[..5]);
 
@@ -98,6 +99,7 @@ pub fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
                         public_enckey = rest[..0x20].to_vec().into();
                         enc_key_type = Some(VidEncryptionKeyType::X25519)
                     }
+                    #[cfg(feature = "pq")]
                     [
                         0b10000000,
                         0b10000000,
@@ -185,7 +187,7 @@ pub fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
 #[cfg(not(feature = "pq"))]
 #[cfg(test)]
 mod test {
-    use crate::definitions::VerifiedVid;
+    use crate::definitions::{VerifiedVid, VidEncryptionKeyType};
     use url::Url;
     use wasm_bindgen_test::wasm_bindgen_test;
 
@@ -203,6 +205,7 @@ mod test {
             id: Default::default(),
             transport: Url::parse("tcp://127.0.0.1:1337").unwrap(),
             public_sigkey,
+            enc_key_type: VidEncryptionKeyType::X25519,
             public_enckey,
         };
 

@@ -30,6 +30,8 @@ use hpke_pq::{
 
 use super::{CryptoError, MessageContents};
 
+
+
 #[cfg(not(feature = "nacl"))]
 pub(crate) fn seal<A, Kdf, Kem>(
     sender: &dyn PrivateVid,
@@ -41,14 +43,14 @@ pub(crate) fn seal<A, Kdf, Kem>(
 where
     A: aead::Aead,
     Kdf: kdf::Kdf,
-    Kem: kem::Kem,
+    Kem: kem::Kem + crate::cesr::AsCryptoType,
 {
     let mut csprng = StdRng::from_entropy();
 
     let mut data = Vec::with_capacity(64);
     crate::cesr::encode_ets_envelope(
         crate::cesr::Envelope {
-            crypto_type: CryptoType::HpkeAuth,
+            crypto_type: Kem::crypto_type(),
             signature_type: SignatureType::Ed25519,
             sender: sender.identifier(),
             receiver: Some(receiver.identifier()),

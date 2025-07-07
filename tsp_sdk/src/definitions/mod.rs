@@ -4,6 +4,7 @@ use std::{
     fmt::{Debug, Display},
     ops::Deref,
 };
+use base64ct::{Base64UrlUnpadded, Encoding};
 use zeroize::Zeroize;
 
 #[cfg(feature = "async")]
@@ -11,6 +12,7 @@ use futures::Stream;
 
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
+use crate::vid::did::web::{Curve, KeyType};
 
 pub type Digest = [u8; 32];
 
@@ -229,7 +231,8 @@ impl<Bytes: AsRef<[u8]>> fmt::Display for Payload<'_, Bytes> {
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Deserialize, Serialize)]
 pub enum VidEncryptionKeyType {
     X25519,
-    X25519Kyber768Draft00
+    #[cfg(feature = "pq")]
+    X25519Kyber768Draft00,
 }
 
 // ANCHOR: custom-vid-mbBook
@@ -245,9 +248,18 @@ pub trait VerifiedVid: Send + Sync {
 
     /// The encryption key associated with this Vid
     fn encryption_key(&self) -> &PublicKeyData;
-    
+
     /// The encryption key type associated with this Vid
     fn encryption_key_type(&self) -> VidEncryptionKeyType;
+
+    fn encryption_key_jwk(&self) -> serde_json::Value {
+        serde_json::json!({
+            "kty": Into::<KeyType>::into(self.encryption_key_type()),
+            "crv": Into::<Curve>::into(self.encryption_key_type()),
+            "use": "enc",
+            "x": Base64UrlUnpadded::encode_string(self.encryption_key().as_ref()),
+        })
+    }
 }
 
 pub trait PrivateVid: VerifiedVid + Send + Sync {
@@ -256,6 +268,16 @@ pub trait PrivateVid: VerifiedVid + Send + Sync {
 
     /// The PRIVATE key used to sign data
     fn signing_key(&self) -> &PrivateSigningKeyData;
+
+    fn private_encryption_key_jwk(&self) -> serde_json::Value {
+        serde_json::json!({
+            "kty": Into::<KeyType>::into(self.encryption_key_type()),
+            "crv": Into::<Curve>::into(self.encryption_key_type()),
+            "use": "enc",
+            "x": Base64UrlUnpadded::encode_string(self.encryption_key().as_ref()),
+            "d": Base64UrlUnpadded::encode_string(self.decryption_key().as_ref()),
+        })
+    }
 }
 // ANCHOR_END: custom-vid-mbBook
 

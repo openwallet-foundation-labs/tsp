@@ -925,7 +925,7 @@ impl SecureStore {
         let route = route.map(|collection| collection.iter().map(|vid| vid.as_ref()).collect());
 
         let mut thread_id = Default::default();
-        let tsp_message = crate::crypto::seal_and_hash(
+        let tsp_message = dbg!(crate::crypto::seal_and_hash(
             &*sender,
             &*receiver,
             None,
@@ -934,7 +934,7 @@ impl SecureStore {
                 thread_id: Default::default(),
             },
             Some(&mut thread_id),
-        )?;
+        ))?;
 
         let (transport, tsp_message) = if let Some(hop_list) = path {
             self.set_route_for_vid(receiver.identifier(), hop_list)?;

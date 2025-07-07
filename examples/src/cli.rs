@@ -12,13 +12,13 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 #[cfg(feature = "create-webvh")]
 use tsp_sdk::vid::{did::webvh::WebvhMetadata, vid_to_did_document};
 use tsp_sdk::{
-    Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
-    RelationshipStatus, SecureStorage, VerifiedVid, Vid,
     cesr::{
         color_print, {self},
-    },
-    definitions::Digest,
-    vid::{VidError, verify_vid},
+    }, definitions::Digest, vid::{verify_vid, VidError}, Aliases, AskarSecureStorage, AsyncSecureStore, Error,
+    ExportVid, OwnedVid, ReceivedTspMessage, RelationshipStatus,
+    SecureStorage,
+    VerifiedVid,
+    Vid,
 };
 use url::Url;
 
@@ -451,8 +451,8 @@ async fn run() -> Result<(), Error> {
                     private_vid
                 }
             };
-            let (_, metadata) = dbg!(verify_vid(private_vid.identifier())
-                .await)
+            let (_, metadata) = verify_vid(private_vid.identifier())
+                .await
                 .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
             vid_wallet.add_private_vid(private_vid.clone(), metadata)?;
         }
@@ -656,6 +656,7 @@ async fn run() -> Result<(), Error> {
                                 cesr::CryptoType::HpkeEssr => "HPKE ESSR",
                                 cesr::CryptoType::NaclAuth => "NaCl Auth",
                                 cesr::CryptoType::NaclEssr => "NaCl ESSR",
+                                cesr::CryptoType::X25519Kyber768Draft00 => "X25519Kyber768Draft00",
                             };
                             let signature_type = match message_type.signature_type {
                                 cesr::SignatureType::NoSignature => "no signature",
@@ -976,18 +977,13 @@ async fn run() -> Result<(), Error> {
         }
     }
 
-    write_wallet(&vault, &vid_wallet).await?;
+    dbg!(write_wallet(&vault, &vid_wallet).await)?;
     vault.close().await?;
 
     Ok(())
 }
 
 fn show_local(vids: &[ExportVid], aliases: &Aliases) -> Result<(), Error> {
-    let enc_key_type = if cfg!(feature = "nacl") {
-        "nacl"
-    } else {
-        "X25519"
-    };
     for vid in vids.iter().filter(|v| v.is_private()) {
         let transport = if vid.transport.as_str() == "tsp://" || vid.parent_vid.is_some() {
             vid.parent_vid.clone().unwrap_or("None".to_string())
@@ -1025,7 +1021,8 @@ fn show_local(vids: &[ExportVid], aliases: &Aliases) -> Result<(), Error> {
             )
         }
         println!(
-            "\t public enc key: ({enc_key_type}): {}",
+            "\t public enc key: ({:?}): {}",
+            vid.enc_key_type,
             Base64::encode_string(vid.public_enckey.deref())
         );
         println!(
@@ -1113,12 +1110,6 @@ fn show_relations(vids: &[ExportVid], vid: Option<String>, aliases: &Aliases) ->
             .collect::<Vec<_>>()
     };
 
-    let enc_key_type = if cfg!(feature = "nacl") {
-        "nacl"
-    } else {
-        "X25519"
-    };
-
     for vid in filtered_vids {
         let transport = if vid.transport.as_str() == "tsp://" || vid.parent_vid.is_some() {
             vid.parent_vid.clone().unwrap_or("None".to_string())
@@ -1159,7 +1150,8 @@ fn show_relations(vids: &[ExportVid], vid: Option<String>, aliases: &Aliases) ->
         println!("\t Transport: {}", transport);
         println!("\t Intermediaries: {:?}", vid.tunnel);
         println!(
-            "\t public enc key: ({enc_key_type}) {}",
+            "\t public enc key: ({:?}): {}",
+            vid.enc_key_type,
             Base64::encode_string(vid.public_enckey.deref())
         );
         println!(

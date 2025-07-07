@@ -2,12 +2,12 @@ use base64ct::{Base64UrlUnpadded, Encoding};
 use serde::{Deserialize, Serialize};
 
 use crate::definitions::{
-    PrivateKeyData, PrivateSigningKeyData, PublicKeyData, PublicVerificationKeyData,
-    PRIVATE_SIGNING_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE,
+    PRIVATE_SIGNING_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE, PrivateKeyData, PrivateSigningKeyData,
+    PublicKeyData, PublicVerificationKeyData,
 };
 
 #[cfg(feature = "async")]
-use super::{error::VidError, OwnedVid};
+use super::{OwnedVid, error::VidError};
 
 #[cfg(feature = "async")]
 use std::path::Path;
