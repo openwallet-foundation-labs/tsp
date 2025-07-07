@@ -23,24 +23,31 @@ jobs:
 
   cargo-test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        features:
+          - "create-webvh"
+          - "create-webvh,pq"
+          - "nacl"
+          - "pq"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install uv
+        if: contains(matrix.features, 'create-webvh')
         uses: astral-sh/setup-uv@v5
       - name: Install the project
+        if: contains(matrix.features, 'create-webvh')
         run: uv --directory tsp_sdk sync --locked --all-extras --dev
       - name: Activate virtualenv
+        if: contains(matrix.features, 'create-webvh')
         run: |
           source ${GITHUB_WORKSPACE}/tsp_sdk/.venv/bin/activate
           echo PATH=$PATH >> $GITHUB_ENV
           echo VIRTUAL_ENV=$VIRTUAL_ENV >> $GITHUB_ENV
       - run: |
-          cargo test --features create-webvh
-          cargo test --doc
-          cargo test --package tsp_sdk --features nacl
-          cargo test --package tsp_sdk --lib --features pq
+          cargo test --features ${{ matrix.features }}
 
   cargo-deny:
     runs-on: ubuntu-latest
