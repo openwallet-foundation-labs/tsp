@@ -11,6 +11,7 @@
 - [Hosting](hosting.md)
 
 # Developers
+
 - [TSP Protocol Design Overview](./design-overview.md)
 - [TSP technical specification](./TSP-technical-specification.md)
   - [CESR encoding](./cesr.md)
@@ -22,6 +23,7 @@
 - [Benchmark](benchmark.md)
 
 # Protocol Integrations
-- [TAM AI Agent]()
+
+- [TMCP: TSP x MCP](tmcp.md)
 - [MQTT]()
 - [Matrix]()
