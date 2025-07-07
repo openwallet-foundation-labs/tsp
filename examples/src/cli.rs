@@ -62,7 +62,7 @@ struct Cli {
     #[arg(
         short,
         long,
-        default_value = "demo.teaspoon.world",
+        default_value = "p.teaspoon.world",
         help = "Test server domain"
     )]
     server: String,
