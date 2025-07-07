@@ -27,6 +27,7 @@ pub use did::peer::{encode_did_peer, verify_did_peer};
 pub use error::VidError;
 use url::Url;
 
+use crate::definitions::VidEncryptionKeyType;
 #[cfg(feature = "resolve")]
 pub use resolve::verify_vid;
 
@@ -42,6 +43,7 @@ pub struct Vid {
     id: String,
     transport: Url,
     public_sigkey: PublicVerificationKeyData,
+    enc_key_type: VidEncryptionKeyType,
     public_enckey: PublicKeyData,
 }
 
@@ -86,6 +88,10 @@ impl VerifiedVid for Vid {
     fn encryption_key(&self) -> &PublicKeyData {
         &self.public_enckey
     }
+
+    fn encryption_key_type(&self) -> VidEncryptionKeyType {
+        self.enc_key_type
+    }
 }
 
 impl VerifiedVid for OwnedVid {
@@ -103,6 +109,10 @@ impl VerifiedVid for OwnedVid {
 
     fn encryption_key(&self) -> &PublicKeyData {
         self.vid.encryption_key()
+    }
+
+    fn encryption_key_type(&self) -> VidEncryptionKeyType {
+        self.vid.encryption_key_type()
     }
 }
 
@@ -132,6 +142,10 @@ impl OwnedVid {
                 id: id.into(),
                 transport,
                 public_sigkey,
+                #[cfg(not(feature = "pq"))]
+                enc_key_type: VidEncryptionKeyType::X25519,
+                #[cfg(feature = "pq")]
+                enc_key_type: VidEncryptionKeyType::X25519Kyber768Draft00,
                 public_enckey,
             },
             sigkey,
@@ -146,6 +160,10 @@ impl OwnedVid {
         let mut vid = Vid {
             id: Default::default(),
             transport,
+            #[cfg(not(feature = "pq"))]
+            enc_key_type: VidEncryptionKeyType::X25519,
+            #[cfg(feature = "pq")]
+            enc_key_type: VidEncryptionKeyType::X25519Kyber768Draft00,
             public_sigkey,
             public_enckey,
         };
@@ -179,6 +197,7 @@ pub struct ExportVid {
     pub transport: Url,
     pub public_sigkey: PublicVerificationKeyData,
     pub public_enckey: PublicKeyData,
+    pub enc_key_type: VidEncryptionKeyType,
     pub(crate) sigkey: Option<PrivateSigningKeyData>,
     pub(crate) enckey: Option<PrivateKeyData>,
     pub relation_status: RelationshipStatus,
@@ -194,6 +213,7 @@ impl ExportVid {
             id: self.id.clone(),
             transport: self.transport.clone(),
             public_sigkey: self.public_sigkey.clone(),
+            enc_key_type: self.enc_key_type,
             public_enckey: self.public_enckey.clone(),
         }
     }

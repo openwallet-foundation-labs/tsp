@@ -103,8 +103,8 @@ pub(crate) fn seal(
         *digest = crate::crypto::blake2b256(&cesr_message)
     }
 
-    let sender_secret_key = SecretKey::from_bytes(**sender.decryption_key());
-    let receiver_public_key = PublicKey::from(**receiver.encryption_key());
+    let sender_secret_key = SecretKey::from_slice(&sender.decryption_key())?;
+    let receiver_public_key = PublicKey::from_slice(&receiver.encryption_key())?;
 
     let sender_box = ChaChaBox::new(&receiver_public_key, &sender_secret_key);
 
@@ -138,8 +138,8 @@ pub(crate) fn open<'a>(
     let (ciphertext, footer) = ciphertext.split_at_mut(ciphertext.len() - 16 - 24);
     let (tag, nonce) = footer.split_at(16);
 
-    let receiver_secret_key = SecretKey::from_bytes(**receiver.decryption_key());
-    let sender_public_key = PublicKey::from(**sender.encryption_key());
+    let receiver_secret_key = SecretKey::from_slice(receiver.decryption_key().as_slice())?;
+    let sender_public_key = PublicKey::from_slice(sender.encryption_key().as_slice())?;
     let receiver_box = ChaChaBox::new(&sender_public_key, &receiver_secret_key);
 
     receiver_box.decrypt_in_place_detached(nonce.into(), &[], ciphertext, tag.into())?;

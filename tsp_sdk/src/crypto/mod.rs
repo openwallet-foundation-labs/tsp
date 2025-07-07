@@ -1,7 +1,13 @@
+#[cfg(not(feature = "nacl"))]
+use crate::definitions::VidEncryptionKeyType;
 use crate::definitions::{
     Digest, MessageType, NonConfidentialData, Payload, PrivateKeyData, PrivateSigningKeyData,
     PrivateVid, PublicKeyData, PublicVerificationKeyData, TSPMessage, VerifiedVid,
 };
+#[cfg(not(feature = "pq"))]
+use hpke::kem;
+#[cfg(feature = "pq")]
+use hpke_pq::kem;
 use rand_core::OsRng;
 
 pub use digest::{blake2b256, sha256};
@@ -11,14 +17,11 @@ pub mod error;
 mod nonconfidential;
 
 mod tsp_hpke;
-#[cfg(not(feature = "pq"))]
 mod tsp_nacl;
 
-pub use error::CryptoError;
-
-#[cfg(not(feature = "pq"))]
 use crate::cesr::CryptoType;
 use crate::crypto::CryptoError::Verify;
+pub use error::CryptoError;
 
 #[cfg(not(feature = "pq"))]
 pub type Aead = hpke::aead::ChaCha20Poly1305;
@@ -27,7 +30,7 @@ pub type Aead = hpke::aead::ChaCha20Poly1305;
 pub type Kdf = hpke::kdf::HkdfSha256;
 
 #[cfg(not(feature = "pq"))]
-pub type Kem = hpke::kem::X25519HkdfSha256;
+pub type Kem = kem::X25519HkdfSha256;
 
 #[cfg(feature = "pq")]
 pub type Aead = hpke_pq::aead::ChaCha20Poly1305;
@@ -36,7 +39,7 @@ pub type Aead = hpke_pq::aead::ChaCha20Poly1305;
 pub type Kdf = hpke_pq::kdf::HkdfSha256;
 
 #[cfg(feature = "pq")]
-pub type Kem = hpke_pq::kem::X25519Kyber768Draft00;
+pub type Kem = kem::X25519Kyber768Draft00;
 
 /// Encrypt, authenticate and sign and CESR encode a TSP message
 pub fn seal(
@@ -57,8 +60,25 @@ pub fn seal_and_hash(
     digest: Option<&mut Digest>,
 ) -> Result<TSPMessage, CryptoError> {
     #[cfg(not(feature = "nacl"))]
-    let msg =
-        tsp_hpke::seal::<Aead, Kdf, Kem>(sender, receiver, nonconfidential_data, payload, digest)?;
+    let msg = match receiver.encryption_key_type() {
+        VidEncryptionKeyType::X25519 => tsp_hpke::seal::<Aead, Kdf, kem::X25519HkdfSha256>(
+            sender,
+            receiver,
+            nonconfidential_data,
+            payload,
+            digest,
+        ),
+        #[cfg(feature = "pq")]
+        VidEncryptionKeyType::X25519Kyber768Draft00 => {
+            tsp_hpke::seal::<Aead, Kdf, kem::X25519Kyber768Draft00>(
+                sender,
+                receiver,
+                nonconfidential_data,
+                payload,
+                digest,
+            )
+        }
+    }?;
 
     #[cfg(feature = "nacl")]
     let msg = tsp_nacl::seal(sender, receiver, nonconfidential_data, payload, digest)?;
@@ -107,13 +127,17 @@ pub fn open<'a>(
         return Err(CryptoError::UnexpectedRecipient);
     }
 
-    #[cfg(feature = "pq")]
-    return tsp_hpke::open::<Aead, Kdf, Kem>(receiver, sender, raw_header, envelope, ciphertext);
-
-    #[cfg(not(feature = "pq"))]
     match envelope.crypto_type {
+        #[cfg(feature = "pq")]
+        CryptoType::X25519Kyber768Draft00 => {
+            return tsp_hpke::open::<Aead, Kdf, kem::X25519Kyber768Draft00>(
+                receiver, sender, raw_header, envelope, ciphertext,
+            );
+        }
         CryptoType::HpkeAuth | CryptoType::HpkeEssr => {
-            tsp_hpke::open::<Aead, Kdf, Kem>(receiver, sender, raw_header, envelope, ciphertext)
+            tsp_hpke::open::<Aead, Kdf, kem::X25519HkdfSha256>(
+                receiver, sender, raw_header, envelope, ciphertext,
+            )
         }
         CryptoType::NaclAuth | CryptoType::NaclEssr => {
             tsp_nacl::open(receiver, sender, raw_header, envelope, ciphertext)
@@ -147,15 +171,14 @@ pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
     let (private, public) = <Kem as hpke::Kem>::gen_keypair(&mut OsRng);
 
     (
-        Into::<[u8; 32]>::into(private.to_bytes()).into(),
-        Into::<[u8; 32]>::into(public.to_bytes()).into(),
+        private.to_bytes().to_vec().into(),
+        public.to_bytes().to_vec().into(),
     )
 }
 
 #[cfg(feature = "pq")]
 /// Generate a new encryption / decryption key pair
 pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
-    use crate::definitions::{PRIVATE_KEY_SIZE, PUBLIC_KEY_SIZE};
     use hpke_pq::Serializable;
 
     let (private, public) = <Kem as hpke_pq::Kem>::gen_keypair(&mut OsRng);
@@ -164,12 +187,8 @@ pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
     let public = public.to_bytes();
 
     (
-        TryInto::<[u8; PRIVATE_KEY_SIZE]>::try_into(private.as_slice())
-            .unwrap()
-            .into(),
-        TryInto::<[u8; PUBLIC_KEY_SIZE]>::try_into(public.as_slice())
-            .unwrap()
-            .into(),
+        private.as_slice().to_vec().into(),
+        public.as_slice().to_vec().into(),
     )
 }
 
@@ -179,8 +198,11 @@ pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
     let private_key = crypto_box::SecretKey::generate(&mut OsRng);
 
     (
-        private_key.to_bytes().into(),
-        crypto_box::PublicKey::from(&private_key).to_bytes().into(),
+        private_key.to_bytes().to_vec().into(),
+        crypto_box::PublicKey::from(&private_key)
+            .to_bytes()
+            .to_vec()
+            .into(),
     )
 }
 

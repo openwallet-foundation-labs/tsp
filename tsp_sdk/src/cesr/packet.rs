@@ -39,6 +39,8 @@ use super::{
     encode::{encode_count, encode_fixed_data},
     error::{DecodeError, EncodeError},
 };
+#[cfg(not(feature = "pq"))]
+use hpke::kem;
 use std::fmt::Debug;
 
 /// A type to enforce that a random nonce contains enough bits of security
@@ -127,6 +129,25 @@ pub enum CryptoType {
     HpkeEssr = 2,
     NaclAuth = 3,
     NaclEssr = 4,
+    #[cfg(feature = "pq")]
+    X25519Kyber768Draft00 = 5,
+}
+
+pub trait AsCryptoType {
+    fn crypto_type() -> CryptoType;
+}
+
+#[cfg(feature = "pq")]
+impl AsCryptoType for kem::X25519Kyber768Draft00 {
+    fn crypto_type() -> CryptoType {
+        CryptoType::X25519Kyber768Draft00
+    }
+}
+
+impl AsCryptoType for kem::X25519HkdfSha256 {
+    fn crypto_type() -> CryptoType {
+        CryptoType::HpkeAuth
+    }
 }
 
 impl TryFrom<u8> for CryptoType {
@@ -139,6 +160,8 @@ impl TryFrom<u8> for CryptoType {
             2 => Ok(CryptoType::HpkeEssr),
             3 => Ok(CryptoType::NaclAuth),
             4 => Ok(CryptoType::NaclEssr),
+            #[cfg(feature = "pq")]
+            5 => Ok(CryptoType::X25519Kyber768Draft00),
             _ => Err(DecodeError::InvalidCryptoType),
         }
     }
@@ -633,6 +656,8 @@ pub fn decode_sender_receiver<'a, Vid: TryFrom<&'a [u8]>>(
     Ok((sender, receiver, crypto_type, signature_type))
 }
 
+#[cfg(feature = "pq")]
+use hpke_pq::kem;
 use std::ops::Range;
 
 #[derive(Debug)]

@@ -10,7 +10,7 @@
 #
 # (you should run these in separate terminals, together with the SSL proxy)
 
-cargo install --path . --features use_local_certificate
+cargo install --path . --features use_local_certificate,pq
 
 echo "---- cleanup the wallet"
 rm -f a.sqlite b.sqlite

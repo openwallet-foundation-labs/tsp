@@ -111,6 +111,7 @@ impl SecureStore {
                 transport: context.vid.endpoint().clone(),
                 public_sigkey: context.vid.verifying_key().clone(),
                 public_enckey: context.vid.encryption_key().clone(),
+                enc_key_type: context.vid.encryption_key_type(),
                 sigkey: context.private.as_ref().map(|x| x.signing_key().clone()),
                 enckey: context.private.as_ref().map(|x| x.decryption_key().clone()),
                 relation_status: context.relation_status.clone(),

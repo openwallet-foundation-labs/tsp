@@ -159,6 +159,7 @@ fn test_send_command_unverified_receiver_ask_flag() {
         "--ask",
     ])
     .write_stdin(input)
+    .timeout(Duration::from_secs(2))
     .assert()
     .stderr(predicate::str::contains(
         "Message cannot be sent without verifying the receiver's DID",
@@ -182,6 +183,7 @@ fn test_send_command_unverified_receiver_ask_flag() {
                 "--ask",
             ])
             .write_stdin(input)
+            .timeout(Duration::from_secs(2))
             .assert()
             .stdout(predicate::str::contains(
                 "Do you want to verify receiver DID",
@@ -198,6 +200,7 @@ fn test_send_command_unverified_receiver_ask_flag() {
                 "--one",
                 &marc_did,
             ])
+            .timeout(Duration::from_secs(2))
             .assert()
             .stderr(predicate::str::contains("received relationship request"))
             .success();

@@ -12,6 +12,7 @@ rust-version.workspace = true
 nacl = ["tsp_sdk/nacl"]
 use_local_certificate = ["tsp_sdk/use_local_certificate"]
 create-webvh = ["tsp_sdk/create-webvh", "dep:pyo3", "dep:pyo3-async-runtimes"]
+pq = ["tsp_sdk/pq"]
 
 [[bin]]
 name = "create-did-web"
