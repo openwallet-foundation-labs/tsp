@@ -171,7 +171,6 @@ jobs:
           for target in $(cargo fuzz list ${{ matrix.features }}) ; do
             cargo fuzz run ${{ matrix.features }} $target -- -max_total_time=10
           done
-        continue-on-error: true
 
       - name: Upload artifacts
         if: failure() && steps.fuzz.outcome == 'failure'

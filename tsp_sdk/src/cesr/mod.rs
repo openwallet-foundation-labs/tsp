@@ -100,7 +100,7 @@ impl EnvelopeType<'_> {
     }
 }
 
-pub fn probe(stream: &mut [u8]) -> Result<EnvelopeType, error::DecodeError> {
+pub fn probe(stream: &mut [u8]) -> Result<EnvelopeType<'_>, error::DecodeError> {
     let (_, crypto_type, _) = detected_tsp_header_size_and_confidentiality(&mut (stream as &[u8]))?;
 
     let envelope = decode_envelope(stream)?
