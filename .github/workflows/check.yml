@@ -2,7 +2,7 @@ name: Check
 
 on:
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   clippy:
@@ -61,7 +61,7 @@ jobs:
         with:
           command: check
           arguments: --workspace
-          rust-version: '1.85'
+          rust-version: "1.85"
 
   cargo-doc:
     runs-on: ubuntu-latest
@@ -80,7 +80,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '22'
+          node-version: "22"
       - name: Install wasm-pack
         run: cargo install wasm-pack
       - name: Run tests with wasm-pack
@@ -127,7 +127,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v2
         with:
-          node-version: '20'
+          node-version: "20"
 
       - name: Install wasm-pack
         run: |
@@ -158,15 +158,22 @@ jobs:
         with:
           toolchain: nightly
       - uses: Swatinem/rust-cache@v2
-      
+
       - name: Install cargo fuzz
         uses: taiki-e/install-action@8984d603c208823d3c1a1b796f4081736f3ae3f9
         with:
           tool: cargo-fuzz
 
       - name: Smoke-test fuzz targets
+        id: fuzz
         run: |
           cargo fuzz build ${{ matrix.features }}
           for target in $(cargo fuzz list ${{ matrix.features }}) ; do
             cargo fuzz run ${{ matrix.features }} $target -- -max_total_time=10
           done
+
+      - name: Upload artifacts
+        if: failure() && steps.fuzz.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          path: fuzz/artifacts

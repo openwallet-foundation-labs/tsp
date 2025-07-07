@@ -390,7 +390,7 @@ pub struct DecodedPayload<'a> {
 }
 
 /// Decode a TSP Digest
-fn decode_digest(stream: &mut [u8]) -> Result<(Digest, &mut [u8]), DecodeError> {
+fn decode_digest(stream: &mut [u8]) -> Result<(Digest<'_>, &mut [u8]), DecodeError> {
     let result = if decode_fixed_data::<32>(TSP_SHA256, &mut (stream as &[u8])).is_some() {
         decode_fixed_data_mut(TSP_SHA256, stream)
             .map(|(digest, stream)| (Digest::Sha2_256(digest), stream))
@@ -413,7 +413,7 @@ pub fn encode_digest(digest: &Digest, output: &mut impl for<'a> Extend<&'a u8>) 
 }
 
 /// Decode a TSP Payload
-pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload, DecodeError> {
+pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, DecodeError> {
     let sender_identity = match decode_count_mut(TSP_PAYLOAD, stream) {
         Some((2, upd_stream)) => {
             let essr_prefix: &[u8];
@@ -726,7 +726,7 @@ impl<'a> CipherView<'a> {
     }
 
     /// Obtain the VerificationChallenge of this CipherView
-    pub fn as_challenge(&self) -> VerificationChallenge {
+    pub fn as_challenge(&self) -> VerificationChallenge<'_> {
         VerificationChallenge {
             signed_data: &self.data[self.signed_data.clone()],
             signature: self.signature,
@@ -861,7 +861,7 @@ pub struct MessageParts<'a> {
 }
 
 /// Decode a CESR-encoded message into its CESR-encoded parts
-pub fn open_message_into_parts(data: &[u8]) -> Result<MessageParts, DecodeError> {
+pub fn open_message_into_parts(data: &[u8]) -> Result<MessageParts<'_>, DecodeError> {
     let (mut pos, crypto_type, signature_type) =
         detected_tsp_header_size_and_confidentiality(&mut (data as &[u8]))?;
 
