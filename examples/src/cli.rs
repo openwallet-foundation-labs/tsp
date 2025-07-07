@@ -656,6 +656,7 @@ async fn run() -> Result<(), Error> {
                                 cesr::CryptoType::HpkeEssr => "HPKE ESSR",
                                 cesr::CryptoType::NaclAuth => "NaCl Auth",
                                 cesr::CryptoType::NaclEssr => "NaCl ESSR",
+                                #[cfg(feature = "pq")]
                                 cesr::CryptoType::X25519Kyber768Draft00 => "X25519Kyber768Draft00",
                             };
                             let signature_type = match message_type.signature_type {

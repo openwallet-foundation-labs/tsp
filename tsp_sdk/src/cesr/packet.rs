@@ -129,6 +129,7 @@ pub enum CryptoType {
     HpkeEssr = 2,
     NaclAuth = 3,
     NaclEssr = 4,
+    #[cfg(feature = "pq")]
     X25519Kyber768Draft00 = 5
 }
 
@@ -159,6 +160,7 @@ impl TryFrom<u8> for CryptoType {
             2 => Ok(CryptoType::HpkeEssr),
             3 => Ok(CryptoType::NaclAuth),
             4 => Ok(CryptoType::NaclEssr),
+            #[cfg(feature = "pq")]
             5 => Ok(CryptoType::X25519Kyber768Draft00),
             _ => Err(DecodeError::InvalidCryptoType),
         }
