@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{
     ExportVid, OwnedVid, PrivateVid, RelationshipStatus,
     crypto::CryptoError,
@@ -135,6 +137,11 @@ impl AsyncSecureStore {
     /// Check whether the [VerifiedVid] identified by `vid` exists in the wallet
     pub fn has_verified_vid(&self, vid: &str) -> Result<bool, Error> {
         self.inner.has_verified_vid(vid)
+    }
+
+    /// Retrieve the [VerifiedVid] identified by `vid` from the wallet if it exists.
+    pub fn get_verified_vid(&self, vid: &str) -> Result<Arc<dyn VerifiedVid>, Error> {
+        self.inner.get_verified_vid(vid)
     }
 
     /// Resolve and verify public key material for a VID identified by `vid` and add it to the wallet as a relationship
