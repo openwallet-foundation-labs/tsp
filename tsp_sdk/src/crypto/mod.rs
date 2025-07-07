@@ -17,7 +17,6 @@ pub mod error;
 mod nonconfidential;
 
 mod tsp_hpke;
-#[cfg(not(feature = "pq"))]
 mod tsp_nacl;
 
 use crate::cesr::CryptoType;
@@ -128,36 +127,17 @@ pub fn open<'a>(
         return Err(CryptoError::UnexpectedRecipient);
     }
 
-    #[cfg(feature = "pq")]
     match envelope.crypto_type {
-        CryptoType::Plaintext => {
-            panic!()
-        }
-        CryptoType::HpkeAuth => {
-            return tsp_hpke::open::<Aead, Kdf, kem::X25519HkdfSha256>(
-                receiver, sender, raw_header, envelope, ciphertext,
-            );
-        }
-        CryptoType::HpkeEssr => {
-            panic!()
-        }
-        CryptoType::NaclAuth => {
-            panic!()
-        }
-        CryptoType::NaclEssr => {
-            panic!()
-        }
+        #[cfg(feature = "pq")]
         CryptoType::X25519Kyber768Draft00 => {
             return tsp_hpke::open::<Aead, Kdf, kem::X25519Kyber768Draft00>(
                 receiver, sender, raw_header, envelope, ciphertext,
             );
         }
-    }
-
-    #[cfg(not(feature = "pq"))]
-    match envelope.crypto_type {
         CryptoType::HpkeAuth | CryptoType::HpkeEssr => {
-            tsp_hpke::open::<Aead, Kdf, Kem>(receiver, sender, raw_header, envelope, ciphertext)
+            tsp_hpke::open::<Aead, Kdf, kem::X25519HkdfSha256>(
+                receiver, sender, raw_header, envelope, ciphertext,
+            )
         }
         CryptoType::NaclAuth | CryptoType::NaclEssr => {
             tsp_nacl::open(receiver, sender, raw_header, envelope, ciphertext)

@@ -21,7 +21,7 @@ use url::Url;
 /// use tsp_sdk::{AsyncSecureStore, OwnedVid, Error, ReceivedTspMessage};
 ///
 /// #[tokio::main]
-/// # #[serial_test::serial]
+/// # #[serial_test::serial(clean_wallet)]
 /// async fn main() {
 ///     // alice wallet
 ///     let mut db = AsyncSecureStore::new();
@@ -201,7 +201,7 @@ impl AsyncSecureStore {
     /// use tsp_sdk::{AsyncSecureStore, OwnedVid};
     ///
     /// #[tokio::main]
-    /// # #[serial_test::serial]
+    /// # #[serial_test::serial(clean_wallet)]
     /// async fn main() {
     ///     let mut db = AsyncSecureStore::new();
     ///     let private_vid = OwnedVid::from_file("../examples/test/bob/piv.json").await.unwrap();
@@ -270,7 +270,7 @@ impl AsyncSecureStore {
     /// use tsp_sdk::{AsyncSecureStore, OwnedVid};
     ///
     /// #[tokio::main]
-    /// # #[serial_test::serial]
+    /// # #[serial_test::serial(clean_wallet)]
     /// async fn main() {
     ///     let mut db = AsyncSecureStore::new();
     ///     let private_vid = OwnedVid::from_file("../examples/test/bob/piv.json").await.unwrap();

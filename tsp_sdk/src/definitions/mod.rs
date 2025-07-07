@@ -16,18 +16,6 @@ use serde::{Deserialize, Serialize};
 
 pub type Digest = [u8; 32];
 
-// #[cfg(feature = "pq")]
-// pub const PRIVATE_KEY_SIZE: usize = 2432;
-//
-// #[cfg(feature = "pq")]
-// pub const PUBLIC_KEY_SIZE: usize = 1216;
-//
-// #[cfg(not(feature = "pq"))]
-// pub const PRIVATE_KEY_SIZE: usize = 32;
-//
-// #[cfg(not(feature = "pq"))]
-// pub const PUBLIC_KEY_SIZE: usize = 32;
-
 #[derive(Clone, Zeroize)]
 pub struct PrivateKeyData(Vec<u8>);
 
@@ -268,6 +256,7 @@ pub trait PrivateVid: VerifiedVid + Send + Sync {
 
     /// The PRIVATE key used to sign data
     fn signing_key(&self) -> &PrivateSigningKeyData;
+    // ANCHOR_END: custom-vid-mbBook
 
     fn private_encryption_key_jwk(&self) -> serde_json::Value {
         serde_json::json!({
@@ -279,7 +268,6 @@ pub trait PrivateVid: VerifiedVid + Send + Sync {
         })
     }
 }
-// ANCHOR_END: custom-vid-mbBook
 
 impl Debug for PrivateKeyData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

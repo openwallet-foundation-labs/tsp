@@ -193,7 +193,6 @@ fn resolve_url(parts: &[&str]) -> Result<Url, VidError> {
     .map_err(|_| VidError::InvalidVid(parts.join(":")))
 }
 
-// TODO remove this function
 fn find_first_key_to_be_removed<const N: usize>(
     did_document: &DidDocument,
     method: &[String],

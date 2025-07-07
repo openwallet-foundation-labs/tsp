@@ -31,7 +31,7 @@
 //! use tsp_sdk::{AsyncSecureStore, Error, OwnedVid, ReceivedTspMessage};
 //!
 //! #[tokio::main]
-//! # #[serial_test::serial]
+//! # #[serial_test::serial(clean_wallet)]
 //! async fn main() -> Result<(), Error> {
 //!     // bob wallet
 //!     let mut bob_db = AsyncSecureStore::new();

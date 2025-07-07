@@ -797,7 +797,7 @@ impl SecureStore {
 
                         // the act of opening this message is simply verifying the signature, because this SDK doesn't yet
                         // support sending data as part of control messages. This can easily change.
-                        let _ = dbg!(self.open_message(inner))?;
+                        let _ = self.open_message(inner)?;
 
                         self.set_parent_for_vid(&inner_vid, Some(&sender))?;
 
@@ -899,7 +899,7 @@ impl SecureStore {
                     return Err(Error::UnverifiedVid(sender.to_string()));
                 };
 
-                let (message, message_type) = dbg!(crate::crypto::verify(&*sender_vid, message))?;
+                let (message, message_type) = crate::crypto::verify(&*sender_vid, message)?;
 
                 Ok(ReceivedTspMessage::GenericMessage {
                     sender,

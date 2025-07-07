@@ -129,37 +129,6 @@ impl SecureStorage for AskarSecureStorage {
                 }
             }
 
-            // if let Some(private) = export.enckey {
-            //     let decryption_key = LocalKey::from_secret_bytes(KeyAlg::X25519, private.as_ref())?;
-            //     let decryption_key_name = format!("{id}#decryption-key");
-            //     if let Err(e) = conn
-            //         .insert_key(
-            //             &decryption_key_name,
-            //             &decryption_key,
-            //             None,
-            //             None,
-            //             None,
-            //             None,
-            //         )
-            //         .await
-            //     {
-            //         if e.kind() == ErrorKind::Duplicate {
-            //             conn.remove_key(&decryption_key_name).await?;
-            //             conn.insert_key(
-            //                 &decryption_key_name,
-            //                 &decryption_key,
-            //                 None,
-            //                 None,
-            //                 None,
-            //                 None,
-            //             )
-            //             .await?;
-            //         } else {
-            //             Err(Error::from(e))?;
-            //         }
-            //     }
-            // }
-
             let verification_key =
                 LocalKey::from_public_bytes(KeyAlg::Ed25519, export.public_sigkey.as_ref())?;
             let verification_key_name = format!("{id}#verification-key");

@@ -10,8 +10,6 @@
 #
 # (you should run these in separate terminals, together with the SSL proxy)
 
-set -x
-
 cargo install --path . --features use_local_certificate,pq
 
 echo "---- cleanup the wallet"
