@@ -30,8 +30,6 @@ use hpke_pq::{
 
 use super::{CryptoError, MessageContents};
 
-
-
 #[cfg(not(feature = "nacl"))]
 pub(crate) fn seal<A, Kdf, Kem>(
     sender: &dyn PrivateVid,

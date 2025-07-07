@@ -30,7 +30,7 @@ pub type Aead = hpke::aead::ChaCha20Poly1305;
 pub type Kdf = hpke::kdf::HkdfSha256;
 
 #[cfg(not(feature = "pq"))]
-pub type Kem = hpke::kem::X25519HkdfSha256;
+pub type Kem = kem::X25519HkdfSha256;
 
 #[cfg(feature = "pq")]
 pub type Aead = hpke_pq::aead::ChaCha20Poly1305;
@@ -39,7 +39,7 @@ pub type Aead = hpke_pq::aead::ChaCha20Poly1305;
 pub type Kdf = hpke_pq::kdf::HkdfSha256;
 
 #[cfg(feature = "pq")]
-pub type Kem = hpke_pq::kem::X25519Kyber768Draft00;
+pub type Kem = kem::X25519Kyber768Draft00;
 
 /// Encrypt, authenticate and sign and CESR encode a TSP message
 pub fn seal(
@@ -70,13 +70,13 @@ pub fn seal_and_hash(
         ),
         #[cfg(feature = "pq")]
         VidEncryptionKeyType::X25519Kyber768Draft00 => {
-            dbg!(tsp_hpke::seal::<Aead, Kdf, kem::X25519Kyber768Draft00>(
+            tsp_hpke::seal::<Aead, Kdf, kem::X25519Kyber768Draft00>(
                 sender,
                 receiver,
                 nonconfidential_data,
                 payload,
                 digest,
-            ))
+            )
         }
     }?;
 
@@ -217,8 +217,8 @@ pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
     let private_key = crypto_box::SecretKey::generate(&mut OsRng);
 
     (
-        private_key.to_bytes().into(),
-        crypto_box::PublicKey::from(&private_key).to_bytes().into(),
+        private_key.to_bytes().to_vec().into(),
+        crypto_box::PublicKey::from(&private_key).to_bytes().to_vec().into(),
     )
 }
 

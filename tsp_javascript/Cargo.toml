@@ -11,6 +11,9 @@ rust-version.workspace = true
 
 publish = true
 
+[features]
+pq = ["tsp_sdk/pq"]
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 

@@ -1,7 +1,7 @@
-use assert_cmd::{cargo_bin, Command};
+use assert_cmd::{Command, cargo_bin};
 use predicates::prelude::*;
 use rand::distributions::Alphanumeric;
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 use std::process::Command as StdCommand;
 use std::thread;
 use std::time::Duration;

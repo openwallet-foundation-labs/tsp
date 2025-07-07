@@ -160,8 +160,10 @@ impl OwnedVid {
         let mut vid = Vid {
             id: Default::default(),
             transport,
-            // TODO: consider allowing PQ algorithms for DID:peer
+            #[cfg(not(feature = "pq"))]
             enc_key_type: VidEncryptionKeyType::X25519,
+            #[cfg(feature = "pq")]
+            enc_key_type: VidEncryptionKeyType::X25519Kyber768Draft00,
             public_sigkey,
             public_enckey,
         };

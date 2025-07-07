@@ -39,9 +39,9 @@ use super::{
     encode::{encode_count, encode_fixed_data},
     error::{DecodeError, EncodeError},
 };
-use std::fmt::Debug;
 #[cfg(not(feature = "pq"))]
 use hpke::kem;
+use std::fmt::Debug;
 
 /// A type to enforce that a random nonce contains enough bits of security
 /// (128bits via a birthday attack -> 256bits needed)
@@ -130,7 +130,7 @@ pub enum CryptoType {
     NaclAuth = 3,
     NaclEssr = 4,
     #[cfg(feature = "pq")]
-    X25519Kyber768Draft00 = 5
+    X25519Kyber768Draft00 = 5,
 }
 
 pub trait AsCryptoType {
@@ -656,9 +656,9 @@ pub fn decode_sender_receiver<'a, Vid: TryFrom<&'a [u8]>>(
     Ok((sender, receiver, crypto_type, signature_type))
 }
 
-use std::ops::Range;
 #[cfg(feature = "pq")]
 use hpke_pq::kem;
+use std::ops::Range;
 
 #[derive(Debug)]
 /// A CipherView is an intermediary representation of an "opened envelope", but whose signature still needs

@@ -1,18 +1,18 @@
+use base64ct::{Base64UrlUnpadded, Encoding};
 use bytes::BytesMut;
 use core::fmt;
 use std::{
     fmt::{Debug, Display},
     ops::Deref,
 };
-use base64ct::{Base64UrlUnpadded, Encoding};
 use zeroize::Zeroize;
 
 #[cfg(feature = "async")]
 use futures::Stream;
 
+use crate::vid::did::web::{Curve, KeyType};
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
-use crate::vid::did::web::{Curve, KeyType};
 
 pub type Digest = [u8; 32];
 

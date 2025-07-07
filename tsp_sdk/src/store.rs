@@ -797,7 +797,7 @@ impl SecureStore {
 
                         // the act of opening this message is simply verifying the signature, because this SDK doesn't yet
                         // support sending data as part of control messages. This can easily change.
-                        let _ = self.open_message(inner)?;
+                        let _ = dbg!(self.open_message(inner))?;
 
                         self.set_parent_for_vid(&inner_vid, Some(&sender))?;
 
@@ -899,7 +899,7 @@ impl SecureStore {
                     return Err(Error::UnverifiedVid(sender.to_string()));
                 };
 
-                let (message, message_type) = crate::crypto::verify(&*sender_vid, message)?;
+                let (message, message_type) = dbg!(crate::crypto::verify(&*sender_vid, message))?;
 
                 Ok(ReceivedTspMessage::GenericMessage {
                     sender,
@@ -925,7 +925,7 @@ impl SecureStore {
         let route = route.map(|collection| collection.iter().map(|vid| vid.as_ref()).collect());
 
         let mut thread_id = Default::default();
-        let tsp_message = dbg!(crate::crypto::seal_and_hash(
+        let tsp_message = crate::crypto::seal_and_hash(
             &*sender,
             &*receiver,
             None,
@@ -934,7 +934,7 @@ impl SecureStore {
                 thread_id: Default::default(),
             },
             Some(&mut thread_id),
-        ))?;
+        )?;
 
         let (transport, tsp_message) = if let Some(hop_list) = path {
             self.set_route_for_vid(receiver.identifier(), hop_list)?;

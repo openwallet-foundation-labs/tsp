@@ -12,13 +12,13 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 #[cfg(feature = "create-webvh")]
 use tsp_sdk::vid::{did::webvh::WebvhMetadata, vid_to_did_document};
 use tsp_sdk::{
+    Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
+    RelationshipStatus, SecureStorage, VerifiedVid, Vid,
     cesr::{
         color_print, {self},
-    }, definitions::Digest, vid::{verify_vid, VidError}, Aliases, AskarSecureStorage, AsyncSecureStore, Error,
-    ExportVid, OwnedVid, ReceivedTspMessage, RelationshipStatus,
-    SecureStorage,
-    VerifiedVid,
-    Vid,
+    },
+    definitions::Digest,
+    vid::{VidError, verify_vid},
 };
 use url::Url;
 
@@ -978,7 +978,7 @@ async fn run() -> Result<(), Error> {
         }
     }
 
-    dbg!(write_wallet(&vault, &vid_wallet).await)?;
+    write_wallet(&vault, &vid_wallet).await?;
     vault.close().await?;
 
     Ok(())

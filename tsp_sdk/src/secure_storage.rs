@@ -2,14 +2,14 @@ use std::collections::HashMap;
 
 use crate::definitions::VidEncryptionKeyType;
 use crate::{
-    definitions::{PRIVATE_SIGNING_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE}, store::{Aliases, WebvhUpdateKeys}, Error,
-    ExportVid,
-    RelationshipStatus,
+    Error, ExportVid, RelationshipStatus,
+    definitions::{PRIVATE_SIGNING_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE},
+    store::{Aliases, WebvhUpdateKeys},
 };
 use aries_askar::{
-    entry::EntryOperation, kms::{KeyAlg, LocalKey},
-    ErrorKind,
-    StoreKeyMethod,
+    ErrorKind, StoreKeyMethod,
+    entry::EntryOperation,
+    kms::{KeyAlg, LocalKey},
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
