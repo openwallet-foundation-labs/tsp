@@ -1,4 +1,5 @@
 #![deny(rustdoc::broken_intra_doc_links)]
+// #![doc(test(attr(serial_test::serial(clean_wallet))))]
 
 //! # Trust Spanning Protocol
 //!
@@ -30,6 +31,7 @@
 //! use tsp_sdk::{AsyncSecureStore, Error, OwnedVid, ReceivedTspMessage};
 //!
 //! #[tokio::main]
+//! # #[serial_test::serial]
 //! async fn main() -> Result<(), Error> {
 //!     // bob wallet
 //!     let mut bob_db = AsyncSecureStore::new();

@@ -23,6 +23,8 @@ jobs:
 
   cargo-test:
     runs-on: ubuntu-latest
+    env:
+      RUST_BACKTRACE: "1"
     strategy:
       matrix:
         features:

@@ -1,7 +1,8 @@
+#[cfg(not(feature = "nacl"))]
+use crate::definitions::VidEncryptionKeyType;
 use crate::definitions::{
     Digest, MessageType, NonConfidentialData, Payload, PrivateKeyData, PrivateSigningKeyData,
     PrivateVid, PublicKeyData, PublicVerificationKeyData, TSPMessage, VerifiedVid,
-    VidEncryptionKeyType,
 };
 #[cfg(not(feature = "pq"))]
 use hpke::kem;
@@ -218,7 +219,10 @@ pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
 
     (
         private_key.to_bytes().to_vec().into(),
-        crypto_box::PublicKey::from(&private_key).to_bytes().to_vec().into(),
+        crypto_box::PublicKey::from(&private_key)
+            .to_bytes()
+            .to_vec()
+            .into(),
     )
 }
 
