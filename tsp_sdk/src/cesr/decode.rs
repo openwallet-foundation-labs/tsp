@@ -209,7 +209,10 @@ pub fn decode_large_blob_index(stream: &[u8]) -> Option<std::ops::Range<usize>> 
     let padded_size = size.next_multiple_of(3);
     let lead_bytes = padded_size - size;
 
-    let range = 9 + lead_bytes..9 + padded_size;
+    let start = 9usize.checked_add(lead_bytes)?;
+    let end = 9usize.checked_add(padded_size)?;
+
+    let range = start..end;
     // make sure the range is valid before returning it
     stream.get(range.clone())?;
 
