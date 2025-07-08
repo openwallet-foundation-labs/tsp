@@ -12,10 +12,12 @@
 
 # Developers
 
-- [TSP Protocol Design Overview](./design-overview.md)
-- [TSP technical specification](./TSP-technical-specification.md)
+- [Protocol design overview](./design-overview.md)
+- [Technical specification](./TSP-technical-specification.md)
   - [CESR encoding](./cesr.md)
 - [SDK APIs](./sdk-apis.md)
+  - [Python bindings](./python.md)
+  - [JavaScript bindings]()
 - [Transport layers](./transport.md)
 - [Custom VIDs](custom-vids.md)
   - [WebVH](webvh.md)
