@@ -22,4 +22,5 @@ tokio.workspace = true
 tsp_sdk.workspace = true
 futures.workspace = true
 serde-pyobject.workspace = true
+rustls.workspace = true
 bytes = "1.10.1"
