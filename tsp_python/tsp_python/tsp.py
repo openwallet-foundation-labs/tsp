@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any
 
 from tsp_python import tsp_python
 
@@ -31,7 +32,10 @@ class SecureStore:
         self.inner = tsp_python.Store(*args, **kwargs)
 
     def add_private_vid(
-        self, vid: str, alias: str | None = None, metadata: dict[str, any] | None = None
+        self,
+        vid: OwnedVid,
+        alias: str | None = None,
+        metadata: dict[Any, Any] | None = None,
     ):
         with Wallet(self):
             self.inner.add_private_vid(vid, alias, metadata)
@@ -41,7 +45,7 @@ class SecureStore:
             self.inner.forget_vid(vid)
 
     def add_verified_owned_vid(
-        self, vid: str, alias: str | None = None, metadata: dict | None = None
+        self, vid: str, alias: str | None = None, metadata: dict[Any, Any] | None = None
     ):
         with Wallet(self):
             self.inner.add_verified_owned_vid(vid, alias, metadata)
