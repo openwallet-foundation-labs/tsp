@@ -53,6 +53,9 @@ impl Store {
                 Ok(vault) => {
                     let (vids, aliases, keys) = vault.read().await.map_err(py_exception)?;
 
+                    let _ = rustls::crypto::CryptoProvider::install_default(
+                        rustls::crypto::aws_lc_rs::default_provider(),
+                    );
                     let inner = AsyncSecureStore::new();
                     inner.import(vids, aliases, keys).map_err(py_exception)?;
 

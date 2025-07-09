@@ -25,4 +25,4 @@ Sending a message from Alice to Bob via your own transport layer should work as 
 4. Bob resolves Alice's DID (if not yet known)
 5. Bob opens the TSP message, retrieving Alice's message
 
-This allows you to use TSP over any transport mechanism, including for example WebSockets, MQTT, email, or any other method of transport available in your particular application.
+This allows you to use TSP over any transport mechanism, including for example WebSockets, MQTT, email, or any other method of transport available in your particular application. For example, [TMCP](./tmcp.md) (MCP with TSP) uses this approach to secure the communication between AI agents and MCP servers.

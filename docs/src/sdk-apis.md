@@ -94,4 +94,4 @@ We use the following Rust crates (library dependencies) in our implementation:
 
 The library is usable in other languages.
 We designed the API in a way that allows the use with C, Python, and JavaScript.
-The SDK contains bindings for JavaScript, Node.js, and Python.
+The SDK contains bindings for JavaScript, Node.js, and [Python](./python.md).

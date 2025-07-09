@@ -181,6 +181,12 @@ impl AsyncSecureStore {
         self.inner.get_secret_key(kid)
     }
 
+    /// Seal a TSP message.
+    /// The message is encrypted, encoded, and signed using the key material
+    /// of the sender and receiver, specified by their VIDs.
+    ///
+    /// Note that the corresponding VIDs should first be added and configured
+    /// using this store.
     pub fn seal_message(
         &self,
         sender: &str,
