@@ -9,7 +9,7 @@ See [https://trustoverip.github.io/tswg-tsp-specification/](https://trustoverip.
 
 See the [web interface](./web-interface.md) to get started with TSP without installing
 any software. The web interface is intended to showcase the direct communication mode of TSP,
-the CESR encoding of messages and for testing purposes.
+the [Composable Event Streaming Representation]() (CESR) encoding of messages and for testing purposes.
 
 ![The Rust Logo](./images/demo.teaspoon.world.png)
 
