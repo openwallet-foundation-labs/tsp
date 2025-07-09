@@ -55,7 +55,7 @@ TRACE tsp: persisted wallet
 
 In some cases, it might be helpful to check what the wallet contains to understand the behavior of TSP.
 Therefore, the CLI provides a `show` command.
-The `show local` command will print all the local VIDs stored in the wallet,
+The `tsp show local` command will print all the local VIDs stored in the wallet,
 including their alias, transport, and parent.
 
 ```
