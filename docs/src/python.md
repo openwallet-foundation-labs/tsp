@@ -24,7 +24,7 @@ The `OwnedVid` class is used to create and manage identities. It supports `did:w
 {{#include ../../tsp_python/tsp_python/tsp_python.pyi:OwnedVid-mdBook}}
 ```
 
-The store a created identity, use the `add_private_vid` method of your `SecureStore`.
+To store a created identity, use the `add_private_vid` method of your `SecureStore`.
 
 ## Secure Store
 
