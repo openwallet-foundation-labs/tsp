@@ -1,5 +1,8 @@
 # Nested mode
 
+Over time, sustained message exchanges enable external observers to gather and analyze significant data. 
+To counter this threat, TSP prvoides a technique to encapsulate a specific conversation within an additional TSP envelope.
+
 To try out TSP in nested mode, the command line interface can be used. A nested relationship can be set up by
 exchanging relationship messages (the preferred way), but it can also be tested by manually
 setting up identifiers, having both sides explicitly verify each other’s identities
