@@ -26,7 +26,7 @@ First, **alice** will have to learn about **bob**'s existence:
 ```
 
 Then she can send a relationship request message. This requires **bob** to be listening as
-shown in the previous chapter (i.e., running `tsp -w bob receive bob` in a separate window):
+shown in the previous chapter (i.e., running `tsp -w bob receive bob --one` in a separate window):
 
 ```sh
 > tsp -w alice request --sender-vid alice --receiver-vid bob --wait
