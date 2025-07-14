@@ -10,7 +10,12 @@ uv add git+https://github.com/openwallet-foundation-labs/tsp#subdirectory=tsp_py
 
 ## Example usage
 
-Here's an example showing how you can use the Python bindings to create an identity, resolve someone else's identity, and send and receive TSP messages:
+Here's an example showing how you can use the Python bindings to send and receive TSP messages. The script goes through the following steps:
+
+1. First it creates an `alice` identity and publishes the did on <https://did.teaspoon.world/>.
+2. Then, it will resolve `did:web:did.teaspoon.world:endpoint:bob` (which may fail if this end-point doesn't exist, in which case you can create it using the TSP CLI).
+3. Once the DID has been resolved, it will send a message saying `"hi bob"`. If you control Bob's end-point, you should be able to receive the message via the TSP CLI.
+4. Finally, it will start listening for incoming messages until you exit the script. If you send a message to Alice's generated DID via the TSP CLI you should see it be received and printed by the script.
 
 ```py
 {{#include ../../tsp_python/example.py}}
