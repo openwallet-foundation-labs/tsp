@@ -27,7 +27,7 @@ pub use did::peer::{encode_did_peer, verify_did_peer};
 pub use error::VidError;
 use url::Url;
 
-use crate::definitions::VidEncryptionKeyType;
+use crate::definitions::{VidEncryptionKeyType, VidSignatureKeyType};
 #[cfg(feature = "resolve")]
 pub use resolve::verify_vid;
 
@@ -42,6 +42,7 @@ pub use resolve::verify_vid;
 pub struct Vid {
     id: String,
     transport: Url,
+    sig_key_type: VidSignatureKeyType,
     public_sigkey: PublicVerificationKeyData,
     enc_key_type: VidEncryptionKeyType,
     public_enckey: PublicKeyData,
@@ -92,6 +93,10 @@ impl VerifiedVid for Vid {
     fn encryption_key_type(&self) -> VidEncryptionKeyType {
         self.enc_key_type
     }
+
+    fn signature_key_type(&self) -> VidSignatureKeyType {
+        self.sig_key_type
+    }
 }
 
 impl VerifiedVid for OwnedVid {
@@ -113,6 +118,10 @@ impl VerifiedVid for OwnedVid {
 
     fn encryption_key_type(&self) -> VidEncryptionKeyType {
         self.vid.encryption_key_type()
+    }
+
+    fn signature_key_type(&self) -> VidSignatureKeyType {
+        self.vid.signature_key_type()
     }
 }
 
@@ -141,6 +150,10 @@ impl OwnedVid {
             vid: Vid {
                 id: id.into(),
                 transport,
+                #[cfg(not(feature = "pq"))]
+                sig_key_type: VidSignatureKeyType::Ed25519,
+                #[cfg(feature = "pq")]
+                sig_key_type: VidSignatureKeyType::MlDsa65,
                 public_sigkey,
                 #[cfg(not(feature = "pq"))]
                 enc_key_type: VidEncryptionKeyType::X25519,
@@ -160,6 +173,10 @@ impl OwnedVid {
         let mut vid = Vid {
             id: Default::default(),
             transport,
+            #[cfg(not(feature = "pq"))]
+            sig_key_type: VidSignatureKeyType::Ed25519,
+            #[cfg(feature = "pq")]
+            sig_key_type: VidSignatureKeyType::MlDsa65,
             #[cfg(not(feature = "pq"))]
             enc_key_type: VidEncryptionKeyType::X25519,
             #[cfg(feature = "pq")]
@@ -196,6 +213,7 @@ pub struct ExportVid {
     pub id: String,
     pub transport: Url,
     pub public_sigkey: PublicVerificationKeyData,
+    pub sig_key_type: VidSignatureKeyType,
     pub public_enckey: PublicKeyData,
     pub enc_key_type: VidEncryptionKeyType,
     pub(crate) sigkey: Option<PrivateSigningKeyData>,
@@ -212,6 +230,7 @@ impl ExportVid {
         Vid {
             id: self.id.clone(),
             transport: self.transport.clone(),
+            sig_key_type: self.sig_key_type,
             public_sigkey: self.public_sigkey.clone(),
             enc_key_type: self.enc_key_type,
             public_enckey: self.public_enckey.clone(),

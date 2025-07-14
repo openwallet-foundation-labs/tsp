@@ -2,8 +2,7 @@ use base64ct::{Base64UrlUnpadded, Encoding};
 use serde::{Deserialize, Serialize};
 
 use crate::definitions::{
-    PRIVATE_SIGNING_KEY_SIZE, PUBLIC_VERIFICATION_KEY_SIZE, PrivateKeyData, PrivateSigningKeyData,
-    PublicKeyData, PublicVerificationKeyData,
+    PrivateKeyData, PrivateSigningKeyData, PublicKeyData, PublicVerificationKeyData,
 };
 
 #[cfg(feature = "async")]
@@ -86,9 +85,6 @@ impl<'de> Deserialize<'de> for PublicVerificationKeyData {
     {
         let encoded: &str = Deserialize::deserialize(deserializer)?;
         let key = Base64UrlUnpadded::decode_vec(encoded).map_err(serde::de::Error::custom)?;
-        let key: [u8; PUBLIC_VERIFICATION_KEY_SIZE] = key
-            .try_into()
-            .map_err(|_| serde::de::Error::custom("key data has incorrect length"))?;
 
         Ok(key.into())
     }
@@ -113,9 +109,6 @@ impl<'de> Deserialize<'de> for PrivateSigningKeyData {
     {
         let encoded: &str = Deserialize::deserialize(deserializer)?;
         let key = Base64UrlUnpadded::decode_vec(encoded).map_err(serde::de::Error::custom)?;
-        let key: [u8; PRIVATE_SIGNING_KEY_SIZE] = key
-            .try_into()
-            .map_err(|_| serde::de::Error::custom("key data has incorrect length"))?;
 
         Ok(key.into())
     }

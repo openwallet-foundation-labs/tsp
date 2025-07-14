@@ -6,6 +6,8 @@ const TSP_DEVELOPMENT_VID: u32 = (((21 << 6) | 8) << 6) | 3; // "VID"
 /// Constants that determine the specific CESR types for "fixed length data"
 const TSP_TYPECODE: u32 = (b'X' - b'A') as u32;
 const ED25519_SIGNATURE: u32 = (b'B' - b'A') as u32;
+#[cfg(feature = "pq")]
+const ML_DSA_65_SIGNATURE: u32 = 0o170413u32; // QDM
 #[allow(clippy::eq_op)]
 const TSP_NONCE: u32 = (b'A' - b'A') as u32;
 const TSP_SHA256: u32 = (b'I' - b'A') as u32;
@@ -178,6 +180,8 @@ impl CryptoType {
 pub enum SignatureType {
     NoSignature = 0,
     Ed25519 = 1,
+    #[cfg(feature = "pq")]
+    MlDsa65 = 2,
 }
 
 impl TryFrom<u8> for SignatureType {
@@ -187,6 +191,8 @@ impl TryFrom<u8> for SignatureType {
         match value {
             0 => Ok(SignatureType::NoSignature),
             1 => Ok(SignatureType::Ed25519),
+            #[cfg(feature = "pq")]
+            2 => Ok(SignatureType::MlDsa65),
             _ => Err(DecodeError::InvalidSignatureType),
         }
     }
@@ -208,7 +214,7 @@ pub struct DecodedEnvelope<'a, Vid, Bytes> {
     pub ciphertext: Option<Bytes>,
 }
 
-type Signature = [u8; 64];
+type Signature = [u8];
 
 /// Safely encode variable data, returning a soft error in case the size limit is exceeded
 fn checked_encode_variable_data(
@@ -580,8 +586,21 @@ fn encode_envelope_fields<'a, Vid: AsRef<[u8]>>(
 }
 
 /// Encode a Ed25519 signature into CESR
-pub fn encode_signature(signature: &Signature, output: &mut impl for<'a> Extend<&'a u8>) {
-    encode_fixed_data(ED25519_SIGNATURE, signature, output);
+pub fn encode_signature(
+    signature: &Signature,
+    output: &mut impl for<'a> Extend<&'a u8>,
+    sig_type: SignatureType,
+) {
+    match sig_type {
+        SignatureType::NoSignature => {}
+        SignatureType::Ed25519 => {
+            encode_fixed_data(ED25519_SIGNATURE, signature, output);
+        }
+        #[cfg(feature = "pq")]
+        SignatureType::MlDsa65 => {
+            encode_fixed_data(ML_DSA_65_SIGNATURE, signature, output);
+        }
+    }
 }
 
 /// Encode a encrypted ciphertext into CESR
@@ -732,6 +751,10 @@ impl<'a> CipherView<'a> {
             signature: self.signature,
         }
     }
+
+    pub(crate) fn signature_type(&self) -> SignatureType {
+        self.signature_type.clone()
+    }
 }
 
 /// Decode an encrypted TSP message plus Envelope & Signature
@@ -764,8 +787,20 @@ pub fn decode_envelope<'a>(stream: &'a mut [u8]) -> Result<CipherView<'a>, Decod
     let mut sigdata: &[u8];
     (data, sigdata) = stream.split_at_mut(signed_data.end);
 
-    let signature =
-        decode_fixed_data(ED25519_SIGNATURE, &mut sigdata).ok_or(DecodeError::UnexpectedData)?;
+    let signature = match signature_type {
+        SignatureType::NoSignature => [].as_slice(),
+        SignatureType::Ed25519 => {
+            let sig: &[u8; 64] = decode_fixed_data(ED25519_SIGNATURE, &mut sigdata)
+                .ok_or(DecodeError::UnexpectedData)?;
+            sig.as_slice()
+        }
+        #[cfg(feature = "pq")]
+        SignatureType::MlDsa65 => {
+            let sig: &[u8; 3309] = decode_fixed_data(ML_DSA_65_SIGNATURE, &mut sigdata)
+                .ok_or(DecodeError::UnexpectedData)?;
+            sig.as_slice()
+        }
+    };
 
     if !sigdata.is_empty() {
         return Err(DecodeError::TrailingGarbage);
@@ -929,7 +964,7 @@ pub fn encode_tsp_message<Vid: AsRef<[u8]>>(
     let ciphertext = &encrypt(receiver, encode_payload_vec(&message)?);
 
     encode_ciphertext(ciphertext, &mut cesr)?;
-    encode_signature(&sign(sender, &cesr), &mut cesr);
+    encode_signature(&sign(sender, &cesr), &mut cesr, SignatureType::Ed25519);
 
     Ok(cesr)
 }
@@ -1016,7 +1051,7 @@ mod test {
         encode_ciphertext(ciphertext, &mut outer).unwrap();
 
         let signed_data = outer.clone();
-        encode_signature(&fixed_sig, &mut outer);
+        encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
 
         let view = decode_envelope(&mut outer).unwrap();
         let ver = view.as_challenge();
@@ -1064,7 +1099,7 @@ mod test {
         encode_ciphertext(ciphertext, &mut outer).unwrap();
 
         let signed_data = outer.clone();
-        encode_signature(&fixed_sig, &mut outer);
+        encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
 
         let view = decode_envelope(&mut outer).unwrap();
         let ver = view.as_challenge();
@@ -1104,7 +1139,7 @@ mod test {
         .unwrap();
 
         let signed_data = outer.clone();
-        encode_signature(&fixed_sig, &mut outer);
+        encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
 
         let view = decode_envelope(&mut outer).unwrap();
         let ver = view.as_challenge();
@@ -1143,7 +1178,7 @@ mod test {
         .unwrap();
         let ciphertext = dummy_crypt(&cesr_payload); // this is wrong
         encode_ciphertext(ciphertext, &mut outer).unwrap();
-        encode_signature(&fixed_sig, &mut outer);
+        encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
 
         assert!(decode_envelope(&mut outer).is_err());
     }
@@ -1165,7 +1200,7 @@ mod test {
             &mut outer,
         )
         .unwrap();
-        encode_signature(&fixed_sig, &mut outer);
+        encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
         encode_ciphertext(&[], &mut outer).unwrap();
 
         assert!(decode_envelope(&mut outer).is_err());
@@ -1185,7 +1220,7 @@ mod test {
         })
         .unwrap();
         encode_ciphertext(&[], &mut outer).unwrap();
-        encode_signature(&fixed_sig, &mut outer);
+        encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
         outer.push(b'-');
 
         assert!(decode_envelope(&mut outer).is_err());
@@ -1283,7 +1318,7 @@ mod test {
         encode_ciphertext(ciphertext, &mut outer).unwrap();
 
         let signed_data = outer.clone();
-        encode_signature(&fixed_sig, &mut outer);
+        encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
 
         let view = decode_envelope(&mut outer).unwrap();
         assert_eq!(view.as_challenge().signed_data, signed_data);

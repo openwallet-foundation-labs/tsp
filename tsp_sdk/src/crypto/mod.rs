@@ -8,6 +8,8 @@ use crate::definitions::{
 use hpke::kem;
 #[cfg(feature = "pq")]
 use hpke_pq::kem;
+#[cfg(feature = "pq")]
+use ml_dsa::{EncodedVerifyingKey, KeyGen, MlDsa65, signature::Verifier};
 use rand_core::OsRng;
 
 pub use digest::{blake2b256, sha256};
@@ -19,7 +21,7 @@ mod nonconfidential;
 mod tsp_hpke;
 mod tsp_nacl;
 
-use crate::cesr::CryptoType;
+use crate::cesr::{CryptoType, SignatureType};
 use crate::crypto::CryptoError::Verify;
 pub use error::CryptoError;
 
@@ -103,12 +105,31 @@ pub fn open<'a>(
 
     // verify outer signature
     let verification_challenge = view.as_challenge();
-    let signature = ed25519_dalek::Signature::from(verification_challenge.signature);
-    let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(sender.verifying_key())
-        .map_err(|err| Verify(sender.identifier().to_string(), err))?;
-    verifying_key
-        .verify_strict(verification_challenge.signed_data, &signature)
-        .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+    match view.signature_type() {
+        SignatureType::NoSignature => {}
+        SignatureType::Ed25519 => {
+            let signature = ed25519_dalek::Signature::from_slice(verification_challenge.signature)
+                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+            let verifying_key =
+                ed25519_dalek::VerifyingKey::try_from(sender.verifying_key().as_slice())
+                    .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+            verifying_key
+                .verify_strict(verification_challenge.signed_data, &signature)
+                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+        }
+        #[cfg(feature = "pq")]
+        SignatureType::MlDsa65 => {
+            let signature: ml_dsa::Signature<MlDsa65> =
+                ml_dsa::Signature::try_from(verification_challenge.signature)
+                    .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+            let verifying_key = ml_dsa::VerifyingKey::decode(
+                &EncodedVerifyingKey::<MlDsa65>::try_from(sender.verifying_key().as_slice())?,
+            );
+            verifying_key
+                .verify(verification_challenge.signed_data, &signature)
+                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+        }
+    }
 
     // decode envelope
     let crate::cesr::DecodedEnvelope {
@@ -130,9 +151,9 @@ pub fn open<'a>(
     match envelope.crypto_type {
         #[cfg(feature = "pq")]
         CryptoType::X25519Kyber768Draft00 => {
-            return tsp_hpke::open::<Aead, Kdf, kem::X25519Kyber768Draft00>(
+            tsp_hpke::open::<Aead, Kdf, kem::X25519Kyber768Draft00>(
                 receiver, sender, raw_header, envelope, ciphertext,
-            );
+            )
         }
         CryptoType::HpkeAuth | CryptoType::HpkeEssr => {
             tsp_hpke::open::<Aead, Kdf, kem::X25519HkdfSha256>(
@@ -206,13 +227,25 @@ pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
     )
 }
 
-/// Generate a new signing / verificationkey pair
+/// Generate a new signing / verification key pair
+#[cfg(not(feature = "pq"))]
 pub fn gen_sign_keypair() -> (PrivateSigningKeyData, PublicVerificationKeyData) {
     let sigkey = ed25519_dalek::SigningKey::generate(&mut OsRng);
 
     (
-        sigkey.to_bytes().into(),
-        sigkey.verifying_key().to_bytes().into(),
+        sigkey.to_bytes().to_vec().into(),
+        sigkey.verifying_key().to_bytes().to_vec().into(),
+    )
+}
+
+/// Generate a new signing / verification key pair
+#[cfg(feature = "pq")]
+pub fn gen_sign_keypair() -> (PrivateSigningKeyData, PublicVerificationKeyData) {
+    let sigkey = MlDsa65::key_gen(&mut OsRng);
+
+    (
+        sigkey.signing_key().encode().to_vec().into(),
+        sigkey.verifying_key().encode().to_vec().into(),
     )
 }
 

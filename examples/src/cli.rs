@@ -12,13 +12,13 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 #[cfg(feature = "create-webvh")]
 use tsp_sdk::vid::{did::webvh::WebvhMetadata, vid_to_did_document};
 use tsp_sdk::{
-    Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
-    RelationshipStatus, SecureStorage, VerifiedVid, Vid,
     cesr::{
         color_format, {self},
-    },
-    definitions::Digest,
-    vid::{VidError, verify_vid},
+    }, definitions::Digest, vid::{verify_vid, VidError}, Aliases, AskarSecureStorage, AsyncSecureStore, Error,
+    ExportVid, OwnedVid, ReceivedTspMessage, RelationshipStatus,
+    SecureStorage,
+    VerifiedVid,
+    Vid,
 };
 use url::Url;
 
@@ -662,6 +662,8 @@ async fn run() -> Result<(), Error> {
                             let signature_type = match message_type.signature_type {
                                 cesr::SignatureType::NoSignature => "no signature",
                                 cesr::SignatureType::Ed25519 => "Ed25519 signature",
+                                #[cfg(feature = "pq")]
+                                cesr::SignatureType::MlDsa65 => "ML-DSA-65 signature",
                             };
                             info!(
                                 "received {status} message ({} bytes) from {} ({crypto_type}, {signature_type})",
@@ -1065,20 +1067,21 @@ async fn create_did_web(
     let private_vid = OwnedVid::bind(&did, transport);
     info!("created identity {}", private_vid.identifier());
 
-    let _: Vid = match client
+    let response = client
         .post(format!("https://{did_server}/add-vid"))
         .json(&private_vid.vid())
         .send()
         .await
         .inspect(|r| debug!("DID server responded with status code {}", r.status()))
-        .expect("Could not publish VID on server")
-        .error_for_status()
-    {
-        Ok(response) => response.json().await.expect("Could not decode VID"),
-        Err(e) => {
+        .expect("Could not publish VID on server");
+
+    let _: Vid = match response.status() {
+        r if r.is_success() => response.json().await.expect("Could not decode VID"),
+        _ => {
             error!(
-                "{e}\nAn error occurred while publishing the DID. Maybe this DID exists already?"
+                "An error occurred while publishing the DID. Maybe this DID exists already?"
             );
+            error!("Response: {}", response.text().await.unwrap());
             return Err(Error::Vid(VidError::InvalidVid(
                 "An error occurred while publishing the DID. Maybe this DID exists already?"
                     .to_string(),

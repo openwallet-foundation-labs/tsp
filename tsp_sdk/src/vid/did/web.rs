@@ -1,4 +1,4 @@
-use crate::definitions::{PUBLIC_VERIFICATION_KEY_SIZE, VerifiedVid, VidEncryptionKeyType};
+use crate::definitions::{VerifiedVid, VidEncryptionKeyType, VidSignatureKeyType};
 use base64ct::{Base64UrlUnpadded, Encoding};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -50,11 +50,19 @@ pub struct VerificationMethod {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicKeyJwk {
-    pub crv: Curve,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub crv: Option<Curve>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub alg: Option<Algorithm>,
     pub kty: KeyType,
     #[serde(rename = "use")]
     pub usage: Usage,
-    pub x: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub x: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub r#pub: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub r#priv: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -79,9 +87,22 @@ impl From<VidEncryptionKeyType> for KeyType {
     }
 }
 
+impl From<VidSignatureKeyType> for KeyType {
+    fn from(value: VidSignatureKeyType) -> Self {
+        match value {
+            VidSignatureKeyType::Ed25519 => KeyType::OKP,
+            #[cfg(feature = "pq")]
+            VidSignatureKeyType::MlDsa65 => KeyType::APK,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 pub enum KeyType {
     OKP,
+    APK,
+
+    // Unofficial placeholder as nothing is official is assigned yet
     X25519Kyber768Draft00,
 }
 
@@ -95,10 +116,36 @@ impl From<VidEncryptionKeyType> for Curve {
     }
 }
 
+impl From<VidSignatureKeyType> for Option<Curve> {
+    fn from(value: VidSignatureKeyType) -> Self {
+        match value {
+            VidSignatureKeyType::Ed25519 => Some(Curve::Ed25519),
+            #[cfg(feature = "pq")]
+            VidSignatureKeyType::MlDsa65 => None,
+        }
+    }
+}
+
+impl From<VidSignatureKeyType> for Option<Algorithm> {
+    fn from(value: VidSignatureKeyType) -> Self {
+        match value {
+            VidSignatureKeyType::Ed25519 => None,
+            #[cfg(feature = "pq")]
+            VidSignatureKeyType::MlDsa65 => Some(Algorithm::MlDsa65),
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 pub enum Curve {
     X25519,
     Ed25519,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
+pub enum Algorithm {
+    #[serde(rename = "ML-DSA-65")]
+    MlDsa65,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
@@ -193,36 +240,11 @@ fn resolve_url(parts: &[&str]) -> Result<Url, VidError> {
     .map_err(|_| VidError::InvalidVid(parts.join(":")))
 }
 
-fn find_first_key_to_be_removed<const N: usize>(
-    did_document: &DidDocument,
-    method: &[String],
-    curve: Curve,
-    usage: Usage,
-) -> Option<[u8; N]> {
-    method
-        .iter()
-        .next()
-        .and_then(|id| {
-            did_document
-                .verification_method
-                .iter()
-                .find(|item| &item.id == id)
-        })
-        .and_then(|method| {
-            if method.public_key_jwk.crv == curve && method.public_key_jwk.usage == usage {
-                Base64UrlUnpadded::decode_vec(&method.public_key_jwk.x).ok()
-            } else {
-                None
-            }
-        })
-        .and_then(|key| <[u8; N]>::try_from(key).ok())
-}
-
 fn find_first_key(
     did_document: &DidDocument,
     method: &[String],
     usage: Usage,
-) -> Option<(Vec<u8>, KeyType, Curve)> {
+) -> Option<(Vec<u8>, KeyType, Option<Curve>, Option<Algorithm>)> {
     method
         .iter()
         .next()
@@ -234,9 +256,40 @@ fn find_first_key(
         })
         .and_then(|method| {
             if method.public_key_jwk.usage == usage {
-                Base64UrlUnpadded::decode_vec(&method.public_key_jwk.x)
-                    .map(|b| (b, method.public_key_jwk.kty, method.public_key_jwk.crv))
-                    .ok()
+                match method.public_key_jwk.kty {
+                    KeyType::OKP | KeyType::X25519Kyber768Draft00 => {
+                        if let Some(x) = &method.public_key_jwk.x {
+                            Base64UrlUnpadded::decode_vec(x)
+                                .map(|b| {
+                                    (
+                                        b,
+                                        method.public_key_jwk.kty,
+                                        method.public_key_jwk.crv,
+                                        method.public_key_jwk.alg,
+                                    )
+                                })
+                                .ok()
+                        } else {
+                            None
+                        }
+                    }
+                    KeyType::APK => {
+                        if let Some(r#pub) = &method.public_key_jwk.r#pub {
+                            Base64UrlUnpadded::decode_vec(r#pub)
+                                .map(|b| {
+                                    (
+                                        b,
+                                        method.public_key_jwk.kty,
+                                        method.public_key_jwk.crv,
+                                        method.public_key_jwk.alg,
+                                    )
+                                })
+                                .ok()
+                        } else {
+                            None
+                        }
+                    }
+                }
             } else {
                 None
             }
@@ -248,18 +301,15 @@ pub fn resolve_document(did_document: DidDocument, target_id: &str) -> Result<Vi
         return Err(VidError::ResolveVid("Invalid id specified in DID document"));
     }
 
-    let Some(public_sigkey) = find_first_key_to_be_removed::<PUBLIC_VERIFICATION_KEY_SIZE>(
-        &did_document,
-        &did_document.authentication,
-        Curve::Ed25519,
-        Usage::Sig,
-    ) else {
+    let Some((public_sigkey, sig_key_type, sig_curve, sig_alg)) =
+        find_first_key(&did_document, &did_document.authentication, Usage::Sig)
+    else {
         return Err(VidError::ResolveVid(
             "No valid sign key found in DID document",
         ));
     };
 
-    let Some((public_enckey, key_type, curve)) =
+    let Some((public_enckey, enc_key_type, enc_curve, enc_alg)) =
         find_first_key(&did_document, &did_document.key_agreement, Usage::Enc)
     else {
         return Err(VidError::ResolveVid(
@@ -282,18 +332,26 @@ pub fn resolve_document(did_document: DidDocument, target_id: &str) -> Result<Vi
         }
     };
 
-    let enc_key_type = match (key_type, curve) {
-        (KeyType::OKP, Curve::X25519) => VidEncryptionKeyType::X25519,
+    let enc_key_type = match (enc_key_type, enc_curve, enc_alg) {
+        (KeyType::OKP, Some(Curve::X25519), None) => VidEncryptionKeyType::X25519,
         #[cfg(feature = "pq")]
-        (KeyType::X25519Kyber768Draft00, Curve::X25519) => {
+        (KeyType::X25519Kyber768Draft00, Some(Curve::X25519), None) => {
             VidEncryptionKeyType::X25519Kyber768Draft00
         }
+        _ => return Err(VidError::ResolveVid("Unsupported key type or curve")),
+    };
+
+    let sig_key_type = match (sig_key_type, sig_curve, sig_alg) {
+        (KeyType::OKP, Some(Curve::Ed25519), None) => VidSignatureKeyType::Ed25519,
+        #[cfg(feature = "pq")]
+        (KeyType::APK, None, Some(Algorithm::MlDsa65)) => VidSignatureKeyType::MlDsa65,
         _ => return Err(VidError::ResolveVid("Unsupported key type or curve")),
     };
 
     Ok(Vid {
         id: did_document.id,
         transport,
+        sig_key_type,
         public_sigkey: public_sigkey.into(),
         enc_key_type,
         public_enckey: public_enckey.into(),
@@ -314,12 +372,7 @@ pub fn vid_to_did_document(vid: &impl VerifiedVid) -> serde_json::Value {
                 "id": format!("{id}#verification-key"),
                 "type": "JsonWebKey2020",
                 "controller":  format!("{id}"),
-                "publicKeyJwk": {
-                    "kty": "OKP",
-                    "crv": "Ed25519",
-                    "use": "sig",
-                    "x": Base64UrlUnpadded::encode_string(vid.verifying_key().as_ref()),
-                }
+                "publicKeyJwk": vid.signature_key_jwk()
             },
             {
                 "id": format!("{id}#encryption-key"),
