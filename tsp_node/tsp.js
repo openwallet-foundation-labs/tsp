@@ -86,6 +86,7 @@ class ReceivedTspMessage {
             case 0:
                 return new GenericMessage(
                     msg.sender,
+                    msg.receiver,
                     msg.nonconfidential_data,
                     new Uint8Array(msg.message),
                     msg.message_type
@@ -94,6 +95,7 @@ class ReceivedTspMessage {
             case 1: 
                 return new RequestRelationship(
                     msg.sender,
+                    msg.receiver,
                     msg.route,
                     msg.nested_vid,
                     msg.thread_id,
@@ -102,6 +104,7 @@ class ReceivedTspMessage {
             case 2: 
                 return new AcceptRelationship(
                     msg.sender,
+                    msg.receiver,
                     msg.nested_vid
                 );
 
@@ -113,6 +116,7 @@ class ReceivedTspMessage {
             case 4: 
                 return new ForwardRequest(
                     msg.sender,
+                    msg.receiver,
                     msg.next_hop,
                     msg.route,
                     msg.opaque_payload,
@@ -128,9 +132,10 @@ class ReceivedTspMessage {
 }
 
 class GenericMessage extends ReceivedTspMessage {
-    constructor(sender, nonconfidential_data, message, message_type) {
+    constructor(sender, receiver, nonconfidential_data, message, message_type) {
         super();
         this.sender = sender;
+        this.receiver = receiver;
         this.nonconfidential_data = nonconfidential_data;
         this.message = message;
         this.message_type = message_type;
@@ -138,9 +143,10 @@ class GenericMessage extends ReceivedTspMessage {
 }
 
 class RequestRelationship extends ReceivedTspMessage {
-    constructor(sender, route, nested_vid, thread_id) {
+    constructor(sender, receiver, route, nested_vid, thread_id) {
         super();
         this.sender = sender;
+        this.receiver = receiver;
         this.route = route;
         this.nested_vid = nested_vid;
         this.thread_id = thread_id;
@@ -148,24 +154,27 @@ class RequestRelationship extends ReceivedTspMessage {
 }
 
 class AcceptRelationship extends ReceivedTspMessage {
-    constructor(sender, nested_vid) {
+    constructor(sender, receiver, nested_vid) {
         super();
         this.sender = sender;
+        this.receiver = receiver;
         this.nested_vid = nested_vid;
     }
 }
 
 class CancelRelationship extends ReceivedTspMessage {
-    constructor(sender) {
+    constructor(sender, receiver) {
         super();
         this.sender = sender;
+        this.receiver = receiver;
     }
 }
 
 class ForwardRequest extends ReceivedTspMessage {
-    constructor(sender, next_hop, route, opaque_payload) {
+    constructor(sender, receiver, next_hop, route, opaque_payload) {
         super();
         this.sender = sender;
+        this.receiver = receiver;
         this.next_hop = next_hop;
         this.route = route;
         this.opaque_payload = opaque_payload;

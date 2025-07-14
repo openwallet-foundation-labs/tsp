@@ -375,6 +375,7 @@ async fn test_routed_mode() {
     let crate::definitions::ReceivedTspMessage::ForwardRequest {
         opaque_payload,
         sender,
+        receiver,
         next_hop,
         route,
     } = bobs_messages.next().await.unwrap().unwrap()
@@ -385,6 +386,10 @@ async fn test_routed_mode() {
     assert_eq!(
         sender,
         "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"
+    );
+    assert_eq!(
+        receiver,
+        "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob"
     );
     assert_eq!(
         next_hop,

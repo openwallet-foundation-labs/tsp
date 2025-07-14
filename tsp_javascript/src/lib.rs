@@ -461,6 +461,7 @@ pub enum SignatureType {
 pub struct FlatReceivedTspMessage {
     pub variant: ReceivedTspMessageVariant,
     sender: Option<String>,
+    receiver: Option<String>,
     nonconfidential_data: Option<Option<Vec<u8>>>,
     message: Option<Vec<u8>>,
     pub crypto_type: Option<CryptoType>,
@@ -563,6 +564,7 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
         let mut this = FlatReceivedTspMessage {
             variant,
             sender: None,
+            receiver: None,
             nonconfidential_data: None,
             message: None,
             crypto_type: None,
@@ -581,11 +583,13 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
         match value {
             tsp_sdk::ReceivedTspMessage::GenericMessage {
                 sender,
+                receiver,
                 nonconfidential_data,
                 message,
                 message_type,
             } => {
                 this.sender = Some(sender);
+                this.receiver = receiver;
                 this.nonconfidential_data = Some(nonconfidential_data.map(Into::into));
                 this.message = Some(message.into());
                 this.crypto_type = match message_type.crypto_type {
@@ -606,40 +610,57 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             }
             tsp_sdk::ReceivedTspMessage::RequestRelationship {
                 sender,
+                receiver,
                 route,
                 nested_vid,
                 thread_id,
             } => {
                 this.sender = Some(sender);
+                this.receiver = Some(receiver);
                 this.route = Some(route);
                 this.nested_vid = Some(nested_vid);
                 this.thread_id = Some(thread_id.to_vec());
             }
-            tsp_sdk::ReceivedTspMessage::AcceptRelationship { sender, nested_vid } => {
+            tsp_sdk::ReceivedTspMessage::AcceptRelationship {
+                sender,
+                receiver,
+                nested_vid,
+            } => {
                 this.sender = Some(sender);
+                this.receiver = Some(receiver);
                 this.nested_vid = Some(nested_vid);
             }
-            tsp_sdk::ReceivedTspMessage::CancelRelationship { sender } => {
+            tsp_sdk::ReceivedTspMessage::CancelRelationship { sender, receiver } => {
                 this.sender = Some(sender);
+                this.receiver = Some(receiver);
             }
-            tsp_sdk::ReceivedTspMessage::NewIdentifier { sender, new_vid } => {
+            tsp_sdk::ReceivedTspMessage::NewIdentifier {
+                sender,
+                receiver,
+                new_vid,
+            } => {
                 this.sender = Some(sender);
+                this.receiver = Some(receiver);
                 this.new_vid = Some(new_vid);
             }
             tsp_sdk::ReceivedTspMessage::Referral {
                 sender,
+                receiver,
                 referred_vid,
             } => {
                 this.sender = Some(sender);
+                this.receiver = Some(receiver);
                 this.referred_vid = Some(referred_vid);
             }
             tsp_sdk::ReceivedTspMessage::ForwardRequest {
                 sender,
+                receiver,
                 next_hop,
                 route,
                 opaque_payload,
             } => {
                 this.sender = Some(sender);
+                this.receiver = Some(receiver);
                 this.next_hop = Some(next_hop);
                 this.route = Some(Some(route.into_iter().map(Into::into).collect()));
                 this.opaque_payload = Some(opaque_payload.into());

@@ -94,35 +94,42 @@ impl Display for RelationshipStatus {
 pub enum ReceivedTspMessage<Data: AsRef<[u8]> = BytesMut> {
     GenericMessage {
         sender: String,
+        receiver: Option<String>,
         nonconfidential_data: Option<Data>,
         message: Data,
         message_type: MessageType,
     },
     RequestRelationship {
         sender: String,
+        receiver: String,
         route: Option<Vec<Vec<u8>>>,
         nested_vid: Option<String>,
         thread_id: Digest,
     },
     AcceptRelationship {
         sender: String,
+        receiver: String,
         nested_vid: Option<String>,
     },
     CancelRelationship {
         sender: String,
+        receiver: String,
     },
     ForwardRequest {
         sender: String,
+        receiver: String,
         next_hop: String,
         route: Vec<BytesMut>,
         opaque_payload: BytesMut,
     },
     NewIdentifier {
         sender: String,
+        receiver: String,
         new_vid: String,
     },
     Referral {
         sender: String,
+        receiver: String,
         referred_vid: String,
     },
     #[cfg(feature = "async")]

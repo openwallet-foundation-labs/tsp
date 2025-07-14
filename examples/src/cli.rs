@@ -642,6 +642,7 @@ async fn run() -> Result<(), Error> {
                     match message {
                         ReceivedTspMessage::GenericMessage {
                             sender,
+                            receiver: _,
                             nonconfidential_data: _,
                             message,
                             message_type,
@@ -672,6 +673,7 @@ async fn run() -> Result<(), Error> {
                         }
                         ReceivedTspMessage::RequestRelationship {
                             sender,
+                            receiver: _,
                             thread_id,
                             route: _,
                             nested_vid,
@@ -696,12 +698,14 @@ async fn run() -> Result<(), Error> {
                         }
                         ReceivedTspMessage::AcceptRelationship {
                             sender,
+                            receiver: _,
                             nested_vid: None,
                         } => {
                             info!("received accept relationship from {}", sender);
                         }
                         ReceivedTspMessage::AcceptRelationship {
                             sender,
+                            receiver: _,
                             nested_vid: Some(vid),
                         } => {
                             info!(
@@ -709,11 +713,15 @@ async fn run() -> Result<(), Error> {
                             );
                             println!("{vid}");
                         }
-                        ReceivedTspMessage::CancelRelationship { sender } => {
+                        ReceivedTspMessage::CancelRelationship {
+                            sender,
+                            receiver: _,
+                        } => {
                             info!("received cancel relationship from {sender}");
                         }
                         ReceivedTspMessage::ForwardRequest {
                             sender,
+                            receiver: _,
                             route,
                             next_hop,
                             opaque_payload,
@@ -728,13 +736,18 @@ async fn run() -> Result<(), Error> {
                                 return Action::Forward(next_hop, route, opaque_payload);
                             }
                         }
-                        ReceivedTspMessage::NewIdentifier { sender, new_vid } => {
+                        ReceivedTspMessage::NewIdentifier {
+                            sender,
+                            receiver: _,
+                            new_vid,
+                        } => {
                             info!("received request for new identifier '{new_vid}' from {sender}");
                             println!("{new_vid}");
                             return Action::Verify(new_vid);
                         }
                         ReceivedTspMessage::Referral {
                             sender,
+                            receiver: _,
                             referred_vid,
                         } => {
                             info!(
@@ -874,7 +887,9 @@ async fn run() -> Result<(), Error> {
                         ReceivedTspMessage::RequestRelationship { sender, .. } => {
                             info!("received relationship request from {sender}")
                         }
-                        ReceivedTspMessage::AcceptRelationship { sender, nested_vid } => {
+                        ReceivedTspMessage::AcceptRelationship {
+                            sender, nested_vid, ..
+                        } => {
                             info!(
                                 "received accept relationship from {sender} (nested_vid: {})",
                                 nested_vid.clone().unwrap_or("none".to_string())
@@ -884,19 +899,22 @@ async fn run() -> Result<(), Error> {
                             }
                             break;
                         }
-                        ReceivedTspMessage::CancelRelationship { sender } => {
+                        ReceivedTspMessage::CancelRelationship { sender, .. } => {
                             info!("received cancel relationship from {sender}");
                             break;
                         }
                         ReceivedTspMessage::ForwardRequest { sender, .. } => {
                             info!("received forward request from {sender}")
                         }
-                        ReceivedTspMessage::NewIdentifier { sender, new_vid } => {
+                        ReceivedTspMessage::NewIdentifier {
+                            sender, new_vid, ..
+                        } => {
                             info!("received new identifier for {sender}: {new_vid}")
                         }
                         ReceivedTspMessage::Referral {
                             sender,
                             referred_vid,
+                            ..
                         } => info!("received referral from {sender} for {referred_vid}"),
                         ReceivedTspMessage::PendingMessage { unknown_vid, .. } => {
                             info!("received pending message from {unknown_vid}")
