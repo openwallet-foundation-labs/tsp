@@ -219,11 +219,23 @@ pub enum VidEncryptionKeyType {
     X25519Kyber768Draft00,
 }
 
+impl Default for VidEncryptionKeyType {
+    fn default() -> Self {
+        VidEncryptionKeyType::X25519
+    }
+}
+
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Deserialize, Serialize)]
 pub enum VidSignatureKeyType {
     Ed25519,
     #[cfg(feature = "pq")]
     MlDsa65,
+}
+
+impl Default for VidSignatureKeyType {
+    fn default() -> Self {
+        VidSignatureKeyType::Ed25519
+    }
 }
 
 // ANCHOR: custom-vid-mbBook

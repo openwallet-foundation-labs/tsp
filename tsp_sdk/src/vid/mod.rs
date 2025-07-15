@@ -42,8 +42,10 @@ pub use resolve::verify_vid;
 pub struct Vid {
     id: String,
     transport: Url,
+    #[serde(default)]
     sig_key_type: VidSignatureKeyType,
     public_sigkey: PublicVerificationKeyData,
+    #[serde(default)]
     enc_key_type: VidEncryptionKeyType,
     public_enckey: PublicKeyData,
 }
