@@ -4,6 +4,7 @@
   "publicEnckey": "QFn5SXupDgBTtzkGc2W3MvoSCHjd8uUD0dapfEXqET4",
   "encKeyType": "X25519",
   "publicSigkey": "NBcP690uVtoJChxvBCxZyy2inI-R24G3aNBWOKwU5lI",
+  "sigKeyType": "Ed25519",
   "sigkey": "1i95TnosmKFwmW_pu300ulOaT9m1OV4xIhnFue8Ltek",
   "transport": "tcp://127.0.0.1:13372"
 }

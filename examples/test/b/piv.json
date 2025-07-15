@@ -4,6 +4,7 @@
   "publicEnckey": "JY_sQu1c8LJq6aTR9TlUMdNDf6xEzqkZeuJH6berxFk",
   "encKeyType": "X25519",
   "publicSigkey": "EAA90CN5qEnTUXyNpPRmVsME2Qyxjj_KlRbP2DcXrF4",
+  "sigKeyType": "Ed25519",
   "sigkey": "Njjnf2yI8emviRODMAOkZ-I_VqXfvK3nFosEueCdRec",
   "transport": "https://q.teaspoon.world/transport/did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:b"
 }

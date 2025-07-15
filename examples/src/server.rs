@@ -232,6 +232,8 @@ fn open_message(message: &[u8], payload: Option<&[u8]>) -> Option<serde_json::Va
         "signatureType": match parts.signature_type {
             cesr::SignatureType::NoSignature => "No Signature",
             cesr::SignatureType::Ed25519 => "Ed25519",
+            #[cfg(feature = "pq")]
+            cesr::SignatureType::MlDsa65 => "MlDsa65",
         }
     }))
 }

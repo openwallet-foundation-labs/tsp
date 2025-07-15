@@ -4,19 +4,20 @@ use crate::{
 };
 use crypto_box::{ChaChaBox, PublicKey, SecretKey, aead::AeadInPlace};
 
+use super::{CryptoError, MessageContents};
 #[cfg(feature = "nacl")]
 use crate::{
     cesr::SignatureType,
-    definitions::{NonConfidentialData, TSPMessage},
+    definitions::{NonConfidentialData, TSPMessage, VidSignatureKeyType},
 };
 #[cfg(feature = "nacl")]
 use crypto_box::aead::{AeadCore, OsRng};
 #[cfg(feature = "nacl")]
 use ed25519_dalek::Signer;
+#[cfg(all(feature = "pq", feature = "nacl"))]
+use ml_dsa::{EncodedSigningKey, MlDsa65};
 #[cfg(feature = "nacl")]
 use rand::{SeedableRng, rngs::StdRng};
-
-use super::{CryptoError, MessageContents};
 
 #[cfg(feature = "nacl")]
 pub(crate) fn seal(
@@ -120,10 +121,24 @@ pub(crate) fn seal(
     // encode and append the ciphertext to the envelope data
     crate::cesr::encode_ciphertext(&cesr_message, &mut data)?;
 
-    // create and append outer signature
-    let sign_key = ed25519_dalek::SigningKey::from_bytes(sender.signing_key());
-    let signature = sign_key.sign(&data).to_bytes();
-    crate::cesr::encode_signature(&signature, &mut data);
+    // create and append signature
+    match sender.signature_key_type() {
+        VidSignatureKeyType::Ed25519 => {
+            let sign_key = ed25519_dalek::SigningKey::from_bytes(&TryInto::<[u8; 32]>::try_into(
+                sender.signing_key().as_slice(),
+            )?);
+            let signature = sign_key.sign(&data).to_bytes();
+            crate::cesr::encode_signature(&signature, &mut data, SignatureType::Ed25519);
+        }
+        #[cfg(feature = "pq")]
+        VidSignatureKeyType::MlDsa65 => {
+            let sign_key = ml_dsa::SigningKey::<MlDsa65>::decode(
+                &EncodedSigningKey::<MlDsa65>::try_from(sender.signing_key().as_slice())?,
+            );
+            let signature = sign_key.sign(&data).encode();
+            crate::cesr::encode_signature(signature.as_slice(), &mut data, SignatureType::MlDsa65);
+        }
+    }
 
     Ok(data)
 }

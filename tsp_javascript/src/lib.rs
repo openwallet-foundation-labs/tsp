@@ -449,8 +449,20 @@ pub enum CryptoType {
     X25519Kyber768Draft00 = 5,
 }
 
+#[cfg(feature = "pq")]
 #[wasm_bindgen]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum SignatureType {
+    NoSignature = 0,
+    Ed25519 = 1,
+    MlDsa65 = 2,
+}
+
+#[cfg(not(feature = "pq"))]
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum SignatureType {
     NoSignature = 0,
     Ed25519 = 1,
@@ -606,6 +618,8 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
                 this.signature_type = match message_type.signature_type {
                     tsp_sdk::cesr::SignatureType::NoSignature => Some(SignatureType::NoSignature),
                     tsp_sdk::cesr::SignatureType::Ed25519 => Some(SignatureType::Ed25519),
+                    #[cfg(feature = "pq")]
+                    tsp_sdk::cesr::SignatureType::MlDsa65 => Some(SignatureType::MlDsa65),
                 };
             }
             tsp_sdk::ReceivedTspMessage::RequestRelationship {
