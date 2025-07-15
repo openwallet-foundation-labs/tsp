@@ -10,7 +10,7 @@
 #
 # (you should run these in separate terminals, together with the SSL proxy)
 
-cargo install --path . --features use_local_certificate,pq
+cargo install --path . --features use_local_certificate,pq || exit 1
 
 echo "---- cleanup the wallet"
 rm -f a.sqlite b.sqlite
@@ -58,7 +58,7 @@ echo
 echo "==== send a routed message"
 
 sleep 2 && echo -n "Indirect Message from A to B via P and Q was received!" | tsp --wallet a send -s a -r b &
-tsp --yes --wallet b receive --one b
+tsp --yes --wallet b receive b
 
 echo "---- cleanup wallets"
 rm -f a.sqlite b.sqlite

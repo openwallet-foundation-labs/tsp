@@ -5,11 +5,7 @@ use crate::{
     Error, ExportVid, RelationshipStatus,
     store::{Aliases, WebvhUpdateKeys},
 };
-use aries_askar::{
-    ErrorKind, StoreKeyMethod,
-    entry::EntryOperation,
-    kms::{KeyAlg, LocalKey},
-};
+use aries_askar::{ErrorKind, StoreKeyMethod, entry::EntryOperation};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -95,16 +91,15 @@ impl SecureStorage for AskarSecureStorage {
             let id = export.id.clone();
 
             if let Some(ref private) = export.sigkey {
-                let signing_key = LocalKey::from_secret_bytes(KeyAlg::Ed25519, private.as_ref())?;
                 let signing_key_name = format!("{id}#signing-key");
 
                 if let Err(e) = conn
-                    .insert_key(&signing_key_name, &signing_key, None, None, None, None)
+                    .insert("key", &signing_key_name, private.as_slice(), None, None)
                     .await
                 {
                     if e.kind() == ErrorKind::Duplicate {
-                        conn.remove_key(&signing_key_name).await?;
-                        conn.insert_key(&signing_key_name, &signing_key, None, None, None, None)
+                        conn.remove("key", &signing_key_name).await?;
+                        conn.insert("key", &signing_key_name, private.as_slice(), None, None)
                             .await?;
                     } else {
                         Err(Error::from(e))?;
@@ -129,27 +124,23 @@ impl SecureStorage for AskarSecureStorage {
                 }
             }
 
-            let verification_key =
-                LocalKey::from_public_bytes(KeyAlg::Ed25519, export.public_sigkey.as_ref())?;
             let verification_key_name = format!("{id}#verification-key");
             if let Err(e) = conn
-                .insert_key(
+                .insert(
+                    "key",
                     &verification_key_name,
-                    &verification_key,
-                    None,
-                    None,
+                    export.public_sigkey.as_slice(),
                     None,
                     None,
                 )
                 .await
             {
                 if e.kind() == ErrorKind::Duplicate {
-                    conn.remove_key(&verification_key_name).await?;
-                    conn.insert_key(
+                    conn.remove("key", &verification_key_name).await?;
+                    conn.insert(
+                        "key",
                         &verification_key_name,
-                        &verification_key,
-                        None,
-                        None,
+                        export.public_sigkey.as_slice(),
                         None,
                         None,
                     )

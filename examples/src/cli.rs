@@ -12,13 +12,13 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 #[cfg(feature = "create-webvh")]
 use tsp_sdk::vid::{did::webvh::WebvhMetadata, vid_to_did_document};
 use tsp_sdk::{
+    Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
+    RelationshipStatus, SecureStorage, VerifiedVid, Vid,
     cesr::{
         color_format, {self},
-    }, definitions::Digest, vid::{verify_vid, VidError}, Aliases, AskarSecureStorage, AsyncSecureStore, Error,
-    ExportVid, OwnedVid, ReceivedTspMessage, RelationshipStatus,
-    SecureStorage,
-    VerifiedVid,
-    Vid,
+    },
+    definitions::Digest,
+    vid::{VidError, verify_vid},
 };
 use url::Url;
 
@@ -1029,7 +1029,8 @@ fn show_local(vids: &[ExportVid], aliases: &Aliases) -> Result<(), Error> {
             Base64::encode_string(vid.public_enckey.deref())
         );
         println!(
-            "\t public sign key: (Ed25519) {}",
+            "\t public sign key: ({:?}) {}",
+            vid.sig_key_type,
             Base64::encode_string(vid.public_sigkey.deref())
         );
         println!();
@@ -1078,9 +1079,7 @@ async fn create_did_web(
     let _: Vid = match response.status() {
         r if r.is_success() => response.json().await.expect("Could not decode VID"),
         _ => {
-            error!(
-                "An error occurred while publishing the DID. Maybe this DID exists already?"
-            );
+            error!("An error occurred while publishing the DID. Maybe this DID exists already?");
             error!("Response: {}", response.text().await.unwrap());
             return Err(Error::Vid(VidError::InvalidVid(
                 "An error occurred while publishing the DID. Maybe this DID exists already?"
