@@ -306,6 +306,7 @@ async fn new_message(
         }
         Ok(ReceivedTspMessage::RequestRelationship {
             sender,
+            receiver: _,
             route,
             nested_vid,
             thread_id,
@@ -329,11 +330,12 @@ async fn new_message(
         Ok(ReceivedTspMessage::AcceptRelationship { sender, .. }) => {
             tracing::error!("accept relationship message from {sender}")
         }
-        Ok(ReceivedTspMessage::CancelRelationship { sender }) => {
+        Ok(ReceivedTspMessage::CancelRelationship { sender, .. }) => {
             tracing::error!("cancel relationship message from {sender}")
         }
         Ok(ReceivedTspMessage::ForwardRequest {
             sender,
+            receiver: _,
             next_hop,
             route,
             opaque_payload,
@@ -394,12 +396,15 @@ async fn new_message(
                     .await;
             }
         }
-        Ok(ReceivedTspMessage::NewIdentifier { sender, new_vid }) => {
+        Ok(ReceivedTspMessage::NewIdentifier {
+            sender, new_vid, ..
+        }) => {
             tracing::error!("new identifier message from {sender}: {new_vid}")
         }
         Ok(ReceivedTspMessage::Referral {
             sender,
             referred_vid,
+            ..
         }) => tracing::error!("referral from {sender}: {referred_vid}"),
         Ok(ReceivedTspMessage::PendingMessage { unknown_vid, .. }) => {
             tracing::error!("pending message message from unknown VID {unknown_vid}")

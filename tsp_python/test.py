@@ -1,16 +1,16 @@
 import os
 import unittest
 
-from tsp_python import *
+import tsp_python as tsp
 
 
 def new_vid():
-    return OwnedVid.new_did_peer("tcp://127.0.0.1:1337")
+    return tsp.OwnedVid.new_did_peer("tcp://127.0.0.1:1337")
 
 
 class AliceBob(unittest.TestCase):
     def setUp(self):
-        self.store = SecureStore(wallet_url="sqlite://test_wallet.sqlite")
+        self.store = tsp.SecureStore(wallet_url="sqlite://test_wallet.sqlite")
         self.alice = new_vid()
         self.bob = new_vid()
 
@@ -32,13 +32,14 @@ class AliceBob(unittest.TestCase):
         received = self.store.open_message(sealed)
 
         match received:
-            case GenericMessage(
-                sender, _, received_message, crypto_type, signature_type
+            case tsp.GenericMessage(
+                sender, receiver, _, received_message, crypto_type, signature_type
             ):
                 self.assertEqual(sender, self.alice.identifier())
+                self.assertEqual(receiver, self.bob.identifier())
                 self.assertEqual(received_message, message)
-                self.assertNotEqual(crypto_type, CryptoType.Plaintext)
-                self.assertNotEqual(signature_type, SignatureType.NoSignature)
+                self.assertNotEqual(crypto_type, tsp.CryptoType.Plaintext)
+                self.assertNotEqual(signature_type, tsp.SignatureType.NoSignature)
 
             case other:
                 self.fail(f"unexpected message type {other}")
@@ -53,8 +54,11 @@ class AliceBob(unittest.TestCase):
         received = self.store.open_message(sealed)
 
         match received:
-            case RequestRelationship(sender, _route, _nested_vid, _thread_id):
+            case tsp.RequestRelationship(
+                sender, receiver, _route, _nested_vid, _thread_id
+            ):
                 self.assertEqual(sender, self.alice.identifier())
+                self.assertEqual(receiver, self.bob.identifier())
 
             case other:
                 self.fail(f"unexpected message type {other}")
@@ -67,8 +71,11 @@ class AliceBob(unittest.TestCase):
 
         received = self.store.open_message(sealed)
         match received:
-            case RequestRelationship(sender, _route, _nested_vid, thread_id):
+            case tsp.RequestRelationship(
+                sender, receiver, _route, _nested_vid, thread_id
+            ):
                 self.assertEqual(sender, self.alice.identifier())
+                self.assertEqual(receiver, self.bob.identifier())
 
             case other:
                 self.fail(f"unexpected message type {other}")
@@ -80,8 +87,9 @@ class AliceBob(unittest.TestCase):
 
         received = self.store.open_message(sealed)
         match received:
-            case AcceptRelationship(sender, _nested_vid):
+            case tsp.AcceptRelationship(sender, receiver, _nested_vid):
                 self.assertEqual(sender, self.bob.identifier())
+                self.assertEqual(receiver, self.alice.identifier())
 
             case other:
                 self.fail(f"unexpected message type {other}")
@@ -94,8 +102,11 @@ class AliceBob(unittest.TestCase):
 
         received = self.store.open_message(sealed)
         match received:
-            case RequestRelationship(sender, _route, _nested_vid, thread_id):
+            case tsp.RequestRelationship(
+                sender, receiver, _route, _nested_vid, thread_id
+            ):
                 self.assertEqual(sender, self.alice.identifier())
+                self.assertEqual(receiver, self.bob.identifier())
 
             case other:
                 self.fail(f"unexpected message type {other}")
@@ -107,8 +118,9 @@ class AliceBob(unittest.TestCase):
 
         received = self.store.open_message(sealed)
         match received:
-            case AcceptRelationship(sender, _nested_vid):
+            case tsp.AcceptRelationship(sender, receiver, _nested_vid):
                 self.assertEqual(sender, self.bob.identifier())
+                self.assertEqual(receiver, self.alice.identifier())
 
             case other:
                 self.fail(f"unexpected message type {other}")
@@ -120,17 +132,18 @@ class AliceBob(unittest.TestCase):
 
         received = self.store.open_message(sealed)
         match received:
-            case CancelRelationship(sender):
+            case tsp.CancelRelationship(sender, receiver):
                 self.assertEqual(sender, self.bob.identifier())
+                self.assertEqual(receiver, self.alice.identifier())
 
             case other:
                 self.fail(f"unexpected message type {other}")
 
     def test_routed(self):
-        a_store = SecureStore(wallet_url="sqlite://test_wallet_a.sqlite")
-        b_store = SecureStore(wallet_url="sqlite://test_wallet_b.sqlite")
-        c_store = SecureStore(wallet_url="sqlite://test_wallet_c.sqlite")
-        d_store = SecureStore(wallet_url="sqlite://test_wallet_d.sqlite")
+        a_store = tsp.SecureStore(wallet_url="sqlite://test_wallet_a.sqlite")
+        b_store = tsp.SecureStore(wallet_url="sqlite://test_wallet_b.sqlite")
+        c_store = tsp.SecureStore(wallet_url="sqlite://test_wallet_c.sqlite")
+        d_store = tsp.SecureStore(wallet_url="sqlite://test_wallet_d.sqlite")
 
         nette_a = new_vid()
         sneaky_a = new_vid()
@@ -192,8 +205,9 @@ class AliceBob(unittest.TestCase):
         received = b_store.open_message(sealed)
 
         match received:
-            case ForwardRequest(sender, next_hop, route, opaque_payload):
+            case tsp.ForwardRequest(sender, receiver, next_hop, route, opaque_payload):
                 self.assertEqual(sender, nette_a.identifier())
+                self.assertEqual(receiver, b.identifier())
 
             case other:
                 self.fail(f"unexpected message type {other}")
@@ -202,8 +216,9 @@ class AliceBob(unittest.TestCase):
         received = c_store.open_message(sealed)
 
         match received:
-            case ForwardRequest(sender, next_hop, route, opaque_payload):
+            case tsp.ForwardRequest(sender, receiver, next_hop, route, opaque_payload):
                 self.assertEqual(sender, b.identifier())
+                self.assertEqual(receiver, c.identifier())
 
             case other:
                 self.fail(f"unexpected message type {other}")
@@ -217,21 +232,27 @@ class AliceBob(unittest.TestCase):
         os.remove("test_wallet_d.sqlite")
 
         match received:
-            case GenericMessage(
-                sender, nonconfidential_data, message, crypto_type, signature_type
+            case tsp.GenericMessage(
+                sender,
+                receiver,
+                nonconfidential_data,
+                message,
+                crypto_type,
+                signature_type,
             ):
                 self.assertEqual(sender, sneaky_a.identifier())
+                self.assertEqual(receiver, sneaky_d.identifier())
                 self.assertEqual(nonconfidential_data, None)
                 self.assertEqual(message, hello_world)
-                self.assertNotEqual(crypto_type, CryptoType.Plaintext)
-                self.assertNotEqual(signature_type, SignatureType.NoSignature)
+                self.assertNotEqual(crypto_type, tsp.CryptoType.Plaintext)
+                self.assertNotEqual(signature_type, tsp.SignatureType.NoSignature)
 
             case other:
                 self.fail(f"unexpected message type {other}")
 
     def test_nested_automatic(self):
-        a_store = SecureStore(wallet_url="sqlite://test_wallet_a.sqlite")
-        b_store = SecureStore(wallet_url="sqlite://test_wallet_b.sqlite")
+        a_store = tsp.SecureStore(wallet_url="sqlite://test_wallet_a.sqlite")
+        b_store = tsp.SecureStore(wallet_url="sqlite://test_wallet_b.sqlite")
 
         a = new_vid()
         b = new_vid()
@@ -249,8 +270,11 @@ class AliceBob(unittest.TestCase):
 
         received = b_store.open_message(sealed)
         match received:
-            case RequestRelationship(sender, _route, _nested_vid, thread_id):
+            case tsp.RequestRelationship(
+                sender, receiver, _route, _nested_vid, thread_id
+            ):
                 self.assertEqual(sender, a.identifier())
+                self.assertEqual(receiver, b.identifier())
 
             case other:
                 self.fail(f"unexpected message type {other}")
@@ -262,8 +286,9 @@ class AliceBob(unittest.TestCase):
 
         received = a_store.open_message(sealed)
         match received:
-            case AcceptRelationship(sender, _nested_vid):
+            case tsp.AcceptRelationship(sender, receiver, _nested_vid):
                 self.assertEqual(sender, b.identifier())
+                self.assertEqual(receiver, a.identifier())
 
             case other:
                 self.fail(f"unexpected message type {other}")
@@ -273,8 +298,11 @@ class AliceBob(unittest.TestCase):
         )
 
         match b_store.open_message(sealed):
-            case RequestRelationship(sender, _route, nested_vid_1, thread_id):
+            case tsp.RequestRelationship(
+                sender, receiver, _route, nested_vid_1, thread_id
+            ):
                 self.assertEqual(sender, a.identifier())
+                self.assertEqual(receiver, b.identifier())
 
             case other:
                 self.fail(f"unexpected message type {other}")
@@ -284,7 +312,7 @@ class AliceBob(unittest.TestCase):
         )
 
         match a_store.open_message(sealed):
-            case AcceptRelationship(sender, nested_vid_2):
+            case tsp.AcceptRelationship(sender, receiver, nested_vid_2):
                 self.assertEqual(sender, b.identifier())
 
             case other:
@@ -303,13 +331,14 @@ class AliceBob(unittest.TestCase):
         os.remove("test_wallet_b.sqlite")
 
         match received:
-            case GenericMessage(
-                sender, _, received_message, crypto_type, signature_type
+            case tsp.GenericMessage(
+                sender, receiver, _, received_message, crypto_type, signature_type
             ):
                 self.assertEqual(sender, nested_a.identifier())
+                self.assertEqual(receiver, nested_b.identifier())
                 self.assertEqual(received_message, hello_world)
-                self.assertNotEqual(crypto_type, CryptoType.Plaintext)
-                self.assertNotEqual(signature_type, SignatureType.NoSignature)
+                self.assertNotEqual(crypto_type, tsp.CryptoType.Plaintext)
+                self.assertNotEqual(signature_type, tsp.SignatureType.NoSignature)
 
             case other:
                 self.fail(f"unexpected message type {other}")

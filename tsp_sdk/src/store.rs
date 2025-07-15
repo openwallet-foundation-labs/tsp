@@ -659,9 +659,9 @@ impl SecureStore {
                 receiver: intended_receiver,
                 ..
             } => {
-                let intended_receiver = std::str::from_utf8(intended_receiver)?;
+                let intended_receiver = std::str::from_utf8(intended_receiver)?.to_string();
 
-                let Ok(intended_receiver) = self.get_private_vid(intended_receiver) else {
+                let Ok(receiver_pid) = self.get_private_vid(&intended_receiver) else {
                     return Err(CryptoError::UnexpectedRecipient.into());
                 };
 
@@ -675,11 +675,12 @@ impl SecureStore {
                 };
 
                 let (nonconfidential_data, payload, crypto_type, signature_type) =
-                    crate::crypto::open(&*intended_receiver, &*sender_vid, message)?;
+                    crate::crypto::open(&*receiver_pid, &*sender_vid, message)?;
 
                 match payload {
                     Payload::Content(message) => Ok(ReceivedTspMessage::GenericMessage {
                         sender,
+                        receiver: Some(intended_receiver),
                         nonconfidential_data,
                         message,
                         message_type: MessageType {
@@ -727,6 +728,7 @@ impl SecureStore {
 
                         Ok(ReceivedTspMessage::ForwardRequest {
                             sender,
+                            receiver: intended_receiver,
                             next_hop: next_hop.to_string(),
                             route: hops[1..]
                                 .iter()
@@ -738,16 +740,18 @@ impl SecureStore {
                     Payload::RequestRelationship { route, thread_id } => {
                         Ok(ReceivedTspMessage::RequestRelationship {
                             sender,
+                            receiver: intended_receiver,
                             route: route.map(|vec| vec.iter().map(|vid| vid.to_vec()).collect()),
                             thread_id,
                             nested_vid: None,
                         })
                     }
                     Payload::AcceptRelationship { thread_id } => {
-                        self.upgrade_relation(intended_receiver.identifier(), &sender, thread_id)?;
+                        self.upgrade_relation(receiver_pid.identifier(), &sender, thread_id)?;
 
                         Ok(ReceivedTspMessage::AcceptRelationship {
                             sender,
+                            receiver: intended_receiver,
                             nested_vid: None,
                         })
                     }
@@ -777,7 +781,10 @@ impl SecureStore {
                             }
                         }
 
-                        Ok(ReceivedTspMessage::CancelRelationship { sender })
+                        Ok(ReceivedTspMessage::CancelRelationship {
+                            sender,
+                            receiver: intended_receiver,
+                        })
                     }
                     Payload::RequestNestedRelationship { inner, thread_id } => {
                         let EnvelopeType::SignedMessage {
@@ -803,6 +810,7 @@ impl SecureStore {
 
                         Ok(ReceivedTspMessage::RequestRelationship {
                             sender,
+                            receiver: intended_receiver,
                             route: None,
                             thread_id,
                             nested_vid: Some(inner_vid),
@@ -841,6 +849,7 @@ impl SecureStore {
 
                         Ok(ReceivedTspMessage::AcceptRelationship {
                             sender,
+                            receiver: intended_receiver,
                             nested_vid: Some(vid),
                         })
                     }
@@ -854,6 +863,7 @@ impl SecureStore {
                                 if check_id == thread_id {
                                     Ok(ReceivedTspMessage::NewIdentifier {
                                         sender,
+                                        receiver: intended_receiver,
                                         new_vid: vid,
                                     })
                                 } else {
@@ -874,6 +884,7 @@ impl SecureStore {
                         let vid = std::str::from_utf8(referred_vid)?;
                         Ok(ReceivedTspMessage::Referral {
                             sender,
+                            receiver: intended_receiver,
                             referred_vid: vid.to_string(),
                         })
                     }
@@ -884,13 +895,17 @@ impl SecureStore {
                 receiver: intended_receiver,
                 ..
             } => {
-                if let Some(intended_receiver) = intended_receiver {
-                    let intended_receiver = std::str::from_utf8(intended_receiver)?;
+                let intended_receiver = intended_receiver
+                    .map(|intended_receiver| {
+                        let intended_receiver = std::str::from_utf8(intended_receiver)?;
 
-                    if !self.has_private_vid(intended_receiver)? {
-                        return Err(CryptoError::UnexpectedRecipient.into());
-                    }
-                };
+                        if !self.has_private_vid(intended_receiver)? {
+                            return Err::<_, Error>(CryptoError::UnexpectedRecipient.into());
+                        }
+
+                        Ok(intended_receiver.to_string())
+                    })
+                    .transpose()?;
 
                 let sender = std::str::from_utf8(sender)?.to_string();
 
@@ -902,6 +917,7 @@ impl SecureStore {
 
                 Ok(ReceivedTspMessage::GenericMessage {
                     sender,
+                    receiver: intended_receiver,
                     nonconfidential_data: None,
                     message,
                     message_type,
@@ -1520,10 +1536,16 @@ mod test {
         assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
         let received = b_store.open_message(&mut sealed).unwrap();
 
-        let ReceivedTspMessage::NewIdentifier { sender, new_vid } = received else {
+        let ReceivedTspMessage::NewIdentifier {
+            sender,
+            receiver,
+            new_vid,
+        } = received
+        else {
             panic!("unexpected message type");
         };
         assert_eq!(sender, alice.identifier());
+        assert_eq!(receiver, bob.identifier());
         assert_eq!(new_vid, charles.identifier());
     }
 
@@ -1549,12 +1571,14 @@ mod test {
 
         let ReceivedTspMessage::Referral {
             sender,
+            receiver,
             referred_vid,
         } = received
         else {
             panic!("unexpected message type");
         };
         assert_eq!(sender, alice.identifier());
+        assert_eq!(receiver, bob.identifier());
         assert_eq!(referred_vid, charles.identifier());
     }
 
@@ -1659,6 +1683,7 @@ mod test {
 
         let ReceivedTspMessage::ForwardRequest {
             sender,
+            receiver,
             next_hop,
             route,
             opaque_payload,
@@ -1667,6 +1692,7 @@ mod test {
             panic!()
         };
         assert_eq!(sender, nette_a.identifier());
+        assert_eq!(receiver, b.identifier());
 
         let (_url, mut sealed) = b_store
             .forward_routed_message(
@@ -1680,6 +1706,7 @@ mod test {
 
         let ReceivedTspMessage::ForwardRequest {
             sender,
+            receiver,
             next_hop,
             route,
             opaque_payload,
@@ -1688,6 +1715,7 @@ mod test {
             panic!()
         };
         assert_eq!(sender, b.identifier());
+        assert_eq!(receiver, c.identifier());
 
         let (_url, mut sealed) = c_store
             .forward_routed_message(
@@ -1701,6 +1729,7 @@ mod test {
 
         let ReceivedTspMessage::GenericMessage {
             sender,
+            receiver,
             nonconfidential_data,
             message,
             message_type,
@@ -1710,6 +1739,7 @@ mod test {
         };
 
         assert_eq!(sender, sneaky_a.identifier());
+        assert_eq!(receiver.unwrap(), sneaky_d.identifier());
         assert!(nonconfidential_data.is_none());
         assert_eq!(message, hello_world);
         assert_ne!(message_type.crypto_type, crate::cesr::CryptoType::Plaintext);
@@ -1780,6 +1810,7 @@ mod test {
 
         let ReceivedTspMessage::GenericMessage {
             sender,
+            receiver,
             nonconfidential_data,
             message,
             message_type,
@@ -1789,6 +1820,7 @@ mod test {
         };
 
         assert_eq!(sender, nested_a.identifier());
+        assert_eq!(receiver.unwrap(), nested_b.identifier());
         assert!(nonconfidential_data.is_none());
         assert_eq!(message, hello_world);
         assert_ne!(message_type.crypto_type, crate::cesr::CryptoType::Plaintext);
@@ -1821,10 +1853,9 @@ mod test {
         let received = b_store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::RequestRelationship {
-            sender: _,
-            route: _,
             nested_vid: None,
             thread_id,
+            ..
         } = received
         else {
             panic!()
@@ -1847,10 +1878,9 @@ mod test {
         let received = b_store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::RequestRelationship {
-            sender: _,
-            route: _,
             nested_vid: Some(ref nested_vid_1),
             thread_id,
+            ..
         } = received
         else {
             panic!()
@@ -1863,8 +1893,8 @@ mod test {
         let received = a_store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::AcceptRelationship {
-            sender: _,
             nested_vid: Some(ref nested_vid_2),
+            ..
         } = received
         else {
             panic!()
@@ -1914,6 +1944,7 @@ mod test {
 
         let ReceivedTspMessage::GenericMessage {
             sender,
+            receiver,
             nonconfidential_data,
             message,
             message_type,
@@ -1923,6 +1954,7 @@ mod test {
         };
 
         assert_eq!(sender, nested_a.identifier());
+        assert_eq!(receiver.unwrap(), nested_b.identifier());
         assert!(nonconfidential_data.is_none());
         assert_eq!(message, hello_world);
         assert_ne!(message_type.crypto_type, crate::cesr::CryptoType::Plaintext);

@@ -179,6 +179,7 @@ class ReceivedTspMessage:
             case ReceivedTspMessageVariant.GenericMessage:
                 return GenericMessage(
                     msg.sender,
+                    msg.receiver,
                     msg.nonconfidential_data,
                     bytes(msg.message),
                     msg.crypto_type,
@@ -187,18 +188,22 @@ class ReceivedTspMessage:
 
             case ReceivedTspMessageVariant.RequestRelationship:
                 return RequestRelationship(
-                    msg.sender, msg.route, msg.nested_vid, msg.thread_id
+                    msg.sender, msg.receiver, msg.route, msg.nested_vid, msg.thread_id
                 )
 
             case ReceivedTspMessageVariant.AcceptRelationship:
-                return AcceptRelationship(msg.sender, msg.nested_vid)
+                return AcceptRelationship(msg.sender, msg.receiver, msg.nested_vid)
 
             case ReceivedTspMessageVariant.CancelRelationship:
-                return CancelRelationship(msg.sender)
+                return CancelRelationship(msg.sender, msg.receiver)
 
             case ReceivedTspMessageVariant.ForwardRequest:
                 return ForwardRequest(
-                    msg.sender, msg.next_hop, msg.route, msg.opaque_payload
+                    msg.sender,
+                    msg.receiver,
+                    msg.next_hop,
+                    msg.route,
+                    msg.opaque_payload,
                 )
 
             case ReceivedTspMessageVariant.PendingMessage:
@@ -211,8 +216,9 @@ class ReceivedTspMessage:
 @dataclass
 class GenericMessage(ReceivedTspMessage):
     sender: str
-    nonconfidential_data: str
-    message: str
+    receiver: str | None
+    nonconfidential_data: bytes | None
+    message: bytes
     crypto_type: str
     signature_type: str
 
@@ -220,17 +226,20 @@ class GenericMessage(ReceivedTspMessage):
 @dataclass
 class AcceptRelationship(ReceivedTspMessage):
     sender: str
+    receiver: str
     nested_vid: str
 
 
 @dataclass
 class CancelRelationship(ReceivedTspMessage):
     sender: str
+    receiver: str
 
 
 @dataclass
 class RequestRelationship(ReceivedTspMessage):
     sender: str
+    receiver: str
     route: str
     nested_vid: str
     thread_id: str
@@ -239,6 +248,7 @@ class RequestRelationship(ReceivedTspMessage):
 @dataclass
 class ForwardRequest(ReceivedTspMessage):
     sender: str
+    receiver: str
     next_hop: str
     route: str
     opaque_payload: str

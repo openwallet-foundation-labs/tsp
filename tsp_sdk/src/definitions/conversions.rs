@@ -20,45 +20,69 @@ impl<T: AsRef<[u8]>> ReceivedTspMessage<T> {
         match self {
             GenericMessage {
                 sender,
+                receiver,
                 nonconfidential_data,
                 message,
                 message_type,
             } => GenericMessage {
                 sender,
+                receiver,
                 nonconfidential_data: nonconfidential_data.map(&f),
                 message: f(message),
                 message_type,
             },
             RequestRelationship {
                 sender,
+                receiver,
                 route,
                 nested_vid,
                 thread_id,
             } => RequestRelationship {
                 sender,
+                receiver,
                 route,
                 nested_vid,
                 thread_id,
             },
-            AcceptRelationship { sender, nested_vid } => AcceptRelationship { sender, nested_vid },
-            CancelRelationship { sender } => CancelRelationship { sender },
+            AcceptRelationship {
+                sender,
+                receiver,
+                nested_vid,
+            } => AcceptRelationship {
+                sender,
+                receiver,
+                nested_vid,
+            },
+            CancelRelationship { sender, receiver } => CancelRelationship { sender, receiver },
             ForwardRequest {
                 sender,
+                receiver,
                 next_hop,
                 route,
                 opaque_payload,
             } => ForwardRequest {
                 sender,
+                receiver,
                 next_hop,
                 route,
                 opaque_payload,
             },
-            NewIdentifier { sender, new_vid } => NewIdentifier { sender, new_vid },
+            NewIdentifier {
+                sender,
+                receiver,
+                new_vid,
+            } => NewIdentifier {
+                sender,
+                receiver,
+                new_vid,
+            },
             Referral {
                 sender,
+                receiver,
                 referred_vid,
             } => Referral {
                 sender,
+                receiver,
                 referred_vid,
             },
             #[cfg(feature = "async")]
