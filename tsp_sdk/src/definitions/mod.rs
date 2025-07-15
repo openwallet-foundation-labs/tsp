@@ -10,7 +10,9 @@ use zeroize::Zeroize;
 #[cfg(feature = "async")]
 use futures::Stream;
 
-use crate::vid::did::web::{Algorithm, Curve, KeyType};
+#[cfg(feature = "pq")]
+use crate::vid::did::web::Algorithm;
+use crate::vid::did::web::{Curve, KeyType};
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
 
@@ -212,30 +214,20 @@ impl<Bytes: AsRef<[u8]>> fmt::Display for Payload<'_, Bytes> {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Deserialize, Serialize)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Deserialize, Serialize, Default)]
 pub enum VidEncryptionKeyType {
+    #[default]
     X25519,
     #[cfg(feature = "pq")]
     X25519Kyber768Draft00,
 }
 
-impl Default for VidEncryptionKeyType {
-    fn default() -> Self {
-        VidEncryptionKeyType::X25519
-    }
-}
-
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Deserialize, Serialize)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Deserialize, Serialize, Default)]
 pub enum VidSignatureKeyType {
+    #[default]
     Ed25519,
     #[cfg(feature = "pq")]
     MlDsa65,
-}
-
-impl Default for VidSignatureKeyType {
-    fn default() -> Self {
-        VidSignatureKeyType::Ed25519
-    }
 }
 
 // ANCHOR: custom-vid-mbBook
@@ -268,23 +260,25 @@ pub trait VerifiedVid: Send + Sync {
     }
 
     fn signature_key_jwk(&self) -> serde_json::Value {
-        #[cfg(feature = "pq")]
-        return serde_json::json!({
-            "kty": Into::<KeyType>::into(self.signature_key_type()),
-            "crv": Into::<Option<Curve>>::into(self.signature_key_type()),
-            "alg": Into::<Option<Algorithm>>::into(self.signature_key_type()),
-            "use": "sig",
-            "x": if self.signature_key_type() == VidSignatureKeyType::Ed25519 {Some(Base64UrlUnpadded::encode_string(self.verifying_key().as_ref()))} else { None },
-            "pub": if self.signature_key_type() == VidSignatureKeyType::MlDsa65 {Some(Base64UrlUnpadded::encode_string(self.verifying_key().as_ref()))} else { None },
-        });
-        #[cfg(not(feature = "pq"))]
-        serde_json::json!({
-            "kty": Into::<KeyType>::into(self.signature_key_type()),
-            "crv": Into::<Option<Curve>>::into(self.signature_key_type()),
-            "alg": Into::<Option<Algorithm>>::into(self.signature_key_type()),
-            "use": "sig",
-            "x": if self.signature_key_type() == VidSignatureKeyType::Ed25519 {Some(Base64UrlUnpadded::encode_string(self.verifying_key().as_ref()))} else { None },
-        })
+        match self.signature_key_type() {
+            VidSignatureKeyType::Ed25519 => {
+                serde_json::json!({
+                    "kty": Into::<KeyType>::into(self.signature_key_type()),
+                    "crv": Into::<Option<Curve>>::into(self.signature_key_type()),
+                    "use": "sig",
+                    "x": Base64UrlUnpadded::encode_string(self.verifying_key().as_ref()),
+                })
+            }
+            #[cfg(feature = "pq")]
+            VidSignatureKeyType::MlDsa65 => {
+                serde_json::json!({
+                    "kty": Into::<KeyType>::into(self.signature_key_type()),
+                    "alg": Into::<Option<Algorithm>>::into(self.signature_key_type()),
+                    "use": "sig",
+                    "pub": Base64UrlUnpadded::encode_string(self.verifying_key().as_ref()),
+                })
+            }
+        }
     }
 }
 

@@ -81,6 +81,7 @@ mod create_webvh {
         let (genesis_doc, update_kid, update_key) = Python::with_gil(|py| -> PyResult<_> {
             let (genesis_doc, update_kid, update_key) =
                 provision(tsp_mod.bind(py), genesis_document)?;
+            println!("{genesis_doc}");
             let genesis_doc: HistoryEntry =
                 serde_json::from_str(&genesis_doc).expect("Invalid genesis doc");
 

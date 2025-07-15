@@ -240,6 +240,7 @@ fn resolve_url(parts: &[&str]) -> Result<Url, VidError> {
     .map_err(|_| VidError::InvalidVid(parts.join(":")))
 }
 
+#[allow(clippy::type_complexity)]
 fn find_first_key(
     did_document: &DidDocument,
     method: &[String],
