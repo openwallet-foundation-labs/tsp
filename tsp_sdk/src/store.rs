@@ -399,12 +399,18 @@ impl SecureStore {
         Ok(aliases.get(alias).cloned())
     }
 
-    /// Resolve alias to its corresponding DID, or leave it as is
+    /// Resolve alias to its corresponding DID. If the input is already a DID, it is returned unchanged.
     pub fn try_resolve_alias(&self, alias: &str) -> Result<String, Error> {
-        Ok(self
-            .resolve_alias(alias)?
-            .unwrap_or(alias.to_owned())
-            .to_string())
+        if alias.starts_with("did:") {
+            return Ok(alias.to_owned());
+        }
+
+        match self.resolve_alias(alias)? {
+            Some(did) => Ok(did),
+            None => Err(Error::MissingVid(format!(
+                "Can not find corresponding DID to {alias}"
+            ))),
+        }
     }
 
     /// Set alias for a DID
