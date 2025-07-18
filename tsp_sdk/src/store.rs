@@ -399,12 +399,18 @@ impl SecureStore {
         Ok(aliases.get(alias).cloned())
     }
 
-    /// Resolve alias to its corresponding DID, or leave it as is
+    /// Resolve alias to its corresponding DID. If the input is already a DID, it is returned unchanged.
     pub fn try_resolve_alias(&self, alias: &str) -> Result<String, Error> {
-        Ok(self
-            .resolve_alias(alias)?
-            .unwrap_or(alias.to_owned())
-            .to_string())
+        if alias.starts_with("did:") {
+            return Ok(alias.to_owned());
+        }
+
+        match self.resolve_alias(alias)? {
+            Some(did) => Ok(did),
+            None => Err(Error::MissingVid(format!(
+                "Can not find corresponding DID to {alias}"
+            ))),
+        }
     }
 
     /// Set alias for a DID
@@ -1962,5 +1968,56 @@ mod test {
             message_type.signature_type,
             crate::cesr::SignatureType::NoSignature
         );
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_set_parent_for_vid_basic() {
+        let store = SecureStore::new();
+        let parent = new_vid();
+        let child = new_vid();
+
+        store.add_private_vid(parent.clone(), None).unwrap();
+        store.add_private_vid(child.clone(), None).unwrap();
+
+        store
+            .set_parent_for_vid(child.identifier(), Some(parent.identifier()))
+            .unwrap();
+
+        let child_context = store.get_vid(child.identifier()).unwrap();
+        assert_eq!(child_context.get_parent_vid(), Some(parent.identifier()));
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_set_parent_for_vid_with_alias() {
+        let store = SecureStore::new();
+        let parent = new_vid();
+        let child = new_vid();
+
+        store.add_private_vid(parent.clone(), None).unwrap();
+        store.add_private_vid(child.clone(), None).unwrap();
+        store
+            .set_alias("parent_alias".to_string(), parent.identifier().to_string())
+            .unwrap();
+
+        store
+            .set_parent_for_vid(child.identifier(), Some("parent_alias"))
+            .unwrap();
+
+        let child_context = store.get_vid(child.identifier()).unwrap();
+        assert_eq!(child_context.get_parent_vid(), Some(parent.identifier()));
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_set_parent_nonexistent_parent() {
+        let store = SecureStore::new();
+        let child = new_vid();
+
+        store.add_private_vid(child.clone(), None).unwrap();
+
+        let result = store.set_parent_for_vid(child.identifier(), Some("nonexistent_parent"));
+        assert!(result.is_err());
     }
 }
