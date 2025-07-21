@@ -19,7 +19,7 @@ strict = []
 fuzzing = ["dep:arbitrary"]
 demo = []
 nacl = ["essr"]
-pq = ["dep:hpke_pq", "essr"]
+pq = ["dep:hpke_pq", "dep:ml-dsa", "essr"]
 async = [
     "resolve",
     "aries-askar",
@@ -54,6 +54,7 @@ once_cell = { workspace = true }
 ed25519-dalek = { workspace = true }
 hpke = { workspace = true }
 hpke_pq = { workspace = true, optional = true }
+ml-dsa = { version = "0.0.4", features = ["rand_core"], optional = true }
 rand = { workspace = true }
 rand_core = { workspace = true }
 sha2 = { workspace = true }

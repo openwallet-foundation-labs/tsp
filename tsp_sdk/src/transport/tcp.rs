@@ -1,8 +1,7 @@
 use async_stream::stream;
-use bytes::BytesMut;
-use futures::StreamExt;
+use bytes::{Bytes, BytesMut};
+use tokio::io::AsyncReadExt;
 use tokio::{io::AsyncWriteExt, net::TcpListener};
-use tokio_util::codec::{BytesCodec, Framed};
 use url::Url;
 
 use super::{TSPStream, TransportError};
@@ -50,12 +49,13 @@ pub(crate) async fn receive_messages(
         .map_err(|e| TransportError::Connection(address.to_string(), e))?;
 
     Ok(Box::pin(stream! {
-        while let Ok((stream, addr)) = listener.accept().await {
-            let mut messages = Framed::new(stream, BytesCodec::new());
-
-            while let Some(m) = messages.next().await {
-                yield m.map_err(|e| TransportError::Connection(addr.to_string(), e));
-            }
+        while let Ok((mut stream, addr)) = listener.accept().await {
+            let mut message = Vec::new();
+            match stream.read_to_end(&mut message).await.map_err(|e| TransportError::Connection(addr.to_string(), e)){
+                Ok(_) => {
+                    yield Ok(BytesMut::from(Bytes::from(message)));
+                }
+                Err(err) => yield Err(err)}
         }
     }))
 }
@@ -63,6 +63,7 @@ pub(crate) async fn receive_messages(
 #[cfg(test)]
 mod test {
     use super::*;
+    use futures::StreamExt;
     use url::Url;
 
     #[tokio::test]

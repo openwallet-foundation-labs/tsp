@@ -1,4 +1,4 @@
-use crate::definitions::VidEncryptionKeyType;
+use crate::definitions::{VidEncryptionKeyType, VidSignatureKeyType};
 use crate::{Vid, definitions::VerifiedVid, vid::error::VidError};
 use base64ct::{Base64UrlUnpadded, Encoding};
 use serde_json::json;
@@ -13,10 +13,23 @@ pub(crate) const SCHEME: &str = "peer";
 /// See <https://identity.foundation/peer-did-method-spec/>
 pub fn encode_did_peer(vid: &Vid) -> String {
     let mut v = Vec::with_capacity(34);
-    // multicodec for ed25519-pub
-    v.push(0xed);
-    // key bytes length
-    v.push(0x20);
+
+    match vid.sig_key_type {
+        VidSignatureKeyType::Ed25519 => {
+            // multicodec for ed25519-pub
+            v.push(0xed);
+            // key bytes length
+            v.push(0x20);
+        }
+        #[cfg(feature = "pq")]
+        VidSignatureKeyType::MlDsa65 => {
+            // private use area (0x300001) => encoded as unsigned varint, see: https://github.com/multiformats/unsigned-varint
+            v.extend_from_slice(&0x8180c001u32.to_be_bytes());
+            // key bytes length (1952 bytes) => encoded as unsigned varint, see: https://github.com/multiformats/unsigned-varint
+            v.extend_from_slice(&0xa00fu16.to_be_bytes());
+        }
+    };
+
     v.extend_from_slice(vid.verifying_key().as_ref());
 
     let verification_key = bs58::encode(&v)
@@ -38,9 +51,9 @@ pub fn encode_did_peer(vid: &Vid) -> String {
             #[cfg(feature = "async")]
             trace!("serializing X25519Kyber768Draft00 encryption key");
             // private use area (0x300000) => encoded as unsigned varint, see: https://github.com/multiformats/unsigned-varint
-            v.extend_from_slice(&0x8080c001u32.to_le_bytes());
+            v.extend_from_slice(&0x8080c001u32.to_be_bytes());
             // key bytes length (1216 bytes) => encoded as unsigned varint, see: https://github.com/multiformats/unsigned-varint
-            v.extend_from_slice(&0xc009u16.to_le_bytes());
+            v.extend_from_slice(&0xc009u16.to_be_bytes());
         }
     }
 
@@ -77,9 +90,10 @@ pub fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
     let mut public_sigkey = None;
     let mut public_enckey = None;
     let mut enc_key_type = None;
+    let mut sig_key_type = None;
     let mut transport = None;
 
-    let mut buf = [0; 1222];
+    let mut buf = [0; 3309 + 6];
 
     for part in peer_parts {
         match &part[0..2] {
@@ -97,10 +111,11 @@ pub fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
                     [0xec, 0x20, rest @ ..] => {
                         #[cfg(feature = "async")]
                         trace!("found x25519 encryption key");
-                        public_enckey = rest[..0x20].to_vec().into();
+                        public_enckey = Some(rest[..0x20].to_vec());
                         enc_key_type = Some(VidEncryptionKeyType::X25519)
                     }
                     #[cfg(feature = "pq")]
+                    // multicodec reserved range (0x300000), followed by length (1216)
                     [
                         0b10000000,
                         0b10000000,
@@ -124,24 +139,42 @@ pub fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
             }
             // Authentication (Verification) + base58 multibase prefix
             "Vz" => {
-                let count = bs58::decode(&part[2..])
+                bs58::decode(&part[2..])
                     .with_alphabet(bs58::Alphabet::BITCOIN)
                     .onto(&mut buf)
                     .map_err(|_| {
                         VidError::ResolveVid("invalid encoded verification key in did:peer")
                     })?;
 
-                debug_assert_eq!(count, 34);
-
-                // multicodec for ed25519-pub + length 32 bytes
-                if let [0xed, 0x20, rest @ ..] = buf {
-                    if let Some(sigkey_bytes) = rest.first_chunk::<32>() {
-                        public_sigkey = Some((*sigkey_bytes).into());
+                match buf {
+                    // multicodec for ed25519-pub + length 32 bytes
+                    [0xed, 0x20, rest @ ..] => {
+                        #[cfg(feature = "async")]
+                        trace!("found Ed25519 signature key");
+                        public_sigkey = Some(rest[..0x20].to_vec());
+                        sig_key_type = Some(VidSignatureKeyType::Ed25519)
                     }
-                } else {
-                    return Err(VidError::ResolveVid(
-                        "invalid verification key type in did:peer",
-                    ));
+                    #[cfg(feature = "pq")]
+                    // multicodec reserved range (0x300001), followed by length (1952) (https://go.dev/play/p/KskwkAiBV7D)
+                    [
+                        0b10000001,
+                        0b10000000,
+                        0b11000000,
+                        0b00000001,
+                        0b10100000,
+                        0b00001111,
+                        rest @ ..,
+                    ] => {
+                        #[cfg(feature = "async")]
+                        trace!("found ML-DSA-65 signature key");
+                        public_sigkey = rest[..1952].to_vec().into();
+                        sig_key_type = Some(VidSignatureKeyType::MlDsa65)
+                    }
+                    _ => {
+                        return Err(VidError::ResolveVid(
+                            "invalid signature key type in did:peer",
+                        ));
+                    }
                 }
             }
             // start of base64url encoded service definition
@@ -175,7 +208,8 @@ pub fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
             Ok(Vid {
                 id: parts.join(":"),
                 transport,
-                public_sigkey,
+                sig_key_type: sig_key_type.unwrap_or(VidSignatureKeyType::Ed25519),
+                public_sigkey: public_sigkey.into(),
                 enc_key_type: enc_key_type.unwrap_or(VidEncryptionKeyType::X25519),
                 public_enckey: public_enckey.into(),
             })
@@ -189,7 +223,7 @@ pub fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
 #[cfg(not(feature = "pq"))]
 #[cfg(test)]
 mod test {
-    use crate::definitions::{VerifiedVid, VidEncryptionKeyType};
+    use crate::definitions::{VerifiedVid, VidEncryptionKeyType, VidSignatureKeyType};
     use url::Url;
     use wasm_bindgen_test::wasm_bindgen_test;
 
@@ -206,6 +240,7 @@ mod test {
         let mut vid = Vid {
             id: Default::default(),
             transport: Url::parse("tcp://127.0.0.1:1337").unwrap(),
+            sig_key_type: VidSignatureKeyType::Ed25519,
             public_sigkey,
             enc_key_type: VidEncryptionKeyType::X25519,
             public_enckey,

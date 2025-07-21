@@ -10,6 +10,8 @@ use zeroize::Zeroize;
 #[cfg(feature = "async")]
 use futures::Stream;
 
+#[cfg(feature = "pq")]
+use crate::vid::did::web::Algorithm;
 use crate::vid::did::web::{Curve, KeyType};
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
@@ -22,15 +24,11 @@ pub struct PrivateKeyData(Vec<u8>);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublicKeyData(Vec<u8>);
 
-pub const PRIVATE_SIGNING_KEY_SIZE: usize = 32;
-
-pub const PUBLIC_VERIFICATION_KEY_SIZE: usize = 32;
-
 #[derive(Clone, Zeroize)]
-pub struct PrivateSigningKeyData([u8; PRIVATE_SIGNING_KEY_SIZE]);
+pub struct PrivateSigningKeyData(Vec<u8>);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PublicVerificationKeyData([u8; PUBLIC_VERIFICATION_KEY_SIZE]);
+pub struct PublicVerificationKeyData(Vec<u8>);
 
 pub type VidData<'a> = &'a [u8];
 pub type NonConfidentialData<'a> = &'a [u8];
@@ -223,11 +221,20 @@ impl<Bytes: AsRef<[u8]>> fmt::Display for Payload<'_, Bytes> {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Deserialize, Serialize)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Deserialize, Serialize, Default)]
 pub enum VidEncryptionKeyType {
+    #[default]
     X25519,
     #[cfg(feature = "pq")]
     X25519Kyber768Draft00,
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Deserialize, Serialize, Default)]
+pub enum VidSignatureKeyType {
+    #[default]
+    Ed25519,
+    #[cfg(feature = "pq")]
+    MlDsa65,
 }
 
 // ANCHOR: custom-vid-mbBook
@@ -247,6 +254,9 @@ pub trait VerifiedVid: Send + Sync {
     /// The encryption key type associated with this Vid
     fn encryption_key_type(&self) -> VidEncryptionKeyType;
 
+    /// The signature key type associated with this Vid
+    fn signature_key_type(&self) -> VidSignatureKeyType;
+
     fn encryption_key_jwk(&self) -> serde_json::Value {
         serde_json::json!({
             "kty": Into::<KeyType>::into(self.encryption_key_type()),
@@ -254,6 +264,28 @@ pub trait VerifiedVid: Send + Sync {
             "use": "enc",
             "x": Base64UrlUnpadded::encode_string(self.encryption_key().as_ref()),
         })
+    }
+
+    fn signature_key_jwk(&self) -> serde_json::Value {
+        match self.signature_key_type() {
+            VidSignatureKeyType::Ed25519 => {
+                serde_json::json!({
+                    "kty": Into::<KeyType>::into(self.signature_key_type()),
+                    "crv": Into::<Option<Curve>>::into(self.signature_key_type()),
+                    "use": "sig",
+                    "x": Base64UrlUnpadded::encode_string(self.verifying_key().as_ref()),
+                })
+            }
+            #[cfg(feature = "pq")]
+            VidSignatureKeyType::MlDsa65 => {
+                serde_json::json!({
+                    "kty": Into::<KeyType>::into(self.signature_key_type()),
+                    "alg": Into::<Option<Algorithm>>::into(self.signature_key_type()),
+                    "use": "sig",
+                    "pub": Base64UrlUnpadded::encode_string(self.verifying_key().as_ref()),
+                })
+            }
+        }
     }
 }
 
@@ -263,7 +295,6 @@ pub trait PrivateVid: VerifiedVid + Send + Sync {
 
     /// The PRIVATE key used to sign data
     fn signing_key(&self) -> &PrivateSigningKeyData;
-    // ANCHOR_END: custom-vid-mbBook
 
     fn private_encryption_key_jwk(&self) -> serde_json::Value {
         serde_json::json!({
@@ -275,6 +306,7 @@ pub trait PrivateVid: VerifiedVid + Send + Sync {
         })
     }
 }
+// ANCHOR_END: custom-vid-mbBook
 
 impl Debug for PrivateKeyData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -306,14 +338,14 @@ impl AsRef<[u8]> for PublicVerificationKeyData {
     }
 }
 
-impl From<[u8; PRIVATE_SIGNING_KEY_SIZE]> for PrivateSigningKeyData {
-    fn from(data: [u8; PRIVATE_SIGNING_KEY_SIZE]) -> PrivateSigningKeyData {
+impl From<Vec<u8>> for PrivateSigningKeyData {
+    fn from(data: Vec<u8>) -> PrivateSigningKeyData {
         PrivateSigningKeyData(data)
     }
 }
 
-impl From<[u8; PUBLIC_VERIFICATION_KEY_SIZE]> for PublicVerificationKeyData {
-    fn from(data: [u8; PUBLIC_VERIFICATION_KEY_SIZE]) -> PublicVerificationKeyData {
+impl From<Vec<u8>> for PublicVerificationKeyData {
+    fn from(data: Vec<u8>) -> PublicVerificationKeyData {
         PublicVerificationKeyData(data)
     }
 }
@@ -347,7 +379,7 @@ impl Deref for PrivateKeyData {
 }
 
 impl Deref for PublicVerificationKeyData {
-    type Target = [u8; PUBLIC_VERIFICATION_KEY_SIZE];
+    type Target = Vec<u8>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -355,7 +387,7 @@ impl Deref for PublicVerificationKeyData {
 }
 
 impl Deref for PrivateSigningKeyData {
-    type Target = [u8; PRIVATE_SIGNING_KEY_SIZE];
+    type Target = Vec<u8>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

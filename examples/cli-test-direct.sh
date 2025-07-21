@@ -29,7 +29,7 @@ echo "---- wait 2 seconds and then send a message to the receiver"
 sleep 2 && echo "Oh hello Marc" | tsp --wallet marlon send -s marlon -r marc &
 
 echo "---- receive the message"
-tsp --wallet marc receive --one marc
+tsp --wallet marc receive marc
 
 echo "---- cleanup wallets"
 rm -f marc.sqlite marlon.sqlite

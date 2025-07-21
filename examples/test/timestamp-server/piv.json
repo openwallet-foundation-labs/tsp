@@ -3,6 +3,7 @@
   "id": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:timestamp-server",
   "publicEnckey": "2SOeMndN9z4oArm7Vu7D7ZGnkbsAXZ2DO-GUAfBd_Bo",
   "publicSigkey": "HR76y6YG5BWHbj4UQsqX-5ybQPjtETiaZFa4LHWaI68",
+  "sigKeyType": "Ed25519",
   "sigkey": "fjSXHx-2-XoyoDk-Usr3XdBQf-kfazcMuSVwrGL9FTQ",
   "encKeyType": "X25519",
   "transport": "https://demo.teaspoon.world/timestamp"
