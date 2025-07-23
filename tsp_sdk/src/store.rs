@@ -247,7 +247,16 @@ impl SecureStore {
     /// Sets the parent for a VID, thus making it a nested VID
     pub fn set_parent_for_vid(&self, vid: &str, parent_vid: Option<&str>) -> Result<(), Error> {
         let parent_vid = if let Some(parent_vid) = parent_vid {
-            Some(self.try_resolve_alias(parent_vid)?)
+            let resolved_parent = self.try_resolve_alias(parent_vid)?;
+            if !self.has_private_vid(&resolved_parent)?
+                && !self.has_verified_vid(&resolved_parent)?
+            {
+                return Err(Error::MissingVid(format!(
+                    "Can not find corresponding DID for alias {parent_vid}"
+                )));
+            }
+
+            Some(resolved_parent)
         } else {
             None
         };
