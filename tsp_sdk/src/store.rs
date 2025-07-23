@@ -408,12 +408,9 @@ impl SecureStore {
         Ok(aliases.get(alias).cloned())
     }
 
-    /// Resolve alias to its corresponding DID, or leave it as is
+    /// Resolve alias to its corresponding DID. If the input is already a DID, it is returned unchanged.
     pub fn try_resolve_alias(&self, alias: &str) -> Result<String, Error> {
-        Ok(self
-            .resolve_alias(alias)?
-            .unwrap_or(alias.to_owned())
-            .to_string())
+        Ok(self.resolve_alias(alias)?.unwrap_or(alias.to_owned()))
     }
 
     /// Set alias for a DID
