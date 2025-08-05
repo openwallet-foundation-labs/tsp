@@ -7,7 +7,7 @@ const TSP_DEVELOPMENT_VID: u32 = (((21 << 6) | 8) << 6) | 3; // "VID"
 const TSP_TYPECODE: u32 = (b'X' - b'A') as u32;
 const ED25519_SIGNATURE: u32 = (b'B' - b'A') as u32;
 #[cfg(feature = "pq")]
-const ML_DSA_65_SIGNATURE: u32 = 0o170413u32; // QDM
+const ML_DSA_65_SIGNATURE: u32 = 0o170413u32; // PEL
 #[allow(clippy::eq_op)]
 const TSP_NONCE: u32 = (b'A' - b'A') as u32;
 const TSP_SHA256: u32 = (b'I' - b'A') as u32;
