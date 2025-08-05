@@ -20,6 +20,9 @@ const fn cesr(x: &str) -> u32 {
     acc
 }
 
+/// The TSP version supported by this spec
+const TSP_VERSION: (u16, u8, u8) = (0, 0, 1);
+
 /// Constants that determine the specific CESR types for "variable length data"
 const TSP_PLAINTEXT: u32 = cesr("B");
 const TSP_CIPHERTEXT: u32 = cesr("C");
@@ -562,12 +565,51 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
     }
 }
 
+const fn encoded_version() -> u16 {
+    (TSP_VERSION.1 as u16) << 6 | (TSP_VERSION.2 as u16)
+}
+
+/// Y is the header.
+/// Note that 'YTSP' is not conforming to the normal rules of a fixed-size CESR code, so we
+/// force hardcode it as a Base64 quadlet/triplet.
+const Y_HEADER: [u8; 3] = {
+    let cesr = u32::to_be_bytes(cesr("YTSP"));
+    [cesr[1], cesr[2], cesr[3]]
+};
+
+/// Encode a TSP version marker
+pub fn encode_version(output: &mut impl for<'b> Extend<&'b u8>) {
+    output.extend(&Y_HEADER);
+    encode_count(TSP_VERSION.0, encoded_version(), output);
+}
+
+fn decode_version(stream: &mut &[u8]) -> Result<(), DecodeError> {
+    // See above: this is hopefully rare case of pseudo-CESR encoding
+    let Some((hdr, new_stream)) = stream.split_at_checked(3) else {
+        return Err(DecodeError::VersionMismatch);
+    };
+
+    if hdr != Y_HEADER {
+        return Err(DecodeError::VersionMismatch);
+    }
+
+    *stream = new_stream;
+
+    let _version = decode_count(TSP_VERSION.0, stream).ok_or(DecodeError::VersionMismatch)?;
+
+    // TODO: can we simply ignore the minor and path parts of the version?
+
+    Ok(())
+}
+
 /// Encode a encrypted TSP message plus Envelope into CESR
 pub fn encode_ets_envelope<'a, Vid: AsRef<[u8]>>(
     envelope: Envelope<'a, Vid>,
     output: &mut impl for<'b> Extend<&'b u8>,
 ) -> Result<(), EncodeError> {
+    //TODO: encode the count of the data to be signed
     encode_count(TSP_ETS_WRAPPER, 1, output);
+    encode_version(output);
     encode_envelope_fields(envelope, output)
 }
 
@@ -577,7 +619,7 @@ pub fn encode_s_envelope<'a, Vid: AsRef<[u8]>>(
     output: &mut impl for<'b> Extend<&'b u8>,
 ) -> Result<(), EncodeError> {
     encode_count(TSP_S_WRAPPER, 1, output);
-
+    encode_version(output);
     encode_envelope_fields(envelope, output)
 }
 
@@ -639,13 +681,16 @@ pub(super) fn detected_tsp_header_size_and_confidentiality(
     stream: &mut &[u8],
 ) -> Result<(usize, CryptoType, SignatureType), DecodeError> {
     let origin = stream as &[u8];
-    let encrypted = if let Some(1) = decode_count(TSP_ETS_WRAPPER, stream) {
+    //TODO: do something with the quadlet count?
+    let encrypted = if let Some(_quadlet_count) = decode_count(TSP_ETS_WRAPPER, stream) {
         true
     } else if let Some(1) = decode_count(TSP_S_WRAPPER, stream) {
         false
     } else {
         return Err(DecodeError::VersionMismatch);
     };
+
+    decode_version(stream)?;
 
     match decode_fixed_data(TSP_TYPECODE, stream) {
         Some([0, 0]) => {}
@@ -665,9 +710,9 @@ pub(super) fn detected_tsp_header_size_and_confidentiality(
         _ => return Err(DecodeError::VersionMismatch),
     };
 
-    debug_assert_eq!(origin.len() - stream.len(), 9);
+    debug_assert_eq!(origin.len() - stream.len(), 15);
 
-    Ok((9, crypto_type, signature_type))
+    Ok((origin.len() - stream.len(), crypto_type, signature_type))
 }
 
 /// A structure representing a siganture + data that needs to be verified.
@@ -1404,10 +1449,10 @@ mod test {
     fn test_message_to_parts() {
         use base64ct::{Base64UrlUnpadded, Encoding};
 
-        let message = Base64UrlUnpadded::decode_vec("-EABXAAAXAEB9VIDAAAEZGlkOnRlc3Q6Ym9i8VIDAAAFAGRpZDp0ZXN0OmFsaWNl6BAEAABleHRyYSBkYXRh4CAXScvzIiBCgfOu9jHtGwd1qN-KlMB7uhFbE9YOSyTmnp9yziA1LVPdQmST27yjuDRTlxeRo7H7gfuaGFY4iyf2EsfiqvEg0BBNDbKoW0DDczGxj7rNWKH_suyj18HCUxMZ6-mDymZdNhHZIS8zIstC9Kxv5Q-GxmI-1v4SNbeCemuCMBzMPogK").unwrap();
+        let message = Base64UrlUnpadded::decode_vec("-EABYTSP-AABXAAAXAEB9VIDAAAEZGlkOnRlc3Q6Ym9i8VIDAAAFAGRpZDp0ZXN0OmFsaWNl6BAEAABleHRyYSBkYXRh4CAXScvzIiBCgfOu9jHtGwd1qN-KlMB7uhFbE9YOSyTmnp9yziA1LVPdQmST27yjuDRTlxeRo7H7gfuaGFY4iyf2EsfiqvEg0BBNDbKoW0DDczGxj7rNWKH_suyj18HCUxMZ6-mDymZdNhHZIS8zIstC9Kxv5Q-GxmI-1v4SNbeCemuCMBzMPogK").unwrap();
         let parts = open_message_into_parts(&message).unwrap();
 
-        assert_eq!(parts.prefix.prefix.len(), 9);
+        assert_eq!(parts.prefix.prefix.len(), 15);
         assert_eq!(parts.sender.data.len(), 10);
         assert_eq!(parts.receiver.unwrap().data.len(), 14);
         assert_eq!(parts.ciphertext.unwrap().data.len(), 69);
