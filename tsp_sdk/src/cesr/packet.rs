@@ -26,7 +26,7 @@ const TSP_VERSION: (u16, u8, u8) = (0, 0, 1);
 /// Constants that determine the specific CESR types for "variable length data"
 const TSP_PLAINTEXT: u32 = cesr("B");
 const TSP_CIPHERTEXT: u32 = cesr("C");
-const TSP_DEVELOPMENT_VID: u32 = cesr("VID");
+const TSP_VID: u32 = cesr("V"); // TODO: this needs to become "B"
 
 /// Constants that determine the specific CESR types for "fixed length data"
 const TSP_TYPECODE: u32 = cesr("X");
@@ -308,7 +308,7 @@ pub fn encode_payload(
 ) -> Result<(), EncodeError> {
     if let Some(sender_identity) = sender_identity {
         encode_count(TSP_PAYLOAD, 2, output);
-        checked_encode_variable_data(TSP_DEVELOPMENT_VID, sender_identity, output)?;
+        checked_encode_variable_data(TSP_VID, sender_identity, output)?;
     } else {
         encode_count(TSP_PAYLOAD, 1, output);
     }
@@ -358,11 +358,11 @@ pub fn encode_payload(
         Payload::NewIdentifierProposal { thread_id, new_vid } => {
             encode_fixed_data(TSP_TYPECODE, &msgtype::NEW_REFER_REL, output);
             encode_digest(thread_id, output);
-            checked_encode_variable_data(TSP_DEVELOPMENT_VID, new_vid.as_ref(), output)?;
+            checked_encode_variable_data(TSP_VID, new_vid.as_ref(), output)?;
         }
         Payload::RelationshipReferral { referred_vid } => {
             encode_fixed_data(TSP_TYPECODE, &msgtype::THIRDP_REFER_REL, output);
-            checked_encode_variable_data(TSP_DEVELOPMENT_VID, referred_vid.as_ref(), output)?;
+            checked_encode_variable_data(TSP_VID, referred_vid.as_ref(), output)?;
         }
         Payload::RelationshipCancel { reply } => {
             encode_fixed_data(TSP_TYPECODE, &msgtype::REL_CANCEL, output);
@@ -381,7 +381,7 @@ pub fn encode_hops(
     if !hops.is_empty() {
         encode_count(TSP_HOP_LIST, hops.len() as u16, output);
         for hop in hops {
-            checked_encode_variable_data(TSP_DEVELOPMENT_VID, hop.as_ref(), output)?;
+            checked_encode_variable_data(TSP_VID, hop.as_ref(), output)?;
         }
     }
 
@@ -404,8 +404,8 @@ fn decode_hops<'a, Vid: TryFrom<&'a [u8]>>(
     let mut hop_list = Vec::with_capacity(hop_length as usize);
     for _ in 0..hop_length {
         let hop: &[u8];
-        (hop, stream) = decode_variable_data_mut(TSP_DEVELOPMENT_VID, stream)
-            .ok_or(DecodeError::UnexpectedData)?;
+        (hop, stream) =
+            decode_variable_data_mut(TSP_VID, stream).ok_or(DecodeError::UnexpectedData)?;
 
         hop_list.push(hop.try_into().map_err(|_| DecodeError::VidError)?);
     }
@@ -448,8 +448,8 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
     let sender_identity = match decode_count_mut(TSP_PAYLOAD, stream) {
         Some((2, upd_stream)) => {
             let essr_prefix: &[u8];
-            (essr_prefix, stream) = decode_variable_data_mut(TSP_DEVELOPMENT_VID, upd_stream)
-                .ok_or(DecodeError::UnexpectedData)?;
+            (essr_prefix, stream) =
+                decode_variable_data_mut(TSP_VID, upd_stream).ok_or(DecodeError::UnexpectedData)?;
 
             Some(essr_prefix)
         }
@@ -534,15 +534,15 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
         msgtype::NEW_REFER_REL => {
             let (thread_id, upd_stream) = decode_digest(stream)?;
             let new_vid: &[u8];
-            (new_vid, stream) = decode_variable_data_mut(TSP_DEVELOPMENT_VID, upd_stream)
-                .ok_or(DecodeError::UnexpectedData)?;
+            (new_vid, stream) =
+                decode_variable_data_mut(TSP_VID, upd_stream).ok_or(DecodeError::UnexpectedData)?;
 
             Payload::NewIdentifierProposal { thread_id, new_vid }
         }
         msgtype::THIRDP_REFER_REL => {
             let referred_vid: &[u8];
-            (referred_vid, stream) = decode_variable_data_mut(TSP_DEVELOPMENT_VID, stream)
-                .ok_or(DecodeError::UnexpectedData)?;
+            (referred_vid, stream) =
+                decode_variable_data_mut(TSP_VID, stream).ok_or(DecodeError::UnexpectedData)?;
 
             Payload::RelationshipReferral { referred_vid }
         }
@@ -636,10 +636,10 @@ fn encode_envelope_fields<'a, Vid: AsRef<[u8]>>(
         &[envelope.crypto_type as u8, envelope.signature_type as u8],
         output,
     );
-    checked_encode_variable_data(TSP_DEVELOPMENT_VID, envelope.sender.as_ref(), output)?;
+    checked_encode_variable_data(TSP_VID, envelope.sender.as_ref(), output)?;
 
     if let Some(rec) = envelope.receiver {
-        checked_encode_variable_data(TSP_DEVELOPMENT_VID, rec.as_ref(), output)?;
+        checked_encode_variable_data(TSP_VID, rec.as_ref(), output)?;
     }
 
     if let Some(data) = envelope.nonconfidential_data {
@@ -730,12 +730,12 @@ pub fn decode_sender_receiver<'a, Vid: TryFrom<&'a [u8]>>(
 ) -> Result<(Vid, Option<Vid>, CryptoType, SignatureType), DecodeError> {
     let (_, crypto_type, signature_type) = detected_tsp_header_size_and_confidentiality(stream)?;
 
-    let sender = decode_variable_data(TSP_DEVELOPMENT_VID, stream)
+    let sender = decode_variable_data(TSP_VID, stream)
         .ok_or(DecodeError::UnexpectedData)?
         .try_into()
         .map_err(|_| DecodeError::VidError)?;
 
-    let receiver = decode_variable_data(TSP_DEVELOPMENT_VID, stream)
+    let receiver = decode_variable_data(TSP_VID, stream)
         .map(|r| r.try_into().map_err(|_| DecodeError::VidError))
         .transpose()?;
 
@@ -830,10 +830,10 @@ pub fn decode_envelope<'a>(stream: &'a mut [u8]) -> Result<CipherView<'a>, Decod
     let (mut pos, crypto_type, signature_type) =
         detected_tsp_header_size_and_confidentiality(&mut (stream as &[u8]))?;
 
-    let sender = decode_variable_data_index(TSP_DEVELOPMENT_VID, stream, &mut pos)
+    let sender = decode_variable_data_index(TSP_VID, stream, &mut pos)
         .ok_or(DecodeError::UnexpectedData)?;
 
-    let receiver = decode_variable_data_index(TSP_DEVELOPMENT_VID, stream, &mut pos);
+    let receiver = decode_variable_data_index(TSP_VID, stream, &mut pos);
 
     let nonconfidential_data = decode_variable_data_index(TSP_PLAINTEXT, stream, &mut pos);
 
@@ -972,8 +972,8 @@ pub fn open_message_into_parts(data: &[u8]) -> Result<MessageParts<'_>, DecodeEr
         data: &[],
     };
 
-    let sender = Part::decode(TSP_DEVELOPMENT_VID, data, &mut pos).ok_or(DecodeError::VidError)?;
-    let receiver = Part::decode(TSP_DEVELOPMENT_VID, data, &mut pos);
+    let sender = Part::decode(TSP_VID, data, &mut pos).ok_or(DecodeError::VidError)?;
+    let receiver = Part::decode(TSP_VID, data, &mut pos);
     let nonconfidential_data = Part::decode(TSP_PLAINTEXT, data, &mut pos);
     let ciphertext = Part::decode(TSP_CIPHERTEXT, data, &mut pos);
 
@@ -1449,7 +1449,7 @@ mod test {
     fn test_message_to_parts() {
         use base64ct::{Base64UrlUnpadded, Encoding};
 
-        let message = Base64UrlUnpadded::decode_vec("-EABYTSP-AABXAAAXAEB9VIDAAAEZGlkOnRlc3Q6Ym9i8VIDAAAFAGRpZDp0ZXN0OmFsaWNl6BAEAABleHRyYSBkYXRh4CAXScvzIiBCgfOu9jHtGwd1qN-KlMB7uhFbE9YOSyTmnp9yziA1LVPdQmST27yjuDRTlxeRo7H7gfuaGFY4iyf2EsfiqvEg0BBNDbKoW0DDczGxj7rNWKH_suyj18HCUxMZ6-mDymZdNhHZIS8zIstC9Kxv5Q-GxmI-1v4SNbeCemuCMBzMPogK").unwrap();
+        let message = Base64UrlUnpadded::decode_vec("-EABYTSP-AABXAAAXAEB6VAEZGlkOnRlc3Q6Ym9i8VIDAAAFAGRpZDp0ZXN0OmFsaWNl6BAEAABleHRyYSBkYXRh4CAXScvzIiBCgfOu9jHtGwd1qN-KlMB7uhFbE9YOSyTmnp9yziA1LVPdQmST27yjuDRTlxeRo7H7gfuaGFY4iyf2EsfiqvEg0BBNDbKoW0DDczGxj7rNWKH_suyj18HCUxMZ6-mDymZdNhHZIS8zIstC9Kxv5Q-GxmI-1v4SNbeCemuCMBzMPogK").unwrap();
         let parts = open_message_into_parts(&message).unwrap();
 
         assert_eq!(parts.prefix.prefix.len(), 15);
