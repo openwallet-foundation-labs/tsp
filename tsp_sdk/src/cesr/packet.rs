@@ -1,24 +1,46 @@
+/// A function for more easy encoding of CESR constants
+const fn cesr(x: &str) -> u32 {
+    let x = x.as_bytes();
+    let mut acc = 0;
+    let mut i = 0;
+    while i < x.len() {
+        let ch = x[i];
+        acc = acc << 6
+            | match ch {
+                ch if ch.is_ascii_uppercase() => ch - b'A',
+                ch if ch.is_ascii_lowercase() => ch - b'a' + 26,
+                ch if ch.is_ascii_digit() => ch - b'0' + 52,
+                b'-' => 62,
+                b'_' => 63,
+                _ => panic!("not a base64url character"),
+            } as u32;
+        i += 1;
+    }
+
+    acc
+}
+
 /// Constants that determine the specific CESR types for "variable length data"
-const TSP_PLAINTEXT: u32 = (b'B' - b'A') as u32;
-const TSP_CIPHERTEXT: u32 = (b'C' - b'A') as u32;
-const TSP_DEVELOPMENT_VID: u32 = (((21 << 6) | 8) << 6) | 3; // "VID"
+const TSP_PLAINTEXT: u32 = cesr("B");
+const TSP_CIPHERTEXT: u32 = cesr("C");
+const TSP_DEVELOPMENT_VID: u32 = cesr("VID");
 
 /// Constants that determine the specific CESR types for "fixed length data"
-const TSP_TYPECODE: u32 = (b'X' - b'A') as u32;
-const ED25519_SIGNATURE: u32 = (b'B' - b'A') as u32;
+const TSP_TYPECODE: u32 = cesr("X");
+const ED25519_SIGNATURE: u32 = cesr("B");
 #[cfg(feature = "pq")]
-const ML_DSA_65_SIGNATURE: u32 = 0o170413u32; // PEL
+const ML_DSA_65_SIGNATURE: u32 = cesr("QDM");
 #[allow(clippy::eq_op)]
-const TSP_NONCE: u32 = (b'A' - b'A') as u32;
-const TSP_SHA256: u32 = (b'I' - b'A') as u32;
+const TSP_NONCE: u32 = cesr("A");
+const TSP_SHA256: u32 = cesr("I");
 #[allow(dead_code)]
-const TSP_BLAKE2B256: u32 = (b'F' - b'A') as u32;
+const TSP_BLAKE2B256: u32 = cesr("F");
 
 /// Constants that determine the specific CESR types for the framing codes
-const TSP_ETS_WRAPPER: u16 = (b'E' - b'A') as u16;
-const TSP_S_WRAPPER: u16 = (b'S' - b'A') as u16;
-const TSP_HOP_LIST: u16 = (b'I' - b'A') as u16;
-const TSP_PAYLOAD: u16 = (b'Z' - b'A') as u16;
+const TSP_ETS_WRAPPER: u16 = cesr("E") as u16;
+const TSP_S_WRAPPER: u16 = cesr("S") as u16;
+const TSP_HOP_LIST: u16 = cesr("I") as u16;
+const TSP_PAYLOAD: u16 = cesr("Z") as u16;
 
 /// Constants to encode message types
 mod msgtype {
