@@ -100,8 +100,10 @@ impl EnvelopeType<'_> {
     }
 }
 
+//TODO: simplify the source of sender/receiver
 pub fn probe(stream: &mut [u8]) -> Result<EnvelopeType<'_>, error::DecodeError> {
-    let (crypto_type, _) = detected_tsp_header_size_and_confidentiality(stream, &mut 0)?;
+    let (_sender, _receiver, crypto_type, _) =
+        detected_tsp_header_size_and_confidentiality(stream, &mut 0)?;
 
     let envelope = decode_envelope(stream)?
         .into_opened()

@@ -94,6 +94,7 @@ pub fn decode_variable_data_index(
     }
 }
 
+#[allow(dead_code)]
 pub fn decode_variable_data<'a>(identifier: u32, stream: &mut &'a [u8]) -> Option<&'a [u8]> {
     let range = decode_variable_data_index(identifier, stream, &mut 0)?;
     let slice = &stream[range.start..range.end];
