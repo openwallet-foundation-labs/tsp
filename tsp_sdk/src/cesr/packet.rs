@@ -26,7 +26,7 @@ const TSP_VERSION: (u16, u8, u8) = (0, 0, 1);
 /// Constants that determine the specific CESR types for "variable length data"
 const TSP_PLAINTEXT: u32 = cesr("B");
 const TSP_CIPHERTEXT: u32 = cesr("C");
-const TSP_VID: u32 = cesr("V"); // TODO: this needs to become "B"
+const TSP_VID: u32 = cesr("B");
 
 /// Constants that determine the specific CESR types for "fixed length data"
 const TSP_TYPECODE: u32 = cesr("X");
@@ -61,7 +61,7 @@ mod msgtype {
 use super::{
     decode::{
         decode_count, decode_count_mut, decode_fixed_data, decode_fixed_data_mut,
-        decode_variable_data, decode_variable_data_index, decode_variable_data_mut,
+        decode_variable_data_index, decode_variable_data_mut,
     },
     encode::{encode_count, encode_fixed_data},
     error::{DecodeError, EncodeError},
@@ -609,7 +609,6 @@ pub fn encode_ets_envelope<'a, Vid: AsRef<[u8]>>(
 ) -> Result<(), EncodeError> {
     //TODO: encode the count of the data to be signed
     encode_count(TSP_ETS_WRAPPER, 1, output);
-    encode_version(output);
     encode_envelope_fields(envelope, output)
 }
 
@@ -619,7 +618,6 @@ pub fn encode_s_envelope<'a, Vid: AsRef<[u8]>>(
     output: &mut impl for<'b> Extend<&'b u8>,
 ) -> Result<(), EncodeError> {
     encode_count(TSP_S_WRAPPER, 1, output);
-    encode_version(output);
     encode_envelope_fields(envelope, output)
 }
 
@@ -630,17 +628,19 @@ fn encode_envelope_fields<'a, Vid: AsRef<[u8]>>(
     envelope: Envelope<'a, Vid>,
     output: &mut impl for<'b> Extend<&'b u8>,
 ) -> Result<(), EncodeError> {
+    encode_version(output);
+    checked_encode_variable_data(TSP_VID, envelope.sender.as_ref(), output)?;
+
+    if let Some(rec) = envelope.receiver {
+        checked_encode_variable_data(TSP_VID, rec.as_ref(), output)?;
+    }
+
     encode_fixed_data(TSP_TYPECODE, &[0, 0], output);
     encode_fixed_data(
         TSP_TYPECODE,
         &[envelope.crypto_type as u8, envelope.signature_type as u8],
         output,
     );
-    checked_encode_variable_data(TSP_VID, envelope.sender.as_ref(), output)?;
-
-    if let Some(rec) = envelope.receiver {
-        checked_encode_variable_data(TSP_VID, rec.as_ref(), output)?;
-    }
 
     if let Some(data) = envelope.nonconfidential_data {
         checked_encode_variable_data(TSP_PLAINTEXT, data, output)?;
@@ -680,9 +680,17 @@ pub fn encode_ciphertext(
 pub(super) fn detected_tsp_header_size_and_confidentiality(
     stream: &[u8],
     pos: &mut usize,
-) -> Result<(CryptoType, SignatureType), DecodeError> {
-    let mut stream = &stream[*pos..];
+) -> Result<
+    (
+        Range<usize>,
+        Option<Range<usize>>,
+        CryptoType,
+        SignatureType,
+    ),
+    DecodeError,
+> {
     let origin = stream;
+    let mut stream = &origin[*pos..];
     //TODO: do something with the quadlet count?
     let encrypted = if let Some(_quadlet_count) = decode_count(TSP_ETS_WRAPPER, &mut stream) {
         true
@@ -693,6 +701,14 @@ pub(super) fn detected_tsp_header_size_and_confidentiality(
     };
 
     decode_version(&mut stream)?;
+    let mut mid_pos = *pos + origin.len() - stream.len();
+
+    let sender = decode_variable_data_index(TSP_VID, origin, &mut mid_pos)
+        .ok_or(DecodeError::UnexpectedData)?;
+
+    let receiver = decode_variable_data_index(TSP_VID, origin, &mut mid_pos);
+
+    let mut stream = &origin[mid_pos..];
 
     match decode_fixed_data(TSP_TYPECODE, &mut stream) {
         Some([0, 0]) => {}
@@ -712,10 +728,8 @@ pub(super) fn detected_tsp_header_size_and_confidentiality(
         _ => return Err(DecodeError::VersionMismatch),
     };
 
-    debug_assert_eq!(origin.len() - stream.len(), 15);
-
     *pos += origin.len() - stream.len();
-    Ok((crypto_type, signature_type))
+    Ok((sender, receiver, crypto_type, signature_type))
 }
 
 /// A structure representing a siganture + data that needs to be verified.
@@ -732,17 +746,16 @@ pub fn decode_sender_receiver<'a, Vid: TryFrom<&'a [u8]>>(
     stream: &mut &'a [u8],
 ) -> Result<(Vid, Option<Vid>, CryptoType, SignatureType), DecodeError> {
     let mut pos = 0;
-    let (crypto_type, signature_type) =
+    let (sender, receiver, crypto_type, signature_type) =
         detected_tsp_header_size_and_confidentiality(stream, &mut pos)?;
     *stream = &stream[pos..];
 
-    let sender = decode_variable_data(TSP_VID, stream)
-        .ok_or(DecodeError::UnexpectedData)?
+    let sender = stream[sender]
         .try_into()
         .map_err(|_| DecodeError::VidError)?;
 
-    let receiver = decode_variable_data(TSP_VID, stream)
-        .map(|r| r.try_into().map_err(|_| DecodeError::VidError))
+    let receiver = receiver
+        .map(|r| stream[r].try_into().map_err(|_| DecodeError::VidError))
         .transpose()?;
 
     Ok((sender, receiver, crypto_type, signature_type))
@@ -834,13 +847,8 @@ impl<'a> CipherView<'a> {
 /// Produces the ciphertext as a mutable stream.
 pub fn decode_envelope<'a>(stream: &'a mut [u8]) -> Result<CipherView<'a>, DecodeError> {
     let mut pos = 0;
-    let (crypto_type, signature_type) =
+    let (sender, receiver, crypto_type, signature_type) =
         detected_tsp_header_size_and_confidentiality(stream, &mut pos)?;
-
-    let sender =
-        decode_variable_data_index(TSP_VID, stream, &mut pos).ok_or(DecodeError::UnexpectedData)?;
-
-    let receiver = decode_variable_data_index(TSP_VID, stream, &mut pos);
 
     let nonconfidential_data = decode_variable_data_index(TSP_PLAINTEXT, stream, &mut pos);
 
@@ -972,7 +980,7 @@ pub struct MessageParts<'a> {
 /// Decode a CESR-encoded message into its CESR-encoded parts
 pub fn open_message_into_parts(data: &[u8]) -> Result<MessageParts<'_>, DecodeError> {
     let mut pos = 0;
-    let (crypto_type, signature_type) =
+    let (sender, receiver, crypto_type, signature_type) =
         detected_tsp_header_size_and_confidentiality(data, &mut pos)?;
 
     let prefix = Part {
@@ -980,8 +988,14 @@ pub fn open_message_into_parts(data: &[u8]) -> Result<MessageParts<'_>, DecodeEr
         data: &[],
     };
 
-    let sender = Part::decode(TSP_VID, data, &mut pos).ok_or(DecodeError::VidError)?;
-    let receiver = Part::decode(TSP_VID, data, &mut pos);
+    let sender = Part {
+        prefix: &[],
+        data: &data[sender],
+    };
+    let receiver = receiver.map(|r| Part {
+        prefix: &[],
+        data: &data[r],
+    });
     let nonconfidential_data = Part::decode(TSP_PLAINTEXT, data, &mut pos);
     let ciphertext = Part::decode(TSP_CIPHERTEXT, data, &mut pos);
 
