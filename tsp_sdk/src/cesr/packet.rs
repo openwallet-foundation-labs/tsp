@@ -678,26 +678,28 @@ pub fn encode_ciphertext(
 /// Checks whether the expected TSP header is present and returns its size and whether it
 /// is a "ETS" or "S" envelope
 pub(super) fn detected_tsp_header_size_and_confidentiality(
-    stream: &mut &[u8],
-) -> Result<(usize, CryptoType, SignatureType), DecodeError> {
-    let origin = stream as &[u8];
+    stream: &[u8],
+    pos: &mut usize,
+) -> Result<(CryptoType, SignatureType), DecodeError> {
+    let mut stream = &stream[*pos..];
+    let origin = stream;
     //TODO: do something with the quadlet count?
-    let encrypted = if let Some(_quadlet_count) = decode_count(TSP_ETS_WRAPPER, stream) {
+    let encrypted = if let Some(_quadlet_count) = decode_count(TSP_ETS_WRAPPER, &mut stream) {
         true
-    } else if let Some(1) = decode_count(TSP_S_WRAPPER, stream) {
+    } else if let Some(1) = decode_count(TSP_S_WRAPPER, &mut stream) {
         false
     } else {
         return Err(DecodeError::VersionMismatch);
     };
 
-    decode_version(stream)?;
+    decode_version(&mut stream)?;
 
-    match decode_fixed_data(TSP_TYPECODE, stream) {
+    match decode_fixed_data(TSP_TYPECODE, &mut stream) {
         Some([0, 0]) => {}
         _ => return Err(DecodeError::VersionMismatch),
     }
 
-    let (crypto_type, signature_type) = match decode_fixed_data(TSP_TYPECODE, stream) {
+    let (crypto_type, signature_type) = match decode_fixed_data(TSP_TYPECODE, &mut stream) {
         Some([crypto, signature]) => {
             let crypto_type = CryptoType::try_from(*crypto)?;
 
@@ -712,7 +714,8 @@ pub(super) fn detected_tsp_header_size_and_confidentiality(
 
     debug_assert_eq!(origin.len() - stream.len(), 15);
 
-    Ok((origin.len() - stream.len(), crypto_type, signature_type))
+    *pos += origin.len() - stream.len();
+    Ok((crypto_type, signature_type))
 }
 
 /// A structure representing a siganture + data that needs to be verified.
@@ -728,7 +731,10 @@ pub struct VerificationChallenge<'a> {
 pub fn decode_sender_receiver<'a, Vid: TryFrom<&'a [u8]>>(
     stream: &mut &'a [u8],
 ) -> Result<(Vid, Option<Vid>, CryptoType, SignatureType), DecodeError> {
-    let (_, crypto_type, signature_type) = detected_tsp_header_size_and_confidentiality(stream)?;
+    let mut pos = 0;
+    let (crypto_type, signature_type) =
+        detected_tsp_header_size_and_confidentiality(stream, &mut pos)?;
+    *stream = &stream[pos..];
 
     let sender = decode_variable_data(TSP_VID, stream)
         .ok_or(DecodeError::UnexpectedData)?
@@ -827,11 +833,12 @@ impl<'a> CipherView<'a> {
 /// Decode an encrypted TSP message plus Envelope & Signature
 /// Produces the ciphertext as a mutable stream.
 pub fn decode_envelope<'a>(stream: &'a mut [u8]) -> Result<CipherView<'a>, DecodeError> {
-    let (mut pos, crypto_type, signature_type) =
-        detected_tsp_header_size_and_confidentiality(&mut (stream as &[u8]))?;
+    let mut pos = 0;
+    let (crypto_type, signature_type) =
+        detected_tsp_header_size_and_confidentiality(stream, &mut pos)?;
 
-    let sender = decode_variable_data_index(TSP_VID, stream, &mut pos)
-        .ok_or(DecodeError::UnexpectedData)?;
+    let sender =
+        decode_variable_data_index(TSP_VID, stream, &mut pos).ok_or(DecodeError::UnexpectedData)?;
 
     let receiver = decode_variable_data_index(TSP_VID, stream, &mut pos);
 
@@ -964,8 +971,9 @@ pub struct MessageParts<'a> {
 
 /// Decode a CESR-encoded message into its CESR-encoded parts
 pub fn open_message_into_parts(data: &[u8]) -> Result<MessageParts<'_>, DecodeError> {
-    let (mut pos, crypto_type, signature_type) =
-        detected_tsp_header_size_and_confidentiality(&mut (data as &[u8]))?;
+    let mut pos = 0;
+    let (crypto_type, signature_type) =
+        detected_tsp_header_size_and_confidentiality(data, &mut pos)?;
 
     let prefix = Part {
         prefix: &data[..pos],
