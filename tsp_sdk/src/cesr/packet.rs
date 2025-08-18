@@ -297,11 +297,10 @@ pub fn encode_payload(
     sender_identity: Option<&[u8]>,
     output: &mut impl for<'a> Extend<&'a u8>,
 ) -> Result<(), EncodeError> {
+    //TODO do something with the payload count
+    encode_count(TSP_PAYLOAD, 1, output);
     if let Some(sender_identity) = sender_identity {
-        encode_count(TSP_PAYLOAD, 2, output);
         checked_encode_variable_data(TSP_VID, sender_identity, output)?;
-    } else {
-        encode_count(TSP_PAYLOAD, 1, output);
     }
 
     match payload {
@@ -436,20 +435,22 @@ pub fn encode_digest(digest: &Digest, output: &mut impl for<'a> Extend<&'a u8>) 
 
 /// Decode a TSP Payload
 pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, DecodeError> {
-    let sender_identity = match decode_count_mut(TSP_PAYLOAD, stream) {
-        Some((2, upd_stream)) => {
-            let essr_prefix: &[u8];
-            (essr_prefix, stream) =
-                decode_variable_data_mut(TSP_VID, upd_stream).ok_or(DecodeError::UnexpectedData)?;
+    //NOTE: should we do something with this count?
+    let _count;
+    (_count, stream) = decode_count_mut(TSP_PAYLOAD, stream).ok_or(DecodeError::UnexpectedData)?;
 
-            Some(essr_prefix)
-        }
-        Some((1, upd_stream)) => {
-            stream = upd_stream;
+    let sender_identity: Option<&[u8]> = {
+        let mut pos = 0;
+        if let Some(essr_prefix) = decode_variable_data_index(TSP_VID, stream, &mut pos) {
+            let prefix;
+            (prefix, stream) = stream
+                .split_at_mut_checked(essr_prefix.end)
+                .ok_or(DecodeError::VidError)?;
 
+            Some(&prefix[essr_prefix])
+        } else {
             None
         }
-        _ => return Err(DecodeError::VersionMismatch),
     };
 
     let (msgtype, mut stream) = stream
@@ -581,7 +582,7 @@ fn decode_version(stream: &mut &[u8]) -> Result<(), DecodeError> {
 
     let _version = decode_count(TSP_VERSION.0, stream).ok_or(DecodeError::VersionMismatch)?;
 
-    // TODO: can we simply ignore the minor and path parts of the version?
+    // NOTE: can we simply ignore the minor and path parts of the version?
 
     Ok(())
 }
@@ -675,7 +676,7 @@ pub(super) fn detected_tsp_header_size_and_confidentiality(
 > {
     let origin = stream;
     let mut stream = &origin[*pos..];
-    //TODO: do something with the quadlet count?
+    //NOTE: do something with the quadlet count?
     let encrypted = if let Some(_quadlet_count) = decode_count(TSP_ETS_WRAPPER, &mut stream) {
         true
     } else if let Some(1) = decode_count(TSP_S_WRAPPER, &mut stream) {
