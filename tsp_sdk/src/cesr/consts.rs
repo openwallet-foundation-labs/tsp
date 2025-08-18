@@ -1,5 +1,13 @@
+macro_rules! cesr {
+    ($value: expr) => {
+        $crate::cesr::consts::cesr_int($value) as _
+    };
+}
+
+pub(super) use cesr;
+
 /// A function for more easy encoding of CESR constants
-pub const fn cesr(x: &str) -> u64 {
+pub const fn cesr_int(x: &str) -> u64 {
     let x = x.as_bytes();
     let mut acc = 0;
     let mut i = 0;
@@ -22,7 +30,7 @@ pub const fn cesr(x: &str) -> u64 {
 
 /// A function for giving the contents of "TSP_TYPECODE" fields
 pub const fn cesr_data<const N: usize>(x: &str) -> [u8; N] {
-    let val = cesr(x);
+    let val = cesr_int(x);
     assert!(val < (1u64 << (8 * N)));
     // we canot use 'try_into().unwrap()' here
     let src = u64::to_be_bytes(val);
