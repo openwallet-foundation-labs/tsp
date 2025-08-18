@@ -619,7 +619,6 @@ fn encode_envelope_fields<'a, Vid: AsRef<[u8]>>(
         checked_encode_variable_data(TSP_VID, rec.as_ref(), output)?;
     }
 
-    encode_fixed_data(TSP_TMP, &[0, 0], output);
     encode_fixed_data(
         TSP_TMP,
         &[envelope.crypto_type as u8, envelope.signature_type as u8],
@@ -694,11 +693,6 @@ pub(super) fn detected_tsp_header_size_and_confidentiality(
     let receiver = decode_variable_data_index(TSP_VID, origin, &mut mid_pos);
 
     let mut stream = &origin[mid_pos..];
-
-    match decode_fixed_data(TSP_TMP, &mut stream) {
-        Some([0, 0]) => {}
-        _ => return Err(DecodeError::VersionMismatch),
-    }
 
     let (crypto_type, signature_type) = match decode_fixed_data(TSP_TMP, &mut stream) {
         Some([crypto, signature]) => {
