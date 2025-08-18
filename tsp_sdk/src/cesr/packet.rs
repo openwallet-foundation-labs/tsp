@@ -21,7 +21,7 @@ const TSP_BLAKE2B256: u32 = cesr!("F");
 /// Constants that determine the specific CESR types for the framing codes
 const TSP_ETS_WRAPPER: u16 = cesr!("E");
 const TSP_S_WRAPPER: u16 = cesr!("S");
-const TSP_HOP_LIST: u16 = cesr!("I");
+const TSP_HOP_LIST: u16 = cesr!("J");
 const TSP_PAYLOAD: u16 = cesr!("Z");
 
 /// Constants to encode message types
@@ -310,10 +310,12 @@ pub fn encode_payload(
         }
         Payload::NestedMessage(data) => {
             output.extend(&XHOP);
+            let no_hops: [&[u8]; 0] = [];
+            encode_hops(&no_hops, output)?;
             checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
         }
         Payload::RoutedMessage(hops, data) => {
-            output.extend(&XSCS);
+            output.extend(&XHOP);
             if hops.is_empty() {
                 return Err(EncodeError::MissingHops);
             }
@@ -459,13 +461,20 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
 
     let payload = match *<&[u8; 3]>::try_from(msgtype as &[u8]).unwrap() {
         XSCS => {
+            let msg;
+            (msg, stream) = checked_decode_variable_data_mut(TSP_PLAINTEXT, stream)
+                .ok_or(DecodeError::UnexpectedData)?;
+
+            Payload::GenericMessage(msg)
+        }
+        XHOP => {
             let (hop_list, upd_stream) = decode_hops(stream)?;
             let msg;
             if hop_list.is_empty() {
                 (msg, stream) = checked_decode_variable_data_mut(TSP_PLAINTEXT, upd_stream)
                     .ok_or(DecodeError::UnexpectedData)?;
 
-                Payload::GenericMessage(msg)
+                Payload::NestedMessage(msg)
             } else {
                 (msg, stream) = checked_decode_variable_data_mut(TSP_PLAINTEXT, upd_stream)
                     .ok_or(DecodeError::UnexpectedData)?;
@@ -484,13 +493,6 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
                 nonce: Nonce(*nonce),
                 hops: hop_list,
             }
-        }
-        XHOP => {
-            let msg;
-            (msg, stream) = checked_decode_variable_data_mut(TSP_PLAINTEXT, stream)
-                .ok_or(DecodeError::UnexpectedData)?;
-
-            Payload::NestedMessage(msg)
         }
         XRFA => {
             let reply;
