@@ -306,15 +306,15 @@ pub fn encode_payload(
 
     match payload {
         Payload::GenericMessage(data) => {
-            output.extend(&msgtype::GEN_MSG);
+            output.extend(&XSCS);
             checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
         }
         Payload::NestedMessage(data) => {
-            output.extend(&msgtype::NEST_MSG);
+            output.extend(&XHOP);
             checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
         }
         Payload::RoutedMessage(hops, data) => {
-            output.extend(&msgtype::GEN_MSG);
+            output.extend(&XSCS);
             if hops.is_empty() {
                 return Err(EncodeError::MissingHops);
             }
@@ -322,12 +322,12 @@ pub fn encode_payload(
             checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
         }
         Payload::DirectRelationProposal { nonce, hops } => {
-            output.extend(&msgtype::NEW_REL);
+            output.extend(&XRFI);
             encode_hops(hops, output)?;
             encode_fixed_data(TSP_NONCE, &nonce.0, output);
         }
         Payload::DirectRelationAffirm { reply } => {
-            output.extend(&msgtype::NEW_REL_REPLY);
+            output.extend(&XRFA);
             encode_digest(reply, output);
         }
         Payload::NestedRelationProposal {
@@ -457,7 +457,7 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
         .ok_or(DecodeError::UnexpectedData)?;
 
     let payload = match *<&[u8; 3]>::try_from(msgtype as &[u8]).unwrap() {
-        msgtype::GEN_MSG => {
+        XSCS => {
             let (hop_list, upd_stream) = decode_hops(stream)?;
             let msg;
             if hop_list.is_empty() {
@@ -472,7 +472,7 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
                 Payload::RoutedMessage(hop_list, msg)
             }
         }
-        msgtype::NEW_REL => {
+        XRFI => {
             let (hop_list, upd_stream) = decode_hops(stream)?;
 
             let nonce;
@@ -484,14 +484,14 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
                 hops: hop_list,
             }
         }
-        msgtype::NEST_MSG => {
+        XHOP => {
             let msg;
             (msg, stream) = checked_decode_variable_data_mut(TSP_PLAINTEXT, stream)
                 .ok_or(DecodeError::UnexpectedData)?;
 
             Payload::NestedMessage(msg)
         }
-        msgtype::NEW_REL_REPLY => {
+        XRFA => {
             let reply;
             (reply, stream) = decode_digest(stream)?;
 
