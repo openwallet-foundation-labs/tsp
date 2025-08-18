@@ -453,26 +453,27 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
             Payload::GenericMessage(msg)
         }
         XHOP => {
-            let (hop_list, upd_stream) = decode_hops(stream)?;
-            let msg;
+            let (hop_list, msg);
+            (hop_list, stream) = decode_hops(stream)?;
             if hop_list.is_empty() {
-                (msg, stream) = checked_decode_variable_data_mut(TSP_PLAINTEXT, upd_stream)
+                (msg, stream) = checked_decode_variable_data_mut(TSP_PLAINTEXT, stream)
                     .ok_or(DecodeError::UnexpectedData)?;
 
                 Payload::NestedMessage(msg)
             } else {
-                (msg, stream) = checked_decode_variable_data_mut(TSP_PLAINTEXT, upd_stream)
+                (msg, stream) = checked_decode_variable_data_mut(TSP_PLAINTEXT, stream)
                     .ok_or(DecodeError::UnexpectedData)?;
 
                 Payload::RoutedMessage(hop_list, msg)
             }
         }
         XRFI => {
-            let (hop_list, upd_stream) = decode_hops(stream)?;
+            let hop_list;
+            (hop_list, stream) = decode_hops(stream)?;
 
             let nonce;
             (nonce, stream) =
-                decode_fixed_data_mut(TSP_NONCE, upd_stream).ok_or(DecodeError::UnexpectedData)?;
+                decode_fixed_data_mut(TSP_NONCE, stream).ok_or(DecodeError::UnexpectedData)?;
 
             Payload::DirectRelationProposal {
                 nonce: Nonce(*nonce),
