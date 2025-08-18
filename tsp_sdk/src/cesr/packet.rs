@@ -39,6 +39,8 @@ mod msgtype {
 const TSP_TMP: u32 = cesr!("X");
 
 /// Constants for payload field types
+// TODO: it is unclear what we are to do with 'generic' control messages.
+#[allow(unused)]
 const XCTL: [u8; 3] = cesr_data("XCTL");
 const XSCS: [u8; 3] = cesr_data("XSCS");
 const XHOP: [u8; 3] = cesr_data("XHOP");
@@ -48,6 +50,9 @@ const XRFI: [u8; 3] = cesr_data("XRFI");
 const XRFA: [u8; 3] = cesr_data("XRFA");
 const XRFD: [u8; 3] = cesr_data("XRFD");
 const YTSP: [u8; 3] = cesr_data("YTSP");
+
+// TODO: a temporary code for third party referrals
+const X3RR: [u8; 3] = cesr_data("X3RR");
 
 use super::{
     decode::{
@@ -353,7 +358,7 @@ pub fn encode_payload(
             checked_encode_variable_data(TSP_VID, new_vid.as_ref(), output)?;
         }
         Payload::RelationshipReferral { referred_vid } => {
-            output.extend(&msgtype::THIRDP_REFER_REL);
+            output.extend(&X3RR);
             checked_encode_variable_data(TSP_VID, referred_vid.as_ref(), output)?;
         }
         Payload::RelationshipCancel { reply } => {
@@ -514,7 +519,7 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
 
             Payload::NewIdentifierProposal { thread_id, new_vid }
         }
-        msgtype::THIRDP_REFER_REL => {
+        X3RR => {
             let referred_vid: &[u8];
             (referred_vid, stream) =
                 decode_variable_data_mut(TSP_VID, stream).ok_or(DecodeError::UnexpectedData)?;
