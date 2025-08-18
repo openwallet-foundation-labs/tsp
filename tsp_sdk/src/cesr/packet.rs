@@ -4,25 +4,25 @@ use super::consts::{cesr, cesr_data};
 const TSP_VERSION: (u16, u8, u8) = (0, 0, 1);
 
 /// Constants that determine the specific CESR types for "variable length data"
-const TSP_PLAINTEXT: u32 = cesr("B") as u32;
-const TSP_CIPHERTEXT: u32 = cesr("C") as u32;
-const TSP_VID: u32 = cesr("B") as u32;
+const TSP_PLAINTEXT: u32 = cesr!("B");
+const TSP_CIPHERTEXT: u32 = cesr!("C");
+const TSP_VID: u32 = cesr!("B");
 
 /// Constants that determine the specific CESR types for "fixed length data"
-const ED25519_SIGNATURE: u32 = cesr("B") as u32;
+const ED25519_SIGNATURE: u32 = cesr!("B");
 #[cfg(feature = "pq")]
-const ML_DSA_65_SIGNATURE: u32 = cesr("QDM") as u32;
+const ML_DSA_65_SIGNATURE: u32 = cesr!("QDM");
 #[allow(clippy::eq_op)]
-const TSP_NONCE: u32 = cesr("A") as u32;
-const TSP_SHA256: u32 = cesr("I") as u32;
+const TSP_NONCE: u32 = cesr!("A");
+const TSP_SHA256: u32 = cesr!("I");
 #[allow(dead_code)]
-const TSP_BLAKE2B256: u32 = cesr("F") as u32;
+const TSP_BLAKE2B256: u32 = cesr!("F");
 
 /// Constants that determine the specific CESR types for the framing codes
-const TSP_ETS_WRAPPER: u16 = cesr("E") as u16;
-const TSP_S_WRAPPER: u16 = cesr("S") as u16;
-const TSP_HOP_LIST: u16 = cesr("I") as u16;
-const TSP_PAYLOAD: u16 = cesr("Z") as u16;
+const TSP_ETS_WRAPPER: u16 = cesr!("E");
+const TSP_S_WRAPPER: u16 = cesr!("S");
+const TSP_HOP_LIST: u16 = cesr!("I");
+const TSP_PAYLOAD: u16 = cesr!("Z");
 
 /// Constants to encode message types
 mod msgtype {
@@ -36,7 +36,7 @@ mod msgtype {
     pub(super) const THIRDP_REFER_REL: [u8; 3] = [23 << 2, 1, 5];
     pub(super) const REL_CANCEL: [u8; 3] = [23 << 2, 1, 255];
 }
-const TSP_TMP: u32 = cesr("X") as u32;
+const TSP_TMP: u32 = cesr!("X");
 
 /// Constants for payload field types
 const XCTL: [u8; 3] = cesr_data("XCTL");
