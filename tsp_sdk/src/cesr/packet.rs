@@ -52,7 +52,7 @@ const YTSP: [u8; 3] = cesr_data("YTSP");
 use super::{
     decode::{
         decode_count, decode_count_mut, decode_fixed_data, decode_fixed_data_mut,
-        decode_variable_data_index, decode_variable_data_mut,
+        decode_variable_data_index, decode_variable_data_mut, opt_decode_variable_data_mut,
     },
     encode::{encode_count, encode_fixed_data},
     error::{DecodeError, EncodeError},
@@ -432,19 +432,8 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
     let _count;
     (_count, stream) = decode_count_mut(TSP_PAYLOAD, stream).ok_or(DecodeError::UnexpectedData)?;
 
-    let sender_identity: Option<&[u8]> = {
-        let mut pos = 0;
-        if let Some(essr_prefix) = decode_variable_data_index(TSP_VID, stream, &mut pos) {
-            let prefix;
-            (prefix, stream) = stream
-                .split_at_mut_checked(essr_prefix.end)
-                .ok_or(DecodeError::VidError)?;
-
-            Some(&prefix[essr_prefix])
-        } else {
-            None
-        }
-    };
+    let sender_identity;
+    (sender_identity, stream) = opt_decode_variable_data_mut(TSP_VID, stream);
 
     let (msgtype, mut stream) = stream
         .split_at_mut_checked(3)

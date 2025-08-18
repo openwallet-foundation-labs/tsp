@@ -114,6 +114,20 @@ pub fn decode_variable_data_mut(
     Some((slice, stream))
 }
 
+pub fn opt_decode_variable_data_mut(
+    identifier: u32,
+    stream: &mut [u8],
+) -> (Option<&[u8]>, &mut [u8]) {
+    let Some(range) = decode_variable_data_index(identifier, stream, &mut 0) else {
+        return (None, stream);
+    };
+
+    let (prefix, stream) = stream.split_at_mut(range.end);
+    let slice = &mut prefix[range.start..];
+
+    (Some(slice), stream)
+}
+
 /// Decode indexed data with a known identifier
 #[allow(dead_code)]
 pub fn decode_indexed_data<'a, const N: usize>(
