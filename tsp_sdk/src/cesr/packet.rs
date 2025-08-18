@@ -331,6 +331,7 @@ pub fn encode_payload(
             output.extend(&XRFI);
             encode_hops(hops, output)?;
             encode_fixed_data(TSP_NONCE, &nonce.0, output);
+            checked_encode_variable_data(TSP_VID, &[], output)?;
         }
         Payload::DirectRelationAffirm { reply } => {
             output.extend(&XRFA);
@@ -353,9 +354,12 @@ pub fn encode_payload(
             encode_digest(reply, output);
         }
         Payload::NewIdentifierProposal { thread_id, new_vid } => {
-            output.extend(&msgtype::NEW_REFER_REL);
-            encode_digest(thread_id, output);
+            output.extend(&XRFI);
+            let no_hops: [&[u8]; 0] = [];
+            encode_hops(&no_hops, output)?;
+            encode_fixed_data(TSP_NONCE, &[0; 32], output); // this does not need to be a secure nonce
             checked_encode_variable_data(TSP_VID, new_vid.as_ref(), output)?;
+            encode_digest(thread_id, output);
         }
         Payload::RelationshipReferral { referred_vid } => {
             output.extend(&X3RR);
@@ -475,9 +479,20 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
             (nonce, stream) =
                 decode_fixed_data_mut(TSP_NONCE, stream).ok_or(DecodeError::UnexpectedData)?;
 
-            Payload::DirectRelationProposal {
-                nonce: Nonce(*nonce),
-                hops: hop_list,
+            let new_vid: &[u8];
+            (new_vid, stream) =
+                decode_variable_data_mut(TSP_VID, stream).ok_or(DecodeError::UnexpectedData)?;
+
+            if new_vid.is_empty() {
+                Payload::DirectRelationProposal {
+                    nonce: Nonce(*nonce),
+                    hops: hop_list,
+                }
+            } else {
+                let thread_id;
+                (thread_id, stream) = decode_digest(stream)?;
+
+                Payload::NewIdentifierProposal { thread_id, new_vid }
             }
         }
         XRFA => {
@@ -511,14 +526,6 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
                 message: data,
                 reply,
             }
-        }
-        msgtype::NEW_REFER_REL => {
-            let (thread_id, upd_stream) = decode_digest(stream)?;
-            let new_vid: &[u8];
-            (new_vid, stream) =
-                decode_variable_data_mut(TSP_VID, upd_stream).ok_or(DecodeError::UnexpectedData)?;
-
-            Payload::NewIdentifierProposal { thread_id, new_vid }
         }
         X3RR => {
             let referred_vid: &[u8];
