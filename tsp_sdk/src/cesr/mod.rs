@@ -6,6 +6,7 @@ pub mod error;
 mod packet;
 use base64ct::{Base64UrlUnpadded, Encoding};
 use error::DecodeError;
+mod consts;
 pub use packet::*;
 
 #[cfg(feature = "cesr-t")]
