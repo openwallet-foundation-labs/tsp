@@ -370,11 +370,9 @@ pub fn encode_hops(
     hops: &[impl AsRef<[u8]>],
     output: &mut impl for<'a> Extend<&'a u8>,
 ) -> Result<(), EncodeError> {
-    if !hops.is_empty() {
-        encode_count(TSP_HOP_LIST, hops.len() as u16, output);
-        for hop in hops {
-            checked_encode_variable_data(TSP_VID, hop.as_ref(), output)?;
-        }
+    encode_count(TSP_HOP_LIST, hops.len() as u16, output);
+    for hop in hops {
+        checked_encode_variable_data(TSP_VID, hop.as_ref(), output)?;
     }
 
     Ok(())
@@ -384,20 +382,13 @@ pub fn encode_hops(
 fn decode_hops<'a, Vid: TryFrom<&'a [u8]>>(
     stream: &'a mut [u8],
 ) -> Result<(Vec<Vid>, &'a mut [u8]), DecodeError> {
-    // a rare case of Rust's borrow checker not being able to figure out
-    // that a "None" isn't borrowing from anybody; so we have to call
-    // the referentially transparent decode_count_mut twice...
-    if decode_count_mut(TSP_HOP_LIST, stream).is_none() {
-        return Ok((Vec::new(), stream));
-    }
-
-    let (hop_length, mut stream) = decode_count_mut(TSP_HOP_LIST, stream).unwrap();
+    let (hop_length, mut stream) =
+        decode_count_mut(TSP_HOP_LIST, stream).ok_or(DecodeError::MissingHops)?;
 
     let mut hop_list = Vec::with_capacity(hop_length as usize);
     for _ in 0..hop_length {
         let hop: &[u8];
-        (hop, stream) =
-            decode_variable_data_mut(TSP_VID, stream).ok_or(DecodeError::UnexpectedData)?;
+        (hop, stream) = decode_variable_data_mut(TSP_VID, stream).ok_or(DecodeError::VidError)?;
 
         hop_list.push(hop.try_into().map_err(|_| DecodeError::VidError)?);
     }
