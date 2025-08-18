@@ -1,43 +1,22 @@
-/// A function for more easy encoding of CESR constants
-const fn cesr(x: &str) -> u32 {
-    let x = x.as_bytes();
-    let mut acc = 0;
-    let mut i = 0;
-    while i < x.len() {
-        let ch = x[i];
-        acc = acc << 6
-            | match ch {
-                ch if ch.is_ascii_uppercase() => ch - b'A',
-                ch if ch.is_ascii_lowercase() => ch - b'a' + 26,
-                ch if ch.is_ascii_digit() => ch - b'0' + 52,
-                b'-' => 62,
-                b'_' => 63,
-                _ => panic!("not a base64url character"),
-            } as u32;
-        i += 1;
-    }
-
-    acc
-}
+use super::consts::{cesr, cesr_data};
 
 /// The TSP version supported by this spec
 const TSP_VERSION: (u16, u8, u8) = (0, 0, 1);
 
 /// Constants that determine the specific CESR types for "variable length data"
-const TSP_PLAINTEXT: u32 = cesr("B");
-const TSP_CIPHERTEXT: u32 = cesr("C");
-const TSP_VID: u32 = cesr("B");
+const TSP_PLAINTEXT: u32 = cesr("B") as u32;
+const TSP_CIPHERTEXT: u32 = cesr("C") as u32;
+const TSP_VID: u32 = cesr("B") as u32;
 
 /// Constants that determine the specific CESR types for "fixed length data"
-const TSP_TYPECODE: u32 = cesr("X");
-const ED25519_SIGNATURE: u32 = cesr("B");
+const ED25519_SIGNATURE: u32 = cesr("B") as u32;
 #[cfg(feature = "pq")]
-const ML_DSA_65_SIGNATURE: u32 = cesr("QDM");
+const ML_DSA_65_SIGNATURE: u32 = cesr("QDM") as u32;
 #[allow(clippy::eq_op)]
-const TSP_NONCE: u32 = cesr("A");
-const TSP_SHA256: u32 = cesr("I");
+const TSP_NONCE: u32 = cesr("A") as u32;
+const TSP_SHA256: u32 = cesr("I") as u32;
 #[allow(dead_code)]
-const TSP_BLAKE2B256: u32 = cesr("F");
+const TSP_BLAKE2B256: u32 = cesr("F") as u32;
 
 /// Constants that determine the specific CESR types for the framing codes
 const TSP_ETS_WRAPPER: u16 = cesr("E") as u16;
@@ -47,16 +26,28 @@ const TSP_PAYLOAD: u16 = cesr("Z") as u16;
 
 /// Constants to encode message types
 mod msgtype {
-    pub(super) const GEN_MSG: [u8; 2] = [0, 0];
-    pub(super) const NEST_MSG: [u8; 2] = [0, 1];
-    pub(super) const NEW_REL: [u8; 2] = [1, 0];
-    pub(super) const NEW_REL_REPLY: [u8; 2] = [1, 1];
-    pub(super) const NEW_NEST_REL: [u8; 2] = [1, 2];
-    pub(super) const NEW_NEST_REL_REPLY: [u8; 2] = [1, 3];
-    pub(super) const NEW_REFER_REL: [u8; 2] = [1, 4];
-    pub(super) const THIRDP_REFER_REL: [u8; 2] = [1, 5];
-    pub(super) const REL_CANCEL: [u8; 2] = [1, 255];
+    pub(super) const GEN_MSG: [u8; 3] = [23 << 2, 0, 0];
+    pub(super) const NEST_MSG: [u8; 3] = [23 << 2, 0, 1];
+    pub(super) const NEW_REL: [u8; 3] = [23 << 2, 1, 0];
+    pub(super) const NEW_REL_REPLY: [u8; 3] = [23 << 2, 1, 1];
+    pub(super) const NEW_NEST_REL: [u8; 3] = [23 << 2, 1, 2];
+    pub(super) const NEW_NEST_REL_REPLY: [u8; 3] = [23 << 2, 1, 3];
+    pub(super) const NEW_REFER_REL: [u8; 3] = [23 << 2, 1, 4];
+    pub(super) const THIRDP_REFER_REL: [u8; 3] = [23 << 2, 1, 5];
+    pub(super) const REL_CANCEL: [u8; 3] = [23 << 2, 1, 255];
 }
+const TSP_TMP: u32 = cesr("X") as u32;
+
+/// Constants for payload field types
+const XCTL: [u8; 3] = cesr_data("XCTL");
+const XSCS: [u8; 3] = cesr_data("XSCS");
+const XHOP: [u8; 3] = cesr_data("XHOP");
+#[allow(unused)]
+const XPAD: [u8; 3] = cesr_data("XPAD");
+const XRFI: [u8; 3] = cesr_data("XRFI");
+const XRFA: [u8; 3] = cesr_data("XRFA");
+const XRFD: [u8; 3] = cesr_data("XRFD");
+const YTSP: [u8; 3] = cesr_data("YTSP");
 
 use super::{
     decode::{
@@ -315,15 +306,15 @@ pub fn encode_payload(
 
     match payload {
         Payload::GenericMessage(data) => {
-            encode_fixed_data(TSP_TYPECODE, &msgtype::GEN_MSG, output);
+            output.extend(&msgtype::GEN_MSG);
             checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
         }
         Payload::NestedMessage(data) => {
-            encode_fixed_data(TSP_TYPECODE, &msgtype::NEST_MSG, output);
+            output.extend(&msgtype::NEST_MSG);
             checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
         }
         Payload::RoutedMessage(hops, data) => {
-            encode_fixed_data(TSP_TYPECODE, &msgtype::GEN_MSG, output);
+            output.extend(&msgtype::GEN_MSG);
             if hops.is_empty() {
                 return Err(EncodeError::MissingHops);
             }
@@ -331,19 +322,19 @@ pub fn encode_payload(
             checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
         }
         Payload::DirectRelationProposal { nonce, hops } => {
-            encode_fixed_data(TSP_TYPECODE, &msgtype::NEW_REL, output);
+            output.extend(&msgtype::NEW_REL);
             encode_hops(hops, output)?;
             encode_fixed_data(TSP_NONCE, &nonce.0, output);
         }
         Payload::DirectRelationAffirm { reply } => {
-            encode_fixed_data(TSP_TYPECODE, &msgtype::NEW_REL_REPLY, output);
+            output.extend(&msgtype::NEW_REL_REPLY);
             encode_digest(reply, output);
         }
         Payload::NestedRelationProposal {
             message: data,
             nonce,
         } => {
-            encode_fixed_data(TSP_TYPECODE, &msgtype::NEW_NEST_REL, output);
+            output.extend(&msgtype::NEW_NEST_REL);
             checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
             encode_fixed_data(TSP_NONCE, &nonce.0, output);
         }
@@ -351,21 +342,21 @@ pub fn encode_payload(
             message: data,
             reply,
         } => {
-            encode_fixed_data(TSP_TYPECODE, &msgtype::NEW_NEST_REL_REPLY, output);
+            output.extend(&msgtype::NEW_NEST_REL_REPLY);
             checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
             encode_digest(reply, output);
         }
         Payload::NewIdentifierProposal { thread_id, new_vid } => {
-            encode_fixed_data(TSP_TYPECODE, &msgtype::NEW_REFER_REL, output);
+            output.extend(&msgtype::NEW_REFER_REL);
             encode_digest(thread_id, output);
             checked_encode_variable_data(TSP_VID, new_vid.as_ref(), output)?;
         }
         Payload::RelationshipReferral { referred_vid } => {
-            encode_fixed_data(TSP_TYPECODE, &msgtype::THIRDP_REFER_REL, output);
+            output.extend(&msgtype::THIRDP_REFER_REL);
             checked_encode_variable_data(TSP_VID, referred_vid.as_ref(), output)?;
         }
         Payload::RelationshipCancel { reply } => {
-            encode_fixed_data(TSP_TYPECODE, &msgtype::REL_CANCEL, output);
+            output.extend(&XRFD);
             encode_digest(reply, output);
         }
     }
@@ -461,10 +452,11 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
         _ => return Err(DecodeError::VersionMismatch),
     };
 
-    let (&mut msgtype, mut stream) =
-        decode_fixed_data_mut(TSP_TYPECODE, stream).ok_or(DecodeError::UnexpectedData)?;
+    let (msgtype, mut stream) = stream
+        .split_at_mut_checked(3)
+        .ok_or(DecodeError::UnexpectedData)?;
 
-    let payload = match msgtype {
+    let payload = match *<&[u8; 3]>::try_from(msgtype as &[u8]).unwrap() {
         msgtype::GEN_MSG => {
             let (hop_list, upd_stream) = decode_hops(stream)?;
             let msg;
@@ -546,7 +538,7 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
 
             Payload::RelationshipReferral { referred_vid }
         }
-        msgtype::REL_CANCEL => {
+        XRFD => {
             let reply;
             (reply, stream) = decode_digest(stream)?;
 
@@ -569,27 +561,19 @@ const fn encoded_version() -> u16 {
     (TSP_VERSION.1 as u16) << 6 | (TSP_VERSION.2 as u16)
 }
 
-/// Y is the header.
-/// Note that 'YTSP' is not conforming to the normal rules of a fixed-size CESR code, so we
-/// force hardcode it as a Base64 quadlet/triplet.
-const Y_HEADER: [u8; 3] = {
-    let cesr = u32::to_be_bytes(cesr("YTSP"));
-    [cesr[1], cesr[2], cesr[3]]
-};
-
 /// Encode a TSP version marker
 pub fn encode_version(output: &mut impl for<'b> Extend<&'b u8>) {
-    output.extend(&Y_HEADER);
+    output.extend(&YTSP);
     encode_count(TSP_VERSION.0, encoded_version(), output);
 }
 
 fn decode_version(stream: &mut &[u8]) -> Result<(), DecodeError> {
     // See above: this is hopefully rare case of pseudo-CESR encoding
-    let Some((hdr, new_stream)) = stream.split_at_checked(3) else {
+    let Some((hdr, new_stream)) = stream.split_at_checked(YTSP.len()) else {
         return Err(DecodeError::VersionMismatch);
     };
 
-    if hdr != Y_HEADER {
+    if hdr != YTSP {
         return Err(DecodeError::VersionMismatch);
     }
 
@@ -635,9 +619,9 @@ fn encode_envelope_fields<'a, Vid: AsRef<[u8]>>(
         checked_encode_variable_data(TSP_VID, rec.as_ref(), output)?;
     }
 
-    encode_fixed_data(TSP_TYPECODE, &[0, 0], output);
+    encode_fixed_data(TSP_TMP, &[0, 0], output);
     encode_fixed_data(
-        TSP_TYPECODE,
+        TSP_TMP,
         &[envelope.crypto_type as u8, envelope.signature_type as u8],
         output,
     );
@@ -677,6 +661,7 @@ pub fn encode_ciphertext(
 
 /// Checks whether the expected TSP header is present and returns its size and whether it
 /// is a "ETS" or "S" envelope
+#[allow(clippy::type_complexity)]
 pub(super) fn detected_tsp_header_size_and_confidentiality(
     stream: &[u8],
     pos: &mut usize,
@@ -710,12 +695,12 @@ pub(super) fn detected_tsp_header_size_and_confidentiality(
 
     let mut stream = &origin[mid_pos..];
 
-    match decode_fixed_data(TSP_TYPECODE, &mut stream) {
+    match decode_fixed_data(TSP_TMP, &mut stream) {
         Some([0, 0]) => {}
         _ => return Err(DecodeError::VersionMismatch),
     }
 
-    let (crypto_type, signature_type) = match decode_fixed_data(TSP_TYPECODE, &mut stream) {
+    let (crypto_type, signature_type) = match decode_fixed_data(TSP_TMP, &mut stream) {
         Some([crypto, signature]) => {
             let crypto_type = CryptoType::try_from(*crypto)?;
 
