@@ -13,6 +13,6 @@
     "tsp-javascript": "file:../tsp_javascript/pkg"
   },
   "devDependencies": {
-    "mocha": "^9.0.0"
+    "mocha": "^11.0.0"
   }
 }
