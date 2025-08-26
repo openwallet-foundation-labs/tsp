@@ -27,6 +27,8 @@
 //! The following example demonstrates how to send a message from Alice to Bob
 //!
 //! ```rust
+//! # #[cfg(feature="async")]
+//! # mod example {
 //! use futures::StreamExt;
 //! use tsp_sdk::{AsyncSecureStore, Error, OwnedVid, ReceivedTspMessage};
 //!
@@ -71,6 +73,7 @@
 //!
 //!     Ok(())
 //! }
+//! # }
 //! ```
 
 /// Provides minimalist CESR encoding/decoding support that is sufficient for
