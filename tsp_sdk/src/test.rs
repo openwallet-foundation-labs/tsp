@@ -5,7 +5,7 @@ use futures::StreamExt;
 #[serial_test::serial(tcp)]
 async fn test_direct_mode() {
     // bob wallet
-    let mut bob_db = AsyncSecureStore::new();
+    let bob_db = AsyncSecureStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
@@ -21,7 +21,7 @@ async fn test_direct_mode() {
         .unwrap();
 
     // alice wallet
-    let mut alice_db = AsyncSecureStore::new();
+    let alice_db = AsyncSecureStore::new();
     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
@@ -72,7 +72,7 @@ async fn test_direct_mode() {
 #[serial_test::serial(tcp)]
 async fn test_large_messages() {
     // bob wallet
-    let mut bob_db = AsyncSecureStore::new();
+    let bob_db = AsyncSecureStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
@@ -88,7 +88,7 @@ async fn test_large_messages() {
         .unwrap();
 
     // alice wallet
-    let mut alice_db = AsyncSecureStore::new();
+    let alice_db = AsyncSecureStore::new();
     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
@@ -144,7 +144,7 @@ async fn test_large_messages() {
 #[serial_test::serial(tcp)]
 async fn test_anycast() {
     // bob wallet
-    let mut bob_db = AsyncSecureStore::new();
+    let bob_db = AsyncSecureStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
@@ -160,7 +160,7 @@ async fn test_anycast() {
         .unwrap();
 
     // alice wallet
-    let mut alice_db = AsyncSecureStore::new();
+    let alice_db = AsyncSecureStore::new();
     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
@@ -203,7 +203,7 @@ async fn test_anycast() {
 #[serial_test::serial(tcp)]
 async fn test_nested_mode() {
     // bob wallet
-    let mut bob_db = AsyncSecureStore::new();
+    let bob_db = AsyncSecureStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
@@ -214,7 +214,7 @@ async fn test_nested_mode() {
         .unwrap();
 
     // alice wallet
-    let mut alice_db = AsyncSecureStore::new();
+    let alice_db = AsyncSecureStore::new();
     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
@@ -306,13 +306,13 @@ async fn test_nested_mode() {
 #[tokio::test]
 #[serial_test::serial(tcp)]
 async fn test_routed_mode() {
-    let mut bob_db = AsyncSecureStore::new();
+    let bob_db = AsyncSecureStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
     bob_db.add_private_vid(bob_vid.clone(), None).unwrap();
 
-    let mut alice_db = AsyncSecureStore::new();
+    let alice_db = AsyncSecureStore::new();
     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
@@ -523,7 +523,7 @@ async fn test_routed_mode() {
 #[tokio::test]
 async fn attack_failures() {
     // bob wallet
-    let mut bob_db = AsyncSecureStore::new();
+    let bob_db = AsyncSecureStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
@@ -585,7 +585,7 @@ async fn attack_failures() {
 #[serial_test::serial(tcp)]
 async fn test_relation_forming() {
     // bob wallet
-    let mut bob_db = AsyncSecureStore::new();
+    let bob_db = AsyncSecureStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
@@ -601,7 +601,7 @@ async fn test_relation_forming() {
         .unwrap();
 
     // alice wallet
-    let mut alice_db = AsyncSecureStore::new();
+    let alice_db = AsyncSecureStore::new();
     let alice_vid = OwnedVid::from_file("../examples/test/alice/piv.json")
         .await
         .unwrap();
@@ -667,7 +667,7 @@ async fn test_relation_forming() {
 #[serial_test::serial(tcp)]
 async fn test_unverified_receiver_in_direct_mode() {
     // bob wallet (unverified receiver)
-    let mut bob_db = AsyncSecureStore::new();
+    let bob_db = AsyncSecureStore::new();
     let bob_vid = OwnedVid::from_file("../examples/test/bob/piv.json")
         .await
         .unwrap();
