@@ -292,7 +292,7 @@ async fn run() -> Result<(), Error> {
     CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider())
         .expect("Failed to install crypto provider");
 
-    let (vault, mut vid_wallet) = read_wallet(&args.wallet, &args.password).await?;
+    let (vault, vid_wallet) = read_wallet(&args.wallet, &args.password).await?;
     let server: String = args.server;
     let did_server = args.did_server;
 

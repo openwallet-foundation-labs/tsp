@@ -146,7 +146,7 @@ impl AsyncSecureStore {
     }
 
     /// Resolve and verify public key material for a VID identified by `vid` and add it to the wallet as a relationship
-    pub async fn verify_vid(&mut self, vid: &str, alias: Option<String>) -> Result<(), Error> {
+    pub async fn verify_vid(&self, vid: &str, alias: Option<String>) -> Result<(), Error> {
         let (verified_vid, metadata) = crate::vid::verify_vid(vid).await?;
 
         self.inner.add_verified_vid(verified_vid, metadata)?;
@@ -521,10 +521,7 @@ impl AsyncSecureStore {
     /// Receive TSP messages for the private VID identified by `vid`, using the appropriate transport mechanism for it.
     /// Messages will be queued in a channel
     /// The returned channel contains a maximum of 16 messages
-    pub async fn receive(
-        &mut self,
-        vid: &str,
-    ) -> Result<TSPStream<ReceivedTspMessage, Error>, Error> {
+    pub async fn receive(&self, vid: &str) -> Result<TSPStream<ReceivedTspMessage, Error>, Error> {
         let receiver = self.inner.get_private_vid(vid)?;
         let mut transport = receiver.endpoint().clone();
         let path = transport
@@ -540,7 +537,7 @@ impl AsyncSecureStore {
         let self_clone = self.clone();
         Ok(Box::pin(messages.then(move |message| {
             let db_inner = db.clone();
-            let mut self_inner = self_clone.clone();
+            let self_inner = self_clone.clone();
             async move {
                 match message {
                     Ok(mut m) => match db_inner.open_message(&mut m) {
@@ -589,7 +586,7 @@ impl AsyncSecureStore {
     /// This takes a Vec as a payload; for a borrowing version the `as_inner()` version can be used;
     /// usually after unpacking a TSP message, you can't or need to do anything with it anyway.
     pub async fn verify_and_open(
-        &mut self,
+        &self,
         vid: &str,
         mut payload: BytesMut,
     ) -> Result<ReceivedTspMessage, Error> {
