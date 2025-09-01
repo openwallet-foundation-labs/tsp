@@ -365,6 +365,36 @@ impl SecureStorage for AskarSecureStorage {
     }
 }
 
+impl AskarSecureStorage {
+    pub async fn store_kv(&self, key: &str, value: &[u8]) -> Result<(), Error> {
+        let mut conn = self.inner.session(None).await?;
+
+        conn.insert("custom_kv", key, value, None, None).await?;
+
+        conn.commit().await?;
+
+        Ok(())
+    }
+
+    pub async fn get_kv(&self, key: &str) -> Result<Option<Vec<u8>>, Error> {
+        let mut conn = self.inner.session(None).await?;
+
+        let result = conn.fetch("custom_kv", key, false).await?;
+
+        Ok(result.map(|e| e.value.to_vec()))
+    }
+
+    pub async fn remove_kv(&self, key: &str) -> Result<(), Error> {
+        let mut conn = self.inner.session(None).await?;
+
+        conn.remove("custom_kv", key).await?;
+
+        conn.commit().await?;
+
+        Ok(())
+    }
+}
+
 #[cfg(not(feature = "pq"))]
 #[cfg(test)]
 mod test {
