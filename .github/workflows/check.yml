@@ -160,9 +160,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Install cargo fuzz
-        uses: taiki-e/install-action@8984d603c208823d3c1a1b796f4081736f3ae3f9
-        with:
-          tool: cargo-fuzz
+        run: cargo install cargo-fuzz
 
       - name: Smoke-test fuzz targets
         id: fuzz

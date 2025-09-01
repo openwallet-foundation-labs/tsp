@@ -204,6 +204,11 @@ enum Commands {
         #[arg(short, long, required = true)]
         new_vid: String,
     },
+    #[command(arg_required_else_help = true, about = "manage custom secret data")]
+    Secret {
+        #[clap(subcommand)]
+        sub: CustomSecretManagement,
+    },
 }
 
 #[derive(Debug, Parser)]
@@ -216,6 +221,16 @@ enum ShowCommands {
         #[arg(short, long)]
         unrelated: bool,
     },
+}
+
+#[derive(Debug, Parser)]
+enum CustomSecretManagement {
+    #[command(about = "Add a custom secret to the wallet")]
+    Add { key: String, value: String },
+    #[command(about = "Get a custom secret from the wallet")]
+    Get { key: String },
+    #[command(about = "Remove a custom secret from the wallet")]
+    Remove { key: String },
 }
 
 async fn write_wallet(vault: &AskarSecureStorage, db: &AsyncSecureStore) -> Result<(), Error> {
@@ -996,6 +1011,26 @@ async fn run() -> Result<(), Error> {
 
             info!("sent control message from {sender_vid} to {receiver_vid}",);
         }
+        Commands::Secret { sub } => match sub {
+            CustomSecretManagement::Add { key, value } => {
+                vault.store_kv(&key, value.as_bytes()).await?;
+                println!("successfully stored secret '{}'", key);
+            }
+            CustomSecretManagement::Get { key } => {
+                println!(
+                    "{:?}",
+                    vault
+                        .get_kv(&key)
+                        .await?
+                        .as_deref()
+                        .map(String::from_utf8_lossy)
+                );
+            }
+            CustomSecretManagement::Remove { key } => {
+                vault.remove_kv(&key).await?;
+                println!("successfully removed secret '{}'", key);
+            }
+        },
     }
 
     write_wallet(&vault, &vid_wallet).await?;
