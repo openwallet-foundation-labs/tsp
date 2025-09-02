@@ -343,6 +343,14 @@ class AliceBob(unittest.TestCase):
             case other:
                 self.fail(f"unexpected message type {other}")
 
+    def test_custom_kv_store(self):
+        self.assertIsNone(self.store.get_kv("test_key"))
+        self.store.store_kv("test_key", b"test_value")
+        self.assertEqual(self.store.get_kv("test_key"), b"test_value")
+        self.store.remove_kv("test_key")
+        self.assertIsNone(self.store.get_kv("test_key"))
+
+
 
 if __name__ == "__main__":
     unittest.main()
