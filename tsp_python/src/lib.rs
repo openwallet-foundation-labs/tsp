@@ -88,6 +88,18 @@ impl Store {
         })?
     }
 
+    fn store_kv(&self, key: &str, value: &[u8]) -> PyResult<()> {
+        wait_for(async { self.vault.store_kv(key, value).await.map_err(py_exception) })?
+    }
+
+    fn get_kv(&self, key: &str) -> PyResult<Option<Vec<u8>>> {
+        wait_for(async { self.vault.get_kv(key).await.map_err(py_exception) })?
+    }
+
+    fn remove_kv(&self, key: &str) -> PyResult<()> {
+        wait_for(async { self.vault.remove_kv(key).await.map_err(py_exception) })?
+    }
+
     fn resolve_alias(&self, alias: &str) -> PyResult<Option<String>> {
         self.inner.resolve_alias(alias).map_err(py_exception)
     }
