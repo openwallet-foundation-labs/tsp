@@ -1,7 +1,4 @@
-#[cfg(not(target_arch = "wasm32"))]
-use didwebvh_resolver::ResolutionError;
-#[cfg(feature = "create-webvh")]
-use pyo3::PyErr;
+use didwebvh_rs::DIDWebVHError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum VidError {
@@ -24,23 +21,21 @@ pub enum VidError {
     InternalError(String),
     #[error("{0}")]
     Verification(String),
-    #[cfg(feature = "create-webvh")]
-    #[error("error in the underlying Python code base: {0}")]
-    Python(#[from] PyErr),
     #[error("invalid URL")]
     Url(#[from] url::ParseError),
+    #[error("WebVH DID resolution failed: {0}")]
+    WebVHError(String),
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-impl From<ResolutionError> for VidError {
-    fn from(err: ResolutionError) -> Self {
+// Convert WebVH Errors to VidError
+impl From<DIDWebVHError> for VidError {
+    fn from(err: DIDWebVHError) -> Self {
         match err {
-            ResolutionError::NotFound => Self::ResolveVid("Not found"),
-            ResolutionError::InvalidDID(s) => Self::InvalidVid(s),
-            ResolutionError::MethodNotSupported => Self::ResolveVid("Method not supported"),
-            ResolutionError::InternalError(s) => Self::InternalError(s),
-            ResolutionError::InvalidDIDDocument(s) => Self::InvalidVid(s),
-            ResolutionError::VerificationFailed(s) => Self::Verification(s),
+            DIDWebVHError::NotFound => Self::ResolveVid("Not found"),
+            DIDWebVHError::DIDError(s) => Self::InvalidVid(s),
+            DIDWebVHError::InvalidMethodIdentifier(_) => Self::ResolveVid("Method not supported"),
+            DIDWebVHError::UnsupportedMethod => Self::ResolveVid("Method not supported"),
+            other => Self::WebVHError(other.to_string()),
         }
     }
 }

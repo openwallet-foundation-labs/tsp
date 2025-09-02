@@ -51,7 +51,6 @@ fn verify_did(wallet_name: &str, alias: &str, did: &str) {
         .success();
 }
 
-#[cfg(feature = "create-webvh")]
 fn rotate_keys(wallet_name: &str, alias: &str) {
     let mut cmd: Command = Command::new(cargo_bin!("tsp"));
     cmd.args(["--wallet", wallet_name, "update", alias])
