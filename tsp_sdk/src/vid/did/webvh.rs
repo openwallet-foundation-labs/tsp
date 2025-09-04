@@ -12,7 +12,7 @@ use didwebvh_rs::{
     parameters::Parameters, url::WebVHURL,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::json;
 use tracing::debug;
 use url::Url;
 
@@ -133,60 +133,4 @@ pub async fn update(
     update_key: &[u8],
 ) -> Result<HistoryEntry, VidError> {
     todo!()
-}
-
-// ------------------- Internal Functions -------------------
-
-/// Creates a WebVH DID Document (State)
-/// id: The path part of the DID (e.g. what comes after did:webvh:<SCID>:)
-/// service_endpoint: The service endpoint to include in the DID Document
-/// verification_key: Public key to use for signing/verification
-/// encryption_key: Public key to use for encryption/decryption
-///
-/// Returns Json Value representing the initial DID Document
-fn create_initial_did_document(
-    id: &str,
-    service_endpoint: &str,
-    verification_key: &str,
-    encryption_key: &str,
-) -> Value {
-    // Default State DID Document
-    json!({
-        "@context": [
-             "https://www.w3.org/ns/did/v1",
-             "https://w3id.org/security/suites/jws-2020/v1"
-        ],
-        "service": [
-            {
-                "id": "#tsp-transport",
-                "serviceEndpoint": service_endpoint,
-                "type": "TSPTransport"
-            }
-        ],
-        "id": id,
-        "authentication": [ ([id, "#verification-key"].concat()) ],
-        "keyAgreement": [ ([id, "#encryption-key"].concat()) ],
-        "verificationMethod": [
-            {
-                "controller": id,
-                "id": ([id, "#verification-key"].concat()),
-                "publicKeyJwk": {
-                    "crv": "Ed25519",
-                    "kty": "OKP",
-                    "use": "sig",
-                    "x": verification_key
-                }
-            },
-            {
-                "controller": id,
-                "id": ([id, "#encryption-key"].concat()),
-                "publicKeyJwk": {
-                    "crv": "X25519",
-                    "kty": "OKP",
-                    "use": "enc",
-                    "x": encryption_key
-                }
-            }
-        ]
-    })
 }
