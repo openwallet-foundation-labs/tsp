@@ -13,7 +13,6 @@ use didwebvh_rs::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tracing::debug;
 use url::Url;
 
 pub(crate) const SCHEME: &str = "webvh";
@@ -41,10 +40,17 @@ pub async fn resolve(id: &str) -> Result<(Vid, serde_json::Value), VidError> {
 
     let (log_entry, meta_data) = webvh.resolve(id, None).await?;
     let did_doc: DidDocument = serde_json::from_value(log_entry.get_state().to_owned())?;
+
+    let update_keys = if let Some(update_keys) = log_entry.get_parameters().update_keys {
+        Some((*update_keys).clone())
+    } else {
+        None
+    };
+
     let metadata = WebvhMetadata {
         version_id: Some(meta_data.version_id),
         updated: Some(meta_data.updated),
-        update_keys: Some((*log_entry.get_parameters().active_update_keys).clone()),
+        update_keys,
     };
 
     Ok((
@@ -54,16 +60,20 @@ pub async fn resolve(id: &str) -> Result<(Vid, serde_json::Value), VidError> {
 }
 
 /// Creates a default WebVH DID that can be used with TSP.
-/// did_name: Name to use to create the DID ID (expects this to be server.name/path)
+/// did_path: Server path to use as base for the DID ID (expects this to be server.name/path)
+/// transport: URL to use for the service record
+///
+/// Returns
+/// VID Record - contains key info
+/// The Genesis Log Entry record for WebVH DID's
+/// The Key ID of the WebVH Update Key
+/// The private key bytes for the WebVH Update Key
 pub async fn create_webvh(
-    did_name: &str,
+    did_path: &str,
     transport: Url,
 ) -> Result<(OwnedVid, serde_json::Value, String, Vec<u8>), VidError> {
-    debug!("did_name: {did_name}");
-    debug!("transport URL: {transport}");
-
     // Create the initial DID ID
-    let path_url = Url::parse(&["http://", did_name].concat())?;
+    let path_url = Url::parse(&["http://", did_path].concat())?;
     let webvh_url = WebVHURL::parse_url(&path_url)?;
 
     // Create default TSP VID
@@ -96,7 +106,7 @@ pub async fn create_webvh(
         "#",
         &webvh_signing_key_public,
     ]
-    .concat(); // Set the Key ID correctly
+    .concat(); // Set the Key ID correctly (expects did:key:multikeyhash)
 
     // WebVH Parameters
     let params = Parameters::new()
@@ -130,7 +140,70 @@ pub async fn create_webvh(
 // Placeholder for native WebVH update DID function
 pub async fn update(
     updated_document: serde_json::Value,
-    update_key: &[u8],
+    update_key: &[u8; 32],
 ) -> Result<HistoryEntry, VidError> {
-    todo!()
+    // Create a valid UpdateKey to use
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(update_key);
+
+    let sigkey_private = signing_key.to_bytes().to_vec();
+    let sigkey_public = signing_key.verifying_key().to_bytes();
+
+    let mut webvh_signing_key = Secret::from_str(
+        "webvh-signing-key",
+        &json!({
+            "crv": "Ed25519",
+            "kty": "OKP",
+            "x": Base64UrlUnpadded::encode_string(&sigkey_public),
+            "d":Base64UrlUnpadded::encode_string(&sigkey_private),
+        }),
+    )
+    .map_err(|e| VidError::InternalError(format!("Couldn't create WebVH UpdateKey: {}", e)))?;
+    let webvh_signing_key_public = webvh_signing_key.get_public_keymultibase().map_err(|e| {
+        VidError::InternalError(format!(
+            "WebVH signing key couldn't get multibase key: {}",
+            e
+        ))
+    })?;
+    webvh_signing_key.id = [
+        "did:key:",
+        &webvh_signing_key_public,
+        "#",
+        &webvh_signing_key_public,
+    ]
+    .concat();
+
+    // Get the DID ID
+    let did_id =
+        updated_document
+            .get("id")
+            .and_then(|v| v.as_str())
+            .ok_or(VidError::InternalError(
+                "Couldn't get DID ID from updated DID Document".to_string(),
+            ))?;
+
+    // Resolve the current DID WebVH State - gets context and is used to append the new LogEntry
+    let mut webvh = DIDWebVHState::default();
+    webvh.resolve(did_id, None).await?;
+
+    // Create the new Log Entry
+    let log_entry = webvh.create_log_entry(
+        None,
+        &updated_document,
+        &Parameters::default(),
+        &webvh_signing_key,
+    )?;
+
+    let mut proofs = Vec::new();
+    for proof in log_entry.log_entry.get_proofs() {
+        proofs.push(json!(proof));
+    }
+
+    // Create new HistoryEntry
+    Ok(HistoryEntry {
+        version_id: log_entry.get_version_id().to_string(),
+        version_time: log_entry.log_entry.get_version_time().to_rfc3339(),
+        parameters: json!(log_entry.log_entry.get_parameters()),
+        state: serde_json::from_value(log_entry.get_state().to_owned())?,
+        proof: proofs,
+    })
 }

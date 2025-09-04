@@ -479,9 +479,15 @@ async fn run() -> Result<(), Error> {
             let update_key = keys
                 .get(&update_keys[0])
                 .expect("Cannot find update keys to update the DID");
-            let history_entry =
-                tsp_sdk::vid::did::webvh::update(vid_to_did_document(vid.vid()), update_key)
-                    .await?;
+            let history_entry = tsp_sdk::vid::did::webvh::update(
+                vid_to_did_document(vid.vid()),
+                update_key.first_chunk::<32>().ok_or_else(|| {
+                    Error::Vid(VidError::WebVHError(
+                        "Couldn't get WebVH UpdateKey Secret bytes".to_string(),
+                    ))
+                })?,
+            )
+            .await?;
 
             client
                 .put(format!(
