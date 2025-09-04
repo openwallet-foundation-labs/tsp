@@ -3,6 +3,7 @@ use crate::{
     vid::{
         VidError,
         did::web::{DidDocument, resolve_document},
+        vid_to_did_document,
     },
 };
 use base64ct::{Base64UrlUnpadded, Encoding};
@@ -10,8 +11,6 @@ use didwebvh_rs::{
     DIDWebVHState, affinidi_secrets_resolver::secrets::Secret, log_entry::LogEntryMethods,
     parameters::Parameters, url::WebVHURL,
 };
-use ed25519_dalek::{KEYPAIR_LENGTH, SECRET_KEY_LENGTH};
-use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracing::debug;
@@ -67,23 +66,15 @@ pub async fn create_webvh(
     let path_url = Url::parse(&["http://", did_name].concat())?;
     let webvh_url = WebVHURL::parse_url(&path_url)?;
 
-    // Create the DID verificationMethod keys
-    let (sigkey, public_sigkey) = crate::crypto::gen_sign_keypair();
-    let (enckey, public_enckey) = crate::crypto::gen_encrypt_keypair();
-    let public_verification_key = Base64UrlUnpadded::encode_string(&public_sigkey);
-    let public_encryption_key = Base64UrlUnpadded::encode_string(&public_enckey);
+    // Create default TSP VID
+    let mut vid = OwnedVid::bind(&webvh_url.to_string(), transport);
 
-    // Create the default starting DID Document
-    let did_doc = create_initial_did_document(
-        &webvh_url.to_string(),
-        transport.as_str(),
-        &public_verification_key,
-        &public_encryption_key,
-    );
+    // Generate the DID Document based on the VID
+    let did_doc = vid_to_did_document(vid.vid());
 
     // Create the WebVH UpdateKey
     let (webvh_update_key, public_webvh_update_key) = crate::crypto::gen_sign_keypair();
-    let webvh_signing_key = Secret::from_str(
+    let mut webvh_signing_key = Secret::from_str(
         "webvh-signing-key",
         &json!({
             "crv": "Ed25519",
@@ -92,26 +83,48 @@ pub async fn create_webvh(
             "d":Base64UrlUnpadded::encode_string(&webvh_update_key),
         }),
     )
-    .map_err(|e| VidError::InternalError(format!("Couldn't convert Secret: {}", e)))?;
+    .map_err(|e| VidError::InternalError(format!("Couldn't create WebVH UpdateKey: {}", e)))?;
+    let webvh_signing_key_public = webvh_signing_key.get_public_keymultibase().map_err(|e| {
+        VidError::InternalError(format!(
+            "WebVH signing key couldn't get multibase key: {}",
+            e
+        ))
+    })?;
+    webvh_signing_key.id = [
+        "did:key:",
+        &webvh_signing_key_public,
+        "#",
+        &webvh_signing_key_public,
+    ]
+    .concat(); // Set the Key ID correctly
 
     // WebVH Parameters
     let params = Parameters::new()
-        .with_update_keys(vec![webvh_signing_key.get_public_keymultibase().map_err(
-            |e| {
-                VidError::InternalError(format!(
-                    "WebVH signing key couldn't get multibase key: {}",
-                    e
-                ))
-            },
-        )?])
+        .with_update_keys(vec![webvh_signing_key_public.clone()])
         .build();
 
     // Create the first WebVH Log Entry
     let mut webvh = DIDWebVHState::default();
+    let log_entry = webvh.create_log_entry(None, &did_doc, &params, &webvh_signing_key)?;
 
-    webvh.create_log_entry(None, &did_doc, &params, &webvh_signing_key)?;
+    // Get the updated webvh ID
+    vid.vid.id = log_entry
+        .get_state()
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or(VidError::InternalError(
+            "Couldn't get DID ID from WebVH Log Entry".to_string(),
+        ))?
+        .to_string();
 
-    todo!()
+    let genesis_log_entry = serde_json::to_value(&log_entry.log_entry)?;
+
+    Ok((
+        vid,
+        genesis_log_entry,
+        webvh_signing_key_public,
+        webvh_signing_key.get_private_bytes().to_vec(),
+    ))
 }
 
 // Placeholder for native WebVH update DID function
