@@ -19,7 +19,9 @@ pub(crate) const SCHEME: &str = "webvh";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WebvhMetadata {
+    /// The versionId from the Log Entry of the resolved DIDDoc version
     version_id: Option<String>,
+    /// The ISO8601 timestamp of the DID’s last valid log entry
     updated: Option<String>,
     pub update_keys: Option<Vec<String>>,
 }
