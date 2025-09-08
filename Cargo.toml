@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["tsp_sdk", "examples", "fuzz", "tsp_javascript"]
+members = ["tsp_sdk", "examples", "fuzz", "tsp_python", "tsp_javascript"]
 exclude = ["demo"]
 
 [workspace.package]
@@ -17,8 +17,8 @@ rust-version = "1.85"
 [workspace.dependencies]
 # generic
 base64ct = { version = "1.6", default-features = false, features = [
-  "alloc",
-  "std",
+    "alloc",
+    "std",
 ] }
 thiserror = "2.0.12"
 url = { version = "2.5", features = ["serde"] }
@@ -26,10 +26,10 @@ zeroize = "1.8"
 once_cell = "1.19"
 #crypto
 ed25519-dalek = { version = "2.1.1", default-features = false, features = [
-  "fast",
-  "std",
-  "zeroize",
-  "rand_core",
+    "fast",
+    "std",
+    "zeroize",
+    "rand_core",
 ] }
 hpke = { version = "0.12.0", features = ["std"] }
 hpke_pq = { version = "0.11.1", features = ["alloc", "std", "xyber768d00"] }
@@ -44,27 +44,27 @@ crypto_box = { version = "0.9.1", features = ["std", "chacha20"] }
 async-stream = { version = "0.3" }
 futures = { version = "0.3" }
 tokio = { version = "1.0", default-features = false, features = [
-  "rt-multi-thread",
-  "net",
-  "macros",
-  "signal",
+    "rt-multi-thread",
+    "net",
+    "macros",
+    "signal",
 ] }
 aries-askar = { version = "0.4.0", default-features = false, features = [
-  "sqlite",
+    "sqlite",
 ] }
 # logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.1", default-features = false, features = [
-  "fmt",
-  "ansi",
-  "env-filter",
-  "tracing-log",
+    "fmt",
+    "ansi",
+    "env-filter",
+    "tracing-log",
 ] }
 # transport
 tokio-tungstenite = { version = "0.26.2", default-features = false, features = [
-  "rustls-tls-native-roots",
-  "stream",
-  "connect",
+    "rustls-tls-native-roots",
+    "stream",
+    "connect",
 ] }
 tokio-util = { version = "0.7", default-features = false, features = ["codec"] }
 bytes = "1.10.1"
@@ -74,21 +74,25 @@ rustls-pki-types = "1.7"
 rustls-native-certs = "0.8.1"
 rustls-pemfile = "2.1"
 quinn = { version = "0.11", default-features = false, features = [
-  "log",
-  "runtime-tokio",
-  "rustls-aws-lc-rs",
+    "log",
+    "runtime-tokio",
+    "rustls-aws-lc-rs",
 ] }
 # resolve
 reqwest = { version = "0.12.12", default-features = false, features = [
-  "rustls-tls-native-roots",
-  "json",
-  "stream",
-  "charset",
-  "http2",
-  "macos-system-configuration",
+    "rustls-tls-native-roots",
+    "json",
+    "stream",
+    "charset",
+    "http2",
+    "macos-system-configuration",
 ] }
 # webvh
 didwebvh-rs = "0.1"
+
+# Python bindings
+pyo3 = { version = "0.24.0", features = ["serde"] }
+serde-pyobject = "0.6.2"
 
 # serialize
 serde = { version = "1.0", features = ["derive"] }

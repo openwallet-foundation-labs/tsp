@@ -43,11 +43,10 @@ pub async fn resolve(id: &str) -> Result<(Vid, serde_json::Value), VidError> {
     let (log_entry, meta_data) = webvh.resolve(id, None).await?;
     let did_doc: DidDocument = serde_json::from_value(log_entry.get_state().to_owned())?;
 
-    let update_keys = if let Some(update_keys) = log_entry.get_parameters().update_keys {
-        Some((*update_keys).clone())
-    } else {
-        None
-    };
+    let update_keys = log_entry
+        .get_parameters()
+        .update_keys
+        .map(|update_keys| (*update_keys).clone());
 
     let metadata = WebvhMetadata {
         version_id: Some(meta_data.version_id),
@@ -62,14 +61,14 @@ pub async fn resolve(id: &str) -> Result<(Vid, serde_json::Value), VidError> {
 }
 
 /// Creates a default WebVH DID that can be used with TSP.
-/// did_path: Server path to use as base for the DID ID (expects this to be server.name/path)
+/// did_path: Server path to use as the base for the DID ID (expects this to be server.name/path)
 /// transport: URL to use for the service record
 ///
-/// Returns
-/// VID Record - contains key info
-/// The Genesis Log Entry record for WebVH DID's
-/// The Key ID of the WebVH Update Key
-/// The private key bytes for the WebVH Update Key
+/// # Returns
+/// * VID Record - contains key info
+/// * The Genesis Log Entry record for WebVH DID's
+/// * The Key ID of the WebVH Update Key
+/// * The private key bytes for the WebVH Update Key
 pub async fn create_webvh(
     did_path: &str,
     transport: Url,
@@ -79,23 +78,28 @@ pub async fn create_webvh(
     let webvh_url = WebVHURL::parse_url(&path_url)?;
 
     // Create default TSP VID
-    let mut vid = OwnedVid::bind(&webvh_url.to_string(), transport);
+    let mut vid = OwnedVid::bind(webvh_url.to_string(), transport);
 
     // Generate the DID Document based on the VID
     let did_doc = vid_to_did_document(vid.vid());
 
     // Create the WebVH UpdateKey
-    let (webvh_update_key, public_webvh_update_key) = crate::crypto::gen_sign_keypair();
+    let signing_key = ed25519_dalek::SigningKey::generate(&mut rand_core::OsRng);
+
+    let sigkey_private = signing_key.to_bytes().to_vec();
+    let sigkey_public = signing_key.verifying_key().to_bytes();
+
     let mut webvh_signing_key = Secret::from_str(
         "webvh-signing-key",
         &json!({
             "crv": "Ed25519",
             "kty": "OKP",
-            "x": Base64UrlUnpadded::encode_string(&public_webvh_update_key),
-            "d":Base64UrlUnpadded::encode_string(&webvh_update_key),
+            "x": Base64UrlUnpadded::encode_string(&sigkey_public),
+            "d":Base64UrlUnpadded::encode_string(&sigkey_private),
         }),
     )
     .map_err(|e| VidError::InternalError(format!("Couldn't create WebVH UpdateKey: {}", e)))?;
+
     let webvh_signing_key_public = webvh_signing_key.get_public_keymultibase().map_err(|e| {
         VidError::InternalError(format!(
             "WebVH signing key couldn't get multibase key: {}",

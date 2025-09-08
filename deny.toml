@@ -15,7 +15,8 @@ allow = [
     "ISC",
     "NCSA",
     "Zlib",
-    "OpenSSL"
+    "OpenSSL",
+    "BSD-2-Clause"
 ]
 
 [advisories]

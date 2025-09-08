@@ -210,7 +210,6 @@ fn test_send_command_unverified_receiver_ask_flag() {
 }
 
 #[test]
-#[cfg(feature = "create-webvh")]
 #[serial_test::serial(clean_wallet)]
 fn test_webvh_creation_key_rotation() {
     clean_wallet();
