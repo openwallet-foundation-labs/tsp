@@ -10,7 +10,7 @@ use base64ct::{Base64UrlUnpadded, Encoding};
 use didwebvh_rs::{
     DIDWebVHState,
     affinidi_secrets_resolver::secrets::Secret,
-    log_entry::{LogEntryMethods, MetaData},
+    log_entry::{LogEntry, LogEntryMethods, MetaData},
     parameters::Parameters,
     url::WebVHURL,
 };
@@ -24,16 +24,6 @@ pub(crate) const SCHEME: &str = "webvh";
 pub struct WebvhMetadata {
     pub webvh_meta_data: MetaData,
     pub update_keys: Option<Vec<String>>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct HistoryEntry {
-    version_id: String,
-    version_time: String,
-    parameters: serde_json::Value,
-    pub state: DidDocument,
-    proof: Vec<serde_json::Value>,
 }
 
 /// Returns the Vid and [`WebvhMetadata`] for the given `id`.
@@ -142,11 +132,13 @@ pub async fn create_webvh(
     ))
 }
 
-// Placeholder for native WebVH update DID function
+// Create a new LogEntry record for an existing WebVH DID
+// updated_document: The updated DID Document to use
+// update_key: The WebVH LogENtry update key that is authorised to make the update
 pub async fn update(
     updated_document: serde_json::Value,
     update_key: &[u8; 32],
-) -> Result<HistoryEntry, VidError> {
+) -> Result<LogEntry, VidError> {
     // Create a valid UpdateKey to use
     let signing_key = ed25519_dalek::SigningKey::from_bytes(update_key);
 
@@ -204,11 +196,5 @@ pub async fn update(
     }
 
     // Create new HistoryEntry
-    Ok(HistoryEntry {
-        version_id: log_entry.get_version_id().to_string(),
-        version_time: log_entry.log_entry.get_version_time().to_rfc3339(),
-        parameters: json!(log_entry.log_entry.get_parameters()),
-        state: serde_json::from_value(log_entry.get_state().to_owned())?,
-        proof: proofs,
-    })
+    Ok(log_entry.log_entry.clone())
 }
