@@ -8,8 +8,11 @@ use crate::{
 };
 use base64ct::{Base64UrlUnpadded, Encoding};
 use didwebvh_rs::{
-    DIDWebVHState, affinidi_secrets_resolver::secrets::Secret, log_entry::LogEntryMethods,
-    parameters::Parameters, url::WebVHURL,
+    DIDWebVHState,
+    affinidi_secrets_resolver::secrets::Secret,
+    log_entry::{LogEntryMethods, MetaData},
+    parameters::Parameters,
+    url::WebVHURL,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -19,10 +22,7 @@ pub(crate) const SCHEME: &str = "webvh";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WebvhMetadata {
-    /// The versionId from the Log Entry of the resolved DIDDoc version
-    version_id: Option<String>,
-    /// The ISO8601 timestamp of the DID’s last valid log entry
-    updated: Option<String>,
+    pub webvh_meta_data: MetaData,
     pub update_keys: Option<Vec<String>>,
 }
 
@@ -49,8 +49,7 @@ pub async fn resolve(id: &str) -> Result<(Vid, serde_json::Value), VidError> {
         .map(|update_keys| (*update_keys).clone());
 
     let metadata = WebvhMetadata {
-        version_id: Some(meta_data.version_id),
-        updated: Some(meta_data.updated),
+        webvh_meta_data: meta_data,
         update_keys,
     };
 
