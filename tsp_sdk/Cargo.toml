@@ -35,6 +35,7 @@ async = [
   "dep:rustls-native-certs",
   "dep:rustls-pemfile",
   "dep:quinn",
+  "dep:didwebvh-rs"
 ]
 resolve = ["serialize", "dep:reqwest"]
 serialize = ["dep:serde", "dep:serde_with"]
@@ -87,11 +88,13 @@ arbitrary = { workspace = true, optional = true }
 async-trait = "0.1.88"
 
 # webvh
-didwebvh-rs = { workspace = true }
+didwebvh-rs = { workspace = true, optional = true }
 
 # not used directly, but we need to configure
 # the JS feature in this transitive dependency
 # required for compiling to wasm32-unknown-unknown
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3.3", features = ["wasm_js"] }
 [dependencies.getrandom]
 version = "0.2"
 features = ["js"]
