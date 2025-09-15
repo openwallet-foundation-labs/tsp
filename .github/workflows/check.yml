@@ -28,26 +28,12 @@ jobs:
     strategy:
       matrix:
         features:
-          - "create-webvh"
-          - "create-webvh,pq"
           - "nacl"
           - "pq"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Install uv
-        if: contains(matrix.features, 'create-webvh')
-        uses: astral-sh/setup-uv@v5
-      - name: Install the project
-        if: contains(matrix.features, 'create-webvh')
-        run: uv --directory tsp_sdk sync --locked --all-extras --dev
-      - name: Activate virtualenv
-        if: contains(matrix.features, 'create-webvh')
-        run: |
-          source ${GITHUB_WORKSPACE}/tsp_sdk/.venv/bin/activate
-          echo PATH=$PATH >> $GITHUB_ENV
-          echo VIRTUAL_ENV=$VIRTUAL_ENV >> $GITHUB_ENV
       - run: |
           cargo test --features ${{ matrix.features }}
 
@@ -85,7 +71,7 @@ jobs:
         run: cargo install wasm-pack
       - name: Run tests with wasm-pack
         working-directory: tsp_sdk
-        run: wasm-pack test --node -- -p tsp_sdk --no-default-features --features "resolve"
+        run: RUSTFLAGS='--cfg getrandom_backend="wasm_js"' wasm-pack test --node -- -p tsp_sdk --no-default-features --features "resolve"
 
   check-python:
     runs-on: ubuntu-22.04
@@ -134,7 +120,7 @@ jobs:
           curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
           wasm-pack --version
       - name: Build Wasm extension
-        run: wasm-pack build --target nodejs tsp_javascript/
+        run: RUSTFLAGS='--cfg getrandom_backend="wasm_js"' wasm-pack build --target nodejs tsp_javascript/
 
       - name: Install npm dependencies
         working-directory: tsp_node/

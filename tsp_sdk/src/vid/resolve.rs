@@ -1,4 +1,3 @@
-#[cfg(not(target_arch = "wasm32"))]
 use super::did::webvh;
 use super::{
     did::{self, peer, web},
@@ -14,7 +13,6 @@ pub async fn verify_vid(id: &str) -> Result<(Vid, Option<serde_json::Value>), Vi
     match parts.get(0..2) {
         Some([did::SCHEME, web::SCHEME]) => Ok((web::resolve(id, parts).await?, None)),
         Some([did::SCHEME, peer::SCHEME]) => Ok((peer::verify_did_peer(&parts)?, None)),
-        #[cfg(not(target_arch = "wasm32"))]
         Some([did::SCHEME, webvh::SCHEME]) => webvh::resolve(id)
             .await
             .map(|(vid, metadata)| (vid, Some(metadata))),

@@ -11,7 +11,6 @@ rust-version.workspace = true
 [features]
 nacl = ["tsp_sdk/nacl"]
 use_local_certificate = ["tsp_sdk/use_local_certificate"]
-create-webvh = ["tsp_sdk/create-webvh", "dep:pyo3", "dep:pyo3-async-runtimes"]
 pq = ["tsp_sdk/pq"]
 
 [[bin]]
@@ -51,10 +50,6 @@ url = { workspace = true }
 rustls = { workspace = true }
 tower-http = { workspace = true }
 uuid = "1.17.0"
-
-# create webvh
-pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
 
 [dev-dependencies]
 assert_cmd = "2.0.17"

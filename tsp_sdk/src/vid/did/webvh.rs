@@ -1,34 +1,47 @@
 use crate::{
-    Vid,
+    OwnedVid, Vid,
     vid::{
         VidError,
         did::web::{DidDocument, resolve_document},
+        vid_to_did_document,
     },
 };
-#[cfg(feature = "create-webvh")]
-pub use create_webvh::{create_webvh, update};
-use didwebvh_resolver::{self, DefaultHttpClient, ResolutionOptions};
+use base64ct::{Base64UrlUnpadded, Encoding};
+use didwebvh_rs::{
+    DIDWebVHState,
+    affinidi_secrets_resolver::secrets::Secret,
+    log_entry::{LogEntry, LogEntryMethods, MetaData},
+    parameters::Parameters,
+    url::WebVHURL,
+};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use url::Url;
 
 pub(crate) const SCHEME: &str = "webvh";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WebvhMetadata {
-    version_id: Option<String>,
-    updated: Option<String>,
+    pub webvh_meta_data: MetaData,
     pub update_keys: Option<Vec<String>>,
 }
+
 /// Returns the Vid and [`WebvhMetadata`] for the given `id`.
 pub async fn resolve(id: &str) -> Result<(Vid, serde_json::Value), VidError> {
-    let http = DefaultHttpClient::new();
-    let resolver = didwebvh_resolver::resolver::WebVHResolver::new(http);
-    let resolved = resolver.resolve(id, &ResolutionOptions::default()).await?;
+    let mut webvh = DIDWebVHState::default();
+
+    let (log_entry, meta_data) = webvh.resolve(id, None).await?;
+    let did_doc: DidDocument = serde_json::from_value(log_entry.get_state().to_owned())?;
+
+    let update_keys = log_entry
+        .get_parameters()
+        .update_keys
+        .map(|update_keys| (*update_keys).clone());
+
     let metadata = WebvhMetadata {
-        version_id: resolved.did_document_metadata.version_id,
-        updated: resolved.did_document_metadata.updated,
-        update_keys: resolved.did_document_metadata.update_keys,
+        webvh_meta_data: meta_data,
+        update_keys,
     };
-    let did_doc: DidDocument = serde_json::from_value(resolved.did_document)?;
 
     Ok((
         resolve_document(did_doc, id)?,
@@ -36,134 +49,152 @@ pub async fn resolve(id: &str) -> Result<(Vid, serde_json::Value), VidError> {
     ))
 }
 
-#[cfg(feature = "create-webvh")]
-mod create_webvh {
-    use crate::{
-        OwnedVid,
-        vid::{
-            VidError,
-            did::web::{DidDocument, resolve_document},
-            vid_to_did_document,
-        },
-    };
-    use pyo3::{ffi::c_str, prelude::*};
-    use serde::Deserialize;
-    use serde_pyobject::to_pyobject;
-    use serde_with::serde_derive::Serialize;
-    use url::Url;
+/// Creates a default WebVH DID that can be used with TSP.
+/// did_path: Server path to use as the base for the DID ID (expects this to be server.name/path)
+/// transport: URL to use for the service record
+///
+/// # Returns
+/// * VID Record - contains key info
+/// * The Genesis Log Entry record for WebVH DID's
+/// * The Key ID of the WebVH Update Key
+/// * The private key bytes for the WebVH Update Key
+pub async fn create_webvh(
+    did_path: &str,
+    transport: Url,
+) -> Result<(OwnedVid, serde_json::Value, String, Vec<u8>), VidError> {
+    // Create the initial DID ID
+    let path_url = Url::parse(&["http://", did_path].concat())?;
+    let webvh_url = WebVHURL::parse_url(&path_url)?;
 
-    #[derive(Serialize, Deserialize, Debug)]
-    #[serde(rename_all = "camelCase")]
-    pub struct HistoryEntry {
-        version_id: String,
-        version_time: String,
-        parameters: serde_json::Value,
-        pub state: DidDocument,
-        proof: Vec<serde_json::Value>,
+    // Create default TSP VID
+    let mut vid = OwnedVid::bind(webvh_url.to_string(), transport);
+
+    // Generate the DID Document based on the VID
+    let did_doc = vid_to_did_document(vid.vid());
+
+    // Create the WebVH UpdateKey
+    let signing_key = ed25519_dalek::SigningKey::generate(&mut rand_core::OsRng);
+
+    let sigkey_private = signing_key.to_bytes().to_vec();
+    let sigkey_public = signing_key.verifying_key().to_bytes();
+
+    let mut webvh_signing_key = Secret::from_str(
+        "webvh-signing-key",
+        &json!({
+            "crv": "Ed25519",
+            "kty": "OKP",
+            "x": Base64UrlUnpadded::encode_string(&sigkey_public),
+            "d":Base64UrlUnpadded::encode_string(&sigkey_private),
+        }),
+    )
+    .map_err(|e| VidError::InternalError(format!("Couldn't create WebVH UpdateKey: {}", e)))?;
+
+    let webvh_signing_key_public = webvh_signing_key.get_public_keymultibase().map_err(|e| {
+        VidError::InternalError(format!(
+            "WebVH signing key couldn't get multibase key: {}",
+            e
+        ))
+    })?;
+    webvh_signing_key.id = [
+        "did:key:",
+        &webvh_signing_key_public,
+        "#",
+        &webvh_signing_key_public,
+    ]
+    .concat(); // Set the Key ID correctly (expects did:key:multikeyhash)
+
+    // WebVH Parameters
+    let params = Parameters::new()
+        .with_update_keys(vec![webvh_signing_key_public.clone()])
+        .build();
+
+    // Create the first WebVH Log Entry
+    let mut webvh = DIDWebVHState::default();
+    let log_entry = webvh.create_log_entry(None, &did_doc, &params, &webvh_signing_key)?;
+
+    // Get the updated webvh ID
+    vid.vid.id = log_entry
+        .get_state()
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or(VidError::InternalError(
+            "Couldn't get DID ID from WebVH Log Entry".to_string(),
+        ))?
+        .to_string();
+
+    let genesis_log_entry = serde_json::to_value(&log_entry.log_entry)?;
+
+    Ok((
+        vid,
+        genesis_log_entry,
+        webvh_signing_key_public,
+        webvh_signing_key.get_private_bytes().to_vec(),
+    ))
+}
+
+// Create a new LogEntry record for an existing WebVH DID
+// updated_document: The updated DID Document to use
+// update_key: The WebVH LogENtry update key that is authorised to make the update
+pub async fn update(
+    updated_document: serde_json::Value,
+    update_key: &[u8; 32],
+) -> Result<LogEntry, VidError> {
+    // Create a valid UpdateKey to use
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(update_key);
+
+    let sigkey_private = signing_key.to_bytes().to_vec();
+    let sigkey_public = signing_key.verifying_key().to_bytes();
+
+    let mut webvh_signing_key = Secret::from_str(
+        "webvh-signing-key",
+        &json!({
+            "crv": "Ed25519",
+            "kty": "OKP",
+            "x": Base64UrlUnpadded::encode_string(&sigkey_public),
+            "d":Base64UrlUnpadded::encode_string(&sigkey_private),
+        }),
+    )
+    .map_err(|e| VidError::InternalError(format!("Couldn't create WebVH UpdateKey: {}", e)))?;
+    let webvh_signing_key_public = webvh_signing_key.get_public_keymultibase().map_err(|e| {
+        VidError::InternalError(format!(
+            "WebVH signing key couldn't get multibase key: {}",
+            e
+        ))
+    })?;
+    webvh_signing_key.id = [
+        "did:key:",
+        &webvh_signing_key_public,
+        "#",
+        &webvh_signing_key_public,
+    ]
+    .concat();
+
+    // Get the DID ID
+    let did_id =
+        updated_document
+            .get("id")
+            .and_then(|v| v.as_str())
+            .ok_or(VidError::InternalError(
+                "Couldn't get DID ID from updated DID Document".to_string(),
+            ))?;
+
+    // Resolve the current DID WebVH State - gets context and is used to append the new LogEntry
+    let mut webvh = DIDWebVHState::default();
+    webvh.resolve(did_id, None).await?;
+
+    // Create the new Log Entry
+    let log_entry = webvh.create_log_entry(
+        None,
+        &updated_document,
+        &Parameters::default(),
+        &webvh_signing_key,
+    )?;
+
+    let mut proofs = Vec::new();
+    for proof in log_entry.log_entry.get_proofs() {
+        proofs.push(json!(proof));
     }
 
-    pub async fn create_webvh(
-        did_name: &str,
-        transport: Url,
-    ) -> Result<(OwnedVid, serde_json::Value, String, Vec<u8>), VidError> {
-        let tsp_mod = load_python()?;
-
-        let placeholder =
-            Python::with_gil(|py| -> String { placeholder_id(py, &tsp_mod, did_name) });
-
-        let transport = transport
-            .as_str()
-            .replace("[vid_placeholder]", &placeholder.replace("%", "%25"));
-
-        let mut vid = OwnedVid::bind(&placeholder, transport.parse()?);
-        let genesis_document = vid_to_did_document(vid.vid());
-
-        let (genesis_doc, update_kid, update_key) = Python::with_gil(|py| -> PyResult<_> {
-            let (genesis_doc, update_kid, update_key) =
-                provision(tsp_mod.bind(py), genesis_document)?;
-            println!("{genesis_doc}");
-            let genesis_doc: HistoryEntry =
-                serde_json::from_str(&genesis_doc).expect("Invalid genesis doc");
-
-            Ok((genesis_doc, update_kid, update_key))
-        })?;
-
-        let id = genesis_doc.state.id.clone();
-        // TODO propper jsonl support.
-        //  Currently, we just rely on the fact that serde_json will serialize it to a single line
-        let history = serde_json::to_value(&genesis_doc).expect("Cannot serialize history");
-        let new_vid = resolve_document(genesis_doc.state, &id)?;
-
-        vid.vid = new_vid;
-
-        Ok((vid, history, update_kid, update_key))
-    }
-
-    pub async fn update(
-        updated_document: serde_json::Value,
-        update_key: &[u8],
-    ) -> Result<HistoryEntry, VidError> {
-        let tsp_mod = load_python()?;
-
-        let fut = Python::with_gil(|py| -> PyResult<_> {
-            pyo3_async_runtimes::tokio::into_future(update_future(
-                tsp_mod.bind(py),
-                updated_document,
-                update_key,
-            )?)
-        })?;
-
-        let res = fut.await?;
-
-        Ok(Python::with_gil(|py| -> PyResult<_> {
-            let updated_history: String = res.extract(py)?;
-            let updated_history =
-                serde_json::from_str(&updated_history).expect("Invalid history entry");
-            Ok(updated_history)
-        })?)
-    }
-
-    fn update_future<'py>(
-        tsp_mod: &Bound<'py, PyAny>,
-        updated_document: serde_json::Value,
-        update_key: &[u8],
-    ) -> PyResult<Bound<'py, PyAny>> {
-        tsp_mod.call_method1(
-            "tsp_update_did",
-            (to_pyobject(tsp_mod.py(), &updated_document)?, update_key),
-        )
-    }
-
-    fn provision(
-        tsp_mod: &Bound<PyAny>,
-        genesis_document: serde_json::Value,
-    ) -> PyResult<(String, String, Vec<u8>)> {
-        tsp_mod
-            .call_method1(
-                "tsp_provision_did",
-                (to_pyobject(tsp_mod.py(), &genesis_document)?,),
-            )?
-            .extract()
-    }
-
-    fn placeholder_id(py: Python, tsp_mod: &PyObject, domain: &str) -> String {
-        let placeholder_id: String = tsp_mod
-            .call_method1(py, "placeholder_id", (domain,))
-            .expect("Cannot create placeholder ID")
-            .extract(py)
-            .expect("Cannot extract placeholder ID");
-        placeholder_id
-    }
-
-    fn load_python() -> PyResult<PyObject> {
-        Python::with_gil(|py| -> PyResult<PyObject> {
-            Ok(PyModule::from_code(
-                py,
-                c_str!(include_str!("tsp_provision_webvh.py")),
-                c_str!("tsp_provision_webvh.py"),
-                c_str!("tsp_provision_webvh"),
-            )?
-            .into())
-        })
-    }
+    // Create new HistoryEntry
+    Ok(log_entry.log_entry.clone())
 }
