@@ -1,4 +1,4 @@
-#[cfg(feature = "async")]
+#[cfg(feature = "resolve")]
 use didwebvh_rs::DIDWebVHError;
 
 #[derive(thiserror::Error, Debug)]
@@ -24,12 +24,12 @@ pub enum VidError {
     Verification(String),
     #[error("invalid URL")]
     Url(#[from] url::ParseError),
-    #[cfg(feature = "async")]
+    #[cfg(feature = "resolve")]
     #[error("WebVH DID resolution failed: {0}")]
     WebVHError(String),
 }
 
-#[cfg(feature = "async")]
+#[cfg(feature = "resolve")]
 // Convert WebVH Errors to VidError
 impl From<DIDWebVHError> for VidError {
     fn from(err: DIDWebVHError) -> Self {

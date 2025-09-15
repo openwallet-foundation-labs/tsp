@@ -35,9 +35,8 @@ async = [
   "dep:rustls-native-certs",
   "dep:rustls-pemfile",
   "dep:quinn",
-  "dep:didwebvh-rs"
 ]
-resolve = ["serialize", "dep:reqwest"]
+resolve = ["serialize", "dep:reqwest", "dep:didwebvh-rs"]
 serialize = ["dep:serde", "dep:serde_with"]
 use_local_certificate = []
 postgres = ["async", "aries-askar/postgres"]

@@ -16,6 +16,7 @@ pub mod did;
 
 pub mod error;
 
+#[cfg(feature = "resolve")]
 pub mod resolve;
 
 #[cfg(feature = "resolve")]
