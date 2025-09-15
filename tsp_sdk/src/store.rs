@@ -716,10 +716,9 @@ impl SecureStore {
                             sender: ref inner_sender,
                             ..
                         } = received_message
+                            && self.get_vid(inner_sender)?.get_parent_vid() == Some(&sender)
                         {
-                            if self.get_vid(inner_sender)?.get_parent_vid() == Some(&sender) {
-                                message_type.crypto_type = crypto_type;
-                            }
+                            message_type.crypto_type = crypto_type;
                         }
 
                         Ok(received_message)

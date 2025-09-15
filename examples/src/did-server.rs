@@ -390,12 +390,12 @@ async fn list_all_ids(domain: String) -> Result<Vec<String>, Box<dyn std::error:
     let mut dir = tokio::fs::read_dir("data").await?;
     let mut dids = Vec::new();
 
-    while let Some(entry) = dir.next_entry().await? {
-        if let Some(filename) = entry.file_name().to_str() {
-            if let Some(name) = filename.strip_suffix(".json") {
-                let did = format!("did:web:{domain}:endpoint:{name}");
-                dids.push(did);
-            }
+    while let Some(entry) = dir.next_entry().await?
+        && let Some(filename) = entry.file_name().to_str()
+    {
+        if let Some(name) = filename.strip_suffix(".json") {
+            let did = format!("did:web:{domain}:endpoint:{name}");
+            dids.push(did);
         }
     }
 

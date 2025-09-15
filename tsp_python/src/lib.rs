@@ -111,9 +111,7 @@ impl Store {
         alias: Option<String>,
         metadata: Option<Bound<'py, PyDict>>,
     ) -> PyResult<()> {
-        let metadata = metadata
-            .map(|m| pythonize::depythonize(&m))
-            .transpose()?;
+        let metadata = metadata.map(|m| pythonize::depythonize(&m)).transpose()?;
 
         self.inner
             .add_private_vid(vid.0.clone(), metadata)
@@ -139,9 +137,7 @@ impl Store {
         alias: Option<String>,
         metadata: Option<Bound<'py, PyDict>>,
     ) -> PyResult<()> {
-        let metadata = metadata
-            .map(|m| pythonize::depythonize(&m))
-            .transpose()?;
+        let metadata = metadata.map(|m| pythonize::depythonize(&m)).transpose()?;
 
         self.inner
             .add_verified_vid(vid.0.clone(), metadata)
