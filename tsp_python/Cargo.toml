@@ -11,8 +11,6 @@ publish = true
 crate-type = ["cdylib"]
 
 [features]
-default = ["create-webvh"]
-create-webvh = ["tsp_sdk/create-webvh"]
 pq = ["tsp_sdk/pq"]
 
 [dependencies]

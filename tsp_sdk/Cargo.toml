@@ -21,26 +21,25 @@ demo = []
 nacl = ["essr"]
 pq = ["dep:hpke_pq", "dep:ml-dsa", "essr"]
 async = [
-    "resolve",
-    "aries-askar",
-    "dep:async-stream",
-    "dep:futures",
-    "dep:tokio",
-    "dep:tokio-tungstenite",
-    "dep:tokio-util",
-    "dep:tracing",
-    "dep:rustls",
-    "dep:tokio-rustls",
-    "dep:rustls-pki-types",
-    "dep:rustls-native-certs",
-    "dep:rustls-pemfile",
-    "dep:quinn",
+  "resolve",
+  "aries-askar",
+  "dep:async-stream",
+  "dep:futures",
+  "dep:tokio",
+  "dep:tokio-tungstenite",
+  "dep:tokio-util",
+  "dep:tracing",
+  "dep:rustls",
+  "dep:tokio-rustls",
+  "dep:rustls-pki-types",
+  "dep:rustls-native-certs",
+  "dep:rustls-pemfile",
+  "dep:quinn",
 ]
-resolve = ["serialize", "dep:reqwest", "dep:didwebvh-resolver"]
+resolve = ["serialize", "dep:reqwest", "dep:didwebvh-rs"]
 serialize = ["dep:serde", "dep:serde_with"]
 use_local_certificate = []
 postgres = ["async", "aries-askar/postgres"]
-create-webvh = ["dep:pyo3", "dep:serde-pyobject", "dep:pyo3-async-runtimes"]
 
 [dependencies]
 # generic
@@ -88,13 +87,13 @@ arbitrary = { workspace = true, optional = true }
 async-trait = "0.1.88"
 
 # webvh
-pyo3 = { workspace = true, features = ["auto-initialize"], optional = true }
-serde-pyobject = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
+didwebvh-rs = { workspace = true, optional = true }
 
 # not used directly, but we need to configure
 # the JS feature in this transitive dependency
 # required for compiling to wasm32-unknown-unknown
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3.3", features = ["wasm_js"] }
 [dependencies.getrandom]
 version = "0.2"
 features = ["js"]
@@ -103,6 +102,3 @@ features = ["js"]
 serial_test = { version = "3.0" }
 arbitrary = { workspace = true }
 wasm-bindgen-test = "0.3.0"
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-didwebvh-resolver = { workspace = true, optional = true }

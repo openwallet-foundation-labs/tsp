@@ -612,7 +612,6 @@ impl OwnedVid {
         OwnedVid(tsp_sdk::OwnedVid::new_did_peer(url.parse().unwrap()))
     }
 
-    #[cfg(feature = "create-webvh")]
     #[staticmethod]
     fn new_did_webvh(did_name: String, transport: String) -> PyResult<(Self, String)> {
         wait_for(async {

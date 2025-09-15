@@ -389,7 +389,7 @@ pub fn vid_to_did_document(vid: &impl VerifiedVid) -> serde_json::Value {
             format!("{id}#encryption-key"),
         ],
         "service": [{
-            "id": "#tsp-transport",
+            "id": format!("{id}#tsp-transport"),
             "type": "TSPTransport",
             "serviceEndpoint": vid.endpoint()
         }]

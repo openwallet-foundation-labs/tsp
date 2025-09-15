@@ -2,23 +2,17 @@ use base64ct::{Base64, Base64Unpadded, Encoding};
 use bytes::BytesMut;
 use clap::{Parser, Subcommand};
 use futures::StreamExt;
-#[cfg(feature = "create-webvh")]
-use pyo3::PyResult;
 use rustls::crypto::CryptoProvider;
 use std::{ops::Deref, path::PathBuf, str::FromStr};
 use tokio::io::AsyncReadExt;
 use tracing::{debug, error, info, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-#[cfg(feature = "create-webvh")]
-use tsp_sdk::vid::{did::webvh::WebvhMetadata, vid_to_did_document};
 use tsp_sdk::{
     Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
     RelationshipStatus, SecureStorage, VerifiedVid, Vid,
-    cesr::{
-        color_format, {self},
-    },
+    cesr::{self, color_format},
     definitions::Digest,
-    vid::{VidError, verify_vid},
+    vid::{VidError, did::webvh::WebvhMetadata, verify_vid, vid_to_did_document},
 };
 use url::Url;
 
@@ -27,7 +21,6 @@ enum DidType {
     #[default]
     Web,
     Peer,
-    #[cfg(feature = "create-webvh")]
     Webvh,
 }
 
@@ -38,7 +31,6 @@ impl FromStr for DidType {
         match s {
             "web" => Ok(DidType::Web),
             "peer" => Ok(DidType::Peer),
-            #[cfg(feature = "create-webvh")]
             "webvh" => Ok(DidType::Webvh),
             _ => Err(format!("invalid did type: {s}")),
         }
@@ -108,7 +100,6 @@ enum Commands {
         )]
         tcp: Option<String>,
     },
-    #[cfg(feature = "create-webvh")]
     #[command(about = "Update the DID:WEBVH. Currently, only a rotation of TSP keys is supported")]
     Update {
         #[arg(help = "VID or Alias to update")]
@@ -396,7 +387,6 @@ async fn run() -> Result<(), Error> {
                     info!("created peer identity {}", private_vid.identifier());
                     private_vid
                 }
-                #[cfg(feature = "create-webvh")]
                 DidType::Webvh => {
                     let (private_vid, history, update_kid, update_key) =
                         tsp_sdk::vid::did::webvh::create_webvh(
@@ -471,7 +461,6 @@ async fn run() -> Result<(), Error> {
                 .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
             vid_wallet.add_private_vid(private_vid.clone(), metadata)?;
         }
-        #[cfg(feature = "create-webvh")]
         Commands::Update { vid } => {
             let (_, _, keys) = vid_wallet.export()?;
             let vid = vid_wallet.try_resolve_alias(&vid)?;
@@ -490,9 +479,15 @@ async fn run() -> Result<(), Error> {
             let update_key = keys
                 .get(&update_keys[0])
                 .expect("Cannot find update keys to update the DID");
-            let history_entry =
-                tsp_sdk::vid::did::webvh::update(vid_to_did_document(vid.vid()), update_key)
-                    .await?;
+            let history_entry = tsp_sdk::vid::did::webvh::update(
+                vid_to_did_document(vid.vid()),
+                update_key.first_chunk::<32>().ok_or_else(|| {
+                    Error::Vid(VidError::WebVHError(
+                        "Couldn't get WebVH UpdateKey Secret bytes".to_string(),
+                    ))
+                })?,
+            )
+            .await?;
 
             client
                 .put(format!(
@@ -1220,12 +1215,8 @@ fn show_relations(vids: &[ExportVid], vid: Option<String>, aliases: &Aliases) ->
     Ok(())
 }
 
-#[cfg(not(feature = "create-webvh"))]
-type PyResult<T> = Result<T, ()>;
-
-#[cfg_attr(not(feature = "create-webvh"), tokio::main)]
-#[cfg_attr(feature = "create-webvh", pyo3_async_runtimes::tokio::main)]
-async fn main() -> PyResult<()> {
+#[tokio::main]
+async fn main() -> Result<(), ()> {
     if let Err(e) = run().await {
         eprintln!("{e}");
         std::process::exit(1);

@@ -14,6 +14,7 @@ cargo version
 ```
 
 Output:
+
 ```
 cargo 1.86.0 (adf9b6ad1 2025-02-28) # for example
 ```
@@ -24,10 +25,6 @@ Installing the TSP CLI program:
 cargo install --git https://github.com/openwallet-foundation-labs/tsp.git examples --bin tsp
 ```
 
-If you want to manage DIDs of type WebVH, you have to compile the CLI with the feature flag `create-webvh`.
-Simply add `--features create-webvh` to the above command.
-You can always verify WebVH, even without enabling the feature flag.
-
 You should be able to run `tsp`:
 
 ```sh
@@ -35,6 +32,7 @@ tsp
 ```
 
 Output:
+
 ```
 Send and receive TSP messages
 
