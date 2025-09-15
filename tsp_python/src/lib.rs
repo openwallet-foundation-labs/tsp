@@ -112,7 +112,7 @@ impl Store {
         metadata: Option<Bound<'py, PyDict>>,
     ) -> PyResult<()> {
         let metadata = metadata
-            .map(|m| serde_pyobject::from_pyobject(m))
+            .map(|m| pythonize::depythonize(&m))
             .transpose()?;
 
         self.inner
@@ -140,7 +140,7 @@ impl Store {
         metadata: Option<Bound<'py, PyDict>>,
     ) -> PyResult<()> {
         let metadata = metadata
-            .map(|m| serde_pyobject::from_pyobject(m))
+            .map(|m| pythonize::depythonize(&m))
             .transpose()?;
 
         self.inner
