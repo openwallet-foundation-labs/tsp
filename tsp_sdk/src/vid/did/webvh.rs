@@ -198,3 +198,99 @@ pub async fn update(
     // Create new HistoryEntry
     Ok(log_entry.log_entry.clone())
 }
+
+#[cfg(feature = "async")]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use url::Url;
+
+    #[tokio::test]
+    async fn test_create_webvh_success() {
+        // 1. Arrange
+        let did_path = "example/endpoint/alice";
+        let transport_url = Url::parse("tcp://example.com:1234").unwrap();
+
+        // 2. Act
+        let result = create_webvh(did_path, transport_url).await;
+        assert!(result.is_ok());
+
+        let (_vid, genesis_log_entry, webvh_update_key_public, private_key_bytes) = result.unwrap();
+        // 3. Assert
+        assert!(genesis_log_entry.is_object());
+
+        let version_id = genesis_log_entry["versionId"].as_str().unwrap();
+        assert!(version_id.starts_with("1-"));
+
+        // Check the DID ID in the state
+        let did_id_from_state = genesis_log_entry["state"]["id"].as_str().unwrap();
+        let scid = genesis_log_entry["parameters"]["scid"].as_str().unwrap();
+        let expected_did_id = format!("did:webvh:{scid}:{}", did_path.replace("/", ":"));
+        assert_eq!(
+            did_id_from_state, expected_did_id,
+            "DID ID in state is incorrect"
+        );
+
+        // Check the updateKeys in parameters
+        let update_keys = genesis_log_entry["parameters"]["updateKeys"]
+            .as_array()
+            .unwrap();
+        assert_eq!(
+            update_keys.len(),
+            1,
+            "There should be exactly one update key"
+        );
+        assert_eq!(
+            update_keys[0].as_str().unwrap(),
+            webvh_update_key_public,
+            "The update key in parameters does not match the returned public key"
+        );
+
+        // Check the proof's verificationMethod
+        let verification_method = genesis_log_entry["proof"][0]["verificationMethod"]
+            .as_str()
+            .unwrap();
+        let expected_vm = format!(
+            "did:key:{}#{}",
+            webvh_update_key_public, webvh_update_key_public
+        );
+        assert_eq!(
+            verification_method, expected_vm,
+            "Verification method in proof is incorrect"
+        );
+
+        assert!(
+            webvh_update_key_public.starts_with('z'),
+            "Public key should be in multibase format starting with 'z'"
+        );
+
+        // Re-derive the public key from the returned private key and verify they match.
+        let key_array: [u8; 32] = private_key_bytes
+            .clone()
+            .try_into()
+            .expect("private key must be 32 bytes");
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&key_array);
+        let verifying_key = signing_key.verifying_key();
+
+        // Create a Secret to get the same multibase encoding as used in the main code
+        let rederived_secret = Secret::from_str(
+            "test-key",
+            &json!({
+                "crv": "Ed25519",
+                "kty": "OKP",
+                "x": Base64UrlUnpadded::encode_string(verifying_key.as_bytes()),
+                "d": Base64UrlUnpadded::encode_string(&private_key_bytes),
+            }),
+        )
+        .expect("Failed to create test secret");
+
+        let rederived_public_key_multibase = rederived_secret
+            .get_public_keymultibase()
+            .expect("Failed to get multibase key");
+
+        assert_eq!(
+            webvh_update_key_public, rederived_public_key_multibase,
+            "Returned public key does not match the one re-derived from the private key"
+        );
+    }
+}
