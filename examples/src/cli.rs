@@ -460,6 +460,7 @@ async fn run() -> Result<(), Error> {
                 .await
                 .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
             vid_wallet.add_private_vid(private_vid.clone(), metadata)?;
+            info!("created VID {}", private_vid.identifier());
         }
         Commands::Update { vid } => {
             let (_, _, keys) = vid_wallet.export()?;
