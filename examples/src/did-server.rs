@@ -190,6 +190,7 @@ async fn create_identity(
     );
 
     let key = private_vid.identifier();
+    let resolve_url = tsp_sdk::vid::did::get_resolve_url(&key).unwrap();
 
     if let Err(e) = write_id(
         Identity {
@@ -208,7 +209,10 @@ async fn create_identity(
     tracing::debug!("created identity {key}");
     state.announce_new_did(key).await;
 
-    Json(private_vid).into_response()
+    let mut response = serde_json::to_value(private_vid).unwrap();
+    response.as_object_mut().unwrap().insert("resolveUrl".to_string(), resolve_url.into());
+
+    Json(response).into_response()
 }
 
 /// Get the DID document of an endpoint
