@@ -46,13 +46,6 @@ struct Cli {
     domain: String,
 }
 
-/// Identity struct, used to store the DID document and VID of an endpoint
-#[derive(Debug, Serialize, Deserialize)]
-struct Identity {
-    did_doc: serde_json::Value,
-    vid: Vid,
-}
-
 /// Application state, used to store the identities and the broadcast channel
 struct AppState {
     domain: String,

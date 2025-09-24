@@ -1,9 +1,9 @@
 use axum::{
-    Form, Json, Router,
-    extract::{DefaultBodyLimit, Path, State, WebSocketUpgrade, ws::Message},
-    http::{Method, StatusCode, header},
-    response::{Html, IntoResponse, Response},
+    extract::{ws::Message, DefaultBodyLimit, Path, State, WebSocketUpgrade}, http::{header, Method, StatusCode}, response::{Html, IntoResponse, Response},
     routing::{get, post},
+    Form,
+    Json,
+    Router,
 };
 use clap::Parser;
 use futures::{SinkExt, StreamExt};
@@ -13,7 +13,7 @@ use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::{
     signal,
-    sync::{RwLock, broadcast},
+    sync::{broadcast, RwLock},
 };
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -210,7 +210,10 @@ async fn create_identity(
     state.announce_new_did(key).await;
 
     let mut response = serde_json::to_value(private_vid).unwrap();
-    response.as_object_mut().unwrap().insert("resolveUrl".to_string(), resolve_url.into());
+    response
+        .as_object_mut()
+        .unwrap()
+        .insert("resolveUrl".to_string(), resolve_url.to_string().into());
 
     Json(response).into_response()
 }
