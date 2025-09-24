@@ -176,6 +176,7 @@ impl SecureStorage for AskarSecureStorage {
                 }
             }
 
+            #[allow(clippy::collapsible_if)]
             if let Ok(data) = serde_json::to_string(&Metadata {
                 id: id.to_string(),
                 enc_key_type: export.enc_key_type,
@@ -205,8 +206,8 @@ impl SecureStorage for AskarSecureStorage {
             }
         }
 
-        if let Ok(aliases) = serde_json::to_value(&aliases) {
-            if let Err(e) = conn
+        if let Ok(aliases) = serde_json::to_value(&aliases)
+            && let Err(e) = conn
                 .insert(
                     "extra_data",
                     "aliases",
@@ -215,25 +216,24 @@ impl SecureStorage for AskarSecureStorage {
                     None,
                 )
                 .await
-            {
-                if e.kind() == ErrorKind::Duplicate {
-                    conn.update(
-                        EntryOperation::Replace,
-                        "extra_data",
-                        "aliases",
-                        Some(aliases.to_string().as_bytes()),
-                        None,
-                        None,
-                    )
-                    .await?;
-                } else {
-                    Err(Error::from(e))?;
-                }
+        {
+            if e.kind() == ErrorKind::Duplicate {
+                conn.update(
+                    EntryOperation::Replace,
+                    "extra_data",
+                    "aliases",
+                    Some(aliases.to_string().as_bytes()),
+                    None,
+                    None,
+                )
+                .await?;
+            } else {
+                Err(Error::from(e))?;
             }
         }
 
-        if let Ok(update_keys) = serde_json::to_value(&keys) {
-            if let Err(e) = conn
+        if let Ok(update_keys) = serde_json::to_value(&keys)
+            && let Err(e) = conn
                 .insert(
                     "webvh_update_keys",
                     "all",
@@ -242,20 +242,19 @@ impl SecureStorage for AskarSecureStorage {
                     None,
                 )
                 .await
-            {
-                if e.kind() == ErrorKind::Duplicate {
-                    conn.update(
-                        EntryOperation::Replace,
-                        "webvh_update_keys",
-                        "all",
-                        Some(update_keys.to_string().as_bytes()),
-                        None,
-                        None,
-                    )
-                    .await?;
-                } else {
-                    Err(Error::from(e))?;
-                }
+        {
+            if e.kind() == ErrorKind::Duplicate {
+                conn.update(
+                    EntryOperation::Replace,
+                    "webvh_update_keys",
+                    "all",
+                    Some(update_keys.to_string().as_bytes()),
+                    None,
+                    None,
+                )
+                .await?;
+            } else {
+                Err(Error::from(e))?;
             }
         }
 

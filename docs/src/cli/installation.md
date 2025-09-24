@@ -16,7 +16,7 @@ cargo version
 Output:
 
 ```
-cargo 1.86.0 (adf9b6ad1 2025-02-28) # for example
+cargo 1.89.0 (c24e10642 2025-06-23) # for example
 ```
 
 Installing the TSP CLI program:
@@ -56,15 +56,17 @@ Commands:
   cancel      break up a relationship
   refer       send an identity referral
   publish     publish a new own identity
+  secret      manage custom secret data
   help        Print this message or the help of the given subcommand(s)
 
 Options:
   -w, --wallet <WALLET>          Wallet name to use [default: wallet]
       --password <PASSWORD>      Password used to encrypt the wallet [default: unsecure]
-  -s, --server <SERVER>          Test server domain [default: demo.teaspoon.world]
+  -s, --server <SERVER>          Test server domain [default: p.teaspoon.world]
       --did-server <DID_SERVER>  DID server domain [default: did.teaspoon.world]
       --verbose                  
   -y, --yes                      Always answer yes to any prompts
   -h, --help                     Print help
   -V, --version                  Print version
+
 ```
