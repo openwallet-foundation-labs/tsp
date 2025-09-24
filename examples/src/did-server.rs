@@ -257,9 +257,8 @@ async fn get_did_history(Path(name): Path<String>) -> Response {
     }
 }
 
-async fn get_endpoints(State(state): State<Arc<AppState>>) -> Response {
-    let domain = state.domain.replace(":", "%3A");
-    match list_all_ids(domain).await {
+async fn get_endpoints() -> Response {
+    match list_all_ids().await {
         Ok(dids) => Json(dids).into_response(),
         Err(e) => {
             tracing::error!("Could not load endpoints: {}", e);
@@ -393,16 +392,19 @@ async fn read_history(name: &str) -> Result<String, Box<dyn std::error::Error>> 
     Ok(history)
 }
 
-async fn list_all_ids(domain: String) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+async fn list_all_ids() -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let mut dir = tokio::fs::read_dir("data").await?;
     let mut dids = Vec::new();
 
     while let Some(entry) = dir.next_entry().await?
         && let Some(filename) = entry.file_name().to_str()
     {
-        if let Some(name) = filename.strip_suffix(".json") {
-            let did = format!("did:web:{domain}:endpoint:{name}");
-            dids.push(did);
+        if filename.ends_with(".json") {
+            let contents = tokio::fs::read_to_string(entry.path()).await?;
+
+            // Read the JSON contents of the file as an instance of `User`.
+            let vid: serde_json::Value = serde_json::from_str(&contents)?;
+            dids.push(vid.get("vid").unwrap().get("id").unwrap().to_string());
         }
     }
 
