@@ -18,6 +18,8 @@ pub enum DecodeError {
     InvalidCryptoType,
     InvalidSignatureType,
     MissingHops,
+    UnknownCrypto,
+    InvalidCrypto,
 }
 
 impl std::fmt::Display for EncodeError {

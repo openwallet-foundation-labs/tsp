@@ -54,9 +54,11 @@ where
         VidSignatureKeyType::MlDsa65 => SignatureType::MlDsa65,
     };
 
+    let crypto_type = Kem::crypto_type();
+
     crate::cesr::encode_ets_envelope(
         crate::cesr::Envelope {
-            crypto_type: Kem::crypto_type(),
+            crypto_type,
             signature_type,
             sender: sender.identifier(),
             receiver: Some(receiver.identifier()),
@@ -162,7 +164,7 @@ where
     cesr_message.extend(encapped_key.to_bytes());
 
     // encode and append the ciphertext to the envelope data
-    crate::cesr::encode_ciphertext(&cesr_message, &mut data)?;
+    crate::cesr::encode_ciphertext(&cesr_message, crypto_type, &mut data)?;
 
     // create and append signature
     match sender.signature_key_type() {
