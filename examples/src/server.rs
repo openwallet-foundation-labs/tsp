@@ -500,10 +500,10 @@ async fn websocket(stream: WebSocket, state: Arc<AppState>) {
                     .insert(identity.identifier().to_string(), identity);
             }
 
-            if let Ok(encoded) = serde_json::from_str::<EncodedMessage>(&incoming_message) {
-                if let Ok(original) = Base64UrlUnpadded::decode_vec(&encoded.message) {
-                    let _ = state.tx.send((encoded.sender, encoded.receiver, original));
-                }
+            if let Ok(encoded) = serde_json::from_str::<EncodedMessage>(&incoming_message)
+                && let Ok(original) = Base64UrlUnpadded::decode_vec(&encoded.message)
+            {
+                let _ = state.tx.send((encoded.sender, encoded.receiver, original));
             }
         }
     });

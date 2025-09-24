@@ -20,7 +20,6 @@
   - [JavaScript bindings]()
 - [Transport layers](./transport.md)
 - [Custom VIDs](custom-vids.md)
-  - [WebVH](webvh.md)
 - [Custom secure storage](custom-secure-storage.md)
 - [Benchmark](benchmark.md)
 

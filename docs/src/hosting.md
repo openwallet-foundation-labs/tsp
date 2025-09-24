@@ -32,7 +32,7 @@ or rely on pulling them [from GitHub](https://github.com/orgs/openwallet-foundat
 To build the images yourself, use the `--target` flag to specify which image to build.
 
 ```bash
-docker build --target did-web . -t your-custom-tag/did-web:version
+docker build --target did-server . -t your-custom-tag/did-server:version
 docker build --target server . -t your-custom-tag/server:version
 docker build --target intermediary . -t your-custom-tag/intermediary:version
 ```
