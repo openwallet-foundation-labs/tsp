@@ -1,9 +1,9 @@
 use axum::{
-    extract::{ws::Message, DefaultBodyLimit, Path, State, WebSocketUpgrade}, http::{header, Method, StatusCode}, response::{Html, IntoResponse, Response},
+    Form, Json, Router,
+    extract::{DefaultBodyLimit, Path, State, WebSocketUpgrade, ws::Message},
+    http::{Method, StatusCode, header},
+    response::{Html, IntoResponse, Response},
     routing::{get, post},
-    Form,
-    Json,
-    Router,
 };
 use clap::Parser;
 use futures::{SinkExt, StreamExt};
@@ -13,7 +13,7 @@ use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::{
     signal,
-    sync::{broadcast, RwLock},
+    sync::{RwLock, broadcast},
 };
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -190,7 +190,7 @@ async fn create_identity(
     );
 
     let key = private_vid.identifier();
-    let resolve_url = tsp_sdk::vid::did::get_resolve_url(&key).unwrap();
+    let resolve_url = tsp_sdk::vid::did::get_resolve_url(key).unwrap();
 
     if let Err(e) = write_id(
         Identity {

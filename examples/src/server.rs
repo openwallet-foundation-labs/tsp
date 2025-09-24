@@ -13,7 +13,7 @@ use base64ct::{Base64UrlUnpadded, Encoding};
 use clap::Parser;
 use core::time;
 use futures::{sink::SinkExt, stream::StreamExt};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 use std::{
     collections::HashMap,
