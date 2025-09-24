@@ -32,6 +32,9 @@ pub(crate) fn seal(
     let mut data = Vec::with_capacity(64);
     crate::cesr::encode_ets_envelope(
         crate::cesr::Envelope {
+            #[cfg(feature = "essr")]
+            crypto_type: CryptoType::NaclEssr,
+            #[cfg(not(feature = "essr"))]
             crypto_type: CryptoType::NaclAuth,
             signature_type: SignatureType::Ed25519,
             sender: sender.identifier(),
