@@ -122,7 +122,15 @@ pub(crate) fn seal(
     cesr_message.extend(nonce);
 
     // encode and append the ciphertext to the envelope data
-    crate::cesr::encode_ciphertext(&cesr_message, &mut data)?;
+    crate::cesr::encode_ciphertext(
+        &cesr_message,
+        if cfg!(feature = "essr") {
+            CryptoType::NaclEssr
+        } else {
+            CryptoType::NaclAuth
+        },
+        &mut data,
+    )?;
 
     // create and append signature
     match sender.signature_key_type() {
