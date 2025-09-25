@@ -29,13 +29,13 @@ jobs:
       matrix:
         features:
           - "nacl"
-          - "pq"
+          - ""
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: |
-          cargo test --features ${{ matrix.features }}
+          cargo test --features "${{ matrix.features }}"
 
   cargo-deny:
     runs-on: ubuntu-latest

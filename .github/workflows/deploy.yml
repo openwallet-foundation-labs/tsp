@@ -33,7 +33,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: true
-          build-args: "FEATURE_FLAGS=pq"
+#          build-args: "FEATURE_FLAGS=pq"
           tags: "ghcr.io/openwallet-foundation-labs/tsp/demo-intermediary:${{ env.tag }}"
           target: intermediary
           cache-from: type=gha
@@ -42,7 +42,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: true
-          build-args: "FEATURE_FLAGS=pq"
+#          build-args: "FEATURE_FLAGS=pq"
           tags: "ghcr.io/openwallet-foundation-labs/tsp/demo-server:${{ env.tag }}"
           target: server
           cache-from: type=gha
@@ -51,7 +51,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: true
-          build-args: "FEATURE_FLAGS=pq"
+#          build-args: "FEATURE_FLAGS=pq"
           tags: "ghcr.io/openwallet-foundation-labs/tsp/did-server:${{ env.tag }}"
           target: did-server
           cache-from: type=gha

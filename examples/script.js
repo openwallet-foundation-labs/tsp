@@ -41,6 +41,7 @@ const updateIdentities = async () => {
           ${identity.sigkey ? 'Private' : 'Public'} VID
         </h5>
         <input type="text" value="${identity.id}" class="form-control-plaintext" readonly />
+        <a href="${identity.resolveUrl}">${identity.resolveUrl}</a>
       </div>
       <ul class="list-group list-group-flush">
         ${identity.sigkey ? `
