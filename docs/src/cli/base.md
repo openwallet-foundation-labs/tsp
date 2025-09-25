@@ -1,4 +1,4 @@
-# Usage
+# Base mode
 
 ## Create a first identity
 
