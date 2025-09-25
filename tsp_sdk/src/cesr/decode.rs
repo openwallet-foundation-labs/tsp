@@ -168,22 +168,29 @@ pub fn decode_indexed_data<'a, const N: usize>(
 }
 
 /// Decode a frame with known identifier and size
-pub fn decode_count(identifier: u16, stream: &mut &[u8]) -> Option<u16> {
+pub fn decode_count(identifier: u16, stream: &mut &[u8]) -> Option<u32> {
     let word = extract_triplet(stream.get(0..=2)?.try_into().unwrap());
     let index = word & mask(12);
 
     let expected = (DASH << 18) | (bits(identifier, 6) << 12) | bits(index, 12);
+    let expected_long =
+        (DASH << 18) | D0 << 12 | (bits(identifier, 6) << 6) | bits(index & 0x3F, 6);
     if word == expected {
         *stream = &stream[3..];
 
-        Some(index as u16)
+        Some((index as u16).into())
+    } else if word == expected_long {
+        let next = extract_triplet(stream.get(3..=5)?.try_into().unwrap());
+        *stream = &stream[6..];
+
+        Some(index << 24 | next)
     } else {
         None
     }
 }
 
 /// Decode a frame with known identifier and size
-pub fn decode_count_mut(identifier: u16, stream: &mut [u8]) -> Option<(u16, &mut [u8])> {
+pub fn decode_count_mut(identifier: u16, stream: &mut [u8]) -> Option<(u32, &mut [u8])> {
     let mut const_stream: &[u8] = stream;
     let count = decode_count(identifier, &mut const_stream)?;
     let offset = stream.len() - const_stream.len();

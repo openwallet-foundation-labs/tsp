@@ -187,7 +187,7 @@ mod test {
             &mut data,
         ); // 1 lead byte
         encode_variable_data(42,  b"I always speak the truth. Not the whole truth, because there's no way, to say it all.", &mut data); // 2 lead bytes
-        encode_count(7, 2, &mut data);
+        encode_count(7, 2usize, &mut data);
         encode_indexed_data(5, 57, b"DON'T PANIC!", &mut data); // 0 lead bytes
         encode_indexed_data(5, 0, b"SECRET KEY", &mut data); // 2 lead bytes
 

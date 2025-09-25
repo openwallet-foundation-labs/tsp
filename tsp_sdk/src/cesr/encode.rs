@@ -68,10 +68,24 @@ pub fn encode_variable_data(
 }
 
 /// Encode a frame with known identifier and count code
-pub fn encode_count(identifier: u16, count: u16, stream: &mut impl for<'a> Extend<&'a u8>) {
-    let word = (DASH << 18) | (bits(identifier, 6) << 12) | bits(count, 12);
+pub fn encode_count(
+    identifier: u16,
+    count: impl Into<usize>,
+    stream: &mut impl for<'a> Extend<&'a u8>,
+) {
+    let count: usize = count.into();
+    let count: u32 = count.try_into().unwrap();
+    if count < 4096 {
+        let word = (DASH << 18) | (bits(identifier, 6) << 12) | bits(count, 12);
 
-    stream.extend(&u32::to_be_bytes(word)[1..]);
+        stream.extend(&u32::to_be_bytes(word)[1..]);
+    } else {
+        let word1 = (DASH << 18) | (D0 << 12) | (bits(identifier, 6) << 6) | bits(count >> 24, 6);
+        let word2 = bits(count, 24);
+
+        stream.extend(&u32::to_be_bytes(word1)[1..]);
+        stream.extend(&u32::to_be_bytes(word2)[1..]);
+    }
 }
 
 /// Encode a genus with known identifier and version
