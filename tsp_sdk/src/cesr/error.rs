@@ -4,6 +4,7 @@ pub enum EncodeError {
     ExcessiveFieldSize,
     MissingHops,
     MissingReceiver,
+    InvalidVid,
 }
 
 /// An error type to indicate something went wrong with decoding
