@@ -29,18 +29,6 @@ const TSP_S_WRAPPER: u16 = cesr!("S");
 const TSP_HOP_LIST: u16 = cesr!("J");
 const TSP_PAYLOAD: u16 = cesr!("Z");
 
-/// Constants to encode message types
-mod msgtype {
-    pub(super) const GEN_MSG: [u8; 3] = [23 << 2, 0, 0];
-    pub(super) const NEST_MSG: [u8; 3] = [23 << 2, 0, 1];
-    pub(super) const NEW_REL: [u8; 3] = [23 << 2, 1, 0];
-    pub(super) const NEW_REL_REPLY: [u8; 3] = [23 << 2, 1, 1];
-    pub(super) const NEW_NEST_REL: [u8; 3] = [23 << 2, 1, 2];
-    pub(super) const NEW_NEST_REL_REPLY: [u8; 3] = [23 << 2, 1, 3];
-    pub(super) const NEW_REFER_REL: [u8; 3] = [23 << 2, 1, 4];
-    pub(super) const THIRDP_REFER_REL: [u8; 3] = [23 << 2, 1, 5];
-    pub(super) const REL_CANCEL: [u8; 3] = [23 << 2, 1, 255];
-}
 const TSP_TMP: u32 = cesr!("X");
 
 /// Constants for payload field types
@@ -58,6 +46,10 @@ const YTSP: [u8; 3] = cesr_data("YTSP");
 
 // FIXME: a temporary code for third party referrals
 const X3RR: [u8; 3] = cesr_data("X3RR");
+
+// FIXME: a temporary code for nested relationships
+const XRNI: [u8; 3] = cesr_data("XRNI");
+const XRNA: [u8; 3] = cesr_data("XRNA");
 
 use super::{
     decode::{
@@ -305,7 +297,7 @@ pub fn encode_payload(
             message: data,
             nonce,
         } => {
-            output.extend(&msgtype::NEW_NEST_REL);
+            output.extend(&XRNI);
             checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
             encode_fixed_data(TSP_NONCE, &nonce.0, output);
         }
@@ -313,7 +305,7 @@ pub fn encode_payload(
             message: data,
             reply,
         } => {
-            output.extend(&msgtype::NEW_NEST_REL_REPLY);
+            output.extend(&XRNA);
             checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
             encode_digest(reply, output);
         }
@@ -479,7 +471,7 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
 
             Payload::DirectRelationAffirm { reply }
         }
-        msgtype::NEW_NEST_REL => {
+        XRNI => {
             let data: &mut [u8];
             (data, stream) = decode_variable_data_mut(TSP_PLAINTEXT, stream)
                 .ok_or(DecodeError::UnexpectedData)?;
@@ -493,7 +485,7 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
                 nonce: Nonce(*nonce),
             }
         }
-        msgtype::NEW_NEST_REL_REPLY => {
+        XRNA => {
             let data: &mut [u8];
             let reply;
             (data, stream) = decode_variable_data_mut(TSP_PLAINTEXT, stream)
