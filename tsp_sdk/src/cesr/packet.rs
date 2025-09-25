@@ -259,13 +259,7 @@ fn checked_encode_variable_data(
     const DATA_LIMIT: usize = 3 * (1 << 24);
 
     if payload.len() >= DATA_LIMIT {
-        // since blobs have no identifier, that information is lost on large payloads and a "blob" can only be used
-        // for TSP_PLAINTEXT or TSP_HPKEAUTH_CIPHERTEXT.
-        if identifier == TSP_PLAINTEXT || identifier == TSP_HPKEAUTH_CIPHERTEXT {
-            super::encode::encode_large_blob(payload, stream);
-        } else {
-            return Err(EncodeError::ExcessiveFieldSize);
-        }
+        return Err(EncodeError::ExcessiveFieldSize);
     } else {
         super::encode::encode_variable_data(identifier, payload, stream);
     }
@@ -273,7 +267,7 @@ fn checked_encode_variable_data(
     Ok(())
 }
 
-/// Safely decode variable data, detecting blobs
+/// Safely decode variable data
 fn checked_decode_variable_data_mut(
     identifier: u32,
     stream: &mut [u8],
@@ -285,28 +279,13 @@ fn checked_decode_variable_data_mut(
     Some((slice, stream))
 }
 
-/// Safely decode variable data, detecting blobs
+/// Safely decode variable data
 fn checked_decode_variable_data_index(
     identifier: u32,
     stream: &[u8],
     pos: &mut usize,
 ) -> Option<std::ops::Range<usize>> {
-    if let Some(result) = decode_variable_data_index(identifier, stream, pos) {
-        Some(result)
-    } else {
-        // since blobs have no identifier, that information is lost on large payloads and a "blob" can only be used
-        // for TSP_PLAINTEXT or TSP_CIPHERTEXT.
-        if identifier == TSP_PLAINTEXT || identifier == TSP_HPKEAUTH_CIPHERTEXT {
-            let mut range = super::decode::decode_large_blob_index(&stream[*pos..])?;
-            range.start += *pos;
-            range.end += *pos;
-            *pos = range.end;
-
-            Some(range)
-        } else {
-            None
-        }
-    }
+    decode_variable_data_index(identifier, stream, pos)
 }
 
 /// Encode a TSP Payload into CESR for encryption
@@ -1515,25 +1494,5 @@ mod test {
         assert_eq!(parts.sender.data.len(), 10);
         assert_eq!(parts.receiver.unwrap().data.len(), 14);
         assert_eq!(parts.ciphertext.unwrap().data.len(), 69);
-    }
-
-    #[test]
-    fn test_blob() {
-        let payload = vec![b'M'; 50];
-        let mut data = vec![];
-        checked_encode_variable_data(TSP_PLAINTEXT, &payload, &mut data).unwrap();
-        let input = &mut data[..];
-        let (source, _) = decode_variable_data_mut(TSP_PLAINTEXT, input).unwrap();
-        assert!(source.len() == 50);
-        let (source, _) = checked_decode_variable_data_mut(TSP_PLAINTEXT, input).unwrap();
-        assert!(source.len() == 50);
-
-        let payload = vec![b'M'; 60_000_000];
-        let mut data = vec![];
-        checked_encode_variable_data(TSP_PLAINTEXT, &payload, &mut data).unwrap();
-        let input = &mut data[..];
-        assert!(decode_variable_data_mut(TSP_PLAINTEXT, input).is_none());
-        let (source, _) = checked_decode_variable_data_mut(TSP_PLAINTEXT, input).unwrap();
-        assert!(source.len() == 60_000_000);
     }
 }
