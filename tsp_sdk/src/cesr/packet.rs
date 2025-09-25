@@ -345,11 +345,13 @@ pub fn encode_payload(
             encode_digest(reply, output);
         }
         Payload::NewIdentifierProposal { thread_id, new_vid } => {
+            if new_vid.as_ref().is_empty() {
+                return Err(EncodeError::InvalidVid);
+            }
             output.extend(&XRFI);
             let no_hops: [&[u8]; 0] = [];
             encode_hops(&no_hops, output)?;
             encode_fixed_data(TSP_NONCE, &[0; 32], output); // this does not need to be a secure nonce
-            //TODO
             checked_encode_variable_data(TSP_VID, new_vid.as_ref(), output)?;
             encode_digest(thread_id, output);
         }

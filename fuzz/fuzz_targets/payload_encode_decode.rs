@@ -15,6 +15,7 @@ fuzz_target!(|data: cesr::fuzzing::Wrapper| {
             cesr::Payload::RoutedMessage(route, _) => assert!(route.is_empty()),
             _ => todo!(),
         },
+        Err(cesr::error::EncodeError::InvalidVid) => {}
         _ => todo!(),
     }
 });
