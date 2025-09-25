@@ -25,6 +25,10 @@ Installing the TSP CLI program:
 cargo install --git https://github.com/openwallet-foundation-labs/tsp.git examples --bin tsp
 ```
 
+**Note:** If you clone the whole repository instead and want to build or test everything in there, you need a working Python
+installation on your system, because it includes language bindings for Python and JavaScript. Please refer to 
+the [Python Section](../python.md#tsp-python-bindings) for more information.
+
 You should be able to run `tsp`:
 
 ```sh
