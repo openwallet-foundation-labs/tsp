@@ -123,7 +123,11 @@ pub enum Payload<'a, Bytes, Vid> {
     /// A TSP message confirming a relationship
     NestedRelationAffirm { message: Bytes, reply: Digest<'a> },
     /// A TSP Message establishing a secondary relationship (parallel relationship forming)
-    NewIdentifierProposal { thread_id: Digest<'a>, new_vid: Vid },
+    NewIdentifierProposal {
+        thread_id: Digest<'a>,
+        sig_thread_id: &'a Signature,
+        new_vid: Vid,
+    },
     /// A TSP Message revealing a third party
     RelationshipReferral { referred_vid: Vid },
     /// A TSP cancellation message
@@ -313,7 +317,11 @@ pub fn encode_payload(
             checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
             encode_digest(reply, output);
         }
-        Payload::NewIdentifierProposal { thread_id, new_vid } => {
+        Payload::NewIdentifierProposal {
+            thread_id,
+            sig_thread_id,
+            new_vid,
+        } => {
             if new_vid.as_ref().is_empty() {
                 return Err(EncodeError::InvalidVid);
             }
@@ -323,6 +331,7 @@ pub fn encode_payload(
             encode_fixed_data(TSP_NONCE, &[0; 32], output); // this does not need to be a secure nonce
             checked_encode_variable_data(TSP_VID, new_vid.as_ref(), output)?;
             encode_digest(thread_id, output);
+            encode_fixed_data(ED25519_SIGNATURE, sig_thread_id, output);
         }
         Payload::RelationshipReferral { referred_vid } => {
             output.extend(&X3RR);
@@ -452,10 +461,16 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
                     hops: hop_list,
                 }
             } else {
-                let thread_id;
+                let (thread_id, sig_thread_id);
                 (thread_id, stream) = decode_digest(stream)?;
+                (sig_thread_id, stream) = decode_fixed_data_mut::<64>(ED25519_SIGNATURE, stream)
+                    .ok_or(DecodeError::UnexpectedData)?;
 
-                Payload::NewIdentifierProposal { thread_id, new_vid }
+                Payload::NewIdentifierProposal {
+                    thread_id,
+                    sig_thread_id,
+                    new_vid,
+                }
             }
         }
         XRFA => {
@@ -1360,6 +1375,7 @@ mod test {
     fn test_par_refer_rel() {
         test_turn_around(Payload::NewIdentifierProposal {
             thread_id: Digest::Sha2_256(&Default::default()),
+            sig_thread_id: &[5; 64],
             new_vid: b"Charlie",
         });
     }
