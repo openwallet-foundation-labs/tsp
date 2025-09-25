@@ -294,8 +294,7 @@ pub fn encode_payload(
     sender_identity: Option<&[u8]>,
     output: &mut impl for<'a> Extend<&'a u8>,
 ) -> Result<(), EncodeError> {
-    //TODO do something with the payload count
-    encode_count(TSP_PAYLOAD, 1, output);
+    encode_count(TSP_PAYLOAD, 1usize, output);
     if let Some(sender_identity) = sender_identity {
         checked_encode_variable_data(TSP_VID, sender_identity, output)?;
     }
@@ -580,8 +579,8 @@ pub fn encode_ets_envelope<'a, Vid: AsRef<[u8]>>(
     envelope: Envelope<'a, Vid>,
     output: &mut impl for<'b> Extend<&'b u8>,
 ) -> Result<(), EncodeError> {
-    //TODO: encode the count of the data to be signed
-    encode_count(TSP_ETS_WRAPPER, 1, output);
+    // TODO: we don't know the size yet
+    encode_count(TSP_ETS_WRAPPER, 1usize, output);
     encode_envelope_fields(envelope, output)
 }
 
@@ -590,7 +589,7 @@ pub fn encode_s_envelope<'a, Vid: AsRef<[u8]>>(
     envelope: Envelope<'a, Vid>,
     output: &mut impl for<'b> Extend<&'b u8>,
 ) -> Result<(), EncodeError> {
-    encode_count(TSP_S_WRAPPER, 1, output);
+    encode_count(TSP_S_WRAPPER, 1usize, output);
     encode_envelope_fields(envelope, output)
 }
 
@@ -676,7 +675,7 @@ pub(super) fn detected_tsp_header_size_and_confidentiality(
 > {
     let origin = stream;
     let mut stream = &origin[*pos..];
-    //NOTE: do something with the quadlet count?
+    //NOTE: we don't need this quadlet count
     let encrypted = if let Some(_quadlet_count) = decode_count(TSP_ETS_WRAPPER, &mut stream) {
         true
     } else if let Some(1) = decode_count(TSP_S_WRAPPER, &mut stream) {
