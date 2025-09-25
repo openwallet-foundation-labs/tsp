@@ -34,7 +34,7 @@ pub(crate) async fn send_message(tsp_message: &[u8], url: &Url) -> Result<(), Tr
 
     let url = url.clone();
 
-    client
+    let response = client
         .build()
         .map_err(|e| TransportError::Http("Client build error".to_string(), e))?
         .post(url.clone())
@@ -42,6 +42,13 @@ pub(crate) async fn send_message(tsp_message: &[u8], url: &Url) -> Result<(), Tr
         .send()
         .await
         .map_err(|e| TransportError::Http(url.to_string(), e))?;
+
+    if let Err(e) = response.error_for_status_ref() {
+        if let Ok(text) = response.text().await {
+            tracing::error!("{text}");
+        }
+        return Err(TransportError::Http(url.to_string(), e));
+    }
 
     Ok(())
 }
