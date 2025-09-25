@@ -13,7 +13,7 @@ use base64ct::{Base64UrlUnpadded, Encoding};
 use clap::Parser;
 use core::time;
 use futures::{sink::SinkExt, stream::StreamExt};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 use std::{
     collections::HashMap,
@@ -44,13 +44,6 @@ struct Cli {
     did_server: String,
     #[arg(index = 1, help = "e.g. \"teaspoon.world\" or \"localhost:3000\"")]
     domain: String,
-}
-
-/// Identity struct, used to store the DID document and VID of an endpoint
-#[derive(Debug, Serialize, Deserialize)]
-struct Identity {
-    did_doc: serde_json::Value,
-    vid: Vid,
 }
 
 /// Application state, used to store the identities and the broadcast channel
