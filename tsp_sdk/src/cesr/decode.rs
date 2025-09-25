@@ -208,37 +208,3 @@ pub fn decode_genus(
 
     Some(())
 }
-
-/// Decode variable size data (intended size >=50mb) that doesn't fit in known CESR encodings.
-///
-/// Since CESR has no native type for this, we use the convention that "big data"
-/// Is announced by encoding the size as a 64bit integer (prefix "N"), which is then
-/// followed by the raw data padded in the usual sense for CESR (pre-padding)
-/// This is a temporary encoding, depending on how CESR will address this in the future.
-pub fn decode_large_blob_index(stream: &[u8]) -> Option<std::ops::Range<usize>> {
-    let selector = b'N' - b'A';
-    let size = u64::from_be_bytes(*decode_fixed_data(
-        selector as u32,
-        &mut <_>::clone(&stream),
-    )?) as usize;
-    let padded_size = size.next_multiple_of(3);
-    let lead_bytes = padded_size - size;
-
-    let start = 9usize.checked_add(lead_bytes)?;
-    let end = 9usize.checked_add(padded_size)?;
-
-    let range = start..end;
-    // make sure the range is valid before returning it
-    stream.get(range.clone())?;
-
-    Some(range)
-}
-
-#[cfg(test)]
-pub fn decode_large_blob<'a>(stream: &mut &'a [u8]) -> Option<&'a [u8]> {
-    let range = decode_large_blob_index(stream)?;
-    let slice = &stream[range.start..range.end];
-    *stream = &stream[range.end..];
-
-    Some(slice)
-}
