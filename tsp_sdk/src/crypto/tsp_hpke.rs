@@ -104,7 +104,10 @@ where
             ref thread_id,
             new_vid,
         } => crate::cesr::Payload::NewIdentifierProposal {
+            //TODO: we need to produce a signature here with `new_vid`, but we don't have the PrivateVid for it at this point and that
+            //cannot be done without changing the "upper" API.
             thread_id: crate::cesr::Digest::Sha2_256(thread_id),
+            sig_thread_id: &[0; 64],
             new_vid,
         },
         Payload::Referral { referred_vid } => {
@@ -280,12 +283,16 @@ where
         },
         crate::cesr::Payload::NestedMessage(data) => Payload::NestedMessage(data),
         crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data as _),
-        crate::cesr::Payload::NewIdentifierProposal { thread_id, new_vid } => {
-            Payload::NewIdentifier {
-                thread_id: *thread_id.as_bytes(),
-                new_vid,
-            }
-        }
+        crate::cesr::Payload::NewIdentifierProposal {
+            thread_id,
+            sig_thread_id: _,
+            new_vid,
+        } => Payload::NewIdentifier {
+            //TODO: the 'sig_thread_id' verification cannot happen at this point, and needs to be bubbled upward
+            //so it can be checked *after* the VID has been verified and key material retrieved.
+            thread_id: *thread_id.as_bytes(),
+            new_vid,
+        },
         crate::cesr::Payload::RelationshipReferral { referred_vid } => {
             Payload::Referral { referred_vid }
         }
