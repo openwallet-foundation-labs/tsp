@@ -26,9 +26,12 @@ Then, you can use these commands to check out and test the repository:
 
 ```sh
 git clone https://github.com/openwallet-foundation-labs/tsp.git
-cd tsp
+cd tsp/tsp_sdk
 cargo test
 ```
+
+If you want to test the language bindings for Python and JavaScript as well, you can run `cargo test` in the top level
+directory of this repository. Please be aware that this requires a working Python installation on your system.
 
 To build the documentation, run:
 
