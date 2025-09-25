@@ -179,23 +179,6 @@ impl AsCryptoType for kem::X25519HkdfSha256 {
     }
 }
 
-impl TryFrom<u8> for CryptoType {
-    type Error = DecodeError;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(CryptoType::Plaintext),
-            1 => Ok(CryptoType::HpkeAuth),
-            2 => Ok(CryptoType::HpkeEssr),
-            3 => Ok(CryptoType::NaclAuth),
-            4 => Ok(CryptoType::NaclEssr),
-            #[cfg(feature = "pq")]
-            5 => Ok(CryptoType::X25519Kyber768Draft00),
-            _ => Err(DecodeError::InvalidCryptoType),
-        }
-    }
-}
-
 impl CryptoType {
     pub(crate) fn is_encrypted(&self) -> bool {
         !matches!(self, CryptoType::Plaintext)
@@ -215,20 +198,6 @@ impl SignatureType {
     #[allow(unused)]
     pub(crate) fn is_signed(&self) -> bool {
         !matches!(self, SignatureType::NoSignature)
-    }
-}
-
-impl TryFrom<u8> for SignatureType {
-    type Error = DecodeError;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(SignatureType::NoSignature),
-            1 => Ok(SignatureType::Ed25519),
-            #[cfg(feature = "pq")]
-            2 => Ok(SignatureType::MlDsa65),
-            _ => Err(DecodeError::InvalidSignatureType),
-        }
     }
 }
 
