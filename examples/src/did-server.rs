@@ -404,7 +404,11 @@ async fn list_all_ids() -> Result<Vec<String>, Box<dyn std::error::Error>> {
 
             // Read the JSON contents of the file as an instance of `User`.
             let vid: serde_json::Value = serde_json::from_str(&contents)?;
-            dids.push(vid.get("vid").unwrap().get("id").unwrap().to_string());
+            if let Some(vid) = vid.get("vid")
+                && let Some(serde_json::Value::String(did)) = vid.get("id")
+            {
+                dids.push(did.to_owned())
+            }
         }
     }
 
