@@ -156,6 +156,11 @@ enum Commands {
             help = "parent VID of the sender, used to listen for a response"
         )]
         parent_vid: Option<String>,
+        #[arg(
+            long,
+            help = "Ask for confirmation before interacting with unknown end-points"
+        )]
+        ask: bool,
         #[arg(long, help = "wait for a response")]
         wait: bool,
     },
@@ -256,6 +261,33 @@ async fn read_wallet(
 
             Ok((vault, db))
         }
+    }
+}
+
+async fn ensure_vid_verified(
+    vid_wallet: &AsyncSecureStore,
+    receiver_vid: &str,
+    wallet_name: &str,
+    ask: bool,
+) -> Result<(), Error> {
+    if vid_wallet.has_verified_vid(receiver_vid)? {
+        return Ok(());
+    };
+
+    if !ask
+        || prompt(format!(
+            "Do you want to verify receiver DID {}",
+            receiver_vid
+        ))
+    {
+        vid_wallet.verify_vid(receiver_vid, None).await?;
+        info!("{receiver_vid} is verified and added to the wallet {wallet_name}");
+        Ok(())
+    } else {
+        tracing::error!("Message cannot be sent without verifying the receiver's DID.");
+        Err(Error::UnverifiedVid(
+            "Message cannot be sent without verifying the receiver's DID.".to_string(),
+        ))
     }
 }
 
@@ -581,18 +613,7 @@ async fn run() -> Result<(), Error> {
             let non_confidential_data = non_confidential_data.as_deref().map(|s| s.as_bytes());
             let receiver_vid = vid_wallet.try_resolve_alias(&receiver_vid)?;
 
-            if !vid_wallet.has_verified_vid(&receiver_vid)? {
-                if !ask || prompt(format!("Do you want to verify receiver DID {receiver_vid}")) {
-                    vid_wallet.verify_vid(&receiver_vid, None).await?;
-                    info!(
-                        "{receiver_vid} is verified and added to the wallet {}",
-                        &args.wallet
-                    );
-                } else {
-                    tracing::error!("Message cannot be sent without verifying the receiver's DID.");
-                    return Ok(());
-                }
-            }
+            ensure_vid_verified(&vid_wallet, &receiver_vid, &args.wallet, ask).await?;
 
             let mut message = Vec::new();
             tokio::io::stdin()
@@ -853,8 +874,11 @@ async fn run() -> Result<(), Error> {
             receiver_vid,
             nested,
             parent_vid,
+            ask,
             wait,
         } => {
+            ensure_vid_verified(&vid_wallet, &receiver_vid, &args.wallet, ask).await?;
+
             // Setup receive stream before sending the request
             let listener_vid = parent_vid.unwrap_or(sender_vid.clone());
             let mut messages = vid_wallet.receive(&listener_vid).await?;
