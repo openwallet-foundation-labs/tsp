@@ -12,6 +12,14 @@ mod tls;
 pub use error::TransportError;
 
 pub async fn send_message(transport: &Url, tsp_message: &[u8]) -> Result<(), TransportError> {
+    if tracing::enabled!(tracing::Level::TRACE) {
+        println!(
+            "CESR-encoded message: {}",
+            crate::cesr::color_format(&tsp_message)
+                .map_err(|_| TransportError::InvalidMessageReceived("DecodeError".to_string()))?
+        );
+    }
+
     match transport.scheme() {
         tcp::SCHEME => tcp::send_message(tsp_message, transport).await,
         tls::SCHEME => tls::send_message(tsp_message, transport).await,
