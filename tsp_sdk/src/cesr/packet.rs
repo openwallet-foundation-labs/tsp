@@ -735,12 +735,11 @@ pub struct VerificationChallenge<'a> {
 
 /// Decode the type, sender and receiver of an encrypted TSP message
 pub fn decode_sender_receiver<'a, Vid: TryFrom<&'a [u8]>>(
-    stream: &mut &'a [u8],
+    stream: &'a [u8],
 ) -> Result<(Vid, Option<Vid>, CryptoType, SignatureType), DecodeError> {
     let mut pos = 0;
     let (sender, receiver, crypto_type, signature_type) =
         detected_tsp_header_size_and_confidentiality(stream, &mut pos)?;
-    *stream = &stream[pos..];
 
     let sender = stream[sender]
         .try_into()
@@ -1472,5 +1471,44 @@ mod test {
         assert_eq!(parts.sender.data.len(), 10);
         assert_eq!(parts.receiver.unwrap().data.len(), 14);
         assert_eq!(parts.ciphertext.unwrap().data.len(), 69);
+    }
+
+    #[test]
+    fn test_decode_send_recv() {
+        fn dummy_crypt(data: &mut [u8]) -> &mut [u8] {
+            data
+        }
+        let fixed_sig = [1; 64];
+
+        let mut cesr_payload =
+            { encode_payload_vec(&Payload::<_, &[u8]>::GenericMessage(b"Hello TSP!")).unwrap() };
+
+        let mut outer = encode_ets_envelope_vec(Envelope {
+            crypto_type: CryptoType::HpkeAuth,
+            signature_type: SignatureType::Ed25519,
+            sender: &b"Alister"[..],
+            receiver: Some(&b"Bobbi"[..]),
+            nonconfidential_data: None,
+        })
+        .unwrap();
+        let ciphertext = dummy_crypt(&mut cesr_payload);
+        encode_ciphertext(ciphertext, CryptoType::HpkeAuth, &mut outer).unwrap();
+
+        let signed_data = outer.clone();
+        encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
+
+        let outer2 = outer.clone();
+        let view = decode_envelope(&mut outer).unwrap();
+        let ver = view.as_challenge();
+        assert_eq!(ver.signed_data, signed_data);
+        assert_eq!(ver.signature, &fixed_sig);
+        let DecodedEnvelope { envelope: env, .. } = view.into_opened().unwrap();
+        assert_eq!(env.sender, &b"Alister"[..]);
+        assert_eq!(env.receiver, Some(&b"Bobbi"[..]));
+        assert_eq!(env.nonconfidential_data, None);
+
+        let (sender, receiver, _, _) = decode_sender_receiver(&outer2).unwrap();
+        assert_eq!(env.sender, sender);
+        assert_eq!(env.receiver, receiver);
     }
 }
