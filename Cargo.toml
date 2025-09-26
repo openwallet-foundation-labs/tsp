@@ -112,3 +112,9 @@ tsp_sdk = { path = "./tsp_sdk", version = "0.8.2" }
 
 [patch.crates-io]
 askar-storage = { git = "https://github.com/openwallet-foundation/askar.git" }
+
+# these are patched to prevent log level from being force to info level
+# should be fixed once PRs are merged and new versions are released
+affinidi-data-integrity = { git = "https://github.com/michielp1807/affinidi-tdk-rs.git" }
+affinidi-secrets-resolver = { git = "https://github.com/michielp1807/affinidi-tdk-rs.git" }
+didwebvh-rs = { git = "https://github.com/decentralized-identity/didwebvh-rs", rev = "05ef9f19ec08e88d945e1bdce595a007422ccb32" }
