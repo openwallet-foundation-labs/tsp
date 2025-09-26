@@ -32,6 +32,9 @@ pub(crate) fn seal(
     let mut data = Vec::with_capacity(64);
     crate::cesr::encode_ets_envelope(
         crate::cesr::Envelope {
+            #[cfg(feature = "essr")]
+            crypto_type: CryptoType::NaclEssr,
+            #[cfg(not(feature = "essr"))]
             crypto_type: CryptoType::NaclAuth,
             signature_type: SignatureType::Ed25519,
             sender: sender.identifier(),
@@ -73,7 +76,10 @@ pub(crate) fn seal(
             ref thread_id,
             new_vid,
         } => crate::cesr::Payload::NewIdentifierProposal {
+            //TODO: we need to produce a signature here with `new_vid`, but we don't have the PrivateVid for it at this point and that
+            //cannot be done without changing the "upper" API.
             thread_id: crate::cesr::Digest::Blake2b256(thread_id),
+            sig_thread_id: &[0; 64],
             new_vid,
         },
         Payload::Referral { referred_vid } => {
@@ -119,7 +125,15 @@ pub(crate) fn seal(
     cesr_message.extend(nonce);
 
     // encode and append the ciphertext to the envelope data
-    crate::cesr::encode_ciphertext(&cesr_message, &mut data)?;
+    crate::cesr::encode_ciphertext(
+        &cesr_message,
+        if cfg!(feature = "essr") {
+            CryptoType::NaclEssr
+        } else {
+            CryptoType::NaclAuth
+        },
+        &mut data,
+    )?;
 
     // create and append signature
     match sender.signature_key_type() {
@@ -200,12 +214,16 @@ pub(crate) fn open<'a>(
             inner,
             thread_id: *reply.as_bytes(),
         },
-        crate::cesr::Payload::NewIdentifierProposal { thread_id, new_vid } => {
-            Payload::NewIdentifier {
-                thread_id: *thread_id.as_bytes(),
-                new_vid,
-            }
-        }
+        crate::cesr::Payload::NewIdentifierProposal {
+            thread_id,
+            sig_thread_id: _,
+            new_vid,
+        } => Payload::NewIdentifier {
+            //TODO: the sig_thread_id cannot be verified at this point, so needs to be bubbled upwards so it can be checked
+            //*after* the new VID has been retrieved and verified.
+            thread_id: *thread_id.as_bytes(),
+            new_vid,
+        },
         crate::cesr::Payload::RelationshipReferral { referred_vid } => {
             Payload::Referral { referred_vid }
         }

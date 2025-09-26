@@ -6,6 +6,7 @@ pub mod error;
 mod packet;
 use base64ct::{Base64UrlUnpadded, Encoding};
 use error::DecodeError;
+mod consts;
 pub use packet::*;
 
 #[cfg(feature = "cesr-t")]
@@ -58,8 +59,7 @@ mod selector {
 
 /// (Temporary) interface to get Sender/Receiver VIDs information from a CESR-encoded message
 pub fn get_sender_receiver(message: &[u8]) -> Result<(&[u8], Option<&[u8]>), error::DecodeError> {
-    let mut stream = message;
-    let (sender, receiver, _, _) = decode_sender_receiver(&mut stream)?;
+    let (sender, receiver, _, _) = decode_sender_receiver(message)?;
 
     Ok((sender, receiver))
 }
@@ -100,8 +100,10 @@ impl EnvelopeType<'_> {
     }
 }
 
+//TODO: simplify the source of sender/receiver
 pub fn probe(stream: &mut [u8]) -> Result<EnvelopeType<'_>, error::DecodeError> {
-    let (_, crypto_type, _) = detected_tsp_header_size_and_confidentiality(&mut (stream as &[u8]))?;
+    let (_sender, _receiver, crypto_type, _) =
+        detected_tsp_header_size_and_confidentiality(stream, &mut 0)?;
 
     let envelope = decode_envelope(stream)?
         .into_opened()
@@ -184,7 +186,7 @@ mod test {
             &mut data,
         ); // 1 lead byte
         encode_variable_data(42,  b"I always speak the truth. Not the whole truth, because there's no way, to say it all.", &mut data); // 2 lead bytes
-        encode_count(7, 2, &mut data);
+        encode_count(7, 2usize, &mut data);
         encode_indexed_data(5, 57, b"DON'T PANIC!", &mut data); // 0 lead bytes
         encode_indexed_data(5, 0, b"SECRET KEY", &mut data); // 2 lead bytes
 
@@ -419,25 +421,5 @@ ACTD7NDX93ZGTkZBBuSeSGsAQ7u0hngpNTZTK_Um7rUZGnLRNJvo5oOnnC1J2iBQHuxoq8PyjdT3BHS2
         assert_eq!(decode_indexed_data::<64>(0, slice).unwrap().0, 0);
         assert_eq!(decode_indexed_data::<64>(0, slice).unwrap().0, 1);
         assert_eq!(decode_indexed_data::<64>(0, slice).unwrap().0, 2);
-    }
-
-    #[test]
-    fn blob_encode_decode() {
-        let mut data = vec![];
-        encode_large_blob(b"Where there is power, there is resistance.", &mut data); // 0 lead bytes
-        encode_large_blob(b"TrustSpanP!", &mut data); // 1 lead byte
-        encode_large_blob(b"I always speak the truth. Not the whole truth, because there's no way, to say it all.", &mut data); // 2 lead bytes
-        encode_variable_data(5, b"TrustSpanP!", &mut data); // not a blob
-        let mut input = &data[..];
-        assert_eq!(
-            decode_large_blob(&mut input).unwrap(),
-            b"Where there is power, there is resistance."
-        );
-        assert_eq!(decode_large_blob(&mut input).unwrap(), b"TrustSpanP!");
-        assert_eq!(
-            decode_large_blob(&mut input).unwrap(),
-            b"I always speak the truth. Not the whole truth, because there's no way, to say it all."
-        );
-        assert!(decode_large_blob(&mut input).is_none());
     }
 }

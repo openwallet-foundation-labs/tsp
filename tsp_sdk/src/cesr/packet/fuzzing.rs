@@ -79,6 +79,7 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
             Variants::NewIdentifierProposal => Payload::NewIdentifierProposal {
                 thread_id: digest(&DIGEST),
                 new_vid: Arbitrary::arbitrary(u)?,
+                sig_thread_id: &[42; 64],
             },
             Variants::RelationshipReferral => Payload::RelationshipReferral {
                 referred_vid: Arbitrary::arbitrary(u)?,
@@ -138,10 +139,12 @@ impl<'a> PartialEq<Payload<'a, &'a mut [u8], &'a [u8]>> for Wrapper {
                 Payload::NewIdentifierProposal {
                     new_vid: l_vid,
                     thread_id: l_reply,
+                    sig_thread_id: _l_sig,
                 },
                 Payload::NewIdentifierProposal {
                     new_vid: r_vid,
                     thread_id: r_reply,
+                    sig_thread_id: _r_sig,
                 },
             ) => l_vid == r_vid && l_reply == r_reply,
             (

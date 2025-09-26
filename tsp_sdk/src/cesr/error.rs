@@ -3,6 +3,8 @@
 pub enum EncodeError {
     ExcessiveFieldSize,
     MissingHops,
+    MissingReceiver,
+    InvalidVid,
 }
 
 /// An error type to indicate something went wrong with decoding
@@ -16,6 +18,9 @@ pub enum DecodeError {
     VersionMismatch,
     InvalidCryptoType,
     InvalidSignatureType,
+    MissingHops,
+    UnknownCrypto,
+    InvalidCrypto,
 }
 
 impl std::fmt::Display for EncodeError {
