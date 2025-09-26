@@ -265,28 +265,30 @@ async fn read_wallet(
 }
 
 async fn ensure_vid_verified(
-    vid_wallet: &mut AsyncSecureStore,
+    vid_wallet: &AsyncSecureStore,
     receiver_vid: &str,
     wallet_name: &str,
     ask: bool,
 ) -> Result<(), Error> {
-    if !vid_wallet.has_verified_vid(receiver_vid)? {
-        if !ask
-            || prompt(format!(
-                "Do you want to verify receiver DID {}",
-                receiver_vid
-            ))
-        {
-            vid_wallet.verify_vid(receiver_vid, None).await?;
-            info!("{receiver_vid} is verified and added to the wallet {wallet_name}");
-        } else {
-            tracing::error!("Message cannot be sent without verifying the receiver's DID.");
-            return Err(Error::UnverifiedVid(
-                "Message cannot be sent without verifying the receiver's DID.".to_string(),
-            ));
-        }
+    if vid_wallet.has_verified_vid(receiver_vid)? {
+        return Ok(());
+    };
+
+    if !ask
+        || prompt(format!(
+            "Do you want to verify receiver DID {}",
+            receiver_vid
+        ))
+    {
+        vid_wallet.verify_vid(receiver_vid, None).await?;
+        info!("{receiver_vid} is verified and added to the wallet {wallet_name}");
+        Ok(())
+    } else {
+        tracing::error!("Message cannot be sent without verifying the receiver's DID.");
+        Err(Error::UnverifiedVid(
+            "Message cannot be sent without verifying the receiver's DID.".to_string(),
+        ))
     }
-    Ok(())
 }
 
 fn prompt(message: String) -> bool {
@@ -611,8 +613,7 @@ async fn run() -> Result<(), Error> {
             let non_confidential_data = non_confidential_data.as_deref().map(|s| s.as_bytes());
             let receiver_vid = vid_wallet.try_resolve_alias(&receiver_vid)?;
 
-            dbg!(ask);
-            ensure_vid_verified(&mut vid_wallet, &receiver_vid, &args.wallet, ask).await?;
+            ensure_vid_verified(&vid_wallet, &receiver_vid, &args.wallet, ask).await?;
 
             let mut message = Vec::new();
             tokio::io::stdin()
@@ -876,7 +877,7 @@ async fn run() -> Result<(), Error> {
             ask,
             wait,
         } => {
-            ensure_vid_verified(&mut vid_wallet, &receiver_vid, &args.wallet, ask).await?;
+            ensure_vid_verified(&vid_wallet, &receiver_vid, &args.wallet, ask).await?;
 
             // Setup receive stream before sending the request
             let listener_vid = parent_vid.unwrap_or(sender_vid.clone());
