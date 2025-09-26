@@ -76,7 +76,10 @@ pub(crate) fn seal(
             ref thread_id,
             new_vid,
         } => crate::cesr::Payload::NewIdentifierProposal {
+            //TODO: we need to produce a signature here with `new_vid`, but we don't have the PrivateVid for it at this point and that
+            //cannot be done without changing the "upper" API.
             thread_id: crate::cesr::Digest::Blake2b256(thread_id),
+            sig_thread_id: &[0; 64],
             new_vid,
         },
         Payload::Referral { referred_vid } => {
