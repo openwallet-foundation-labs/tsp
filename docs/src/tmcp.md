@@ -6,7 +6,7 @@
 uv add git+https://github.com/openwallet-foundation-labs/mcp-transport-hooks git+https://github.com/openwallet-foundation-labs/tmcp-python
 ```
 
-See the [`./demo` directory](https://github.com/openwallet-foundation-labs/mcp-over-tsp-python/tree/main/tmcp/demo) for some example TMCP servers and clients.
+See the [`./demo` directory](https://github.com/openwallet-foundation-labs/tmcp-python/tree/main/demo) for some example TMCP servers and clients.
 
 ## Example usage
 
