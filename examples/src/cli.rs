@@ -9,8 +9,7 @@ use tracing::{debug, error, info, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{
     Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
-    RelationshipStatus, SecureStorage, VerifiedVid, Vid,
-    cesr::{self, color_format},
+    RelationshipStatus, SecureStorage, VerifiedVid, Vid, cesr,
     definitions::Digest,
     vid::{VidError, did::webvh::WebvhMetadata, verify_vid, vid_to_did_document},
 };
@@ -634,15 +633,6 @@ async fn run() -> Result<(), Error> {
                     return Ok(());
                 }
             };
-
-            if args.verbose {
-                let cesr_message = vid_wallet
-                    .as_store()
-                    .seal_message(&sender_vid, &receiver_vid, non_confidential_data, &message)?
-                    .1;
-                println!("CESR-encoded message:");
-                println!("{}", color_format(&cesr_message).unwrap());
-            }
 
             info!(
                 "sent message ({} bytes) from {sender_vid} to {receiver_vid}",

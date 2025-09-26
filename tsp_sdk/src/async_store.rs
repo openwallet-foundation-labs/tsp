@@ -539,27 +539,33 @@ impl AsyncSecureStore {
             let db_inner = db.clone();
             let self_inner = self_clone.clone();
             async move {
-                match message {
-                    Ok(mut m) => match db_inner.open_message(&mut m) {
-                        Err(Error::UnverifiedSource(unknown_vid, _)) => {
-                            debug!("Verifying VID: {}", unknown_vid);
-                            self_inner.verify_vid(&unknown_vid, None).await?;
-                            db_inner.open_message(&mut m)
-                        }
-                        Err(Error::Crypto(CryptoError::Verify(vid, _))) => {
-                            debug!("Re-verifying VID: {}", vid);
-                            self_inner.verify_vid(&vid, None).await?;
-                            db_inner.open_message(&mut m)
-                        }
-                        maybe_message => maybe_message,
-                    }
-                    .map(|msg| msg.into_owned())
-                    .map_err(|e| {
-                        tracing::error!("{}", e);
-                        e
-                    }),
-                    Err(e) => Err(e.into()),
+                let mut message = message?;
+
+                if tracing::enabled!(tracing::Level::TRACE) {
+                    println!(
+                        "CESR-encoded message: {}",
+                        crate::cesr::color_format(&message)?
+                    );
                 }
+
+                match db_inner.open_message(&mut message) {
+                    Err(Error::UnverifiedSource(unknown_vid, _)) => {
+                        debug!("Verifying VID: {}", unknown_vid);
+                        self_inner.verify_vid(&unknown_vid, None).await?;
+                        db_inner.open_message(&mut message)
+                    }
+                    Err(Error::Crypto(CryptoError::Verify(vid, _))) => {
+                        debug!("Re-verifying VID: {}", vid);
+                        self_inner.verify_vid(&vid, None).await?;
+                        db_inner.open_message(&mut message)
+                    }
+                    maybe_message => maybe_message,
+                }
+                .map(|msg| msg.into_owned())
+                .map_err(|e| {
+                    tracing::error!("{}", e);
+                    e
+                })
             }
         })))
     }
