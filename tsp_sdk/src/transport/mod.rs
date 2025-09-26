@@ -15,7 +15,7 @@ pub async fn send_message(transport: &Url, tsp_message: &[u8]) -> Result<(), Tra
     if tracing::enabled!(tracing::Level::TRACE) {
         println!(
             "CESR-encoded message: {}",
-            crate::cesr::color_format(&tsp_message)
+            crate::cesr::color_format(tsp_message)
                 .map_err(|_| TransportError::InvalidMessageReceived("DecodeError".to_string()))?
         );
     }
