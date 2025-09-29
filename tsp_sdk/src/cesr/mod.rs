@@ -140,10 +140,19 @@ pub fn color_format(message: &[u8]) -> Result<String, DecodeError> {
     let mut out = String::new();
     for (part, color) in parts {
         if let Some(part) = part {
+            let color_prefix = Base64UrlUnpadded::encode_string(part.prefix);
+            let mut contents = part.prefix.to_owned();
+            contents.extend_from_slice(part.data);
+            let color_contents = Base64UrlUnpadded::encode_string(&contents);
+            let split = if color_prefix.len().is_multiple_of(4) {
+                color_prefix.len()
+            } else {
+                color_prefix.len() - 1
+            };
             out.push_str(&format!(
                 "\x1b[1;{color}m{}\x1b[0;{color}m{}\x1b[0m",
-                Base64UrlUnpadded::encode_string(part.prefix),
-                Base64UrlUnpadded::encode_string(part.data)
+                &color_contents[..split],
+                &color_contents[split..],
             ));
         }
     }
