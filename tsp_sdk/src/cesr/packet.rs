@@ -975,20 +975,28 @@ pub fn open_message_into_parts(data: &[u8]) -> Result<MessageParts<'_>, DecodeEr
         detected_tsp_header_size_and_confidentiality(data, &mut pos)?;
 
     let prefix = Part {
-        prefix: &data[..pos],
+        prefix: &data[..9],
         data: &[],
     };
 
+    let sender_prefix_len = if sender.len() > 3 * 0xFFFFFF { 6 } else { 3 };
     let sender = Part {
-        prefix: &[],
+        prefix: &data[sender.start - sender_prefix_len..sender.start],
         data: &data[sender],
     };
-    let receiver = receiver.map(|r| Part {
-        prefix: &[],
-        data: &data[r],
+
+    let receiver = receiver.map(|r| {
+        let receiver_prefix_len = if r.len() > 3 * 0xFFFFFF { 6 } else { 3 };
+        Part {
+            prefix: &data[r.start - receiver_prefix_len..r.start],
+            data: &data[r],
+        }
     });
+
     let nonconfidential_data = Part::decode(TSP_PLAINTEXT, data, &mut pos);
-    let ciphertext = Part::decode(crypto_type.cesr_code()?, data, &mut pos);
+
+    let cipher_code = crypto_type.cesr_code()?;
+    let ciphertext = Part::decode(cipher_code, data, &mut pos);
 
     let signature: &[u8; 64] = decode_fixed_data(ED25519_SIGNATURE, &mut &data[pos..])
         .ok_or(DecodeError::SignatureError)?;
