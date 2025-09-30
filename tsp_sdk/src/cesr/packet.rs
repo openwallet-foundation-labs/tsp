@@ -998,9 +998,14 @@ pub fn open_message_into_parts(data: &[u8]) -> Result<MessageParts<'_>, DecodeEr
 
     let receiver = receiver.map(|r| {
         let receiver_prefix_len = if r.len() > 3 * 0xFFFFFF { 6 } else { 3 };
+        let start = if r.start.is_multiple_of(3) {
+            r.start
+        } else {
+            (r.start).next_multiple_of(3) - 3
+        };
         Part {
-            prefix: &data[r.start - receiver_prefix_len..r.start],
-            data: &data[r],
+            prefix: &data[start - receiver_prefix_len..start],
+            data: &data[start..r.end],
         }
     });
 
