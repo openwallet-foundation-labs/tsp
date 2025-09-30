@@ -259,55 +259,56 @@ pub fn encode_payload(
     sender_identity: Option<&[u8]>,
     output: &mut impl for<'a> Extend<&'a u8>,
 ) -> Result<(), EncodeError> {
-    encode_count(TSP_PAYLOAD, 1usize, output);
+    let mut temp = Vec::new(); // temporary buffer to count the size
+
     if let Some(sender_identity) = sender_identity {
-        checked_encode_variable_data(TSP_VID, sender_identity, output)?;
+        checked_encode_variable_data(TSP_VID, sender_identity, &mut temp)?;
     }
 
     match payload {
         Payload::GenericMessage(data) => {
-            output.extend(&XSCS);
-            checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
+            temp.extend(&XSCS);
+            checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), &mut temp)?;
         }
         Payload::NestedMessage(data) => {
-            output.extend(&XHOP);
+            temp.extend(&XHOP);
             let no_hops: [&[u8]; 0] = [];
-            encode_hops(&no_hops, output)?;
-            checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
+            encode_hops(&no_hops, &mut temp)?;
+            checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), &mut temp)?;
         }
         Payload::RoutedMessage(hops, data) => {
-            output.extend(&XHOP);
+            temp.extend(&XHOP);
             if hops.is_empty() {
                 return Err(EncodeError::MissingHops);
             }
-            encode_hops(hops, output)?;
-            checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
+            encode_hops(hops, &mut temp)?;
+            checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), &mut temp)?;
         }
         Payload::DirectRelationProposal { nonce, hops } => {
-            output.extend(&XRFI);
-            encode_hops(hops, output)?;
-            encode_fixed_data(TSP_NONCE, &nonce.0, output);
-            checked_encode_variable_data(TSP_VID, &[], output)?;
+            temp.extend(&XRFI);
+            encode_hops(hops, &mut temp)?;
+            encode_fixed_data(TSP_NONCE, &nonce.0, &mut temp);
+            checked_encode_variable_data(TSP_VID, &[], &mut temp)?;
         }
         Payload::DirectRelationAffirm { reply } => {
-            output.extend(&XRFA);
-            encode_digest(reply, output);
+            temp.extend(&XRFA);
+            encode_digest(reply, &mut temp);
         }
         Payload::NestedRelationProposal {
             message: data,
             nonce,
         } => {
-            output.extend(&XRNI);
-            checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
-            encode_fixed_data(TSP_NONCE, &nonce.0, output);
+            temp.extend(&XRNI);
+            checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), &mut temp)?;
+            encode_fixed_data(TSP_NONCE, &nonce.0, &mut temp);
         }
         Payload::NestedRelationAffirm {
             message: data,
             reply,
         } => {
-            output.extend(&XRNA);
-            checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), output)?;
-            encode_digest(reply, output);
+            temp.extend(&XRNA);
+            checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), &mut temp)?;
+            encode_digest(reply, &mut temp);
         }
         Payload::NewIdentifierProposal {
             thread_id,
@@ -317,23 +318,26 @@ pub fn encode_payload(
             if new_vid.as_ref().is_empty() {
                 return Err(EncodeError::InvalidVid);
             }
-            output.extend(&XRFI);
+            temp.extend(&XRFI);
             let no_hops: [&[u8]; 0] = [];
-            encode_hops(&no_hops, output)?;
-            encode_fixed_data(TSP_NONCE, &[0; 32], output); // this does not need to be a secure nonce
-            checked_encode_variable_data(TSP_VID, new_vid.as_ref(), output)?;
-            encode_digest(thread_id, output);
-            encode_fixed_data(ED25519_SIGNATURE, sig_thread_id, output);
+            encode_hops(&no_hops, &mut temp)?;
+            encode_fixed_data(TSP_NONCE, &[0; 32], &mut temp); // this does not need to be a secure nonce
+            checked_encode_variable_data(TSP_VID, new_vid.as_ref(), &mut temp)?;
+            encode_digest(thread_id, &mut temp);
+            encode_fixed_data(ED25519_SIGNATURE, sig_thread_id, &mut temp);
         }
         Payload::RelationshipReferral { referred_vid } => {
-            output.extend(&X3RR);
-            checked_encode_variable_data(TSP_VID, referred_vid.as_ref(), output)?;
+            temp.extend(&X3RR);
+            checked_encode_variable_data(TSP_VID, referred_vid.as_ref(), &mut temp)?;
         }
         Payload::RelationshipCancel { reply } => {
-            output.extend(&XRFD);
-            encode_digest(reply, output);
+            temp.extend(&XRFD);
+            encode_digest(reply, &mut temp);
         }
     }
+
+    encode_count(TSP_PAYLOAD, temp.len() / 3, output);
+    output.extend(temp.iter());
 
     Ok(())
 }
@@ -628,7 +632,7 @@ impl CryptoType {
             CryptoType::HpkeAuth => TSP_HPKEAUTH_CIPHERTEXT,
             CryptoType::NaclAuth => TSP_NACLAUTH_CIPHERTEXT,
             #[cfg(feature = "pq")]
-            CrytpoType::X25519Kyber768Draft00 => TSP_HPKEPQ_CIPHERTEXT,
+            CryptoType::X25519Kyber768Draft00 => TSP_HPKEPQ_CIPHERTEXT,
             _ => return Err(DecodeError::InvalidCrypto),
         })
     }
@@ -731,7 +735,7 @@ pub(super) fn detected_tsp_header_size_and_confidentiality(
     Ok((sender, receiver, crypto_type, signature_type))
 }
 
-/// A structure representing a siganture + data that needs to be verified.
+/// A structure representing a signature + data that needs to be verified.
 /// The `signature` must authenticate the `signed_data`.
 #[derive(Clone, Debug)]
 #[must_use]
