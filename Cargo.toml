@@ -4,7 +4,7 @@ members = ["tsp_sdk", "examples", "fuzz", "tsp_python", "tsp_javascript"]
 exclude = ["demo"]
 
 [workspace.package]
-version = "0.8.1"
+version = "0.8.2"
 edition = "2024"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/openwallet-foundation-labs/tsp"
@@ -100,7 +100,7 @@ clap = { version = "4.5", features = ["derive"] }
 axum = { version = "0.8.1", features = ["ws", "macros"] }
 tower-http = { version = "0.6.2", features = ["cors"] }
 
-tsp_sdk = { path = "./tsp_sdk", version = "0.8.1" }
+tsp_sdk = { path = "./tsp_sdk", version = "0.8.2" }
 
 [patch.crates-io]
 askar-storage = { git = "https://github.com/openwallet-foundation/askar.git" }
