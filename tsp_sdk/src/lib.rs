@@ -53,7 +53,6 @@
 //!     alice_db.send(
 //!         "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
 //!         "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
-//!         Some(b"extra non-confidential data"),
 //!         b"hello world",
 //!     ).await?;
 //!

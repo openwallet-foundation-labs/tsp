@@ -199,18 +199,18 @@ impl SignatureType {
 
 /// Type representing a TSP Envelope
 #[derive(Debug, Clone)]
-pub struct Envelope<'a, Vid> {
+pub struct Envelope<Vid> {
     pub crypto_type: CryptoType,
     pub signature_type: SignatureType,
     pub sender: Vid,
     pub receiver: Option<Vid>,
-    pub nonconfidential_data: Option<&'a [u8]>,
 }
 
 pub struct DecodedEnvelope<'a, Vid, Bytes> {
-    pub envelope: Envelope<'a, Vid>,
+    pub envelope: Envelope<Vid>,
     pub raw_header: &'a [u8], // for associated data purposes
     pub ciphertext: Option<Bytes>,
+    pub nonconfidential_data: Option<&'a [u8]>,
 }
 
 type Signature = [u8];
@@ -558,7 +558,7 @@ fn decode_version(stream: &mut &[u8]) -> Result<(), DecodeError> {
 
 /// Encode a encrypted TSP message plus Envelope into CESR
 pub fn encode_ets_envelope<'a, Vid: AsRef<[u8]>>(
-    envelope: Envelope<'a, Vid>,
+    envelope: Envelope<Vid>,
     output: &mut impl for<'b> Extend<&'b u8>,
 ) -> Result<(), EncodeError> {
     let mut temp = Vec::new(); // temporary buffer to count the size
@@ -571,7 +571,8 @@ pub fn encode_ets_envelope<'a, Vid: AsRef<[u8]>>(
 
 /// Encode a encrypted TSP message plus Envelope into CESR
 pub fn encode_s_envelope<'a, Vid: AsRef<[u8]>>(
-    envelope: Envelope<'a, Vid>,
+    envelope: Envelope<Vid>,
+    nonconfidential_data: &'a [u8],
     output: &mut impl for<'b> Extend<&'b u8>,
 ) -> Result<(), EncodeError> {
     let mut temp = Vec::new(); // temporary buffer to count the size
@@ -579,6 +580,9 @@ pub fn encode_s_envelope<'a, Vid: AsRef<[u8]>>(
 
     encode_count(TSP_S_WRAPPER, temp.len() / 3, output);
     output.extend(temp.iter());
+
+    checked_encode_variable_data(TSP_PLAINTEXT, nonconfidential_data, output)?;
+
     Ok(())
 }
 
@@ -586,7 +590,7 @@ pub fn encode_s_envelope<'a, Vid: AsRef<[u8]>>(
 /// is whether there is ciphertext between the header and signature, and this function
 /// doesn't need to know that.
 fn encode_envelope_fields<'a, Vid: AsRef<[u8]>>(
-    envelope: Envelope<'a, Vid>,
+    envelope: Envelope<Vid>,
     output: &mut impl for<'b> Extend<&'b u8>,
 ) -> Result<(), EncodeError> {
     encode_version(output);
@@ -598,10 +602,6 @@ fn encode_envelope_fields<'a, Vid: AsRef<[u8]>>(
 
     // FIXME: without this parsing errors seem to occur -- maybe there is am ambiguity
     encode_fixed_data(TSP_TMP, &[0u8, 0u8], output);
-
-    if let Some(data) = envelope.nonconfidential_data {
-        checked_encode_variable_data(TSP_PLAINTEXT, data, output)?;
-    }
 
     Ok(())
 }
@@ -819,16 +819,18 @@ impl<'a> CipherView<'a> {
                 .receiver
                 .map(|r| header[r.clone()].try_into())
                 .transpose()?,
-            nonconfidential_data: self
-                .nonconfidential_data
-                .as_ref()
-                .map(|range| &header[range.clone()]),
         };
+
+        let nonconfidential_data = self
+            .nonconfidential_data
+            .as_ref()
+            .map(|range| &header[range.clone()]);
 
         Ok(DecodedEnvelope {
             envelope,
             raw_header,
             ciphertext,
+            nonconfidential_data,
         })
     }
 
@@ -852,7 +854,11 @@ pub fn decode_envelope<'a>(stream: &'a mut [u8]) -> Result<CipherView<'a>, Decod
     let (sender, receiver, crypto_type, signature_type) =
         detected_tsp_header_size_and_confidentiality(stream, &mut pos)?;
 
-    let nonconfidential_data = decode_variable_data_index(TSP_PLAINTEXT, stream, &mut pos);
+    let nonconfidential_data = if crypto_type.is_encrypted() {
+        None
+    } else {
+        decode_variable_data_index(TSP_PLAINTEXT, stream, &mut pos)
+    };
 
     let associated_data = 0..pos;
 
@@ -932,11 +938,12 @@ pub fn encode_ets_envelope_vec<Vid: AsRef<[u8]>>(
 
 /// Allocating variant of [encode_ets_envelope]
 #[cfg(test)]
-pub fn encode_s_envelope_vec<Vid: AsRef<[u8]>>(
+pub fn encode_s_envelope_vec<'a, Vid: AsRef<[u8]>>(
     envelope: Envelope<Vid>,
+    nonconfidential_data: &'a [u8],
 ) -> Result<Vec<u8>, EncodeError> {
     let mut data = vec![];
-    encode_s_envelope(envelope, &mut data)?;
+    encode_s_envelope(envelope, nonconfidential_data, &mut data)?;
 
     Ok(data)
 }
@@ -1148,7 +1155,6 @@ mod test {
             signature_type: SignatureType::Ed25519,
             sender: &b"Alister"[..],
             receiver: Some(&b"Bobbi"[..]),
-            nonconfidential_data: None,
         })
         .unwrap();
         let ciphertext = dummy_crypt(&mut cesr_payload);
@@ -1168,7 +1174,6 @@ mod test {
         } = view.into_opened().unwrap();
         assert_eq!(env.sender, &b"Alister"[..]);
         assert_eq!(env.receiver, Some(&b"Bobbi"[..]));
-        assert_eq!(env.nonconfidential_data, None);
 
         let DecodedPayload {
             payload: Payload::GenericMessage(data),
@@ -1196,7 +1201,6 @@ mod test {
             signature_type: SignatureType::Ed25519,
             sender: &b"Alister"[..],
             receiver: Some(&b"Bobbi"[..]),
-            nonconfidential_data: Some(b"treasure"),
         })
         .unwrap();
         let ciphertext = dummy_crypt(&mut cesr_payload);
@@ -1216,7 +1220,6 @@ mod test {
         } = view.into_opened().unwrap();
         assert_eq!(env.sender, &b"Alister"[..]);
         assert_eq!(env.receiver, Some(&b"Bobbi"[..]));
-        assert_eq!(env.nonconfidential_data, Some(&b"treasure"[..]));
 
         let DecodedPayload {
             payload: Payload::GenericMessage(data),
@@ -1233,13 +1236,15 @@ mod test {
     fn envelope_without_confidential_data() {
         let fixed_sig = [1; 64];
 
-        let mut outer = encode_s_envelope_vec(Envelope {
-            crypto_type: CryptoType::Plaintext,
-            signature_type: SignatureType::Ed25519,
-            sender: &b"Alister"[..],
-            receiver: Some(&b"Bobbi"[..]),
-            nonconfidential_data: Some(b"treasure"),
-        })
+        let mut outer = encode_s_envelope_vec(
+            Envelope {
+                crypto_type: CryptoType::Plaintext,
+                signature_type: SignatureType::Ed25519,
+                sender: &b"Alister"[..],
+                receiver: Some(&b"Bobbi"[..]),
+            },
+            b"treasure",
+        )
         .unwrap();
 
         let signed_data = outer.clone();
@@ -1256,7 +1261,6 @@ mod test {
         } = view.into_opened().unwrap();
         assert_eq!(env.sender, &b"Alister"[..]);
         assert_eq!(env.receiver, Some(&b"Bobbi"[..]));
-        assert_eq!(env.nonconfidential_data, Some(&b"treasure"[..]));
 
         assert!(ciphertext.is_none());
     }
@@ -1272,13 +1276,15 @@ mod test {
         let cesr_payload =
             { encode_payload_vec(&Payload::<_, &[u8]>::GenericMessage(b"Hello TSP!")).unwrap() };
 
-        let mut outer = encode_s_envelope_vec(Envelope {
-            crypto_type: CryptoType::Plaintext,
-            signature_type: SignatureType::Ed25519,
-            sender: &b"Alister"[..],
-            receiver: Some(&b"Bobbi"[..]),
-            nonconfidential_data: Some(b"treasure"),
-        })
+        let mut outer = encode_s_envelope_vec(
+            Envelope {
+                crypto_type: CryptoType::Plaintext,
+                signature_type: SignatureType::Ed25519,
+                sender: &b"Alister"[..],
+                receiver: Some(&b"Bobbi"[..]),
+            },
+            b"treasure",
+        )
         .unwrap();
         let ciphertext = dummy_crypt(&cesr_payload); // this is wrong
         encode_ciphertext(ciphertext, CryptoType::HpkeAuth, &mut outer).unwrap();
@@ -1299,7 +1305,6 @@ mod test {
                 signature_type: SignatureType::Ed25519,
                 sender: &b"Alister"[..],
                 receiver: Some(&b"Bobbi"[..]),
-                nonconfidential_data: Some(b"treasure"),
             },
             &mut outer,
         )
@@ -1320,7 +1325,6 @@ mod test {
             signature_type: SignatureType::Ed25519,
             sender: &b"Alister"[..],
             receiver: Some(&b"Bobbi"[..]),
-            nonconfidential_data: Some(b"treasure"),
         })
         .unwrap();
         encode_ciphertext(&[], CryptoType::HpkeAuth, &mut outer).unwrap();
@@ -1340,7 +1344,6 @@ mod test {
             Message {
                 sender,
                 receiver,
-                nonconfidential_data: None,
                 message: Payload::GenericMessage(payload),
             },
             |_, vec| vec,
@@ -1416,7 +1419,6 @@ mod test {
             signature_type: SignatureType::Ed25519,
             sender: &b"Alister"[..],
             receiver: Some(&b"Bobbi"[..]),
-            nonconfidential_data: Some(b"treasure"),
         })
         .unwrap();
         let ciphertext = dummy_crypt(&mut cesr_payload);
@@ -1436,7 +1438,6 @@ mod test {
 
         assert_eq!(env.sender, &b"Alister"[..]);
         assert_eq!(env.receiver, Some(&b"Bobbi"[..]));
-        assert_eq!(env.nonconfidential_data, Some(&b"treasure"[..]));
 
         assert_eq!(
             decode_payload(dummy_crypt(ciphertext.unwrap()))
@@ -1512,7 +1513,6 @@ mod test {
             signature_type: SignatureType::Ed25519,
             sender: &b"Alister"[..],
             receiver: Some(&b"Bobbi"[..]),
-            nonconfidential_data: None,
         })
         .unwrap();
         let ciphertext = dummy_crypt(&mut cesr_payload);
@@ -1529,7 +1529,6 @@ mod test {
         let DecodedEnvelope { envelope: env, .. } = view.into_opened().unwrap();
         assert_eq!(env.sender, &b"Alister"[..]);
         assert_eq!(env.receiver, Some(&b"Bobbi"[..]));
-        assert_eq!(env.nonconfidential_data, None);
 
         let (sender, receiver, _, _) = decode_sender_receiver(&outer2).unwrap();
         assert_eq!(env.sender, sender);

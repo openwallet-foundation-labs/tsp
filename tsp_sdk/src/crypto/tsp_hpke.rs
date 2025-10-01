@@ -6,7 +6,7 @@ use crate::{
 #[cfg(not(feature = "nacl"))]
 use crate::{
     cesr::SignatureType,
-    definitions::{NonConfidentialData, TSPMessage, VidSignatureKeyType},
+    definitions::{TSPMessage, VidSignatureKeyType},
 };
 
 #[cfg(not(feature = "nacl"))]
@@ -35,7 +35,6 @@ use ml_dsa::{EncodedSigningKey, MlDsa65};
 pub(crate) fn seal<A, Kdf, Kem>(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<NonConfidentialData>,
     secret_payload: Payload<&[u8]>,
     digest: Option<&mut super::Digest>,
 ) -> Result<TSPMessage, CryptoError>
@@ -62,7 +61,6 @@ where
             signature_type,
             sender: sender.identifier(),
             receiver: Some(receiver.identifier()),
-            nonconfidential_data,
         },
         &mut data,
     )?;
@@ -195,7 +193,7 @@ pub(crate) fn open<'a, A, Kdf, Kem>(
     receiver: &dyn PrivateVid,
     sender: &dyn VerifiedVid,
     raw_header: &'a [u8],
-    envelope: Envelope<'a, &[u8]>,
+    envelope: Envelope<&[u8]>,
     ciphertext: &'a mut [u8],
 ) -> Result<MessageContents<'a>, CryptoError>
 where
@@ -299,7 +297,7 @@ where
     };
 
     Ok((
-        envelope.nonconfidential_data,
+        None,
         secret_payload,
         envelope.crypto_type,
         envelope.signature_type,

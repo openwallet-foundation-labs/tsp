@@ -35,7 +35,7 @@ class Store {
         return this.inner.set_route_for_vid(...args);
     }
 
-    seal_message(sender, receiver, nonconfidential_data, message) {
+    seal_message(sender, receiver, message) {
         let byteArray;
         
         if (typeof message === 'string') {
@@ -47,7 +47,7 @@ class Store {
             throw new TypeError("Message must be a string or a Uint8Array");
         }
 
-        return this.inner.seal_message(sender, receiver, nonconfidential_data, byteArray);
+        return this.inner.seal_message(sender, receiver, byteArray);
     }
 
     make_relationship_request(...args) {

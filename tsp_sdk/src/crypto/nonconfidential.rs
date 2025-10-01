@@ -31,8 +31,8 @@ pub fn sign(
             signature_type,
             sender: sender.identifier(),
             receiver: receiver.map(|r| r.identifier()),
-            nonconfidential_data: Some(payload),
         },
+        payload,
         &mut data,
     )?;
 
@@ -102,8 +102,8 @@ pub fn verify<'a>(
                 signature_type,
                 sender: _,
                 receiver: _,
-                nonconfidential_data: Some(nonconfidential_data),
             },
+        nonconfidential_data: Some(nonconfidential_data),
         ciphertext: None,
     } = view
         .into_opened::<&[u8]>()

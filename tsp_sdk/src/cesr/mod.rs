@@ -69,7 +69,6 @@ pub enum EnvelopeType<'a> {
     EncryptedMessage {
         sender: &'a [u8],
         receiver: &'a [u8],
-        nonconfidential_data: Option<&'a [u8]>,
     },
     SignedMessage {
         sender: &'a [u8],
@@ -88,10 +87,7 @@ impl EnvelopeType<'_> {
 
     pub fn get_nonconfidential_data(&self) -> Option<&[u8]> {
         match self {
-            EnvelopeType::EncryptedMessage {
-                nonconfidential_data,
-                ..
-            } => *nonconfidential_data,
+            EnvelopeType::EncryptedMessage { .. } => None,
             EnvelopeType::SignedMessage {
                 nonconfidential_data,
                 ..
@@ -105,22 +101,18 @@ pub fn probe(stream: &mut [u8]) -> Result<EnvelopeType<'_>, error::DecodeError> 
     let (_sender, _receiver, crypto_type, _) =
         detected_tsp_header_size_and_confidentiality(stream, &mut 0)?;
 
-    let envelope = decode_envelope(stream)?
-        .into_opened()
-        .expect("Infallible")
-        .envelope;
+    let decoded = decode_envelope(stream)?.into_opened().expect("Infallible");
 
     Ok(if crypto_type.is_encrypted() {
         EnvelopeType::EncryptedMessage {
-            sender: envelope.sender,
-            receiver: envelope.receiver.expect("Infallible"),
-            nonconfidential_data: envelope.nonconfidential_data,
+            sender: decoded.envelope.sender,
+            receiver: decoded.envelope.receiver.expect("Infallible"),
         }
     } else {
         EnvelopeType::SignedMessage {
-            sender: envelope.sender,
-            receiver: envelope.receiver,
-            nonconfidential_data: envelope.nonconfidential_data,
+            sender: decoded.envelope.sender,
+            receiver: decoded.envelope.receiver,
+            nonconfidential_data: decoded.nonconfidential_data,
         }
     })
 }

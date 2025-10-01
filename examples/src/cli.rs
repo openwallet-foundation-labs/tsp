@@ -127,8 +127,6 @@ enum Commands {
         sender_vid: String,
         #[arg(short, long, required = true)]
         receiver_vid: String,
-        #[arg(short, long)]
-        non_confidential_data: Option<String>,
         #[arg(
             long,
             help = "Ask for confirmation before interacting with unknown end-points"
@@ -606,10 +604,8 @@ async fn run() -> Result<(), Error> {
         Commands::Send {
             sender_vid,
             receiver_vid,
-            non_confidential_data,
             ask,
         } => {
-            let non_confidential_data = non_confidential_data.as_deref().map(|s| s.as_bytes());
             let receiver_vid = vid_wallet.try_resolve_alias(&receiver_vid)?;
 
             ensure_vid_verified(&vid_wallet, &receiver_vid, &args.wallet, ask).await?;
@@ -620,10 +616,7 @@ async fn run() -> Result<(), Error> {
                 .await
                 .expect("Could not read message from stdin");
 
-            match vid_wallet
-                .send(&sender_vid, &receiver_vid, non_confidential_data, &message)
-                .await
-            {
+            match vid_wallet.send(&sender_vid, &receiver_vid, &message).await {
                 Ok(()) => {}
                 Err(e) => {
                     tracing::error!(

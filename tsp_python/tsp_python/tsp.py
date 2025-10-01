@@ -52,10 +52,10 @@ class SecureStore:
             return self.inner.verify_vid(did, alias)
 
     def add_private_vid(
-            self,
-            vid: OwnedVid,
-            alias: str | None = None,
-            metadata: dict[Any, Any] | None = None,
+        self,
+        vid: OwnedVid,
+        alias: str | None = None,
+        metadata: dict[Any, Any] | None = None,
     ):
         """Adds a private `vid` to the wallet"""
         with Wallet(self):
@@ -73,10 +73,10 @@ class SecureStore:
         # ANCHOR_END: manage-vids-mdBook
 
     def add_verified_owned_vid(
-            self,
-            vid: OwnedVid,
-            alias: str | None = None,
-            metadata: dict[Any, Any] | None = None,
+        self,
+        vid: OwnedVid,
+        alias: str | None = None,
+        metadata: dict[Any, Any] | None = None,
     ):
         """Add `vid` to the wallet, but without the private keys"""
         with Wallet(self):
@@ -89,11 +89,10 @@ class SecureStore:
 
     # ANCHOR: open-seal-mdBook
     def seal_message(
-            self,
-            sender: str,
-            receiver: str,
-            message: bytes,
-            nonconfidential_data: bytes | None = None,
+        self,
+        sender: str,
+        receiver: str,
+        message: bytes,
     ) -> tuple[str, bytes]:
         """
         Seal a TSP message.
@@ -102,9 +101,7 @@ class SecureStore:
         of the sender and receiver, specified by their VIDs.
         """
         with Wallet(self):
-            return self.inner.seal_message(
-                sender, receiver, message, nonconfidential_data
-            )
+            return self.inner.seal_message(sender, receiver, message)
 
     def open_message(self, message: bytes):
         """Decode an encrypted `message`"""
@@ -115,11 +112,10 @@ class SecureStore:
 
     # ANCHOR: send-receive-mdBook
     def send(
-            self,
-            sender: str,
-            receiver: str,
-            message: bytes,
-            nonconfidential_data: bytes | None = None,
+        self,
+        sender: str,
+        receiver: str,
+        message: bytes,
     ):
         """
         Send a TSP message given earlier resolved VIDs
@@ -127,7 +123,7 @@ class SecureStore:
         Encodes, encrypts, signs, and sends a TSP message
         """
         with Wallet(self):
-            self.inner.send(sender, receiver, message, nonconfidential_data)
+            self.inner.send(sender, receiver, message)
 
     def receive(self, vid: str):
         """Receive a single TSP messages for the private VID identified by `vid`, using the appropriate transport mechanism for it."""
@@ -142,17 +138,17 @@ class SecureStore:
             return self.inner.get_sender_receiver(message)
 
     def make_relationship_request(
-            self, sender: str, receiver: str, route: list[str] | None = None
+        self, sender: str, receiver: str, route: list[str] | None = None
     ) -> tuple[str, bytes]:
         with Wallet(self):
             return self.inner.make_relationship_request(sender, receiver, route)
 
     def make_relationship_accept(
-            self,
-            sender: str,
-            receiver: str,
-            thread_id: bytes,
-            route: list[str] | None = None,
+        self,
+        sender: str,
+        receiver: str,
+        thread_id: bytes,
+        route: list[str] | None = None,
     ) -> tuple[str, bytes]:
         with Wallet(self):
             return self.inner.make_relationship_accept(
@@ -164,13 +160,13 @@ class SecureStore:
             return self.inner.make_relationship_cancel(sender, receiver)
 
     def make_nested_relationship_request(
-            self, parent_sender: str, receiver: str
+        self, parent_sender: str, receiver: str
     ) -> tuple[tuple[str, bytes], tsp_python.OwnedVid]:
         with Wallet(self):
             return self.inner.make_nested_relationship_request(parent_sender, receiver)
 
     def make_nested_relationship_accept(
-            self, sender: str, receiver: str, thread_id: bytes
+        self, sender: str, receiver: str, thread_id: bytes
     ) -> tuple[tuple[str, bytes], tsp_python.OwnedVid]:
         with Wallet(self):
             return self.inner.make_nested_relationship_accept(
@@ -178,7 +174,7 @@ class SecureStore:
             )
 
     def forward_routed_message(
-            self, next_hop: str, route: list[bytes], opaque_payload: bytes
+        self, next_hop: str, route: list[bytes], opaque_payload: bytes
     ):
         with Wallet(self):
             return self.inner.forward_routed_message(next_hop, route, opaque_payload)

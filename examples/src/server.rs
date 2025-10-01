@@ -235,7 +235,6 @@ fn open_message(message: &[u8], payload: Option<&[u8]>) -> Option<serde_json::Va
 #[derive(Deserialize, Debug)]
 struct SendMessageForm {
     message: String,
-    nonconfidential_data: Option<String>,
     sender: OwnedVid,
     receiver: Vid,
 }
@@ -298,16 +297,14 @@ async fn sign_timestamp(
         .add_verified_vid(verified_vid, metadata)
         .map_err(|_| (StatusCode::BAD_REQUEST, "Error adding verified vid").into_response())?;
 
-    let (_url, response_bytes) = state
+    let response_bytes = state
         .timestamp_server
-        .seal_message(
+        .sign_anycast(
             &format!(
                 "did:web:did.{}:endpoint:timestamp-server",
                 state.domain.replace(":", "%3A")
             ),
-            receiver,
-            Some(&bytes),
-            &[],
+            &bytes,
         )
         .map_err(|_| {
             (StatusCode::INTERNAL_SERVER_ERROR, "Error signing message").into_response()
@@ -362,13 +359,6 @@ async fn send_message(
     let result = tsp_sdk::crypto::seal(
         &form.sender,
         &form.receiver,
-        form.nonconfidential_data.as_deref().and_then(|d| {
-            if d.is_empty() {
-                None
-            } else {
-                Some(d.as_bytes())
-            }
-        }),
         Payload::Content(form.message.as_bytes()),
     );
 

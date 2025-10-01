@@ -425,16 +425,10 @@ impl SecureStore {
         &self,
         sender: &str,
         receiver: &str,
-        nonconfidential_data: Option<&[u8]>,
         message: &[u8],
     ) -> Result<(Url, Vec<u8>), Error> {
         // ANCHOR_END: seal_message-mbBook
-        self.seal_message_payload(
-            sender,
-            receiver,
-            nonconfidential_data,
-            Payload::Content(message),
-        )
+        self.seal_message_payload(sender, receiver, Payload::Content(message))
     }
 
     /// Seal a TSP message.
@@ -442,10 +436,9 @@ impl SecureStore {
         &self,
         sender: &str,
         receiver: &str,
-        nonconfidential_data: Option<&[u8]>,
         payload: Payload<&[u8]>,
     ) -> Result<(url::Url, Vec<u8>), Error> {
-        self.seal_message_payload_and_hash(sender, receiver, nonconfidential_data, payload, None)
+        self.seal_message_payload_and_hash(sender, receiver, payload, None)
     }
 
     /// Seal a TSP message and return the digest of the payload
@@ -453,7 +446,6 @@ impl SecureStore {
         &self,
         sender: &str,
         receiver: &str,
-        nonconfidential_data: Option<&[u8]>,
         payload: Payload<&[u8]>,
         digest: Option<&mut Digest>,
     ) -> Result<(url::Url, Vec<u8>), Error> {
@@ -474,7 +466,6 @@ impl SecureStore {
                     let tsp_message: Vec<u8> = crate::crypto::seal_and_hash(
                         &*inner_sender,
                         &*receiver_context.vid,
-                        nonconfidential_data,
                         payload,
                         digest,
                     )?;
@@ -494,7 +485,6 @@ impl SecureStore {
             return self.seal_message_payload(
                 sender.identifier(),
                 first_hop.vid.identifier(),
-                None,
                 Payload::RoutedMessage(hops, &inner_message),
             );
         }
@@ -527,7 +517,6 @@ impl SecureStore {
                 crate::crypto::seal_and_hash(
                     &*inner_sender,
                     &*receiver_context.vid,
-                    None,
                     payload,
                     digest,
                 )?
@@ -539,19 +528,13 @@ impl SecureStore {
             return self.seal_message_payload(
                 parent_sender.identifier(),
                 parent_receiver.identifier(),
-                nonconfidential_data,
                 Payload::NestedMessage(&inner_message),
             );
         }
 
         // send direct mode
-        let tsp_message = crate::crypto::seal_and_hash(
-            &*sender,
-            &*receiver_context.vid,
-            nonconfidential_data,
-            payload,
-            digest,
-        )?;
+        let tsp_message =
+            crate::crypto::seal_and_hash(&*sender, &*receiver_context.vid, payload, digest)?;
 
         Ok((receiver_context.vid.endpoint().clone(), tsp_message))
     }
@@ -611,7 +594,6 @@ impl SecureStore {
             self.seal_message_payload(
                 sender_private.identifier(),
                 recipient.identifier(),
-                None,
                 Payload::NestedMessage(opaque_payload),
             )
         } else {
@@ -628,7 +610,6 @@ impl SecureStore {
             self.seal_message_payload(
                 sender.identifier(),
                 next_hop_context.vid.identifier(),
-                None,
                 Payload::RoutedMessage(route, opaque_payload),
             )
         }
@@ -943,7 +924,6 @@ impl SecureStore {
         let tsp_message = crate::crypto::seal_and_hash(
             &*sender,
             &*receiver,
-            None,
             Payload::RequestRelationship {
                 route,
                 thread_id: Default::default(),
@@ -977,12 +957,8 @@ impl SecureStore {
         thread_id: Digest,
         route: Option<&[&str]>,
     ) -> Result<(Url, Vec<u8>), Error> {
-        let (transport, tsp_message) = self.seal_message_payload(
-            sender,
-            receiver,
-            None,
-            Payload::AcceptRelationship { thread_id },
-        )?;
+        let (transport, tsp_message) =
+            self.seal_message_payload(sender, receiver, Payload::AcceptRelationship { thread_id })?;
 
         let (transport, tsp_message) = if let Some(hop_list) = route {
             self.set_route_for_vid(receiver, hop_list)?;
@@ -1022,12 +998,8 @@ impl SecureStore {
             }
         };
 
-        let (transport, message) = self.seal_message_payload(
-            sender,
-            receiver,
-            None,
-            Payload::CancelRelationship { thread_id },
-        )?;
+        let (transport, message) =
+            self.seal_message_payload(sender, receiver, Payload::CancelRelationship { thread_id })?;
 
         Ok((transport, message))
     }
@@ -1049,7 +1021,6 @@ impl SecureStore {
         let (endpoint, tsp_message) = self.seal_message_payload_and_hash(
             sender.identifier(),
             receiver.identifier(),
-            None,
             Payload::RequestNestedRelationship {
                 inner: &inner_message,
                 thread_id: Default::default(),
@@ -1096,7 +1067,6 @@ impl SecureStore {
         let (transport, tsp_message) = self.seal_message_payload(
             parent_sender,
             parent_receiver,
-            None,
             Payload::AcceptNestedRelationship {
                 thread_id,
                 inner: &inner_message,
@@ -1134,7 +1104,6 @@ impl SecureStore {
         let (transport, tsp_message) = self.seal_message_payload(
             sender,
             receiver,
-            None,
             Payload::NewIdentifier {
                 thread_id,
                 new_vid: new_vid.identifier().as_ref(),
@@ -1156,7 +1125,6 @@ impl SecureStore {
         let (transport, tsp_message) = self.seal_message_payload(
             sender,
             receiver,
-            None,
             Payload::Referral {
                 referred_vid: referred_vid.vid.identifier().as_ref(),
             },
@@ -1358,7 +1326,7 @@ mod test {
         let message = b"hello world";
 
         let (url, mut sealed) = store
-            .seal_message(alice.identifier(), bob.identifier(), None, message)
+            .seal_message(alice.identifier(), bob.identifier(), message)
             .unwrap();
 
         assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
@@ -1671,12 +1639,7 @@ mod test {
         let hello_world = b"hello world";
 
         let (_url, mut sealed) = a_store
-            .seal_message(
-                sneaky_a.identifier(),
-                sneaky_d.identifier(),
-                None,
-                hello_world,
-            )
+            .seal_message(sneaky_a.identifier(), sneaky_d.identifier(), hello_world)
             .unwrap();
 
         let received = b_store.open_message(&mut sealed).unwrap();
@@ -1798,12 +1761,7 @@ mod test {
         let hello_world = b"hello world";
 
         let (_url, mut sealed) = a_store
-            .seal_message(
-                nested_a.identifier(),
-                nested_b.identifier(),
-                None,
-                hello_world,
-            )
+            .seal_message(nested_a.identifier(), nested_b.identifier(), hello_world)
             .unwrap();
 
         let received = b_store.open_message(&mut sealed).unwrap();
@@ -1932,12 +1890,7 @@ mod test {
         let hello_world = b"hello world";
 
         let (_url, mut sealed) = a_store
-            .seal_message(
-                nested_a.identifier(),
-                nested_b.identifier(),
-                None,
-                hello_world,
-            )
+            .seal_message(nested_a.identifier(), nested_b.identifier(), hello_world)
             .unwrap();
 
         let received = b_store.open_message(&mut sealed).unwrap();

@@ -178,42 +178,24 @@ impl Store {
             .map_err(py_exception)
     }
 
-    #[pyo3(signature = (sender, receiver, message, nonconfidential_data = None))]
+    #[pyo3(signature = (sender, receiver, message))]
     fn seal_message(
         &self,
         sender: String,
         receiver: String,
         message: Vec<u8>,
-        nonconfidential_data: Option<Vec<u8>>,
     ) -> PyResult<(String, Vec<u8>)> {
         let (url, bytes) = self
             .inner
-            .seal_message(
-                &sender,
-                &receiver,
-                nonconfidential_data.as_deref(),
-                &message,
-            )
+            .seal_message(&sender, &receiver, &message)
             .map_err(py_exception)?;
 
         Ok((url.to_string(), bytes))
     }
 
-    #[pyo3(signature = (sender, receiver, message, nonconfidential_data = None))]
-    fn send(
-        &self,
-        sender: String,
-        receiver: String,
-        message: Vec<u8>,
-        nonconfidential_data: Option<Vec<u8>>,
-    ) -> PyResult<()> {
-        wait_for(self.inner.send(
-            &sender,
-            &receiver,
-            nonconfidential_data.as_deref(),
-            &message,
-        ))?
-        .map_err(py_exception)
+    #[pyo3(signature = (sender, receiver, message))]
+    fn send(&self, sender: String, receiver: String, message: Vec<u8>) -> PyResult<()> {
+        wait_for(self.inner.send(&sender, &receiver, &message))?.map_err(py_exception)
     }
 
     fn receive(&mut self, vid: String) -> PyResult<Option<FlatReceivedTspMessage>> {

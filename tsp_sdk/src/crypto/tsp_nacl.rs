@@ -8,7 +8,7 @@ use super::{CryptoError, MessageContents};
 #[cfg(feature = "nacl")]
 use crate::{
     cesr::SignatureType,
-    definitions::{NonConfidentialData, TSPMessage, VidSignatureKeyType},
+    definitions::{TSPMessage, VidSignatureKeyType},
 };
 #[cfg(feature = "nacl")]
 use crypto_box::aead::{AeadCore, OsRng};
@@ -23,7 +23,6 @@ use rand::{SeedableRng, rngs::StdRng};
 pub(crate) fn seal(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<NonConfidentialData>,
     secret_payload: Payload<&[u8]>,
     digest: Option<&mut super::Digest>,
 ) -> Result<TSPMessage, CryptoError> {
@@ -39,7 +38,6 @@ pub(crate) fn seal(
             signature_type: SignatureType::Ed25519,
             sender: sender.identifier(),
             receiver: Some(receiver.identifier()),
-            nonconfidential_data,
         },
         &mut data,
     )?;
@@ -161,7 +159,7 @@ pub(crate) fn open<'a>(
     receiver: &dyn PrivateVid,
     sender: &dyn VerifiedVid,
     _raw_header: &'a [u8],
-    envelope: Envelope<'a, &[u8]>,
+    envelope: Envelope<&[u8]>,
     ciphertext: &'a mut [u8],
 ) -> Result<MessageContents<'a>, CryptoError> {
     let (ciphertext, footer) = ciphertext.split_at_mut(ciphertext.len() - 16 - 24);
@@ -235,7 +233,7 @@ pub(crate) fn open<'a>(
     };
 
     Ok((
-        envelope.nonconfidential_data,
+        None,
         secret_payload,
         envelope.crypto_type,
         envelope.signature_type,

@@ -47,37 +47,27 @@ pub type Kem = kem::X25519Kyber768Draft00;
 pub fn seal(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
 ) -> Result<TSPMessage, CryptoError> {
-    seal_and_hash(sender, receiver, nonconfidential_data, payload, None)
+    seal_and_hash(sender, receiver, payload, None)
 }
 
 /// Encrypt, authenticate and sign and CESR encode a TSP message; also returns the hash value of the plaintext parts before encryption
 pub fn seal_and_hash(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
     digest: Option<&mut Digest>,
 ) -> Result<TSPMessage, CryptoError> {
     #[cfg(not(feature = "nacl"))]
     let msg = match receiver.encryption_key_type() {
-        VidEncryptionKeyType::X25519 => tsp_hpke::seal::<Aead, Kdf, kem::X25519HkdfSha256>(
-            sender,
-            receiver,
-            nonconfidential_data,
-            payload,
-            digest,
-        ),
+        VidEncryptionKeyType::X25519 => {
+            tsp_hpke::seal::<Aead, Kdf, kem::X25519HkdfSha256>(sender, receiver, payload, digest)
+        }
         #[cfg(feature = "pq")]
         VidEncryptionKeyType::X25519Kyber768Draft00 => {
             tsp_hpke::seal::<Aead, Kdf, kem::X25519Kyber768Draft00>(
-                sender,
-                receiver,
-                nonconfidential_data,
-                payload,
-                digest,
+                sender, receiver, payload, digest,
             )
         }
     }?;
@@ -136,6 +126,7 @@ pub fn open<'a>(
         raw_header,
         envelope,
         ciphertext: Some(ciphertext),
+        nonconfidential_data: None,
     } = view
         .into_opened::<&[u8]>()
         .map_err(|_| crate::cesr::error::DecodeError::VidError)?
@@ -268,20 +259,13 @@ mod tests {
         );
 
         let secret_message: &[u8] = b"hello world";
-        let nonconfidential_data = b"extra header data";
 
-        let mut message = seal(
-            &bob,
-            &alice,
-            Some(nonconfidential_data),
-            Payload::Content(secret_message),
-        )
-        .unwrap();
+        let mut message = seal(&bob, &alice, Payload::Content(secret_message)).unwrap();
 
         let (received_nonconfidential_data, received_secret_message, _, _) =
             open(&alice, &bob, &mut message).unwrap();
 
-        assert_eq!(received_nonconfidential_data.unwrap(), nonconfidential_data);
+        assert_eq!(received_nonconfidential_data, None);
         assert_eq!(received_secret_message, Payload::Content(secret_message));
     }
 }

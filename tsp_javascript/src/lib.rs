@@ -73,17 +73,11 @@ impl Store {
         &self,
         sender: String,
         receiver: String,
-        nonconfidential_data: Option<Vec<u8>>,
         message: Vec<u8>,
     ) -> Result<SealedMessage, Error> {
         let (url, sealed) = self
             .0
-            .seal_message(
-                &sender,
-                &receiver,
-                nonconfidential_data.as_deref(),
-                &message,
-            )
+            .seal_message(&sender, &receiver, &message)
             .map_err(Error)?;
 
         Ok(SealedMessage {
@@ -380,17 +374,9 @@ pub fn message_parts(message: &[u8]) -> Result<String, Error> {
 pub fn probe_message(mut message: Vec<u8>) -> Result<String, Error> {
     tsp_sdk::cesr::probe(&mut message)
         .map(|e: EnvelopeType| match e {
-            EnvelopeType::EncryptedMessage {
-                sender,
-                receiver,
-                nonconfidential_data,
-            } => serde_json::to_string(&json!({
+            EnvelopeType::EncryptedMessage { sender, receiver } => serde_json::to_string(&json!({
                 "sender": String::from_utf8_lossy(sender).to_string(),
                 "receiver": String::from_utf8_lossy(receiver).to_string(),
-                "nonconfidential_data": String::from_utf8_lossy(
-                    nonconfidential_data.unwrap_or_default(),
-                )
-                .to_string(),
             }))
             .unwrap(),
             EnvelopeType::SignedMessage {
