@@ -1084,8 +1084,12 @@ pub fn open_message_into_parts(data: &[u8]) -> Result<MessageParts<'_>, DecodeEr
     let cipher_code = crypto_type.cesr_code()?;
     let ciphertext = Part::decode(cipher_code, data, &mut pos);
 
-    let signature: &[u8; 64] = decode_fixed_data(ED25519_SIGNATURE, &mut &data[pos..])
-        .ok_or(DecodeError::SignatureError)?;
+    let signature = match EncodedSignature::decode(&mut &data[pos..])? {
+        EncodedSignature::NoSignature => &[],
+        EncodedSignature::Ed25519(sig) => sig.as_slice(),
+        #[cfg(feature = "pq")]
+        EncodedSignature::MlDsa65(sig) => sig.as_slice(),
+    };
 
     let signature = Part {
         prefix: &data[pos..(data.len() - signature.len())],
