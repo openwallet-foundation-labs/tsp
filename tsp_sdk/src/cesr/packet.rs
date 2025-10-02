@@ -28,6 +28,8 @@ const TSP_ETS_WRAPPER: u16 = cesr!("E");
 const TSP_S_WRAPPER: u16 = cesr!("S");
 const TSP_HOP_LIST: u16 = cesr!("J");
 const TSP_PAYLOAD: u16 = cesr!("Z");
+const TSP_ATTACH_GRP: u16 = cesr!("C");
+const TSP_INDEX_SIG_GRP: u16 = cesr!("K");
 
 const TSP_TMP: u32 = cesr!("X");
 
@@ -618,16 +620,38 @@ impl<'a> EncodedSignature<'a> {
         match self {
             EncodedSignature::NoSignature => {}
             EncodedSignature::Ed25519(signature) => {
+                encode_count(
+                    TSP_ATTACH_GRP,
+                    signature.len().next_multiple_of(3) / 3,
+                    output,
+                );
+                encode_count(
+                    TSP_INDEX_SIG_GRP,
+                    signature.len().next_multiple_of(3) / 3,
+                    output,
+                );
                 encode_fixed_data(ED25519_SIGNATURE, signature.as_slice(), output);
             }
             #[cfg(feature = "pq")]
             EncodedSignature::MlDsa65(signature) => {
+                encode_count(
+                    TSP_ATTACH_GRP,
+                    signature.len().next_multiple_of(3) / 3,
+                    output,
+                );
+                encode_count(
+                    TSP_INDEX_SIG_GRP,
+                    signature.len().next_multiple_of(3) / 3,
+                    output,
+                );
                 encode_fixed_data(ML_DSA_65_SIGNATURE, signature.as_slice(), output);
             }
         }
     }
 
     fn decode(stream: &mut &'a [u8]) -> Result<Self, DecodeError> {
+        decode_count(TSP_ATTACH_GRP, stream).ok_or(DecodeError::UnexpectedData)?;
+        decode_count(TSP_INDEX_SIG_GRP, stream).ok_or(DecodeError::UnexpectedData)?;
         if let Some(sig) = decode_fixed_data(ED25519_SIGNATURE, stream) {
             Ok(EncodedSignature::Ed25519(sig))
         } else {
