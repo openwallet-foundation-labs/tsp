@@ -110,8 +110,8 @@ pub(crate) fn seal(
         *digest = crate::crypto::blake2b256(&cesr_message)
     }
 
-    let sender_secret_key = SecretKey::from_slice(&sender.decryption_key())?;
-    let receiver_public_key = PublicKey::from_slice(&receiver.encryption_key())?;
+    let sender_secret_key = SecretKey::from_slice(sender.decryption_key())?;
+    let receiver_public_key = PublicKey::from_slice(receiver.encryption_key())?;
 
     let sender_box = ChaChaBox::new(&receiver_public_key, &sender_secret_key);
 

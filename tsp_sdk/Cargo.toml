@@ -13,7 +13,7 @@ publish = true
 
 [features]
 cesr-t = []
-default = ["async"]
+default = ["async", "nacl"]
 essr = []
 strict = []
 fuzzing = ["dep:arbitrary"]
