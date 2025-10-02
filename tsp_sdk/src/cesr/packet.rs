@@ -606,22 +606,41 @@ fn encode_envelope_fields<'a, Vid: AsRef<[u8]>>(
     Ok(())
 }
 
-/// Encode a Ed25519 signature into CESR
+enum EncodedSignature<'a> {
+    NoSignature,
+    Ed25519(&'a Signature),
+    #[cfg(feature = "pq")]
+    MlDsa65(&'a Signature),
+}
+
+impl<'a> EncodedSignature<'a> {
+    fn encode(&self, output: &mut impl for<'b> Extend<&'b u8>) {
+        match self {
+            EncodedSignature::NoSignature => {}
+            EncodedSignature::Ed25519(signature) => {
+                encode_fixed_data(ED25519_SIGNATURE, signature, output);
+            }
+            #[cfg(feature = "pq")]
+            EncodedSignature::MlDsa65(signature) => {
+                encode_fixed_data(ML_DSA_65_SIGNATURE, signature, output);
+            }
+        }
+    }
+}
+
+/// Encode a Ed25519 or MlDsa signature into CESR
 pub fn encode_signature(
     signature: &Signature,
     output: &mut impl for<'a> Extend<&'a u8>,
     sig_type: SignatureType,
 ) {
     match sig_type {
-        SignatureType::NoSignature => {}
-        SignatureType::Ed25519 => {
-            encode_fixed_data(ED25519_SIGNATURE, signature, output);
-        }
+        SignatureType::NoSignature => EncodedSignature::NoSignature,
+        SignatureType::Ed25519 => EncodedSignature::Ed25519(signature),
         #[cfg(feature = "pq")]
-        SignatureType::MlDsa65 => {
-            encode_fixed_data(ML_DSA_65_SIGNATURE, signature, output);
-        }
+        SignatureType::MlDsa65 => EncodedSignatgure::MlDsa65(signature),
     }
+    .encode(output)
 }
 
 impl CryptoType {
