@@ -981,6 +981,15 @@ pub struct MessageParts<'a> {
 
 /// Decode a CESR-encoded message into its CESR-encoded parts
 pub fn open_message_into_parts(data: &[u8]) -> Result<MessageParts<'_>, DecodeError> {
+    let fix_start = |r: Range<usize>| {
+        let start = if r.start.is_multiple_of(3) {
+            r.start
+        } else {
+            (r.start).next_multiple_of(3) - 3
+        };
+        start..r.end
+    };
+
     let mut pos = 0;
     let (sender, receiver, crypto_type, signature_type) =
         detected_tsp_header_size_and_confidentiality(data, &mut pos)?;
@@ -991,6 +1000,7 @@ pub fn open_message_into_parts(data: &[u8]) -> Result<MessageParts<'_>, DecodeEr
     };
 
     let sender_prefix_len = if sender.len() > 3 * 0xFFFFFF { 6 } else { 3 };
+    let sender = fix_start(sender);
     let sender = Part {
         prefix: &data[sender.start - sender_prefix_len..sender.start],
         data: &data[sender],
@@ -998,14 +1008,10 @@ pub fn open_message_into_parts(data: &[u8]) -> Result<MessageParts<'_>, DecodeEr
 
     let receiver = receiver.map(|r| {
         let receiver_prefix_len = if r.len() > 3 * 0xFFFFFF { 6 } else { 3 };
-        let start = if r.start.is_multiple_of(3) {
-            r.start
-        } else {
-            (r.start).next_multiple_of(3) - 3
-        };
+        let r = fix_start(r);
         Part {
-            prefix: &data[start - receiver_prefix_len..start],
-            data: &data[start..r.end],
+            prefix: &data[r.start - receiver_prefix_len..r.start],
+            data: &data[r.start..r.end],
         }
     });
 
