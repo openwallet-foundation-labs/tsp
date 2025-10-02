@@ -608,9 +608,9 @@ fn encode_envelope_fields<'a, Vid: AsRef<[u8]>>(
 
 enum EncodedSignature<'a> {
     NoSignature,
-    Ed25519(&'a Signature),
+    Ed25519(&'a [u8; 64]),
     #[cfg(feature = "pq")]
-    MlDsa65(&'a Signature),
+    MlDsa65(&'a [u8; 3309]),
 }
 
 impl<'a> EncodedSignature<'a> {
@@ -618,21 +618,21 @@ impl<'a> EncodedSignature<'a> {
         match self {
             EncodedSignature::NoSignature => {}
             EncodedSignature::Ed25519(signature) => {
-                encode_fixed_data(ED25519_SIGNATURE, signature, output);
+                encode_fixed_data(ED25519_SIGNATURE, signature.as_slice(), output);
             }
             #[cfg(feature = "pq")]
             EncodedSignature::MlDsa65(signature) => {
-                encode_fixed_data(ML_DSA_65_SIGNATURE, signature, output);
+                encode_fixed_data(ML_DSA_65_SIGNATURE, signature.as_slice(), output);
             }
         }
     }
 
     fn decode(stream: &mut &'a [u8]) -> Result<Self, DecodeError> {
-        if let Some(sig) = decode_fixed_data::<64>(ED25519_SIGNATURE, stream) {
+        if let Some(sig) = decode_fixed_data(ED25519_SIGNATURE, stream) {
             Ok(EncodedSignature::Ed25519(sig))
         } else {
             #[cfg(feature = "pq")]
-            if let Some(sig) = decode_fixed_data::<3309>(ML_DSA_65_SIGNATURE, stream) {
+            if let Some(sig) = decode_fixed_data(ML_DSA_65_SIGNATURE, stream) {
                 Ok(EncodedSignature::MlDsa65(sig))
             } else {
                 return Err(DecodeError::InvalidSignatureType);
@@ -651,9 +651,13 @@ pub fn encode_signature(
 ) {
     match sig_type {
         SignatureType::NoSignature => EncodedSignature::NoSignature,
-        SignatureType::Ed25519 => EncodedSignature::Ed25519(signature),
+        SignatureType::Ed25519 => {
+            EncodedSignature::Ed25519(signature.try_into().expect("signature has incorrect size"))
+        }
         #[cfg(feature = "pq")]
-        SignatureType::MlDsa65 => EncodedSignatgure::MlDsa65(signature),
+        SignatureType::MlDsa65 => {
+            EncodedSignature::MlDsa65(signature.try_into().expect("signature has incorrect size"))
+        }
     }
     .encode(output)
 }
@@ -753,17 +757,11 @@ pub(super) fn detected_tsp_header_size_and_confidentiality(
         return Err(DecodeError::InvalidCrypto);
     }
 
-    let signature_type = if decode_fixed_data::<64>(ED25519_SIGNATURE, &mut stream).is_some() {
-        SignatureType::Ed25519
-    } else {
+    let signature_type = match EncodedSignature::decode(&mut stream) {
+        Ok(EncodedSignature::Ed25519(_)) => SignatureType::Ed25519,
         #[cfg(feature = "pq")]
-        if code_fixed_data::<3309>(ML_DSA_65_SIGNATURE, &mut stream).is_some() {
-            SignatureType::MlDsa65
-        } else {
-            SignatureType::NoSignature
-        }
-        #[cfg(not(feature = "pq"))]
-        SignatureType::NoSignature
+        Ok(EncodedSignature::MlDsa65(_)) => SignatureType::MlDsa65,
+        _ => SignatureType::NoSignature,
     };
 
     Ok((sender, receiver, crypto_type, signature_type))
@@ -905,19 +903,15 @@ pub fn decode_envelope<'a>(stream: &'a mut [u8]) -> Result<CipherView<'a>, Decod
     let mut sigdata: &[u8];
     (data, sigdata) = stream.split_at_mut(signed_data.end);
 
+    //FIXME: just decode it fully with EncodedSignature
     let signature = match signature_type {
         SignatureType::NoSignature => [].as_slice(),
-        SignatureType::Ed25519 => {
-            let sig: &[u8; 64] = decode_fixed_data(ED25519_SIGNATURE, &mut sigdata)
-                .ok_or(DecodeError::UnexpectedData)?;
-            sig.as_slice()
-        }
-        #[cfg(feature = "pq")]
-        SignatureType::MlDsa65 => {
-            let sig: &[u8; 3309] = decode_fixed_data(ML_DSA_65_SIGNATURE, &mut sigdata)
-                .ok_or(DecodeError::UnexpectedData)?;
-            sig.as_slice()
-        }
+        _ => match EncodedSignature::decode(&mut sigdata)? {
+            EncodedSignature::Ed25519(sig) => sig.as_slice(),
+            #[cfg(feature = "pq")]
+            EncodedSignature::MlDsa65(sig) => sig.as_slice(),
+            _ => [].as_slice(),
+        },
     };
 
     if !sigdata.is_empty() {
