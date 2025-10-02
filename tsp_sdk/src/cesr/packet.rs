@@ -28,6 +28,8 @@ const TSP_ETS_WRAPPER: u16 = cesr!("E");
 const TSP_S_WRAPPER: u16 = cesr!("S");
 const TSP_HOP_LIST: u16 = cesr!("J");
 const TSP_PAYLOAD: u16 = cesr!("Z");
+const TSP_ATTACH_GRP: u16 = cesr!("C");
+const TSP_INDEX_SIG_GRP: u16 = cesr!("K");
 
 const TSP_TMP: u32 = cesr!("X");
 
@@ -606,22 +608,94 @@ fn encode_envelope_fields<'a, Vid: AsRef<[u8]>>(
     Ok(())
 }
 
-/// Encode a Ed25519 signature into CESR
+enum EncodedSignature<'a> {
+    NoSignature,
+    Ed25519(&'a [u8; 64]),
+    #[cfg(feature = "pq")]
+    MlDsa65(&'a [u8; 3309]),
+}
+
+impl<'a> EncodedSignature<'a> {
+    fn encode(&self, output: &mut impl for<'b> Extend<&'b u8>) {
+        match self {
+            EncodedSignature::NoSignature => {}
+            EncodedSignature::Ed25519(signature) => {
+                encode_count(
+                    TSP_ATTACH_GRP,
+                    signature.len().next_multiple_of(3) / 3,
+                    output,
+                );
+                encode_count(
+                    TSP_INDEX_SIG_GRP,
+                    signature.len().next_multiple_of(3) / 3,
+                    output,
+                );
+                encode_fixed_data(ED25519_SIGNATURE, signature.as_slice(), output);
+            }
+            #[cfg(feature = "pq")]
+            EncodedSignature::MlDsa65(signature) => {
+                encode_count(
+                    TSP_ATTACH_GRP,
+                    signature.len().next_multiple_of(3) / 3,
+                    output,
+                );
+                encode_count(
+                    TSP_INDEX_SIG_GRP,
+                    signature.len().next_multiple_of(3) / 3,
+                    output,
+                );
+                encode_fixed_data(ML_DSA_65_SIGNATURE, signature.as_slice(), output);
+            }
+        }
+    }
+
+    fn decode(stream: &mut &'a [u8]) -> Result<Self, DecodeError> {
+        let a_size = decode_count(TSP_ATTACH_GRP, stream).ok_or(DecodeError::UnexpectedData)?;
+        let i_size = decode_count(TSP_INDEX_SIG_GRP, stream).ok_or(DecodeError::UnexpectedData)?;
+        if let Some(sig) = decode_fixed_data(ED25519_SIGNATURE, stream) {
+            if a_size != (sig.len() as u32).next_multiple_of(3) / 3 {
+                return Err(DecodeError::InvalidSignatureType);
+            }
+            if i_size != (sig.len() as u32).next_multiple_of(3) / 3 {
+                return Err(DecodeError::InvalidSignatureType);
+            }
+            Ok(EncodedSignature::Ed25519(sig))
+        } else {
+            #[cfg(feature = "pq")]
+            if let Some(sig) = decode_fixed_data(ML_DSA_65_SIGNATURE, stream) {
+                if a_size != (sig.len() as u32).next_multiple_of(3) / 3 {
+                    return Err(DecodeError::InvalidSignatureType);
+                }
+                if i_size != (sig.len() as u32).next_multiple_of(3) / 3 {
+                    return Err(DecodeError::InvalidSignatureType);
+                }
+                Ok(EncodedSignature::MlDsa65(sig))
+            } else {
+                return Err(DecodeError::InvalidSignatureType);
+            }
+            #[cfg(not(feature = "pq"))]
+            return Err(DecodeError::InvalidSignatureType);
+        }
+    }
+}
+
+/// Encode a Ed25519 or MlDsa signature into CESR
 pub fn encode_signature(
     signature: &Signature,
     output: &mut impl for<'a> Extend<&'a u8>,
     sig_type: SignatureType,
 ) {
     match sig_type {
-        SignatureType::NoSignature => {}
+        SignatureType::NoSignature => EncodedSignature::NoSignature,
         SignatureType::Ed25519 => {
-            encode_fixed_data(ED25519_SIGNATURE, signature, output);
+            EncodedSignature::Ed25519(signature.try_into().expect("signature has incorrect size"))
         }
         #[cfg(feature = "pq")]
         SignatureType::MlDsa65 => {
-            encode_fixed_data(ML_DSA_65_SIGNATURE, signature, output);
+            EncodedSignature::MlDsa65(signature.try_into().expect("signature has incorrect size"))
         }
     }
+    .encode(output)
 }
 
 impl CryptoType {
@@ -719,17 +793,11 @@ pub(super) fn detected_tsp_header_size_and_confidentiality(
         return Err(DecodeError::InvalidCrypto);
     }
 
-    let signature_type = if decode_fixed_data::<64>(ED25519_SIGNATURE, &mut stream).is_some() {
-        SignatureType::Ed25519
-    } else {
+    let signature_type = match EncodedSignature::decode(&mut stream) {
+        Ok(EncodedSignature::Ed25519(_)) => SignatureType::Ed25519,
         #[cfg(feature = "pq")]
-        if code_fixed_data::<3309>(ML_DSA_65_SIGNATURE, &mut stream).is_some() {
-            SignatureType::MlDsa65
-        } else {
-            SignatureType::NoSignature
-        }
-        #[cfg(not(feature = "pq"))]
-        SignatureType::NoSignature
+        Ok(EncodedSignature::MlDsa65(_)) => SignatureType::MlDsa65,
+        _ => SignatureType::NoSignature,
     };
 
     Ok((sender, receiver, crypto_type, signature_type))
@@ -871,19 +939,15 @@ pub fn decode_envelope<'a>(stream: &'a mut [u8]) -> Result<CipherView<'a>, Decod
     let mut sigdata: &[u8];
     (data, sigdata) = stream.split_at_mut(signed_data.end);
 
+    //FIXME: just decode it fully with EncodedSignature
     let signature = match signature_type {
         SignatureType::NoSignature => [].as_slice(),
-        SignatureType::Ed25519 => {
-            let sig: &[u8; 64] = decode_fixed_data(ED25519_SIGNATURE, &mut sigdata)
-                .ok_or(DecodeError::UnexpectedData)?;
-            sig.as_slice()
-        }
-        #[cfg(feature = "pq")]
-        SignatureType::MlDsa65 => {
-            let sig: &[u8; 3309] = decode_fixed_data(ML_DSA_65_SIGNATURE, &mut sigdata)
-                .ok_or(DecodeError::UnexpectedData)?;
-            sig.as_slice()
-        }
+        _ => match EncodedSignature::decode(&mut sigdata)? {
+            EncodedSignature::Ed25519(sig) => sig.as_slice(),
+            #[cfg(feature = "pq")]
+            EncodedSignature::MlDsa65(sig) => sig.as_slice(),
+            _ => [].as_slice(),
+        },
     };
 
     if !sigdata.is_empty() {
@@ -1020,8 +1084,12 @@ pub fn open_message_into_parts(data: &[u8]) -> Result<MessageParts<'_>, DecodeEr
     let cipher_code = crypto_type.cesr_code()?;
     let ciphertext = Part::decode(cipher_code, data, &mut pos);
 
-    let signature: &[u8; 64] = decode_fixed_data(ED25519_SIGNATURE, &mut &data[pos..])
-        .ok_or(DecodeError::SignatureError)?;
+    let signature = match EncodedSignature::decode(&mut &data[pos..])? {
+        EncodedSignature::NoSignature => &[],
+        EncodedSignature::Ed25519(sig) => sig.as_slice(),
+        #[cfg(feature = "pq")]
+        EncodedSignature::MlDsa65(sig) => sig.as_slice(),
+    };
 
     let signature = Part {
         prefix: &data[pos..(data.len() - signature.len())],
