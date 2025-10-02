@@ -650,13 +650,25 @@ impl<'a> EncodedSignature<'a> {
     }
 
     fn decode(stream: &mut &'a [u8]) -> Result<Self, DecodeError> {
-        decode_count(TSP_ATTACH_GRP, stream).ok_or(DecodeError::UnexpectedData)?;
-        decode_count(TSP_INDEX_SIG_GRP, stream).ok_or(DecodeError::UnexpectedData)?;
+        let a_size = decode_count(TSP_ATTACH_GRP, stream).ok_or(DecodeError::UnexpectedData)?;
+        let i_size = decode_count(TSP_INDEX_SIG_GRP, stream).ok_or(DecodeError::UnexpectedData)?;
         if let Some(sig) = decode_fixed_data(ED25519_SIGNATURE, stream) {
+            if a_size != (sig.len() as u32).next_multiple_of(3) / 3 {
+                return Err(DecodeError::InvalidSignatureType);
+            }
+            if i_size != (sig.len() as u32).next_multiple_of(3) / 3 {
+                return Err(DecodeError::InvalidSignatureType);
+            }
             Ok(EncodedSignature::Ed25519(sig))
         } else {
             #[cfg(feature = "pq")]
             if let Some(sig) = decode_fixed_data(ML_DSA_65_SIGNATURE, stream) {
+                if a_size != (sig.len() as u32).next_multiple_of(3) / 3 {
+                    return Err(DecodeError::InvalidSignatureType);
+                }
+                if i_size != (sig.len() as u32).next_multiple_of(3) / 3 {
+                    return Err(DecodeError::InvalidSignatureType);
+                }
                 Ok(EncodedSignature::MlDsa65(sig))
             } else {
                 return Err(DecodeError::InvalidSignatureType);
