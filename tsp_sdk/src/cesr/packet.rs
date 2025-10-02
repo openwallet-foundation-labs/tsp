@@ -626,6 +626,21 @@ impl<'a> EncodedSignature<'a> {
             }
         }
     }
+
+    fn decode(stream: &mut &'a [u8]) -> Result<Self, DecodeError> {
+        if let Some(sig) = decode_fixed_data::<64>(ED25519_SIGNATURE, stream) {
+            Ok(EncodedSignature::Ed25519(sig))
+        } else {
+            #[cfg(feature = "pq")]
+            if let Some(sig) = decode_fixed_data::<3309>(ML_DSA_65_SIGNATURE, stream) {
+                Ok(EncodedSignature::MlDsa65(sig))
+            } else {
+                return Err(DecodeError::InvalidSignatureType);
+            }
+            #[cfg(not(feature = "pq"))]
+            return Err(DecodeError::InvalidSignatureType);
+        }
+    }
 }
 
 /// Encode a Ed25519 or MlDsa signature into CESR
