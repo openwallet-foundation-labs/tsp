@@ -184,7 +184,7 @@ pub fn verify<'a>(
     nonconfidential::verify(sender, tsp_message)
 }
 
-#[cfg(all(not(feature = "essr"), not(feature = "pq")))]
+#[cfg(all(not(feature = "nacl"), not(feature = "pq")))]
 /// Generate a new encryption / decryption key pair
 pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
     use hpke::Serializable;

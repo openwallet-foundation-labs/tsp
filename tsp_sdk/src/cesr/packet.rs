@@ -173,7 +173,11 @@ impl AsCryptoType for kem::X25519Kyber768Draft00 {
 
 impl AsCryptoType for kem::X25519HkdfSha256 {
     fn crypto_type() -> CryptoType {
-        CryptoType::HpkeAuth
+        if cfg!(feature = "essr") {
+            CryptoType::HpkeEssr
+        } else {
+            CryptoType::HpkeAuth
+        }
     }
 }
 
