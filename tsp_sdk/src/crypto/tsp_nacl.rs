@@ -118,8 +118,43 @@ pub(crate) fn seal(
     // Get a random nonce to encrypt the message under
     let nonce = ChaChaBox::generate_nonce(&mut OsRng);
 
+    tracing::info!(
+        "Encrypting plaintext {}:",
+        <base64ct::Base64Url as base64ct::Encoding>::encode_string(&cesr_message)
+    );
+
     // aad not yet supported: https://github.com/RustCrypto/nacl-compat/blob/78b59261458923740724c84937459f0a6017a592/crypto_box/src/lib.rs#L227
     let tag = sender_box.encrypt_in_place_detached(&nonce, &[], &mut cesr_message);
+
+    tracing::info!(
+        "- ciphertext: {}",
+        <base64ct::Base64Url as base64ct::Encoding>::encode_string(&cesr_message)
+    );
+    tracing::info!(
+        "- tag: {}",
+        <base64ct::Base64Url as base64ct::Encoding>::encode_string(&tag.unwrap())
+    );
+    tracing::info!(
+        "- nonce: {}",
+        <base64ct::Base64Url as base64ct::Encoding>::encode_string(&nonce)
+    );
+
+    let mut unpadded = cesr_message.clone();
+    unpadded.append(&mut tag.unwrap().iter().copied().collect());
+    let padded_size = unpadded.len().next_multiple_of(3);
+    let lead_bytes = padded_size - unpadded.len();
+
+    let mut padded: Vec<u8> = <[u8; 2]>::default()[0..lead_bytes]
+        .iter()
+        .copied()
+        .collect();
+    padded.extend_from_slice(&cesr_message);
+    padded.append(&mut tag.unwrap().iter().copied().collect());
+
+    tracing::info!(
+        "Padded ciphertext + tag: {}",
+        <base64ct::Base64Url as base64ct::Encoding>::encode_string(&padded)
+    );
 
     cesr_message.extend(tag.unwrap());
     cesr_message.extend(nonce);
