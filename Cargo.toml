@@ -4,7 +4,7 @@ members = ["tsp_sdk", "examples", "fuzz", "tsp_python", "tsp_javascript"]
 exclude = ["demo"]
 
 [workspace.package]
-version = "0.9.0-alpha"
+version = "0.9.0-alpha2"
 edition = "2024"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/openwallet-foundation-labs/tsp"
@@ -49,7 +49,7 @@ tokio = { version = "1.0", default-features = false, features = [
   "macros",
   "signal",
 ] }
-aries-askar = { version = "0.4.0", default-features = false, features = [
+aries-askar = { version = "0.4.6", default-features = false, features = [
   "sqlite",
 ] }
 # logging
@@ -61,7 +61,7 @@ tracing-subscriber = { version = "0.3.1", default-features = false, features = [
   "tracing-log",
 ] }
 # transport
-tokio-tungstenite = { version = "0.27", default-features = false, features = [
+tokio-tungstenite = { version = "0.28", default-features = false, features = [
   "rustls-tls-native-roots",
   "stream",
   "connect",
@@ -109,12 +109,3 @@ axum = { version = "0.8.1", features = ["ws", "macros"] }
 tower-http = { version = "0.6.2", features = ["cors"] }
 
 tsp_sdk = { path = "./tsp_sdk", version = "0.9.0-alpha" }
-
-[patch.crates-io]
-askar-storage = { git = "https://github.com/openwallet-foundation/askar.git" }
-
-# these are patched to prevent log level from being force to info level
-# should be fixed once PRs are merged and new versions are released
-affinidi-data-integrity = { git = "https://github.com/michielp1807/affinidi-tdk-rs.git" }
-affinidi-secrets-resolver = { git = "https://github.com/michielp1807/affinidi-tdk-rs.git" }
-didwebvh-rs = { git = "https://github.com/decentralized-identity/didwebvh-rs", rev = "05ef9f19ec08e88d945e1bdce595a007422ccb32" }
