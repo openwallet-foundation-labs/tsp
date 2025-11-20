@@ -87,7 +87,7 @@ arbitrary = { workspace = true, optional = true }
 async-trait = "0.1.88"
 
 # webvh
-didwebvh-rs = { workspace = true, optional = true }
+didwebvh-rs = { optional = true, version = "0.1.10" }
 
 # not used directly, but we need to configure
 # the JS feature in this transitive dependency
