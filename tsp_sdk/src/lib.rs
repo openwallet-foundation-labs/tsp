@@ -127,6 +127,7 @@ pub use secure_storage::SecureStorage;
 pub use definitions::{Payload, PrivateVid, ReceivedTspMessage, RelationshipStatus, VerifiedVid};
 pub use relationship_machine::{RelationshipEvent, RelationshipMachine};
 
+pub mod queue;
 pub mod relationship_machine;
 pub mod retry;
 pub use error::Error;

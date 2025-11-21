@@ -7,6 +7,7 @@ use crate::{
         VerifiedVid,
     },
     error::Error,
+    queue::MessageQueue,
     relationship_machine::{RelationshipEvent, RelationshipMachine, StateError},
     retry::RetryPolicy,
     vid::{VidError, resolve::verify_vid_offline},
@@ -110,6 +111,7 @@ pub struct SecureStore {
     pub(crate) vids: Arc<RwLock<HashMap<String, VidContext>>>,
     pub(crate) aliases: Arc<RwLock<Aliases>>,
     pub(crate) keys: Arc<RwLock<WebvhUpdateKeys>>,
+    pub(crate) queue: Arc<RwLock<MessageQueue>>,
 }
 
 /// This wallet is used to store and resolve VIDs
@@ -1382,6 +1384,25 @@ impl SecureStore {
         }
 
         Ok(messages_to_resend)
+    }
+
+    /// Queue a message for later delivery.
+    pub fn queue_message(&self, url: Url, message: Vec<u8>) -> Result<(), Error> {
+        let mut queue = self.queue.write().unwrap();
+        queue.push(url, message);
+        Ok(())
+    }
+
+    /// Retrieve pending messages from the queue.
+    /// This removes them from the queue, so the caller is responsible for sending them.
+    /// If sending fails again, they should be re-queued.
+    pub fn retrieve_pending_messages(&self) -> Result<Vec<(Url, Vec<u8>)>, Error> {
+        let mut queue = self.queue.write().unwrap();
+        let mut messages = Vec::new();
+        while let Some(msg) = queue.pop() {
+            messages.push((msg.url, msg.message));
+        }
+        Ok(messages)
     }
 
     fn add_nested_relation(
