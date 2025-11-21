@@ -44,7 +44,7 @@ pub struct MessageType {
 }
 
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RelationshipStatus {
     _Controlled,
     Bidirectional {

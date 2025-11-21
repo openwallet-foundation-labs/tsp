@@ -7,6 +7,7 @@ use crate::{
         VerifiedVid,
     },
     error::Error,
+    relationship_machine::{RelationshipEvent, RelationshipMachine, StateError},
     vid::{VidError, resolve::verify_vid_offline},
 };
 #[cfg(feature = "async")]
@@ -16,8 +17,17 @@ use std::{
     collections::HashMap,
     fmt::Display,
     sync::{Arc, RwLock},
+    time::{Duration, Instant},
 };
 use url::Url;
+
+/// Represents a pending relationship request, storing the event that triggered it
+/// and the thread ID associated with the request.
+#[derive(Clone, Debug)]
+pub(crate) struct PendingRequest {
+    pub(crate) event: RelationshipEvent,
+    pub(crate) thread_id: Digest,
+}
 
 #[derive(Clone)]
 pub(crate) struct VidContext {
@@ -28,6 +38,8 @@ pub(crate) struct VidContext {
     parent_vid: Option<String>,
     tunnel: Option<Box<[String]>>,
     metadata: Option<serde_json::Value>,
+    request_timeout: Option<Instant>,
+    pending_request: Option<PendingRequest>,
 }
 
 impl VidContext {
@@ -48,7 +60,10 @@ impl VidContext {
         &mut self,
         relation_status: RelationshipStatus,
     ) -> RelationshipStatus {
-        std::mem::replace(&mut self.relation_status, relation_status)
+        let old = std::mem::replace(&mut self.relation_status, relation_status);
+        self.request_timeout = None; // Reset timeout on status change
+        self.pending_request = None; // Reset pending request on status change
+        old
     }
 
     /// Set the route for this VID. The route will be used to send routed messages to this VID
@@ -151,6 +166,8 @@ impl SecureStore {
                     parent_vid: vid.parent_vid,
                     tunnel: vid.tunnel,
                     metadata: vid.metadata,
+                    request_timeout: None,
+                    pending_request: None,
                 },
             );
 
@@ -197,6 +214,8 @@ impl SecureStore {
                 vid: verified_vid,
                 private: None,
                 relation_status: RelationshipStatus::Unrelated,
+                request_timeout: None,
+                pending_request: None,
                 relation_vid: None,
                 parent_vid: None,
                 tunnel: None,
@@ -226,6 +245,8 @@ impl SecureStore {
                 vid: vid.clone(),
                 private: Some(vid),
                 relation_status: RelationshipStatus::Unrelated,
+                request_timeout: None,
+                pending_request: None,
                 relation_vid: None,
                 parent_vid: None,
                 tunnel: None,
@@ -738,16 +759,80 @@ impl SecureStore {
                         })
                     }
                     Payload::RequestRelationship { route, thread_id } => {
-                        Ok(ReceivedTspMessage::RequestRelationship {
-                            sender,
-                            receiver: intended_receiver,
-                            route: route.map(|vec| vec.iter().map(|vid| vid.to_vec()).collect()),
-                            thread_id,
-                            nested_vid: None,
-                        })
+                        // State Machine Check
+                        let current_status = self.get_vid(&sender)?.relation_status.clone();
+                        let event = RelationshipEvent::ReceiveRequest { thread_id };
+
+                        match RelationshipMachine::transition(&current_status, event) {
+                            Ok(new_status) => {
+                                self.set_relation_and_status_for_vid(
+                                    &sender,
+                                    new_status,
+                                    receiver_pid.identifier(),
+                                )?;
+                                Ok(ReceivedTspMessage::RequestRelationship {
+                                    sender,
+                                    receiver: intended_receiver,
+                                    route: route
+                                        .map(|vec| vec.iter().map(|vid| vid.to_vec()).collect()),
+                                    thread_id,
+                                    nested_vid: None,
+                                })
+                            }
+                            Err(StateError::ConcurrencyConflict) => {
+                                // Handle concurrency: compare thread_ids
+                                // We need to know *our* thread_id from the current status
+                                if let RelationshipStatus::Unidirectional {
+                                    thread_id: my_thread_id,
+                                } = current_status
+                                {
+                                    if my_thread_id < thread_id {
+                                        // My request wins, ignore theirs (or reject)
+                                        // For now, we just return an error or ignore.
+                                        // Returning error might be better for visibility.
+                                        Err(Error::Relationship(
+                                            "Concurrent request conflict: my request has priority"
+                                                .into(),
+                                        ))
+                                    } else {
+                                        // Their request wins, accept theirs
+                                        // Transition to ReverseUnidirectional
+                                        let new_status =
+                                            RelationshipStatus::ReverseUnidirectional { thread_id };
+                                        self.set_relation_and_status_for_vid(
+                                            &sender,
+                                            new_status,
+                                            receiver_pid.identifier(),
+                                        )?;
+
+                                        Ok(ReceivedTspMessage::RequestRelationship {
+                                            sender,
+                                            receiver: intended_receiver,
+                                            route: route.map(|vec| {
+                                                vec.iter().map(|vid| vid.to_vec()).collect()
+                                            }),
+                                            thread_id,
+                                            nested_vid: None,
+                                        })
+                                    }
+                                } else {
+                                    Err(Error::State(StateError::ConcurrencyConflict))
+                                }
+                            }
+                            Err(e) => Err(Error::State(e)),
+                        }
                     }
                     Payload::AcceptRelationship { thread_id } => {
-                        self.upgrade_relation(receiver_pid.identifier(), &sender, thread_id)?;
+                        // State Machine Check
+                        let current_status = self.get_vid(&sender)?.relation_status.clone();
+                        let event = RelationshipEvent::ReceiveAccept { thread_id };
+                        let new_status = RelationshipMachine::transition(&current_status, event)?;
+
+                        self.set_relation_and_status_for_vid(
+                            &sender,
+                            new_status,
+                            receiver_pid.identifier(),
+                        )?;
 
                         Ok(ReceivedTspMessage::AcceptRelationship {
                             sender,
@@ -756,30 +841,34 @@ impl SecureStore {
                         })
                     }
                     Payload::CancelRelationship { thread_id } => {
-                        if let Some(context) = self.vids.write()?.get_mut(&sender) {
-                            match context.relation_status {
-                                RelationshipStatus::Bidirectional {
-                                    thread_id: digest, ..
-                                }
-                                | RelationshipStatus::Unidirectional { thread_id: digest }
-                                | RelationshipStatus::ReverseUnidirectional { thread_id: digest } =>
-                                {
-                                    if thread_id != digest {
-                                        return Err(Error::Relationship(
-                                            "invalid attempt to end the relationship, wrong thread_id".into(),
-                                        ));
-                                    }
-                                    context.relation_status = RelationshipStatus::Unrelated;
-                                    context.relation_vid = None;
-                                }
-                                RelationshipStatus::_Controlled => {
+                        // State Machine Check
+                        let current_status = self.get_vid(&sender)?.relation_status.clone();
+
+                        // Verify thread_id matches before transition
+                        match &current_status {
+                            RelationshipStatus::Bidirectional {
+                                thread_id: digest, ..
+                            }
+                            | RelationshipStatus::Unidirectional { thread_id: digest }
+                            | RelationshipStatus::ReverseUnidirectional { thread_id: digest } => {
+                                if &thread_id != digest {
                                     return Err(Error::Relationship(
-                                        "you cannot cancel a relationship with yourself".into(),
+                                        "invalid attempt to end the relationship, wrong thread_id"
+                                            .into(),
                                     ));
                                 }
-                                RelationshipStatus::Unrelated => {}
                             }
+                            _ => {} // Unrelated or Controlled, let state machine handle invalid transition
                         }
+
+                        let event = RelationshipEvent::ReceiveCancel;
+                        let new_status = RelationshipMachine::transition(&current_status, event)?;
+
+                        self.set_relation_and_status_for_vid(
+                            &sender,
+                            new_status,
+                            receiver_pid.identifier(),
+                        )?;
 
                         Ok(ReceivedTspMessage::CancelRelationship {
                             sender,
@@ -933,16 +1022,29 @@ impl SecureStore {
         receiver: &str,
         route: Option<&[&str]>,
     ) -> Result<(Url, Vec<u8>), Error> {
-        let sender = self.get_private_vid(sender)?;
-        let receiver = self.get_verified_vid(receiver)?;
+        let sender_vid = self.get_private_vid(sender)?;
+        let receiver_vid = self.get_verified_vid(receiver)?;
 
         let path = route;
         let route = route.map(|collection| collection.iter().map(|vid| vid.as_ref()).collect());
 
         let mut thread_id = Default::default();
+
+        // State Machine Check
+        let current_status = self.get_vid(receiver)?.relation_status.clone();
+        // let event = RelationshipEvent::SendRequest { thread_id: Default::default() }; // Removed unused variable
+
+        // We need to generate thread_id first to accurately predict state,
+        // but seal_and_hash generates it.
+        // Ideally we should generate it here if we want to be strict,
+        // but for now let's assume transition is valid for *any* new request.
+        // Actually, RelationshipMachine::transition expects a thread_id.
+        // Let's generate a dummy one for the check or modify logic.
+        // Better: seal_and_hash generates it. Let's do it.
+
         let tsp_message = crate::crypto::seal_and_hash(
-            &*sender,
-            &*receiver,
+            &*sender_vid,
+            &*receiver_vid,
             None,
             Payload::RequestRelationship {
                 route,
@@ -951,18 +1053,28 @@ impl SecureStore {
             Some(&mut thread_id),
         )?;
 
+        // Now we have the real thread_id
+        let event = RelationshipEvent::SendRequest { thread_id };
+        let new_status = RelationshipMachine::transition(&current_status, event)?;
+
         let (transport, tsp_message) = if let Some(hop_list) = path {
-            self.set_route_for_vid(receiver.identifier(), hop_list)?;
+            self.set_route_for_vid(receiver_vid.identifier(), hop_list)?;
             self.resolve_route_and_send(hop_list, &tsp_message)?
         } else {
-            (receiver.endpoint().clone(), tsp_message)
+            (receiver_vid.endpoint().clone(), tsp_message)
         };
 
-        self.set_relation_and_status_for_vid(
-            receiver.identifier(),
-            RelationshipStatus::Unidirectional { thread_id },
-            sender.identifier(),
-        )?;
+        // Update state
+        let mut vids = self.vids.write().unwrap();
+        if let Some(context) = vids.get_mut(receiver) {
+            context.relation_status = new_status;
+            context.request_timeout = Some(Instant::now() + Duration::from_secs(60));
+            context.pending_request = Some(PendingRequest {
+                event: RelationshipEvent::SendRequest { thread_id },
+                thread_id,
+            });
+            context.relation_vid = Some(sender.to_string());
+        }
 
         Ok((transport, tsp_message.to_owned()))
     }
@@ -977,6 +1089,11 @@ impl SecureStore {
         thread_id: Digest,
         route: Option<&[&str]>,
     ) -> Result<(Url, Vec<u8>), Error> {
+        // State Machine Check
+        let current_status = self.get_vid(receiver)?.relation_status.clone();
+        let event = RelationshipEvent::SendAccept { thread_id };
+        let new_status = RelationshipMachine::transition(&current_status, event)?;
+
         let (transport, tsp_message) = self.seal_message_payload(
             sender,
             receiver,
@@ -991,14 +1108,7 @@ impl SecureStore {
             (transport.to_owned(), tsp_message)
         };
 
-        self.set_relation_and_status_for_vid(
-            receiver,
-            RelationshipStatus::Bidirectional {
-                thread_id,
-                outstanding_nested_thread_ids: Default::default(),
-            },
-            sender,
-        )?;
+        self.set_relation_and_status_for_vid(receiver, new_status, sender)?;
 
         Ok((transport, tsp_message))
     }
@@ -1192,42 +1302,6 @@ impl SecureStore {
         self.add_verified_vid(nested_vid, None)
     }
 
-    fn upgrade_relation(
-        &self,
-        my_vid: &str,
-        other_vid: &str,
-        thread_id: Digest,
-    ) -> Result<(), Error> {
-        let mut vids = self.vids.write()?;
-        let Some(context) = vids.get_mut(other_vid) else {
-            return Err(Error::Relationship(format!(
-                "unknown other vid {other_vid}"
-            )));
-        };
-
-        let RelationshipStatus::Unidirectional { thread_id: digest } = context.relation_status
-        else {
-            return Err(Error::Relationship(format!(
-                "no unidirectional relationship with {other_vid}, cannot upgrade"
-            )));
-        };
-
-        if thread_id != digest {
-            return Err(Error::Relationship(
-                "thread_id does not match digest".to_string(),
-            ));
-        }
-
-        context.relation_vid = Some(my_vid.to_string());
-
-        context.relation_status = RelationshipStatus::Bidirectional {
-            thread_id: digest,
-            outstanding_nested_thread_ids: Default::default(),
-        };
-
-        Ok(())
-    }
-
     fn add_nested_thread_id(&self, vid: &str, thread_id: Digest) -> Result<(), Error> {
         let mut vids = self.vids.write()?;
         let Some(context) = vids.get_mut(vid) else {
@@ -1247,6 +1321,38 @@ impl SecureStore {
         Ok(())
     }
 
+    /// Check for timed out relationship requests and handle them.
+    pub fn check_timeouts(&self) -> Result<Vec<String>, Error> {
+        let mut vids = self.vids.write().unwrap();
+        let mut timed_out_vids: Vec<String> = Vec::new();
+        let now = Instant::now();
+
+        for (vid, context) in vids.iter_mut() {
+            if let Some(timeout) = context.request_timeout {
+                if now > timeout {
+                    // Timeout occurred
+                    // Transition state: Unidirectional -> Unrelated (or retry logic if implemented)
+                    // For now, we just reset to Unrelated
+                    let event = RelationshipEvent::Timeout;
+                    match RelationshipMachine::transition(&context.relation_status, event) {
+                        Ok(new_status) => {
+                            context.relation_status = new_status;
+                            context.request_timeout = None;
+                            context.pending_request = None;
+                            timed_out_vids.push(vid.clone());
+                        }
+                        Err(e) => {
+                            // Log error but continue
+                            tracing::error!("Error handling timeout for {}: {}", vid, e);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(timed_out_vids)
+    }
+
     fn add_nested_relation(
         &self,
         parent_vid: &str,
@@ -1254,7 +1360,7 @@ impl SecureStore {
         thread_id: Digest,
     ) -> Result<(), Error> {
         let mut vids = self.vids.write()?;
-        let Some(context) = vids.get_mut(parent_vid) else {
+        let Some(parent_context) = vids.get_mut(parent_vid) else {
             return Err(Error::Relationship(format!(
                 "unknown parent vid {parent_vid}"
             )));
@@ -1263,7 +1369,7 @@ impl SecureStore {
         let RelationshipStatus::Bidirectional {
             ref mut outstanding_nested_thread_ids,
             ..
-        } = context.relation_status
+        } = parent_context.relation_status
         else {
             return Err(Error::Relationship(format!(
                 "no relationship set for parent vid {parent_vid}"
@@ -1281,13 +1387,13 @@ impl SecureStore {
         };
         outstanding_nested_thread_ids.remove(index);
 
-        let Some(context) = vids.get_mut(nested_vid) else {
+        let Some(nested_context) = vids.get_mut(nested_vid) else {
             return Err(Error::Relationship(format!(
                 "unknown nested vid {nested_vid}"
             )));
         };
 
-        context.relation_status = RelationshipStatus::Bidirectional {
+        nested_context.relation_status = RelationshipStatus::Bidirectional {
             thread_id,
             outstanding_nested_thread_ids: Default::default(),
         };
