@@ -128,6 +128,7 @@ pub use definitions::{Payload, PrivateVid, ReceivedTspMessage, RelationshipStatu
 pub use relationship_machine::{RelationshipEvent, RelationshipMachine};
 
 pub mod relationship_machine;
+pub mod retry;
 pub use error::Error;
 pub use store::{Aliases, SecureStore};
 pub use vid::{ExportVid, OwnedVid, Vid};

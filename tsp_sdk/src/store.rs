@@ -8,6 +8,7 @@ use crate::{
     },
     error::Error,
     relationship_machine::{RelationshipEvent, RelationshipMachine, StateError},
+    retry::RetryPolicy,
     vid::{VidError, resolve::verify_vid_offline},
 };
 #[cfg(feature = "async")]
@@ -27,6 +28,9 @@ use url::Url;
 pub(crate) struct PendingRequest {
     pub(crate) event: RelationshipEvent,
     pub(crate) thread_id: Digest,
+    pub(crate) message: Vec<u8>,
+    pub(crate) retry_count: u32,
+    pub(crate) last_attempt: Instant,
 }
 
 #[derive(Clone)]
@@ -1068,10 +1072,14 @@ impl SecureStore {
         let mut vids = self.vids.write().unwrap();
         if let Some(context) = vids.get_mut(receiver) {
             context.relation_status = new_status;
-            context.request_timeout = Some(Instant::now() + Duration::from_secs(60));
+            let retry_policy = RetryPolicy::default();
+            context.request_timeout = Some(Instant::now() + retry_policy.initial_delay);
             context.pending_request = Some(PendingRequest {
                 event: RelationshipEvent::SendRequest { thread_id },
                 thread_id,
+                message: tsp_message.to_owned(),
+                retry_count: 0,
+                last_attempt: Instant::now(),
             });
             context.relation_vid = Some(sender.to_string());
         }
@@ -1322,27 +1330,50 @@ impl SecureStore {
     }
 
     /// Check for timed out relationship requests and handle them.
-    pub fn check_timeouts(&self) -> Result<Vec<String>, Error> {
+    /// Check for timed out relationship requests and handle them.
+    /// Returns a list of messages that need to be re-sent (Url, Message).
+    pub fn check_timeouts(&self) -> Result<Vec<(Url, Vec<u8>)>, Error> {
         let mut vids = self.vids.write().unwrap();
-        let mut timed_out_vids: Vec<String> = Vec::new();
+        let mut messages_to_resend = Vec::new();
         let now = Instant::now();
+        let retry_policy = RetryPolicy::default();
 
         for (vid, context) in vids.iter_mut() {
             if let Some(timeout) = context.request_timeout {
                 if now > timeout {
                     // Timeout occurred
-                    // Transition state: Unidirectional -> Unrelated (or retry logic if implemented)
-                    // For now, we just reset to Unrelated
+                    if let Some(pending) = &mut context.pending_request {
+                        if let Some(next_delay) = retry_policy.next_timeout(pending.retry_count) {
+                            // Retry
+                            pending.retry_count += 1;
+                            pending.last_attempt = now;
+                            context.request_timeout = Some(now + next_delay);
+
+                            tracing::info!(
+                                "Retrying relationship request to {} (attempt {})",
+                                vid,
+                                pending.retry_count
+                            );
+
+                            // We need the endpoint to resend
+                            // Since we are inside a write lock, we can't easily call get_verified_vid which takes a read lock or similar.
+                            // But context.vid is Arc<dyn VerifiedVid>, so we can use it directly.
+                            let endpoint = context.vid.endpoint().clone();
+                            messages_to_resend.push((endpoint, pending.message.clone()));
+                            continue;
+                        }
+                    }
+
+                    // Retries exhausted or no pending request data
+                    tracing::warn!("Relationship request to {} timed out after retries", vid);
                     let event = RelationshipEvent::Timeout;
                     match RelationshipMachine::transition(&context.relation_status, event) {
                         Ok(new_status) => {
                             context.relation_status = new_status;
                             context.request_timeout = None;
                             context.pending_request = None;
-                            timed_out_vids.push(vid.clone());
                         }
                         Err(e) => {
-                            // Log error but continue
                             tracing::error!("Error handling timeout for {}: {}", vid, e);
                         }
                     }
@@ -1350,7 +1381,7 @@ impl SecureStore {
             }
         }
 
-        Ok(timed_out_vids)
+        Ok(messages_to_resend)
     }
 
     fn add_nested_relation(
