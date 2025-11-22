@@ -3,16 +3,40 @@ use std::time::Instant;
 use url::Url;
 
 /// A message that has been queued for later delivery.
+///
+/// This struct holds the raw encrypted message bytes and the destination URL,
+/// along with a timestamp for potential expiration or ordering logic.
 #[derive(Debug, Clone)]
 pub struct QueuedMessage {
+    /// The sealed TSP message payload.
     pub message: Vec<u8>,
+    /// The destination URL for the message.
     pub url: Url,
+    /// The time when this message was added to the queue.
     pub created_at: Instant,
 }
 
 /// An in-memory queue for storing messages that failed to send.
+///
+/// This queue uses a `VecDeque` to maintain FIFO (First-In-First-Out) order.
+/// It is intended to hold messages temporarily when the transport is unavailable
+/// or the recipient is offline.
+///
+/// # Example
+///
+/// ```
+/// use tsp_sdk::queue::MessageQueue;
+/// use url::Url;
+///
+/// let mut queue = MessageQueue::new();
+/// let url = Url::parse("tcp://127.0.0.1:8080").unwrap();
+/// queue.push(url, vec![1, 2, 3]);
+///
+/// assert!(!queue.is_empty());
+/// ```
 #[derive(Debug, Default)]
 pub struct MessageQueue {
+    // Internal storage using a double-ended queue for efficient push/pop.
     queue: VecDeque<QueuedMessage>,
 }
 

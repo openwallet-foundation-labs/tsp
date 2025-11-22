@@ -1,43 +1,91 @@
 use crate::definitions::{Digest, RelationshipStatus};
 
 /// Events that trigger state transitions in the relationship lifecycle.
+///
+/// These events represent the various actions that can occur during the
+/// establishment and termination of a relationship between two TSP nodes.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RelationshipEvent {
     /// Sending a relationship request to a peer.
+    ///
+    /// This event occurs when the local node initiates a handshake.
     SendRequest { thread_id: Digest },
     /// Receiving a relationship request from a peer.
+    ///
+    /// This event occurs when a `RequestRelationship` message is received.
     ReceiveRequest { thread_id: Digest },
     /// Sending an acceptance to a relationship request.
+    ///
+    /// This event occurs when the local node accepts an incoming request.
     SendAccept { thread_id: Digest },
     /// Receiving an acceptance to a relationship request.
+    ///
+    /// This event occurs when an `AcceptRelationship` message is received.
     ReceiveAccept { thread_id: Digest },
     /// Sending a cancellation of the relationship.
+    ///
+    /// This terminates the relationship from the local side.
     SendCancel,
     /// Receiving a cancellation of the relationship.
+    ///
+    /// This terminates the relationship from the remote side.
     ReceiveCancel,
     /// A request has timed out.
+    ///
+    /// This event is triggered by the `check_timeouts` mechanism when a
+    /// pending request exceeds its `request_timeout`.
     Timeout,
 }
 
 /// Errors that can occur during state transitions.
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum StateError {
+    /// The transition is not allowed from the current state.
     #[error("Invalid state transition from {from:?} with event {event:?}")]
     InvalidTransition {
         from: RelationshipStatus,
         event: RelationshipEvent,
     },
+    /// The thread ID in the event does not match the expected thread ID in the state.
+    ///
+    /// This usually indicates a mismatched or stale message.
     #[error("Thread ID mismatch: expected {expected:?}, got {got:?}")]
     ThreadIdMismatch { expected: Digest, got: Digest },
+    /// Both parties requested a relationship simultaneously, and the conflict
+    /// could not be automatically resolved (or requires higher-level handling).
     #[error("Concurrency conflict: both parties requested relationship")]
     ConcurrencyConflict,
 }
 
 /// The Relationship State Machine governing lifecycle transitions.
+///
+/// This struct provides a pure function `transition` to determine the next state
+/// based on the current state and an incoming event.
+///
+/// # Example
+///
+/// ```
+/// use tsp_sdk::relationship_machine::{RelationshipMachine, RelationshipEvent};
+/// use tsp_sdk::definitions::{RelationshipStatus, Digest};
+///
+/// let current_state = RelationshipStatus::Unrelated;
+/// let thread_id = [0u8; 32]; // Mock Digest
+///
+/// // Transition: Unrelated -> Unidirectional (Sending Request)
+/// let new_state = RelationshipMachine::transition(
+///     &current_state,
+///     RelationshipEvent::SendRequest { thread_id }
+/// ).unwrap();
+///
+/// assert!(matches!(new_state, RelationshipStatus::Unidirectional { .. }));
+/// ```
 pub struct RelationshipMachine;
 
 impl RelationshipMachine {
     /// Transition the state based on the current state and the incoming event.
+    ///
+    /// This function implements the core logic of the state machine, including
+    /// concurrency handling and idempotency checks.
     pub fn transition(
         current: &RelationshipStatus,
         event: RelationshipEvent,
