@@ -17,6 +17,14 @@ future direction of the Trust Spanning Protocol.
 
 In short, it is not the reference implementation _yet_.
 
+## Key Features
+
+- **Relationship State Machine**: Robust management of relationship states (Unidirectional, Bidirectional) with concurrency control.
+- **Retry Mechanism**: Automatic exponential backoff and retry for failed messages to handle network instability.
+- **Offline Message Queue**: Queueing of messages when the transport is unavailable, ensuring delivery when connectivity is restored.
+
+Check out the [Smart Home Lock Example](examples/src/smart_home_lock.rs) for a demonstration of these features.
+
 ## How to build this project
 
 You will need to install the most recent Rust compiler, by following the

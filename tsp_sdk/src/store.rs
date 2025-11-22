@@ -19,7 +19,7 @@ use std::{
     collections::HashMap,
     fmt::Display,
     sync::{Arc, RwLock},
-    time::{Duration, Instant},
+    time::Instant,
 };
 use url::Url;
 
@@ -1332,7 +1332,6 @@ impl SecureStore {
     }
 
     /// Check for timed out relationship requests and handle them.
-    /// Check for timed out relationship requests and handle them.
     /// Returns a list of messages that need to be re-sent (Url, Message).
     pub fn check_timeouts(&self) -> Result<Vec<(Url, Vec<u8>)>, Error> {
         let mut vids = self.vids.write().unwrap();
@@ -1352,9 +1351,11 @@ impl SecureStore {
                             context.request_timeout = Some(now + next_delay);
 
                             tracing::info!(
-                                "Retrying relationship request to {} (attempt {})",
+                                "Retrying relationship request to {} (attempt {}). Event: {:?}, ThreadID: {:?}",
                                 vid,
-                                pending.retry_count
+                                pending.retry_count,
+                                pending.event,
+                                pending.thread_id
                             );
 
                             // We need the endpoint to resend
@@ -1405,6 +1406,10 @@ impl SecureStore {
         Ok(messages)
     }
 
+    /// Add a nested relationship to a parent VID.
+    ///
+    /// This updates the parent's state to track the nested relationship and
+    /// initializes the nested VID's state.
     fn add_nested_relation(
         &self,
         parent_vid: &str,

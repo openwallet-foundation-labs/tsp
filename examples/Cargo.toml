@@ -33,6 +33,10 @@ path = "src/intermediary.rs"
 name = "did-server"
 path = "src/did-server.rs"
 
+[[bin]]
+name = "smart-home-lock"
+path = "src/smart_home_lock.rs"
+
 [dependencies]
 tsp_sdk = { path = "../tsp_sdk", features = ["async", "resolve"] }
 axum = { workspace = true }
