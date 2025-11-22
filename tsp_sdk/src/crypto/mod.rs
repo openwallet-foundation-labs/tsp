@@ -213,7 +213,7 @@ pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
     )
 }
 
-#[cfg(feature = "nacl")]
+#[cfg(all(feature = "nacl", not(feature = "pq")))]
 /// Generate a new encryption / decryption key pair
 pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
     let private_key = crypto_box::SecretKey::generate(&mut OsRng);
@@ -271,15 +271,15 @@ mod tests {
         let nonconfidential_data = b"extra header data";
 
         let mut message = seal(
-            &bob,
             &alice,
+            &bob,
             Some(nonconfidential_data),
             Payload::Content(secret_message),
         )
         .unwrap();
 
         let (received_nonconfidential_data, received_secret_message, _, _) =
-            open(&alice, &bob, &mut message).unwrap();
+            open(&bob, &alice, &mut message).unwrap();
 
         assert_eq!(received_nonconfidential_data.unwrap(), nonconfidential_data);
         assert_eq!(received_secret_message, Payload::Content(secret_message));

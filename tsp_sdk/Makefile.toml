@@ -1,0 +1,77 @@
+[config]
+default_to_workspace = false
+
+[tasks.default]
+alias = "test-flow"
+
+# --- 主要測試流程 (新特性單元測試) / Main Test Flow (New Features Unit Tests) ---
+[tasks.test-flow]
+description = "依序執行關鍵模組的測試 (Relationship, Retry, Queue) / Run key module tests sequentially (Relationship, Retry, Queue)"
+dependencies = ["test-relationship", "test-retry", "test-queue"]
+
+# --- 單元測試任務 (默認特性) / Unit Test Tasks (Default Features) ---
+[tasks.test-relationship]
+description = "只執行關係狀態機 (Relationship Machine) 的測試 / Run Relationship State Machine tests only"
+command = "cargo"
+args = ["test", "relationship_machine"]
+
+[tasks.test-retry]
+description = "只執行重試機制 (Retry) 的測試 / Run Retry Mechanism tests only"
+command = "cargo"
+args = ["test", "retry"]
+
+[tasks.test-queue]
+description = "只執行離線隊列 (Queue) 的測試 / Run Offline Message Queue tests only"
+command = "cargo"
+args = ["test", "queue"]
+
+# --- 進階構建與測試任務 (多特性組合) / Advanced Build & Test Tasks (Multiple Feature Combinations) ---
+
+[tasks.check-all-features]
+description = "檢查所有特性組合下的編譯情況 / Check compilation with all feature combinations"
+command = "cargo"
+args = ["check", "--all-features"]
+
+[tasks.test-no-default]
+description = "測試無默認特性的情況 / Test with no default features"
+command = "cargo"
+args = ["test", "--no-default-features"]
+
+[tasks.test-demo]
+description = "測試 'demo' 特性 / Test 'demo' feature"
+command = "cargo"
+args = ["test", "--no-default-features", "--features", "demo"]
+
+[tasks.test-pq]
+description = "測試 'pq' (後量子加密) 特性 / Test 'pq' (Post-Quantum Cryptography) feature"
+command = "cargo"
+args = ["test", "--no-default-features", "--features", "pq,async"]
+
+[tasks.test-nacl]
+description = "測試 'nacl' 特性 / Test 'nacl' feature"
+command = "cargo"
+args = ["test", "--no-default-features", "--features", "nacl"]
+
+[tasks.test-async]
+description = "測試 'async' 特性 / Test 'async' feature"
+command = "cargo"
+args = ["test", "--features", "async"]
+
+# --- 綜合驗證任務 / Comprehensive Validation Tasks ---
+[tasks.ci-flow]
+description = "CI 級別的驗證流程：新特性測試 + 編譯檢查 / CI-level validation: new features tests + compilation check"
+dependencies = [
+    "test-flow",          # 測試新增的三個特性 / Test the three new features
+    "check-all-features", # 確保所有特性組合能編譯 / Ensure all feature combinations compile
+    "test-async",         # 測試常用的 async 特性組合 / Test common async feature combination
+]
+
+[tasks.full-test]
+description = "完整測試流程：所有特性組合的測試 / Full test flow: tests for all feature combinations"
+dependencies = [
+    "test-flow",
+    "test-no-default",
+    "test-async",
+    "test-nacl",
+    "test-pq",
+]

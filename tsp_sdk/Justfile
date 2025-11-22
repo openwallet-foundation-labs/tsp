@@ -1,13 +1,25 @@
 # 預設任務：直接輸入 'just' 就會執行這個
+# Default task: Running 'just' will execute this
 default: test-flow
 
 # 定義我們的主要測試流程
+# Define our main test flow
 # just 會依序執行每一行，如果其中一行失敗（報錯），就會立刻停止，這效果等同於 '&&'
+# Just executes each line sequentially and stops immediately on failure (equivalent to '&&')
 test-flow:
     cargo test relationship_machine
     cargo test retry
     cargo test queue
 
 # 你也可以定義單獨的捷徑，例如只測 retry
+# You can also define individual shortcuts, e.g., to test only retry
 test-retry:
     cargo test retry
+
+# 只測試關係狀態機 / Test only relationship machine
+test-relationship:
+    cargo test relationship_machine
+
+# 只測試離線隊列 / Test only message queue
+test-queue:
+    cargo test queue

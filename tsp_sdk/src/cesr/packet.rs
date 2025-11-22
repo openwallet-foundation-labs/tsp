@@ -1133,7 +1133,7 @@ pub fn encode_tsp_message<Vid: AsRef<[u8]>>(
         message,
     }: Message<Vid, impl AsRef<[u8]>>,
     encrypt: impl FnOnce(&Vid, Vec<u8>) -> Vec<u8>,
-    sign: impl FnOnce(&Vid, &[u8]) -> Signature,
+    sign: impl FnOnce(&Vid, &[u8]) -> Vec<u8>,
 ) -> Result<Vec<u8>, EncodeError> {
     let mut cesr = encode_ets_envelope_vec(Envelope {
         crypto_type: CryptoType::HpkeAuth,
@@ -1145,7 +1145,7 @@ pub fn encode_tsp_message<Vid: AsRef<[u8]>>(
 
     let ciphertext = &encrypt(receiver, encode_payload_vec(&message)?);
 
-    encode_ciphertext(ciphertext, &mut cesr)?;
+    encode_ciphertext(ciphertext, CryptoType::HpkeAuth, &mut cesr)?;
     encode_signature(&sign(sender, &cesr), &mut cesr, SignatureType::Ed25519);
 
     Ok(cesr)
@@ -1422,7 +1422,7 @@ mod test {
                 message: Payload::GenericMessage(payload),
             },
             |_, vec| vec,
-            |_, _| [5; 64],
+            |_, _| vec![5; 64],
         )
         .unwrap();
 
