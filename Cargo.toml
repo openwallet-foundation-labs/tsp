@@ -89,14 +89,14 @@ reqwest = { version = "0.12.12", default-features = false, features = [
 ] }
 #
 # webvh
-didwebvh-rs = "0.1.7"
+didwebvh-rs = "0.1.10"
 
 # Python bindings
 pyo3 = { version = "0.26", features = ["serde"] }
 pythonize = "0.26"
 
 # serialize
-serde = { version = "=1.0.219", features = ["derive"] }
+serde = { version = "1.0.220", features = ["derive"] }
 serde_json = { version = "1.0" }
 serde_with = { version = "3.14", features = ["base64"] }
 bs58 = "0.5"
