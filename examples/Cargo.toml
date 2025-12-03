@@ -11,6 +11,7 @@ rust-version.workspace = true
 [features]
 default = ["nacl"]
 nacl = ["tsp_sdk/nacl"]
+essr = ["tsp_sdk/essr"]
 use_local_certificate = ["tsp_sdk/use_local_certificate"]
 pq = ["tsp_sdk/pq"]
 

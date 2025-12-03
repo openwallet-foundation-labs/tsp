@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # install using one of:
-cargo install --path .                                      # NaCl (default)
-#   cargo install --path . --no-default-features                # HPKE
-#   cargo install --path . --no-default-features --features pq  # HPKE-PQ (nacl and pq are mutually exclusive)
+cargo install --path .                                            # NaCl + ESSR (default)
+#   cargo install --path . --no-default-features --features essr      # HPKE-Base + ESSR
+#   cargo install --path . --no-default-features --features pq        # HPKE-PQ + ESSR
 
 randuser() {
     head -c4 /dev/urandom | shasum | head -c8
