@@ -9,6 +9,7 @@ publish.workspace = true
 rust-version.workspace = true
 
 [features]
+default = ["nacl"]
 nacl = ["tsp_sdk/nacl"]
 use_local_certificate = ["tsp_sdk/use_local_certificate"]
 pq = ["tsp_sdk/pq"]
@@ -34,7 +35,7 @@ name = "did-server"
 path = "src/did-server.rs"
 
 [dependencies]
-tsp_sdk = { path = "../tsp_sdk", features = ["async", "resolve"] }
+tsp_sdk = { path = "../tsp_sdk", default-features = false, features = ["async", "resolve"] }
 axum = { workspace = true }
 base64ct = { workspace = true }
 clap = { workspace = true }
