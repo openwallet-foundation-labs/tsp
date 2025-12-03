@@ -213,7 +213,7 @@ pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
     )
 }
 
-#[cfg(feature = "nacl")]
+#[cfg(all(feature = "nacl", not(feature = "pq")))]
 /// Generate a new encryption / decryption key pair
 pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
     let private_key = crypto_box::SecretKey::generate(&mut OsRng);
