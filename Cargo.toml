@@ -89,7 +89,7 @@ reqwest = { version = "0.12.12", default-features = false, features = [
 ] }
 #
 # webvh
-didwebvh-rs = "0.1.10"
+didwebvh-rs = "=0.1.10"
 
 # Python bindings
 pyo3 = { version = "0.26", features = ["serde"] }
