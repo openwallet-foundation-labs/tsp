@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# install using
-cargo install --path . --features pq
+# install using default NaCl + ESSR build
+cargo install --path . || exit 1
 
 randuser() {
     head -c4 /dev/urandom | shasum | head -c8

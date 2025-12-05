@@ -6,7 +6,8 @@
 # https://p.teaspoon.world/
 # https://q.teaspoon.world/
 
-cargo install --path . --features pq || exit 1
+# install using default NaCl + ESSR build
+cargo install --path . || exit 1
 
 randuser() {
     head -c4 /dev/urandom | shasum | head -c8
