@@ -127,8 +127,22 @@ pub use secure_storage::SecureStorage;
 pub use definitions::{Payload, PrivateVid, ReceivedTspMessage, RelationshipStatus, VerifiedVid};
 pub use relationship_machine::{RelationshipEvent, RelationshipMachine};
 
+/// Implements an offline message queue mechanism.
+///
+/// This module ensures that messages are not lost when the recipient or the network is temporarily unavailable.
+/// It enqueues messages and attempts to resend them when conditions are favorable.
 pub mod queue;
+
+/// Implements a state machine for managing the lifecycle of TSP relationships.
+///
+/// This module handles the various states of a relationship (e.g., Unrelated, Unidirectional, Bidirectional),
+/// ensuring secure and consistent state transitions during handshakes and other lifecycle events.
 pub mod relationship_machine;
+
+/// Implements a retry mechanism with exponential backoff.
+///
+/// This module provides functionality to automatically retry failed operations (like sending messages)
+/// with increasing delays, improving resilience in unstable network environments.
 pub mod retry;
 pub use error::Error;
 pub use store::{Aliases, SecureStore};
