@@ -12,6 +12,7 @@ use futures::Stream;
 
 #[cfg(feature = "pq")]
 use crate::vid::did::web::Algorithm;
+#[cfg(feature = "resolve")]
 use crate::vid::did::web::{Curve, KeyType};
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
@@ -221,7 +222,8 @@ impl<Bytes: AsRef<[u8]>> fmt::Display for Payload<'_, Bytes> {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Deserialize, Serialize, Default)]
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Default)]
 pub enum VidEncryptionKeyType {
     #[default]
     X25519,
@@ -229,7 +231,8 @@ pub enum VidEncryptionKeyType {
     X25519Kyber768Draft00,
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Deserialize, Serialize, Default)]
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Default)]
 pub enum VidSignatureKeyType {
     #[default]
     Ed25519,
@@ -257,6 +260,7 @@ pub trait VerifiedVid: Send + Sync {
     /// The signature key type associated with this Vid
     fn signature_key_type(&self) -> VidSignatureKeyType;
 
+    #[cfg(feature = "resolve")]
     fn encryption_key_jwk(&self) -> serde_json::Value {
         serde_json::json!({
             "kty": Into::<KeyType>::into(self.encryption_key_type()),
@@ -266,6 +270,7 @@ pub trait VerifiedVid: Send + Sync {
         })
     }
 
+    #[cfg(feature = "resolve")]
     fn signature_key_jwk(&self) -> serde_json::Value {
         match self.signature_key_type() {
             VidSignatureKeyType::Ed25519 => {
@@ -296,6 +301,7 @@ pub trait PrivateVid: VerifiedVid + Send + Sync {
     /// The PRIVATE key used to sign data
     fn signing_key(&self) -> &PrivateSigningKeyData;
 
+    #[cfg(feature = "resolve")]
     fn private_encryption_key_jwk(&self) -> serde_json::Value {
         serde_json::json!({
             "kty": Into::<KeyType>::into(self.encryption_key_type()),

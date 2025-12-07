@@ -1,3 +1,5 @@
+#[cfg(feature = "resolve")]
+use crate::vid::resolve::verify_vid_offline;
 use crate::{
     ExportVid, OwnedVid,
     cesr::EnvelopeType,
@@ -10,7 +12,7 @@ use crate::{
     queue::MessageQueue,
     relationship_machine::{RelationshipEvent, RelationshipMachine, StateError},
     retry::RetryPolicy,
-    vid::{VidError, resolve::verify_vid_offline},
+    vid::VidError,
 };
 #[cfg(feature = "async")]
 use bytes::Bytes;
@@ -882,71 +884,91 @@ impl SecureStore {
                         })
                     }
                     Payload::RequestNestedRelationship { inner, thread_id } => {
-                        let EnvelopeType::SignedMessage {
-                            sender: inner_vid,
-                            receiver: None,
-                            ..
-                        } = crate::cesr::probe(inner)?
-                        else {
+                        #[cfg(not(feature = "resolve"))]
+                        {
+                            let _ = (inner, thread_id);
                             return Err(Error::Relationship(
-                                "invalid nested request, not a signed message".into(),
+                                "Nested relationships require 'resolve' feature".into(),
                             ));
-                        };
+                        }
+                        #[cfg(feature = "resolve")]
+                        {
+                            let EnvelopeType::SignedMessage {
+                                sender: inner_vid,
+                                receiver: None,
+                                ..
+                            } = crate::cesr::probe(inner)?
+                            else {
+                                return Err(Error::Relationship(
+                                    "invalid nested request, not a signed message".into(),
+                                ));
+                            };
 
-                        let inner_vid = std::str::from_utf8(inner_vid)?.to_string();
+                            let inner_vid = std::str::from_utf8(inner_vid)?.to_string();
 
-                        self.add_nested_vid(&inner_vid)?;
+                            self.add_nested_vid(&inner_vid)?;
 
-                        // the act of opening this message is simply verifying the signature, because this SDK doesn't yet
-                        // support sending data as part of control messages. This can easily change.
-                        let _ = self.open_message(inner)?;
+                            // the act of opening this message is simply verifying the signature, because this SDK doesn't yet
+                            // support sending data as part of control messages. This can easily change.
+                            let _ = self.open_message(inner)?;
 
-                        self.set_parent_for_vid(&inner_vid, Some(&sender))?;
+                            self.set_parent_for_vid(&inner_vid, Some(&sender))?;
 
-                        Ok(ReceivedTspMessage::RequestRelationship {
-                            sender,
-                            receiver: intended_receiver,
-                            route: None,
-                            thread_id,
-                            nested_vid: Some(inner_vid),
-                        })
+                            Ok(ReceivedTspMessage::RequestRelationship {
+                                sender,
+                                receiver: intended_receiver,
+                                route: None,
+                                thread_id,
+                                nested_vid: Some(inner_vid),
+                            })
+                        }
                     }
                     Payload::AcceptNestedRelationship { thread_id, inner } => {
-                        let EnvelopeType::SignedMessage {
-                            sender: vid,
-                            receiver: Some(connect_to_vid),
-                            ..
-                        } = crate::cesr::probe(inner)?
-                        else {
+                        #[cfg(not(feature = "resolve"))]
+                        {
+                            let _ = (inner, thread_id);
                             return Err(Error::Relationship(
-                                "invalid nested accept reply, not a signed message".into(),
+                                "Nested relationships require 'resolve' feature".into(),
                             ));
-                        };
+                        }
+                        #[cfg(feature = "resolve")]
+                        {
+                            let EnvelopeType::SignedMessage {
+                                sender: vid,
+                                receiver: Some(connect_to_vid),
+                                ..
+                            } = crate::cesr::probe(inner)?
+                            else {
+                                return Err(Error::Relationship(
+                                    "invalid nested accept reply, not a signed message".into(),
+                                ));
+                            };
 
-                        let vid = std::str::from_utf8(vid)?.to_string();
-                        let connect_to_vid = std::str::from_utf8(connect_to_vid)?.to_string();
-                        self.add_nested_vid(&vid)?;
+                            let vid = std::str::from_utf8(vid)?.to_string();
+                            let connect_to_vid = std::str::from_utf8(connect_to_vid)?.to_string();
+                            self.add_nested_vid(&vid)?;
 
-                        let _ = self.open_message(inner)?;
+                            let _ = self.open_message(inner)?;
 
-                        self.set_parent_for_vid(&vid, Some(&sender))?;
-                        self.add_nested_relation(&sender, &vid, thread_id)?;
-                        self.set_relation_and_status_for_vid(
-                            &connect_to_vid,
-                            RelationshipStatus::bi_default(),
-                            &vid,
-                        )?;
-                        self.set_relation_and_status_for_vid(
-                            &vid,
-                            RelationshipStatus::bi_default(),
-                            &connect_to_vid,
-                        )?;
+                            self.set_parent_for_vid(&vid, Some(&sender))?;
+                            self.add_nested_relation(&sender, &vid, thread_id)?;
+                            self.set_relation_and_status_for_vid(
+                                &connect_to_vid,
+                                RelationshipStatus::bi_default(),
+                                &vid,
+                            )?;
+                            self.set_relation_and_status_for_vid(
+                                &vid,
+                                RelationshipStatus::bi_default(),
+                                &connect_to_vid,
+                            )?;
 
-                        Ok(ReceivedTspMessage::AcceptRelationship {
-                            sender,
-                            receiver: intended_receiver,
-                            nested_vid: Some(vid),
-                        })
+                            Ok(ReceivedTspMessage::AcceptRelationship {
+                                sender,
+                                receiver: intended_receiver,
+                                nested_vid: Some(vid),
+                            })
+                        }
                     }
                     Payload::NewIdentifier { thread_id, new_vid } => {
                         let vid = std::str::from_utf8(new_vid)?.to_string();
@@ -1306,6 +1328,7 @@ impl SecureStore {
         self.forward_routed_message(&next_hop, path, opaque_message)
     }
 
+    #[cfg(feature = "resolve")]
     fn add_nested_vid(&self, vid: &str) -> Result<(), Error> {
         let nested_vid = verify_vid_offline(vid)?;
 
@@ -1339,6 +1362,8 @@ impl SecureStore {
         let now = Instant::now();
         let retry_policy = RetryPolicy::default();
 
+        // TODO: Consider adding a dedicated `tracing` feature in Cargo.toml for more granular control.
+        // Currently, tracing is tied to the `async` feature. See Cargo.toml line 31.
         for (vid, context) in vids.iter_mut() {
             if let Some(timeout) = context.request_timeout {
                 if now > timeout {
@@ -1350,6 +1375,7 @@ impl SecureStore {
                             pending.last_attempt = now;
                             context.request_timeout = Some(now + next_delay);
 
+                            #[cfg(feature = "async")]
                             tracing::info!(
                                 "Retrying relationship request to {} (attempt {}). Event: {:?}, ThreadID: {:?}",
                                 vid,
@@ -1368,6 +1394,7 @@ impl SecureStore {
                     }
 
                     // Retries exhausted or no pending request data
+                    #[cfg(feature = "async")]
                     tracing::warn!("Relationship request to {} timed out after retries", vid);
                     let event = RelationshipEvent::Timeout;
                     match RelationshipMachine::transition(&context.relation_status, event) {
@@ -1376,8 +1403,9 @@ impl SecureStore {
                             context.request_timeout = None;
                             context.pending_request = None;
                         }
-                        Err(e) => {
-                            tracing::error!("Error handling timeout for {}: {}", vid, e);
+                        Err(_e) => {
+                            #[cfg(feature = "async")]
+                            tracing::error!("Error handling timeout for {}: {}", vid, _e);
                         }
                     }
                 }
@@ -1993,6 +2021,7 @@ mod test {
         );
     }
 
+    #[cfg(feature = "resolve")]
     #[cfg(not(feature = "pq"))]
     #[test]
     #[wasm_bindgen_test]
