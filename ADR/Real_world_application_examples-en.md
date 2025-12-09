@@ -37,6 +37,12 @@ Suppose you have a **Smartphone App (Controller)** and a **Smart Lock (Device)**
     5.  **Queue Flushing**: The App automatically retrieves the "Set temporary password" command from the queue and sends it out.
 *   **Problem Solved**: Ensures that critical instructions (such as authorization, revocation of permissions) are not lost due to the device being temporarily offline. You don't need to keep staring at the App waiting for the device to come online to manually send it again.
 
+#### 4. **Integration Tests**
+
+```bash
+cargo run -p examples --bin smart-home-lock
+```
+
 ### Summary
 *   **State Machine** ensures the logical correctness and security of the **"Connection"** process.
 *   **Retry Mechanism** resolves **"Transient"** network issues.

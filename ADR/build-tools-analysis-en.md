@@ -119,7 +119,7 @@ Result of running `cargo make ci-flow`:
 ```
 
 ### Key Design Decisions
-I **avoided using `--all-features`** for testing because:
+ **avoided using `--all-features`** for testing because:
 - Certain feature combinations create incompatibilities (e.g., `pq + nacl`).
 - Using `--no-default-features + --features <specific>` provides more precise control.
 - `check-all-features` ensures all features compile, but does not enforce that all tests pass.
