@@ -24,6 +24,7 @@ use url::Url;
 /// Represents a pending relationship request, storing the event that triggered it
 /// and the thread ID associated with the request.
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub(crate) struct PendingRequest {
     pub(crate) event: RelationshipEvent,
     pub(crate) thread_id: Digest,
