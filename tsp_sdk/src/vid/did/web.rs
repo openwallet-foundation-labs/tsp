@@ -173,21 +173,10 @@ pub async fn resolve(id: &str, parts: Vec<&str>) -> Result<Vid, VidError> {
     {
         let url = resolve_url(&parts)?;
 
-        let client = reqwest::Client::builder();
-
-        #[cfg(feature = "use_local_certificate")]
-        let cert = {
-            tracing::warn!("Using local root CA! (should only be used for local testing)");
-            reqwest::Certificate::from_pem(include_bytes!("../../../../examples/test/root-ca.pem"))
-                .unwrap()
-        };
-
-        #[cfg(feature = "use_local_certificate")]
-        let client = client.add_root_certificate(cert);
+        let client = crate::http_client::reqwest_client()
+            .map_err(|e| VidError::Http(e.context.to_string(), e.source))?;
 
         let response = client
-            .build()
-            .map_err(|e| VidError::Http("Client build error".to_string(), e))?
             .get(url.as_ref())
             .send()
             .await

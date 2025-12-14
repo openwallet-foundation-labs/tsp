@@ -20,23 +20,11 @@ pub(crate) const SCHEME_WS: &str = "ws";
 pub(crate) const SCHEME_WSS: &str = "wss";
 
 pub(crate) async fn send_message(tsp_message: &[u8], url: &Url) -> Result<(), TransportError> {
-    let client = reqwest::Client::builder();
-
-    #[cfg(feature = "use_local_certificate")]
-    let cert = {
-        warn!("Using local root CA! (should only be used for local testing)");
-        let cert = include_bytes!("../../../examples/test/root-ca.pem");
-        reqwest::Certificate::from_pem(cert).unwrap()
-    };
-
-    #[cfg(feature = "use_local_certificate")]
-    let client = client.add_root_certificate(cert);
-
     let url = url.clone();
+    let client = crate::http_client::reqwest_client()
+        .map_err(|e| TransportError::Http(e.context.to_string(), e.source))?;
 
     let response = client
-        .build()
-        .map_err(|e| TransportError::Http("Client build error".to_string(), e))?
         .post(url.clone())
         .body(tsp_message.to_vec())
         .send()

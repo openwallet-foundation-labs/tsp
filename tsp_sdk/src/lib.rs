@@ -94,6 +94,8 @@ pub mod crypto;
 /// Defines several common data structures, traits and error types that are used throughout the project.
 pub mod definitions;
 mod error;
+#[cfg(feature = "resolve")]
+mod http_client;
 mod store;
 
 /// Contains code for handling *verified identifiers* and identities.
