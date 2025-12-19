@@ -18,6 +18,8 @@ pub enum TransportError {
     TLSConfiguration,
     #[error("missing TLS certificate or key file '{0}'")]
     TLSMissingFile(String),
+    #[error("invalid TLS certificate")]
+    TLSCertificate,
     #[error("invalid TLS key '{0}'")]
     TLSKey(String),
     #[error("{0}")]
