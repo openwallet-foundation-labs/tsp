@@ -72,7 +72,6 @@ rustls = "0.23"
 tokio-rustls = "0.26"
 rustls-pki-types = "1.12"
 rustls-native-certs = "0.8.1"
-rustls-pemfile = "2.2"
 quinn = { version = "0.11", default-features = false, features = [
   "log",
   "runtime-tokio",

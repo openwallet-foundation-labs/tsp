@@ -3,7 +3,7 @@ use bytes::{Bytes, BytesMut};
 use futures::StreamExt;
 use once_cell::sync::Lazy;
 use rustls::{ClientConfig, RootCertStore, crypto::CryptoProvider};
-use rustls_pki_types::ServerName;
+use rustls_pki_types::{ServerName, pem::PemObject};
 use std::sync::Arc;
 use tokio::{io::AsyncWriteExt, net::TcpListener, sync::mpsc};
 use tokio_rustls::{TlsAcceptor, TlsConnector};
@@ -25,11 +25,6 @@ pub(super) fn load_certificate() -> Result<
     ),
     TransportError,
 > {
-    use std::{
-        fs::File,
-        io::{BufReader, Result},
-    };
-
     #[cfg(not(test))]
     let cert_path = std::env::var("TSP_TLS_CERT").map_err(|_| TransportError::TLSConfiguration)?;
     #[cfg(not(test))]
@@ -39,20 +34,16 @@ pub(super) fn load_certificate() -> Result<
     #[cfg(test)]
     let key_path = "../examples/test/localhost-key.pem".to_string();
 
-    let cert_file =
-        File::open(&cert_path).map_err(|_| TransportError::TLSMissingFile(cert_path))?;
+    let certs: Vec<rustls_pki_types::CertificateDer<'static>> =
+        rustls_pki_types::CertificateDer::pem_file_iter(&cert_path)
+            .map_err(|_| TransportError::TLSMissingFile(cert_path))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| TransportError::TLSCertificate)?;
 
-    let certs: Result<Vec<rustls_pki_types::CertificateDer<'static>>> =
-        rustls_pemfile::certs(&mut BufReader::new(cert_file)).collect();
+    let key = rustls_pki_types::PrivateKeyDer::from_pem_file(&key_path)
+        .map_err(|_| TransportError::TLSKey(key_path))?;
 
-    let key_file =
-        File::open(&key_path).map_err(|_| TransportError::TLSMissingFile(key_path.clone()))?;
-
-    let key = rustls_pemfile::private_key(&mut BufReader::new(&key_file))
-        .map_err(|_| TransportError::TLSKey(key_path.clone()))?
-        .ok_or(TransportError::TLSKey(key_path))?;
-
-    Ok((certs.unwrap(), key))
+    Ok((certs, key))
 }
 
 pub(super) fn create_tls_config() -> ClientConfig {
@@ -70,11 +61,13 @@ pub(super) fn create_tls_config() -> ClientConfig {
     #[cfg(test)]
     {
         let cert_path = "../examples/test/root-ca.pem";
-        let cert_file = std::fs::File::open(cert_path).expect("could not find test CA certificate");
-        let certs: std::io::Result<Vec<rustls_pki_types::CertificateDer<'static>>> =
-            rustls_pemfile::certs(&mut std::io::BufReader::new(cert_file)).collect();
+        let certs: Vec<rustls_pki_types::CertificateDer<'static>> =
+            rustls_pki_types::CertificateDer::pem_file_iter(cert_path)
+                .expect("could not find test CA certificate")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("could not read test CA certificate");
 
-        for cert in certs.expect("could not read test CA certificate") {
+        for cert in certs {
             root_cert_store
                 .add(cert)
                 .expect("could not add test CA certificate")
