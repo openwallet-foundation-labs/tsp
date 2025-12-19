@@ -20,13 +20,12 @@ pub(crate) fn reqwest_client() -> Result<&'static reqwest::Client, ReqwestClient
             #[cfg(feature = "async")]
             tracing::warn!("Using local root CA! (should only be used for local testing)");
 
-            let cert = reqwest::Certificate::from_pem(include_bytes!(
-                "../../examples/test/root-ca.pem"
-            ))
-            .map_err(|e| ReqwestClientError {
-                context: "Local root CA",
-                source: e,
-            })?;
+            let cert =
+                reqwest::Certificate::from_pem(include_bytes!("../../examples/test/root-ca.pem"))
+                    .map_err(|e| ReqwestClientError {
+                    context: "Local root CA",
+                    source: e,
+                })?;
 
             client.add_root_certificate(cert)
         };
@@ -37,4 +36,3 @@ pub(crate) fn reqwest_client() -> Result<&'static reqwest::Client, ReqwestClient
         })
     })
 }
-
