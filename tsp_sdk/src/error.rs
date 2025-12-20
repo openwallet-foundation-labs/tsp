@@ -25,6 +25,8 @@ pub enum Error {
     InvalidRoute(String),
     #[error("Relationship Error: {0}")]
     Relationship(String),
+    #[error("Relationship State Error: {0}")]
+    State(#[from] crate::relationship_machine::StateError),
     #[error("Error: missing private vid {0}")]
     MissingPrivateVid(String),
     #[error("Error: missing vid {0}")]

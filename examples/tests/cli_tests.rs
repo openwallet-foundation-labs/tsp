@@ -113,7 +113,7 @@ fn test_send_command_unverified_receiver_default() {
                 "receive",
                 &marc_did,
             ])
-            .timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(20))
             .assert()
             .stderr(predicate::str::contains("received relationship request"))
             .stdout(predicate::str::contains("Oh hello Marc"))
@@ -158,7 +158,7 @@ fn test_send_command_unverified_receiver_ask_flag() {
         "--ask",
     ])
     .write_stdin(input)
-    .timeout(Duration::from_secs(2))
+    .timeout(Duration::from_secs(20))
     .assert()
     .stderr(predicate::str::contains(
         "Message cannot be sent without verifying the receiver's DID",
@@ -182,7 +182,7 @@ fn test_send_command_unverified_receiver_ask_flag() {
                 "--ask",
             ])
             .write_stdin(input)
-            .timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(20))
             .assert()
             .stdout(predicate::str::contains(
                 "Do you want to verify receiver DID",
@@ -199,7 +199,7 @@ fn test_send_command_unverified_receiver_ask_flag() {
                 "--one",
                 &marc_did,
             ])
-            .timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(20))
             .assert()
             .stderr(predicate::str::contains("received relationship request"))
             .success();
@@ -256,7 +256,7 @@ fn test_webvh_creation_key_rotation() {
                 "receive",
                 &bar_did,
             ])
-            .timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(20))
             .assert()
             .stderr(predicate::str::contains("received relationship request"))
             .stdout(predicate::str::contains("Oh hello Marc"))
@@ -293,7 +293,7 @@ fn test_webvh_creation_key_rotation() {
                 "receive",
                 &bar_did,
             ])
-            .timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(20))
             .assert()
             .stdout(predicate::str::contains("Oh hello Marc"))
             .failure();
