@@ -289,8 +289,9 @@ impl SecureStore {
         relation_status: RelationshipStatus,
         relation_vid: &str,
     ) -> Result<(), Error> {
+        let relation_vid = self.try_resolve_alias(relation_vid)?;
         self.modify_vid(vid, |resolved| {
-            resolved.set_relation_vid(Some(relation_vid));
+            resolved.set_relation_vid(Some(&relation_vid));
             let _ = resolved.replace_relation_status(relation_status);
 
             Ok(())
@@ -1448,6 +1449,47 @@ mod test {
             panic!("unexpected message type");
         };
         assert_eq!(sender, bob.identifier());
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_relationship_accept_resolves_aliases() {
+        let store = SecureStore::new();
+        let alice = new_vid();
+        let bob = new_vid();
+
+        store.add_private_vid(alice.clone(), None).unwrap();
+        store.add_private_vid(bob.clone(), None).unwrap();
+        store
+            .set_alias("alice".to_string(), alice.identifier().to_string())
+            .unwrap();
+        store
+            .set_alias("bob".to_string(), bob.identifier().to_string())
+            .unwrap();
+
+        let (_, mut sealed) = store
+            .make_relationship_request("alice", "bob", None)
+            .unwrap();
+        let ReceivedTspMessage::RequestRelationship { thread_id, .. } =
+            store.open_message(&mut sealed).unwrap()
+        else {
+            panic!("unexpected message type");
+        };
+
+        store
+            .make_relationship_accept("bob", "alice", thread_id, None)
+            .unwrap();
+
+        let (vids, _aliases, _keys) = store.export().unwrap();
+        let alice_entry = vids
+            .iter()
+            .find(|vid| vid.id == alice.identifier())
+            .expect("missing alice entry");
+        assert_eq!(alice_entry.relation_vid.as_deref(), Some(bob.identifier()));
+        assert!(matches!(
+            alice_entry.relation_status,
+            RelationshipStatus::Bidirectional { .. }
+        ));
     }
 
     #[test]
