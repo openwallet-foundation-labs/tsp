@@ -1020,17 +1020,10 @@ pub struct Part<'a> {
 impl<'a> Part<'a> {
     fn decode(identifier: u32, data: &'a [u8], pos: &mut usize) -> Option<Part<'a>> {
         let begin_pos = *pos;
-        match checked_decode_variable_data_index(identifier, data, pos) {
-            Some(range) => {
-                let part = Part {
-                    prefix: &data[begin_pos..range.start],
-                    data: &data[range.start..range.end],
-                };
-
-                Some(part)
-            }
-            None => None,
-        }
+        checked_decode_variable_data_index(identifier, data, pos).map(|range| Part {
+            prefix: &data[begin_pos..range.start],
+            data: &data[range.start..range.end],
+        })
     }
 }
 
