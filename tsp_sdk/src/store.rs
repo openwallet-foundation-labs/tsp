@@ -142,10 +142,9 @@ impl SecureStore {
                 vid.id.to_string(),
                 VidContext {
                     vid: Arc::new(vid.verified_vid()),
-                    private: match vid.private_vid() {
-                        Some(private) => Some(Arc::new(private)),
-                        None => None,
-                    },
+                    private: vid
+                        .private_vid()
+                        .map(|private| -> Arc<dyn PrivateVid> { Arc::new(private) }),
                     relation_status: vid.relation_status,
                     relation_vid: vid.relation_vid,
                     parent_vid: vid.parent_vid,
