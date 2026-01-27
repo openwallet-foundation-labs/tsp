@@ -21,6 +21,7 @@
 - [Transport layers](./transport.md)
 - [Custom VIDs](custom-vids.md)
 - [Custom secure storage](custom-secure-storage.md)
+- [Benchmark Strategy](benchmark-strategy.md)
 - [Benchmark](benchmark.md)
 
 # Protocol Integrations
