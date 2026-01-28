@@ -14,6 +14,10 @@ use iai_callgrind::{
     LibraryBenchmarkConfig, OutputFormat, library_benchmark, library_benchmark_group, main,
 };
 #[cfg(all(feature = "pq", not(feature = "nacl")))]
+mod bench_utils;
+#[cfg(all(feature = "pq", not(feature = "nacl")))]
+use bench_utils::seeded_bytes;
+#[cfg(all(feature = "pq", not(feature = "nacl")))]
 use std::hint::black_box;
 #[cfg(all(feature = "pq", not(feature = "nacl")))]
 use tsp_sdk::{OwnedVid, definitions::Payload};
@@ -27,11 +31,19 @@ struct SealOpenCase {
 
 #[cfg(all(feature = "pq", not(feature = "nacl")))]
 fn setup_seal_open(_benchmark_id: &'static str, payload_len: usize) -> SealOpenCase {
-    let transport = url::Url::parse("tsp://").expect("static URL must parse");
+    let transport = "tcp://127.0.0.1:13371";
     SealOpenCase {
-        alice: OwnedVid::bind("did:example:alice", transport.clone()),
-        bob: OwnedVid::bind("did:example:bob", transport),
-        payload: vec![0u8; payload_len],
+        alice: bench_utils::deterministic_owned_vid_mldsa65_x25519kyber768(
+            "did:example:alice",
+            transport,
+            0x50515F414C494345u64,
+        ),
+        bob: bench_utils::deterministic_owned_vid_mldsa65_x25519kyber768(
+            "did:example:bob",
+            transport,
+            0x50515F424F425F5Fu64,
+        ),
+        payload: seeded_bytes(0x48504B455F50515Fu64 ^ payload_len as u64, payload_len),
     }
 }
 
@@ -72,10 +84,13 @@ struct SignVerifyCase {
 
 #[cfg(all(feature = "pq", not(feature = "nacl")))]
 fn setup_sign_verify(_benchmark_id: &'static str, payload_len: usize) -> SignVerifyCase {
-    let transport = url::Url::parse("tsp://").expect("static URL must parse");
     SignVerifyCase {
-        alice: OwnedVid::bind("did:example:alice", transport),
-        payload: vec![0u8; payload_len],
+        alice: bench_utils::deterministic_owned_vid_mldsa65_x25519kyber768(
+            "did:example:alice",
+            "tcp://127.0.0.1:13371",
+            0x4D4C44534136355Fu64,
+        ),
+        payload: seeded_bytes(0x4D4C44534136355Fu64 ^ payload_len as u64, payload_len),
     }
 }
 

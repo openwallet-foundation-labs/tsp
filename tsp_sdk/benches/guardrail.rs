@@ -1,6 +1,8 @@
 use iai_callgrind::{
     LibraryBenchmarkConfig, OutputFormat, library_benchmark, library_benchmark_group, main,
 };
+mod bench_utils;
+use bench_utils::seeded_bytes;
 use std::hint::black_box;
 use tsp_sdk::{
     ReceivedTspMessage, SecureStore, VerifiedVid,
@@ -38,7 +40,7 @@ fn setup_store(_benchmark_id: &'static str, payload_len: usize) -> StoreCase {
         store,
         sender: alice.identifier().to_string(),
         receiver: bob.identifier().to_string(),
-        payload: vec![0u8; payload_len],
+        payload: seeded_bytes(0x53544F52455F504Cu64 ^ payload_len as u64, payload_len),
     }
 }
 
@@ -74,7 +76,7 @@ fn setup_crypto(_benchmark_id: &'static str, payload_len: usize) -> CryptoCase {
     CryptoCase {
         alice: fixture_owned_vid("alice"),
         bob: fixture_owned_vid("bob"),
-        payload: vec![0u8; payload_len],
+        payload: seeded_bytes(0x43525950544F5F50u64 ^ payload_len as u64, payload_len),
     }
 }
 
@@ -107,7 +109,7 @@ fn guardrail_crypto_seal_open(case: CryptoCase) -> usize {
 }
 
 fn setup_digest_input(_benchmark_id: &'static str, payload_len: usize) -> Vec<u8> {
-    vec![0u8; payload_len]
+    seeded_bytes(0x4449474553545F50u64 ^ payload_len as u64, payload_len)
 }
 
 #[library_benchmark]
@@ -143,14 +145,9 @@ fn guardrail_crypto_blake2b256(input: Vec<u8>) -> u8 {
 fn setup_cesr_fixture(_benchmark_id: &'static str, payload_len: usize) -> Vec<u8> {
     let alice = fixture_owned_vid("alice");
     let bob = fixture_owned_vid("bob");
+    let payload = seeded_bytes(0x434553525F504C44u64 ^ payload_len as u64, payload_len);
 
-    tsp_sdk::crypto::seal(
-        &alice,
-        &bob,
-        None,
-        Payload::Content(&vec![0u8; payload_len]),
-    )
-    .unwrap()
+    tsp_sdk::crypto::seal(&alice, &bob, None, Payload::Content(payload.as_slice())).unwrap()
 }
 
 #[library_benchmark]
