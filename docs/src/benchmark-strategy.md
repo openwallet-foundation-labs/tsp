@@ -28,6 +28,8 @@ Purpose: regression detection with minimal CI time.
 
 Metric: MUST gate on Callgrind `Ir` (instructions), not wall-clock time.
 
+Implementation note: Guardrail coverage MAY require multiple `cargo bench` invocations under different feature sets (e.g., default, no-`nacl`, `pq`). CI should merge results into a single canonical JSON output.
+
 Required benchmark IDs:
 
 - Store:
@@ -36,6 +38,23 @@ Required benchmark IDs:
 - Crypto:
   - `guardrail.crypto.seal_open.direct.1KiB`
   - `guardrail.crypto.seal_open.direct.16KiB`
+  - Classic HPKE (no `nacl`):
+    - `guardrail.crypto.seal_open.hpke.direct.1KiB`
+    - `guardrail.crypto.seal_open.hpke.direct.16KiB`
+    - `guardrail.crypto.sign_verify.ed25519.direct.1KiB`
+    - `guardrail.crypto.sign_verify.ed25519.direct.16KiB`
+  - Post-quantum (feature `pq`, no `nacl`):
+    - `guardrail.crypto.seal_open.hpke_pq.direct.1KiB`
+    - `guardrail.crypto.seal_open.hpke_pq.direct.16KiB`
+    - `guardrail.crypto.sign_verify.mldsa65.direct.1KiB`
+    - `guardrail.crypto.sign_verify.mldsa65.direct.16KiB`
+  - Digest:
+    - `guardrail.crypto.digest.sha256.32B`
+    - `guardrail.crypto.digest.sha256.1KiB`
+    - `guardrail.crypto.digest.sha256.16KiB`
+    - `guardrail.crypto.digest.blake2b256.32B`
+    - `guardrail.crypto.digest.blake2b256.1KiB`
+    - `guardrail.crypto.digest.blake2b256.16KiB`
 - CESR:
   - `guardrail.cesr.decode_envelope.1KiB`
   - `guardrail.cesr.decode_envelope.16KiB`
@@ -81,7 +100,8 @@ Default payload sizes for message-like benchmarks:
 
 Fixtures and keys:
 
-- no randomness without a fixed seed (setup may generate; measured region must be deterministic)
+- no randomness without a fixed seed (setup may generate)
+- for cryptographic APIs which do not support injecting a deterministic RNG, measured regions MAY use OS RNG when gating on Callgrind `Ir`
 - prefer repository fixtures (e.g., `examples/test/**`)
 - no external network calls
 
@@ -129,6 +149,8 @@ Each record MUST contain:
 - `timestamp` (RFC 3339 / ISO 8601 string)
 - `environment` (object; MUST exist)
 
+Each record MAY include additional metadata fields (e.g., `run.variant`) as long as the required fields remain stable.
+
 `environment` MUST include:
 
 - `os` (string)
@@ -162,18 +184,18 @@ Example record:
   "unit": "instructions",
   "git_sha": "0123456789abcdef",
   "timestamp": "2026-01-27T12:34:56Z",
-    "environment": {
-      "os": "linux",
-      "arch": "x86_64",
-      "runner": "github-actions",
-      "rustc": "rustc 1.88.0 (....)",
-      "tools": {
-        "iai_callgrind": "0.16.1",
-        "iai_callgrind_runner": "0.16.1",
-        "valgrind": "3.19.0"
-      }
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "runner": "github-actions",
+    "rustc": "rustc 1.88.0 (....)",
+    "tools": {
+      "iai_callgrind": "0.16.1",
+      "iai_callgrind_runner": "0.16.1",
+      "valgrind": "3.19.0"
     }
   }
+}
 ```
 
 ### Callgrind output (CI)
@@ -189,11 +211,11 @@ CI MUST produce canonical JSON for the Guardrail Suite, even if the Callgrind ru
 
 Guardrail runs SHOULD also produce a machine-readable `iai-callgrind` summary artifact:
 
-- `target/bench-results/guardrail.iai.json` (JSON array; raw per-benchmark summaries)
+- `target/bench-results/guardrail.<variant>.iai.json` (JSON array; raw per-benchmark summaries)
 
 Canonical records MAY include an `artifacts` object to point to debug files (relative paths):
 
-- `artifacts.iai_summaries_json` (string; points at `target/bench-results/guardrail.iai.json`)
+- `artifacts.iai_summaries_json` (string; points at `target/bench-results/guardrail.<variant>.iai.json`)
 - `artifacts.callgrind.out_paths` (array of strings)
 - `artifacts.callgrind.log_paths` (array of strings)
 - `artifacts.callgrind.flamegraphs` (array of strings)
