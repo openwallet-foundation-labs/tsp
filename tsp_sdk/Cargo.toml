@@ -100,3 +100,26 @@ features = ["js"]
 serial_test = { version = "3.0" }
 arbitrary = { workspace = true }
 wasm-bindgen-test = "0.3.0"
+
+# benches
+iai-callgrind = "0.16.1"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+
+[[bench]]
+name = "guardrail"
+harness = false
+required-features = ["resolve"]
+
+[[bench]]
+name = "guardrail_hpke"
+harness = false
+required-features = ["resolve"]
+
+[[bench]]
+name = "guardrail_pq"
+harness = false
+required-features = ["pq", "resolve"]
+
+[[bench]]
+name = "guardrail_report"
+harness = false
