@@ -135,6 +135,13 @@ Each record MUST contain:
 - `arch` (string)
 - `runner` (string; e.g., `github-actions`, `local`)
 - `rustc` (string; `rustc -V`)
+- `tools` (object; toolchain versions used for the run)
+
+`environment.tools` MUST include:
+
+- `iai_callgrind` (string; version, from `Cargo.lock`)
+- `iai_callgrind_runner` (string; version)
+- `valgrind` (string; version)
 
 Standard metrics:
 
@@ -155,13 +162,18 @@ Example record:
   "unit": "instructions",
   "git_sha": "0123456789abcdef",
   "timestamp": "2026-01-27T12:34:56Z",
-  "environment": {
-    "os": "linux",
-    "arch": "x86_64",
-    "runner": "github-actions",
-    "rustc": "rustc 1.88.0 (....)"
+    "environment": {
+      "os": "linux",
+      "arch": "x86_64",
+      "runner": "github-actions",
+      "rustc": "rustc 1.88.0 (....)",
+      "tools": {
+        "iai_callgrind": "0.16.1",
+        "iai_callgrind_runner": "0.16.1",
+        "valgrind": "3.19.0"
+      }
+    }
   }
-}
 ```
 
 ### Callgrind output (CI)
@@ -169,8 +181,22 @@ Example record:
 CI MUST produce canonical JSON for the Guardrail Suite, even if the Callgrind runner emits its own JSON.
 
 - raw tool output may be uploaded as an artifact for debugging
+- CI SHOULD upload `target/iai/**` as an artifact (Callgrind logs/out/flamegraphs)
 - normalization MUST inject `git_sha`, `timestamp`, and `environment.*` fields
 - gating MUST be based on `Ir` unless this document is updated
+
+### Artifacts
+
+Guardrail runs SHOULD also produce a machine-readable `iai-callgrind` summary artifact:
+
+- `target/bench-results/guardrail.iai.json` (JSON array; raw per-benchmark summaries)
+
+Canonical records MAY include an `artifacts` object to point to debug files (relative paths):
+
+- `artifacts.iai_summaries_json` (string; points at `target/bench-results/guardrail.iai.json`)
+- `artifacts.callgrind.out_paths` (array of strings)
+- `artifacts.callgrind.log_paths` (array of strings)
+- `artifacts.callgrind.flamegraphs` (array of strings)
 
 ## Baselines and thresholds
 
