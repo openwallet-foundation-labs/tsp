@@ -317,7 +317,7 @@ fn guardrail_runs() -> Vec<GuardrailRun> {
             bench_target: "guardrail",
             cargo: CargoRun {
                 no_default_features: false,
-                features: &["resolve"],
+                features: &["resolve", "bench-callgrind"],
             },
         },
         GuardrailRun {
@@ -325,7 +325,7 @@ fn guardrail_runs() -> Vec<GuardrailRun> {
             bench_target: "guardrail_hpke",
             cargo: CargoRun {
                 no_default_features: true,
-                features: &["resolve"],
+                features: &["resolve", "bench-callgrind"],
             },
         },
         GuardrailRun {
@@ -333,7 +333,7 @@ fn guardrail_runs() -> Vec<GuardrailRun> {
             bench_target: "guardrail_pq",
             cargo: CargoRun {
                 no_default_features: true,
-                features: &["pq", "resolve"],
+                features: &["pq", "resolve", "bench-callgrind"],
             },
         },
     ]

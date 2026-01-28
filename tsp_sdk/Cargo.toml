@@ -20,6 +20,7 @@ fuzzing = ["dep:arbitrary"]
 demo = []
 nacl = ["essr"]
 pq = ["dep:hpke_pq", "dep:ml-dsa", "essr"]
+bench-callgrind = ["dep:iai-callgrind"]
 async = [
   "resolve",
   "aries-askar",
@@ -87,6 +88,9 @@ async-trait = "0.1.88"
 # webvh
 didwebvh-rs = { workspace = true, optional = true }
 
+# bench
+iai-callgrind = { version = "0.16.1", optional = true }
+
 # not used directly, but we need to configure
 # the JS feature in this transitive dependency
 # required for compiling to wasm32-unknown-unknown
@@ -102,24 +106,23 @@ arbitrary = { workspace = true }
 wasm-bindgen-test = "0.3.0"
 rand_chacha = "0.3.1"
 
-# benches
-iai-callgrind = "0.16.1"
+# bench
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 
 [[bench]]
 name = "guardrail"
 harness = false
-required-features = ["resolve"]
+required-features = ["resolve", "bench-callgrind"]
 
 [[bench]]
 name = "guardrail_hpke"
 harness = false
-required-features = ["resolve"]
+required-features = ["resolve", "bench-callgrind"]
 
 [[bench]]
 name = "guardrail_pq"
 harness = false
-required-features = ["pq", "resolve"]
+required-features = ["pq", "resolve", "bench-callgrind"]
 
 [[bench]]
 name = "guardrail_report"
