@@ -219,11 +219,14 @@ pub(crate) async fn receive_messages(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::TestPortAllocator;
     use futures::StreamExt;
 
     #[tokio::test]
     async fn test_quic_transport() {
-        let url = Url::parse("quic://localhost:3737").unwrap();
+        let allocator = TestPortAllocator::new();
+        let url = Url::parse(&format!("quic://localhost:{}", allocator.allocate())).unwrap();
+
         let mut incoming_stream = receive_messages(&url).await.unwrap();
 
         // Send multiple messages to verify connection reuse and multi-stream receiving

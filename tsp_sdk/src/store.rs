@@ -1300,17 +1300,14 @@ impl SecureStore {
 mod test {
     use wasm_bindgen_test::wasm_bindgen_test;
 
-    use crate::{OwnedVid, ReceivedTspMessage, RelationshipStatus, SecureStore, VerifiedVid};
-
-    fn new_vid() -> OwnedVid {
-        OwnedVid::new_did_peer("tcp://127.0.0.1:1337".parse().unwrap())
-    }
+    use crate::{ReceivedTspMessage, RelationshipStatus, VerifiedVid};
+    use crate::test_utils::*;
 
     #[test]
     #[wasm_bindgen_test]
     fn test_add_private_vid() {
-        let store = SecureStore::new();
-        let vid = new_vid();
+        let store = create_test_store();
+        let vid = create_test_vid();
 
         store.add_private_vid(vid.clone(), None).unwrap();
 
@@ -1320,8 +1317,8 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_add_verified_vid() {
-        let store = SecureStore::new();
-        let owned_vid = new_vid();
+        let store = create_test_store();
+        let owned_vid = create_test_vid();
 
         store
             .add_verified_vid(owned_vid.vid().clone(), None)
@@ -1333,8 +1330,8 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_remove() {
-        let store = SecureStore::new();
-        let vid = new_vid();
+        let store = create_test_store();
+        let vid = create_test_vid();
 
         store.add_private_vid(vid.clone(), None).unwrap();
 
@@ -1348,9 +1345,8 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_open_seal() {
-        let store = SecureStore::new();
-        let alice = new_vid();
-        let bob = new_vid();
+        let store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
 
         store.add_private_vid(alice.clone(), None).unwrap();
         store.add_private_vid(bob.clone(), None).unwrap();
@@ -1387,9 +1383,8 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_make_relationship_request() {
-        let store = SecureStore::new();
-        let alice = new_vid();
-        let bob = new_vid();
+        let store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
 
         store.add_private_vid(alice.clone(), None).unwrap();
         store.add_private_vid(bob.clone(), None).unwrap();
@@ -1412,9 +1407,8 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_make_relationship_accept() {
-        let store = SecureStore::new();
-        let alice = new_vid();
-        let bob = new_vid();
+        let store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
 
         store.add_private_vid(alice.clone(), None).unwrap();
         store.add_private_vid(bob.clone(), None).unwrap();
@@ -1453,9 +1447,8 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_relationship_accept_resolves_aliases() {
-        let store = SecureStore::new();
-        let alice = new_vid();
-        let bob = new_vid();
+        let store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
 
         store.add_private_vid(alice.clone(), None).unwrap();
         store.add_private_vid(bob.clone(), None).unwrap();
@@ -1494,9 +1487,8 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_make_relationship_cancel() {
-        let store = SecureStore::new();
-        let alice = new_vid();
-        let bob = new_vid();
+        let store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
 
         store.add_private_vid(alice.clone(), None).unwrap();
         store.add_private_vid(bob.clone(), None).unwrap();
@@ -1547,11 +1539,10 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_make_new_identity() {
-        let a_store = SecureStore::new();
-        let b_store = SecureStore::new();
-        let alice = new_vid();
-        let bob = new_vid();
-        let charles = new_vid();
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+        let charles = create_test_vid();
 
         a_store.add_private_vid(alice.clone(), None).unwrap();
         b_store.add_private_vid(bob.clone(), None).unwrap();
@@ -1593,10 +1584,9 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_make_referral() {
-        let store = SecureStore::new();
-        let alice = new_vid();
-        let bob = new_vid();
-        let charles = new_vid();
+        let store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+        let charles = create_test_vid();
 
         store.add_private_vid(alice.clone(), None).unwrap();
         store.add_private_vid(bob.clone(), None).unwrap();
@@ -1626,21 +1616,21 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_routed() {
-        let a_store = SecureStore::new();
-        let b_store = SecureStore::new();
-        let c_store = SecureStore::new();
-        let d_store = SecureStore::new();
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let c_store = create_test_store();
+        let d_store = create_test_store();
 
-        let nette_a = new_vid();
-        let sneaky_a = new_vid();
+        let nette_a = create_test_vid();
+        let sneaky_a = create_test_vid();
 
-        let b = new_vid();
+        let b = create_test_vid();
 
-        let mailbox_c = new_vid();
-        let c = new_vid();
+        let mailbox_c = create_test_vid();
+        let c = create_test_vid();
 
-        let sneaky_d = new_vid();
-        let nette_d = new_vid();
+        let sneaky_d = create_test_vid();
+        let nette_d = create_test_vid();
 
         a_store.add_private_vid(nette_a.clone(), None).unwrap();
         a_store.add_private_vid(sneaky_a.clone(), None).unwrap();
@@ -1793,14 +1783,14 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_nested_manual() {
-        let a_store = SecureStore::new();
-        let b_store = SecureStore::new();
+        let a_store = create_test_store();
+        let b_store = create_test_store();
 
-        let a = new_vid();
-        let b = new_vid();
+        let a = create_test_vid();
+        let b = create_test_vid();
 
-        let nested_a = new_vid();
-        let nested_b = new_vid();
+        let nested_a = create_test_vid();
+        let nested_b = create_test_vid();
 
         a_store.add_private_vid(a.clone(), None).unwrap();
         a_store.add_private_vid(nested_a.clone(), None).unwrap();
@@ -1875,11 +1865,11 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_nested_automatic_setup() {
-        let a_store = SecureStore::new();
-        let b_store = SecureStore::new();
+        let a_store = create_test_store();
+        let b_store = create_test_store();
 
-        let a = new_vid();
-        let b = new_vid();
+        let a = create_test_vid();
+        let b = create_test_vid();
 
         a_store.add_private_vid(a.clone(), None).unwrap();
         b_store.add_private_vid(b.clone(), None).unwrap();

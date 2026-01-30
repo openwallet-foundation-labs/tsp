@@ -138,13 +138,16 @@ pub(crate) async fn receive_messages(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::test_utils::TestPortAllocator;
     use futures::StreamExt;
     use url::Url;
 
     #[tokio::test]
     #[serial_test::serial(tcp)]
     async fn test_tcp_transport() {
-        let url = Url::parse("tcp://localhost:12345").unwrap();
+        let allocator = TestPortAllocator::new();
+        let url = Url::parse(&format!("tcp://localhost:{}", allocator.allocate())).unwrap();
+
         let mut incoming_stream = receive_messages(&url).await.unwrap();
 
         // Send multiple messages to verify connection reuse and framing
