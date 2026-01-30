@@ -4,8 +4,8 @@
 //! It includes helpers for creating VIDs, stores, assertions, and async test utilities.
 
 use crate::{
-    definitions::{Payload, PrivateVid, VerifiedVid},
     OwnedVid, SecureStore,
+    definitions::{Payload, PrivateVid, VerifiedVid},
 };
 
 #[cfg(feature = "async")]
@@ -131,7 +131,8 @@ pub fn seal_test_message(
 #[track_caller]
 pub fn assert_bytes_eq(actual: &[u8], expected: &[u8], message: &str) {
     assert_eq!(
-        actual, expected,
+        actual,
+        expected,
         "{}\nExpected: {:?}\nActual: {:?}",
         message,
         String::from_utf8_lossy(expected),
@@ -142,10 +143,7 @@ pub fn assert_bytes_eq(actual: &[u8], expected: &[u8], message: &str) {
 /// Assert that a message appears to be encrypted (not plaintext)
 #[track_caller]
 pub fn assert_message_encrypted(message: &[u8], plaintext: &[u8]) {
-    assert!(
-        !message.is_empty(),
-        "Encrypted message should not be empty"
-    );
+    assert!(!message.is_empty(), "Encrypted message should not be empty");
     assert!(
         message.len() > plaintext.len(),
         "Encrypted message should be longer than plaintext"
@@ -190,10 +188,7 @@ pub fn assert_vid_format(identifier: &str, expected_prefix: &str) {
 /// # });
 /// ```
 #[cfg(feature = "async")]
-pub async fn with_timeout<F, T>(
-    duration: std::time::Duration,
-    future: F,
-) -> Result<T, &'static str>
+pub async fn with_timeout<F, T>(duration: std::time::Duration, future: F) -> Result<T, &'static str>
 where
     F: std::future::Future<Output = T>,
 {
@@ -299,8 +294,7 @@ impl Drop for TempWallet {
 pub struct TestPortAllocator;
 
 // Global port counter starting at 50000
-static GLOBAL_PORT_COUNTER: std::sync::atomic::AtomicU16 =
-    std::sync::atomic::AtomicU16::new(50000);
+static GLOBAL_PORT_COUNTER: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(50000);
 
 impl TestPortAllocator {
     /// Create a new port allocator

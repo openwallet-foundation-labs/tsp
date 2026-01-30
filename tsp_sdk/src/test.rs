@@ -1,4 +1,4 @@
-use crate::{test_utils::*, OwnedVid, RelationshipStatus, VerifiedVid};
+use crate::{OwnedVid, RelationshipStatus, VerifiedVid, test_utils::*};
 use futures::StreamExt;
 
 #[tokio::test]
