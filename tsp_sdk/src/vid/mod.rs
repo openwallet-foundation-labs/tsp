@@ -169,6 +169,39 @@ impl OwnedVid {
         }
     }
 
+    /// Create a VID with Ed25519/X25519 keys, regardless of pq feature
+    ///
+    /// This is useful for creating did:web and did:webvh VIDs that need to be
+    /// published to external servers that don't support post-quantum keys yet.
+    #[cfg(feature = "pq")]
+    pub fn bind_with_ed25519(id: impl Into<String>, transport: url::Url) -> Self {
+        use rand_core::OsRng;
+
+        let sigkey_private = ed25519_dalek::SigningKey::generate(&mut OsRng);
+        let public_sigkey = sigkey_private.verifying_key().to_bytes().to_vec().into();
+        let sigkey = sigkey_private.to_bytes().to_vec().into();
+
+        let enckey_private = crypto_box::SecretKey::generate(&mut OsRng);
+        let public_enckey = crypto_box::PublicKey::from(&enckey_private)
+            .to_bytes()
+            .to_vec()
+            .into();
+        let enckey = enckey_private.to_bytes().to_vec().into();
+
+        Self {
+            vid: Vid {
+                id: id.into(),
+                transport,
+                sig_key_type: VidSignatureKeyType::Ed25519,
+                public_sigkey,
+                enc_key_type: VidEncryptionKeyType::X25519,
+                public_enckey,
+            },
+            sigkey,
+            enckey,
+        }
+    }
+
     pub fn new_did_peer(transport: Url) -> OwnedVid {
         let (sigkey, public_sigkey) = crate::crypto::gen_sign_keypair();
         let (enckey, public_enckey) = crate::crypto::gen_encrypt_keypair();

@@ -66,8 +66,12 @@ pub async fn create_webvh(
     let path_url = Url::parse(&["http://", did_path].concat())?;
     let webvh_url = WebVHURL::parse_url(&path_url)?;
 
-    // Create default TSP VID
+    // Create default TSP VID with Ed25519 keys for external server compatibility
+    #[cfg(not(feature = "pq"))]
     let mut vid = OwnedVid::bind(webvh_url.to_string(), transport);
+
+    #[cfg(feature = "pq")]
+    let mut vid = OwnedVid::bind_with_ed25519(webvh_url.to_string(), transport);
 
     // Generate the DID Document based on the VID
     let did_doc = vid_to_did_document(vid.vid());

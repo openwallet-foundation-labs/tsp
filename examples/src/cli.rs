@@ -1128,7 +1128,13 @@ async fn create_did_web(
     )
     .unwrap();
 
+    // Use Ed25519 keys for did:web since external servers don't support post-quantum yet
+    #[cfg(not(feature = "pq"))]
     let private_vid = OwnedVid::bind(&did, transport);
+
+    #[cfg(feature = "pq")]
+    let private_vid = OwnedVid::bind_with_ed25519(&did, transport);
+
     info!("created identity {}", private_vid.identifier());
 
     let response = client
