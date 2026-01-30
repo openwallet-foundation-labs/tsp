@@ -199,10 +199,12 @@ pub(crate) async fn receive_messages(
 mod tests {
     use super::*;
     use futures::StreamExt;
+    use crate::test_utils::TestPortAllocator;
 
     #[tokio::test]
     async fn test_tls_transport() {
-        let url = Url::parse("tls://localhost:4242").unwrap();
+        let allocator = TestPortAllocator::new();
+        let url = Url::parse(&format!("tls://localhost:{}", allocator.allocate())).unwrap();
         let message = b"Hello, world!";
 
         let mut incoming_stream = receive_messages(&url).await.unwrap();

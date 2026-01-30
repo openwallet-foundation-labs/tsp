@@ -65,11 +65,13 @@ mod test {
     use super::*;
     use futures::StreamExt;
     use url::Url;
+    use crate::test_utils::TestPortAllocator;
 
     #[tokio::test]
     #[serial_test::serial(tcp)]
     async fn test_tcp_transport() {
-        let url = Url::parse("tcp://localhost:12345").unwrap();
+        let allocator = TestPortAllocator::new();
+        let url = Url::parse(&format!("tcp://localhost:{}", allocator.allocate())).unwrap();
         let message = b"Hello, world!";
 
         let mut incoming_stream = receive_messages(&url).await.unwrap();
