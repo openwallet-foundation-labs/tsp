@@ -212,6 +212,11 @@ fn test_send_command_unverified_receiver_ask_flag() {
 #[test]
 #[serial_test::serial(clean_wallet)]
 fn test_webvh_creation_key_rotation() {
+    if std::env::var("TSP_SKIP_E2E").is_ok() {
+        eprintln!("skipping test_webvh_creation_key_rotation because TSP_SKIP_E2E is set");
+        return;
+    }
+
     clean_wallet();
 
     // create a new sender identity
