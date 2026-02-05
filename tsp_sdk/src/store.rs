@@ -1300,8 +1300,8 @@ impl SecureStore {
 mod test {
     use wasm_bindgen_test::wasm_bindgen_test;
 
-    use crate::{ReceivedTspMessage, RelationshipStatus, VerifiedVid};
     use crate::test_utils::*;
+    use crate::{ReceivedTspMessage, RelationshipStatus, VerifiedVid};
 
     #[test]
     #[wasm_bindgen_test]

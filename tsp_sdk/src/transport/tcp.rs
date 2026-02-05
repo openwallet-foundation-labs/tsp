@@ -63,9 +63,9 @@ pub(crate) async fn receive_messages(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::test_utils::TestPortAllocator;
     use futures::StreamExt;
     use url::Url;
-    use crate::test_utils::TestPortAllocator;
 
     #[tokio::test]
     #[serial_test::serial(tcp)]

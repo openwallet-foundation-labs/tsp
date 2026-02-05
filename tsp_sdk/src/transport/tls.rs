@@ -198,8 +198,8 @@ pub(crate) async fn receive_messages(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::StreamExt;
     use crate::test_utils::TestPortAllocator;
+    use futures::StreamExt;
 
     #[tokio::test]
     async fn test_tls_transport() {
