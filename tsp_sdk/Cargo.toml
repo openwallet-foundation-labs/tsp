@@ -20,6 +20,8 @@ fuzzing = ["dep:arbitrary"]
 demo = []
 nacl = ["essr"]
 pq = ["dep:hpke_pq", "dep:ml-dsa", "essr"]
+bench-callgrind = ["dep:gungraun"]
+bench-criterion = ["dep:criterion"]
 async = [
   "resolve",
   "aries-askar",
@@ -87,6 +89,10 @@ async-trait = "0.1.88"
 # webvh
 didwebvh-rs = { workspace = true, optional = true }
 
+# bench
+gungraun = { version = "0.17.0", optional = true }
+criterion = { version = "0.5.1", optional = true }
+
 # not used directly, but we need to configure
 # the JS feature in this transitive dependency
 # required for compiling to wasm32-unknown-unknown
@@ -100,3 +106,61 @@ features = ["js"]
 serial_test = { version = "3.0" }
 arbitrary = { workspace = true }
 wasm-bindgen-test = "0.3.0"
+rand_chacha = "0.3.1"
+
+# bench
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+
+[[bench]]
+name = "guardrail"
+harness = false
+required-features = ["resolve", "bench-callgrind"]
+
+[[bench]]
+name = "guardrail_hpke"
+harness = false
+required-features = ["resolve", "bench-callgrind"]
+
+[[bench]]
+name = "guardrail_pq"
+harness = false
+required-features = ["pq", "resolve", "bench-callgrind"]
+
+[[bench]]
+name = "throughput"
+harness = false
+required-features = ["resolve", "bench-criterion"]
+
+[[bench]]
+name = "throughput_hpke"
+harness = false
+required-features = ["resolve", "bench-criterion"]
+
+[[bench]]
+name = "throughput_pq"
+harness = false
+required-features = ["pq", "resolve", "bench-criterion"]
+
+[[bench]]
+name = "throughput_report"
+harness = false
+
+[[bench]]
+name = "throughput_transport"
+harness = false
+required-features = ["async", "bench-criterion"]
+
+[[bench]]
+name = "throughput_cli"
+harness = false
+required-features = ["async", "bench-criterion"]
+
+[[bench]]
+name = "throughput_store_backend"
+harness = false
+required-features = ["async", "bench-criterion"]
+
+[[bench]]
+name = "throughput_store_backend_pg"
+harness = false
+required-features = ["postgres", "bench-criterion"]

@@ -25,13 +25,13 @@ pub(super) fn load_certificate() -> Result<
     ),
     TransportError,
 > {
-    #[cfg(not(test))]
+    #[cfg(all(not(test), not(feature = "bench-criterion")))]
     let cert_path = std::env::var("TSP_TLS_CERT").map_err(|_| TransportError::TLSConfiguration)?;
-    #[cfg(not(test))]
+    #[cfg(all(not(test), not(feature = "bench-criterion")))]
     let key_path = std::env::var("TSP_TLS_KEY").map_err(|_| TransportError::TLSConfiguration)?;
-    #[cfg(test)]
+    #[cfg(any(test, feature = "bench-criterion"))]
     let cert_path = "../examples/test/localhost.pem".to_string();
-    #[cfg(test)]
+    #[cfg(any(test, feature = "bench-criterion"))]
     let key_path = "../examples/test/localhost-key.pem".to_string();
 
     let certs: Vec<rustls_pki_types::CertificateDer<'static>> =
@@ -57,8 +57,8 @@ pub(super) fn create_tls_config() -> ClientConfig {
             .expect("could not add native certificate");
     }
 
-    // Add test CA certificate
-    #[cfg(test)]
+    // Add local test CA certificate (for tests and local dev benches only).
+    #[cfg(any(test, feature = "bench-criterion"))]
     {
         let cert_path = "../examples/test/root-ca.pem";
         let certs: Vec<rustls_pki_types::CertificateDer<'static>> =
