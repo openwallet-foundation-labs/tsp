@@ -36,15 +36,3 @@ If needed, use Docker to run the suite:
 ```bash
 bash tsp_sdk/benches/guardrail/run_docker.sh
 ```
-
-## Outputs
-
-Primary results are stored in Bencher.
-
-Local runs produce gungraun output, and Callgrind artifacts are produced under `target/gungraun/**`.
-
-## How to read results
-
-- `benchmark_id` identifies the benchmark case (stable across refactors).
-- `value` is the `Ir` instruction count (lower is better).
-- Variant-specific benchmarks include the crypto suite in their benchmark IDs (e.g., `*.hpke.*`, `*.hpke_pq.*`).
