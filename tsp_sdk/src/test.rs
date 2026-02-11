@@ -1,5 +1,9 @@
-use crate::{OwnedVid, RelationshipStatus, VerifiedVid, test_utils::*};
+use crate::{
+    AskarSecureStorage, AsyncSecureStore, OwnedVid, RelationshipStatus, SecureStorage, VerifiedVid,
+    test_utils::*,
+};
 use futures::StreamExt;
+use std::collections::BTreeMap;
 
 #[tokio::test]
 #[serial_test::serial(tcp)]
@@ -778,4 +782,333 @@ async fn test_persisted_store_roundtrip_reopens_dirty_wallet() {
         .seal_message(&local_vid, &receiver_vid, None, b"persisted-wallet-message")
         .unwrap();
     assert!(!sealed_message.is_empty());
+}
+
+fn relationship_status_signature(status: RelationshipStatus) -> String {
+    match status {
+        RelationshipStatus::_Controlled => "Controlled".to_string(),
+        RelationshipStatus::Unrelated => "Unrelated".to_string(),
+        RelationshipStatus::Unidirectional { thread_id } => format!("Uni:{thread_id:?}"),
+        RelationshipStatus::ReverseUnidirectional { thread_id } => format!("RevUni:{thread_id:?}"),
+        RelationshipStatus::Bidirectional {
+            thread_id,
+            outstanding_nested_thread_ids,
+        } => format!("Bi:{thread_id:?}:{outstanding_nested_thread_ids:?}"),
+    }
+}
+
+fn export_snapshot(
+    store: &AsyncSecureStore,
+) -> (
+    BTreeMap<String, String>,
+    Vec<String>,
+    BTreeMap<String, String>,
+) {
+    let (vids, aliases, keys) = store.export().unwrap();
+    let mut vid_rows = vids
+        .into_iter()
+        .map(|exported| {
+            format!(
+                "{}|{}|{}|{}|{}",
+                exported.id,
+                exported.is_private(),
+                exported.relation_vid.unwrap_or_default(),
+                exported.parent_vid.unwrap_or_default(),
+                relationship_status_signature(exported.relation_status)
+            )
+        })
+        .collect::<Vec<_>>();
+    vid_rows.sort();
+
+    let key_rows = keys
+        .into_iter()
+        .map(|(k, v)| (k, format!("{v:?}")))
+        .collect::<BTreeMap<_, _>>();
+
+    (
+        aliases.into_iter().collect::<BTreeMap<_, _>>(),
+        vid_rows,
+        key_rows,
+    )
+}
+
+fn setup_transition_pair() -> (AsyncSecureStore, String, AsyncSecureStore, String) {
+    let a_store = create_async_test_store();
+    let b_store = create_async_test_store();
+
+    let a = create_test_vid();
+    let b = create_test_vid();
+
+    a_store.add_private_vid(a.clone(), None).unwrap();
+    a_store.add_verified_vid(b.clone(), None).unwrap();
+
+    b_store.add_private_vid(b.clone(), None).unwrap();
+    b_store.add_verified_vid(a.clone(), None).unwrap();
+
+    (
+        a_store,
+        a.identifier().to_string(),
+        b_store,
+        b.identifier().to_string(),
+    )
+}
+
+async fn assert_storage_open_or_read_fails(url: &str, password: &[u8]) {
+    let open_result = <AskarSecureStorage as SecureStorage>::open(url, password).await;
+    match open_result {
+        Err(_) => {}
+        Ok(storage) => {
+            let read_result = storage.read().await;
+            assert!(
+                read_result.is_err(),
+                "storage opened and read unexpectedly succeeded"
+            );
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[tokio::test]
+async fn test_dirty_roundtrip_multi_reopen_idempotent() {
+    let dirty_store = create_prepopulated_store();
+    let (vids, aliases, keys) = dirty_store.export().unwrap();
+    let initial_store = create_async_test_store();
+    initial_store.import(vids, aliases, keys).unwrap();
+
+    let fixture = create_persisted_store().await;
+    let baseline = export_snapshot(&initial_store);
+    let reopened = persist_reopen_cycle(&initial_store, &fixture, 3).await;
+
+    assert_eq!(baseline, export_snapshot(&reopened));
+    assert_eq!(
+        reopened.get_secret_key("test-history-key-1").unwrap(),
+        Some(vec![1, 2, 3, 4])
+    );
+    assert_eq!(
+        reopened.get_secret_key("test-history-key-2").unwrap(),
+        Some(vec![5, 6, 7, 8])
+    );
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[tokio::test]
+async fn test_relationship_transition_request_accept_after_reopen() {
+    let (a_store, a_vid, b_store, b_vid) = setup_transition_pair();
+    let fixture_a = create_persisted_store().await;
+    let fixture_b = create_persisted_store().await;
+
+    let (_endpoint, mut request_message) = a_store
+        .make_relationship_request(&a_vid, &b_vid, None)
+        .unwrap();
+
+    let request_thread_id = match a_store
+        .get_relation_status_for_vid_pair(&a_vid, &b_vid)
+        .unwrap()
+    {
+        RelationshipStatus::Unidirectional { thread_id } => thread_id,
+        status => panic!("unexpected status after request: {status}"),
+    };
+
+    let a_store = persist_reopen_cycle(&a_store, &fixture_a, 1).await;
+    let b_store = persist_reopen_cycle(&b_store, &fixture_b, 1).await;
+
+    let crate::ReceivedTspMessage::RequestRelationship { thread_id, .. } =
+        b_store.open_message(&mut request_message).unwrap()
+    else {
+        panic!("receiver did not decode relationship request");
+    };
+    assert_eq!(thread_id, request_thread_id);
+
+    // Receiver explicitly marks the incoming request as pending relation before sending accept.
+    b_store
+        .set_relation_and_status_for_vid(
+            &a_vid,
+            RelationshipStatus::Unidirectional { thread_id },
+            &b_vid,
+        )
+        .unwrap();
+    let (_endpoint, mut accept_message) = b_store
+        .make_relationship_accept(&b_vid, &a_vid, thread_id, None)
+        .unwrap();
+
+    let a_store = persist_reopen_cycle(&a_store, &fixture_a, 1).await;
+    let _ = persist_reopen_cycle(&b_store, &fixture_b, 1).await;
+
+    let crate::ReceivedTspMessage::AcceptRelationship { .. } =
+        a_store.open_message(&mut accept_message).unwrap()
+    else {
+        panic!("sender did not decode relationship accept");
+    };
+
+    let RelationshipStatus::Bidirectional {
+        thread_id: upgraded,
+        ..
+    } = a_store
+        .get_relation_status_for_vid_pair(&a_vid, &b_vid)
+        .unwrap()
+    else {
+        panic!("relationship was not upgraded to bidirectional");
+    };
+    assert_eq!(upgraded, thread_id);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[tokio::test]
+async fn test_relationship_transition_cancel_after_reopen() {
+    let (store, seed) = create_dirty_store_with_transition_seed();
+    let fixture = create_persisted_store().await;
+    let store = persist_reopen_cycle(&store, &fixture, 1).await;
+
+    let (_endpoint, cancel_message) = store
+        .make_relationship_cancel(&seed.local_vid, &seed.remote_bidirectional_vid)
+        .unwrap();
+    assert!(!cancel_message.is_empty());
+
+    let RelationshipStatus::Unrelated = store
+        .get_relation_status_for_vid_pair(&seed.local_vid, &seed.remote_bidirectional_vid)
+        .unwrap()
+    else {
+        panic!("relationship was not cancelled");
+    };
+    let RelationshipStatus::Unrelated = store
+        .get_relation_status_for_vid_pair(&seed.local_vid, &seed.remote_unrelated_vid)
+        .unwrap()
+    else {
+        panic!("unrelated relationship unexpectedly changed");
+    };
+
+    let store = persist_reopen_cycle(&store, &fixture, 1).await;
+    let RelationshipStatus::Unrelated = store
+        .get_relation_status_for_vid_pair(&seed.local_vid, &seed.remote_bidirectional_vid)
+        .unwrap()
+    else {
+        panic!("cancelled relationship did not persist as unrelated");
+    };
+
+    let err = store
+        .make_relationship_cancel(&seed.local_vid, &seed.remote_bidirectional_vid)
+        .unwrap_err();
+    assert!(matches!(err, crate::Error::Relationship(_)));
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[tokio::test]
+async fn test_nested_relationship_transition_after_reopen() {
+    let (a_store, a_vid, b_store, b_vid) = setup_transition_pair();
+    let fixture_a = create_persisted_store().await;
+    let fixture_b = create_persisted_store().await;
+
+    let (_endpoint, mut request_message) = a_store
+        .make_relationship_request(&a_vid, &b_vid, None)
+        .unwrap();
+    let thread_id = match a_store
+        .get_relation_status_for_vid_pair(&a_vid, &b_vid)
+        .unwrap()
+    {
+        RelationshipStatus::Unidirectional { thread_id } => thread_id,
+        _ => panic!("missing unidirectional relation before accept"),
+    };
+    b_store
+        .set_relation_and_status_for_vid(
+            &a_vid,
+            RelationshipStatus::Unidirectional { thread_id },
+            &b_vid,
+        )
+        .unwrap();
+    let (_endpoint, mut accept_message) = b_store
+        .make_relationship_accept(&b_vid, &a_vid, thread_id, None)
+        .unwrap();
+    let _ = b_store.open_message(&mut request_message).unwrap();
+    let _ = a_store.open_message(&mut accept_message).unwrap();
+
+    let a_store = persist_reopen_cycle(&a_store, &fixture_a, 1).await;
+    let b_store = persist_reopen_cycle(&b_store, &fixture_b, 1).await;
+
+    let ((_endpoint, mut nested_request), nested_a_vid) = a_store
+        .make_nested_relationship_request(&a_vid, &b_vid)
+        .unwrap();
+
+    let nested_thread = match a_store
+        .get_relation_status_for_vid_pair(&a_vid, &b_vid)
+        .unwrap()
+    {
+        RelationshipStatus::Bidirectional {
+            outstanding_nested_thread_ids,
+            ..
+        } => *outstanding_nested_thread_ids.last().unwrap(),
+        _ => panic!("missing outstanding nested thread id"),
+    };
+
+    let a_store = persist_reopen_cycle(&a_store, &fixture_a, 1).await;
+    let b_store = persist_reopen_cycle(&b_store, &fixture_b, 1).await;
+
+    let crate::ReceivedTspMessage::RequestRelationship {
+        nested_vid: Some(nested_vid),
+        thread_id,
+        ..
+    } = b_store.open_message(&mut nested_request).unwrap()
+    else {
+        panic!("nested relationship request was not decoded");
+    };
+    assert_eq!(nested_vid, nested_a_vid.identifier());
+    assert_eq!(thread_id, nested_thread);
+
+    let ((_endpoint, mut nested_accept), nested_b_vid) = b_store
+        .make_nested_relationship_accept(&b_vid, &nested_vid, thread_id)
+        .unwrap();
+    let a_store = persist_reopen_cycle(&a_store, &fixture_a, 1).await;
+
+    let crate::ReceivedTspMessage::AcceptRelationship {
+        nested_vid: Some(accepted_nested_vid),
+        ..
+    } = a_store.open_message(&mut nested_accept).unwrap()
+    else {
+        panic!("nested relationship accept was not decoded");
+    };
+    assert_eq!(accepted_nested_vid, nested_b_vid.identifier());
+
+    let RelationshipStatus::Bidirectional {
+        outstanding_nested_thread_ids,
+        ..
+    } = a_store
+        .get_relation_status_for_vid_pair(&a_vid, &b_vid)
+        .unwrap()
+    else {
+        panic!("parent relation is not bidirectional after nested accept");
+    };
+    assert!(
+        !outstanding_nested_thread_ids.contains(&thread_id),
+        "nested thread id was not consumed after nested accept"
+    );
+
+    let RelationshipStatus::Bidirectional { .. } = a_store
+        .get_relation_status_for_vid_pair(nested_a_vid.identifier(), nested_b_vid.identifier())
+        .unwrap()
+    else {
+        panic!("nested vid relation was not persisted as bidirectional");
+    };
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[tokio::test]
+async fn test_persisted_store_open_with_wrong_password_fails() {
+    let fixture = create_persisted_store().await;
+    let store = create_async_test_store();
+    store.add_private_vid(create_test_vid(), None).unwrap();
+    fixture.persist_from(&store).await;
+
+    assert_storage_open_or_read_fails(fixture.storage_url(), b"definitely-wrong-password").await;
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[tokio::test]
+async fn test_persisted_store_open_with_corrupted_file_fails() {
+    let fixture = create_persisted_store().await;
+    let store = create_async_test_store();
+    store.add_private_vid(create_test_vid(), None).unwrap();
+    fixture.persist_from(&store).await;
+
+    corrupt_sqlite_file(fixture.sqlite_path());
+
+    assert_storage_open_or_read_fails(fixture.storage_url(), fixture.password()).await;
 }
