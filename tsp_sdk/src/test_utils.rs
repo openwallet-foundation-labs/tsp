@@ -1,313 +1,60 @@
-//! Test utilities and helpers for writing tests
-//!
-//! This module provides test utilities to make writing tests easier and more consistent.
-//! It includes helpers for creating VIDs, stores, assertions, and async test utilities.
+//! Test utilities and helpers for writing tests.
 
 use crate::{
-    OwnedVid, SecureStore,
-    definitions::{Payload, PrivateVid, VerifiedVid},
+    OwnedVid, RelationshipStatus, SecureStore,
+    definitions::{Digest, VerifiedVid},
 };
+use once_cell::sync::Lazy;
 
 #[cfg(feature = "async")]
-use crate::AsyncSecureStore;
+use crate::{AskarSecureStorage, AsyncSecureStore, SecureStorage};
 
-// =============================================================================
-// VID Creation Helpers
-// =============================================================================
+#[cfg(any(test, feature = "test-utils"))]
+use tempfile::TempDir;
 
-/// Create a test VID with a localhost TCP endpoint
+const MIN_TEST_PORT: u16 = 50_000;
+const MAX_TEST_PORT: u16 = 59_999;
+const TEST_PORT_SPAN: u32 = (MAX_TEST_PORT - MIN_TEST_PORT + 1) as u32;
+static CAN_PROBE_TEST_PORTS: Lazy<bool> =
+    Lazy::new(|| std::net::TcpListener::bind(("127.0.0.1", 0)).is_ok());
+
+/// Port allocator to avoid conflicts in concurrent tests.
 ///
-/// This is useful for unit tests that don't need real network connectivity.
-pub fn create_test_vid() -> OwnedVid {
-    OwnedVid::new_did_peer(url::Url::parse("tcp://127.0.0.1:1337").unwrap())
-}
-
-/// Create a test VID with a custom endpoint
-pub fn create_test_vid_with_endpoint(endpoint: &str) -> OwnedVid {
-    OwnedVid::new_did_peer(url::Url::parse(endpoint).unwrap())
-}
-
-/// Create a pair of test VIDs (alice, bob) for testing bidirectional communication
-pub fn create_test_vid_pair() -> (OwnedVid, OwnedVid) {
-    let alice = create_test_vid();
-    let bob = create_test_vid();
-    (alice, bob)
-}
-
-/// Load a test VID from a file (for integration tests)
-///
-/// # Examples
-///
-/// ```no_run
-/// # use tsp_sdk::test_utils::create_vid_from_file;
-/// # tokio_test::block_on(async {
-/// let alice = create_vid_from_file("../examples/test/alice/piv.json").await;
-/// # });
-/// ```
-#[cfg(feature = "async")]
-pub async fn create_vid_from_file(path: &str) -> OwnedVid {
-    OwnedVid::from_file(path)
-        .await
-        .unwrap_or_else(|e| panic!("Failed to load VID from {}: {}", path, e))
-}
-
-// =============================================================================
-// Store Creation Helpers
-// =============================================================================
-
-/// Create a test SecureStore with a temporary in-memory database
-pub fn create_test_store() -> SecureStore {
-    SecureStore::new()
-}
-
-/// Create a test AsyncSecureStore with a temporary in-memory database
-#[cfg(feature = "async")]
-pub fn create_async_test_store() -> AsyncSecureStore {
-    AsyncSecureStore::new()
-}
-
-/// Create two connected stores with alice and bob VIDs already set up
-///
-/// Returns `(alice_store, alice_vid, bob_store, bob_vid)` with mutual verification
-pub fn create_connected_stores() -> (SecureStore, OwnedVid, SecureStore, OwnedVid) {
-    let alice_store = create_test_store();
-    let bob_store = create_test_store();
-
-    let alice = create_test_vid();
-    let bob = create_test_vid();
-
-    alice_store.add_private_vid(alice.clone(), None).unwrap();
-    bob_store.add_private_vid(bob.clone(), None).unwrap();
-
-    // Mutual verification
-    alice_store.add_verified_vid(bob.clone(), None).unwrap();
-    bob_store.add_verified_vid(alice.clone(), None).unwrap();
-
-    (alice_store, alice, bob_store, bob)
-}
-
-/// Create two connected async stores with alice and bob VIDs already set up
-///
-/// Returns `(alice_store, alice_vid, bob_store, bob_vid)` with mutual verification
-#[cfg(feature = "async")]
-pub fn create_connected_async_stores() -> (AsyncSecureStore, OwnedVid, AsyncSecureStore, OwnedVid) {
-    let alice_store = create_async_test_store();
-    let bob_store = create_async_test_store();
-
-    let alice = create_test_vid();
-    let bob = create_test_vid();
-
-    alice_store.add_private_vid(alice.clone(), None).unwrap();
-    bob_store.add_private_vid(bob.clone(), None).unwrap();
-
-    // Mutual verification
-    alice_store.add_verified_vid(bob.clone(), None).unwrap();
-    bob_store.add_verified_vid(alice.clone(), None).unwrap();
-
-    (alice_store, alice, bob_store, bob)
-}
-
-// =============================================================================
-// Message Helpers
-// =============================================================================
-
-/// Seal a test message between two VIDs
-///
-/// Helper to create an encrypted message for testing.
-pub fn seal_test_message(
-    sender: &dyn PrivateVid,
-    receiver: &dyn VerifiedVid,
-    content: &[u8],
-) -> crate::definitions::TSPMessage {
-    crate::crypto::seal(sender, receiver, None, Payload::Content(content))
-        .expect("Failed to seal test message")
-}
-
-// =============================================================================
-// Assertion Helpers
-// =============================================================================
-
-/// Assert that two byte slices are equal with a helpful error message
-#[track_caller]
-pub fn assert_bytes_eq(actual: &[u8], expected: &[u8], message: &str) {
-    assert_eq!(
-        actual,
-        expected,
-        "{}\nExpected: {:?}\nActual: {:?}",
-        message,
-        String::from_utf8_lossy(expected),
-        String::from_utf8_lossy(actual)
-    );
-}
-
-/// Assert that a message appears to be encrypted (not plaintext)
-#[track_caller]
-pub fn assert_message_encrypted(message: &[u8], plaintext: &[u8]) {
-    assert!(!message.is_empty(), "Encrypted message should not be empty");
-    assert!(
-        message.len() > plaintext.len(),
-        "Encrypted message should be longer than plaintext"
-    );
-    // Check that plaintext doesn't appear verbatim in the message
-    assert!(
-        !message.windows(plaintext.len()).any(|w| w == plaintext),
-        "Plaintext should not appear in encrypted message"
-    );
-}
-
-/// Assert that a VID identifier has the expected format
-#[track_caller]
-pub fn assert_vid_format(identifier: &str, expected_prefix: &str) {
-    assert!(
-        identifier.starts_with(expected_prefix),
-        "VID identifier '{}' should start with '{}'",
-        identifier,
-        expected_prefix
-    );
-}
-
-// =============================================================================
-// Async Test Helpers
-// =============================================================================
-
-/// Add a timeout to an async operation in tests
-///
-/// Prevents tests from hanging indefinitely if something goes wrong.
-///
-/// # Examples
-///
-/// ```no_run
-/// # use tsp_sdk::test_utils::with_timeout;
-/// # use std::time::Duration;
-/// # tokio_test::block_on(async {
-/// let result = with_timeout(Duration::from_secs(5), async {
-///     // Some async operation
-///     42
-/// }).await;
-/// assert_eq!(result.unwrap(), 42);
-/// # });
-/// ```
-#[cfg(feature = "async")]
-pub async fn with_timeout<F, T>(duration: std::time::Duration, future: F) -> Result<T, &'static str>
-where
-    F: std::future::Future<Output = T>,
-{
-    tokio::time::timeout(duration, future)
-        .await
-        .map_err(|_| "Operation timed out")
-}
-
-/// Poll an async condition until it becomes true or timeout
-///
-/// Useful for testing eventual consistency or async state changes.
-///
-/// # Examples
-///
-/// ```no_run
-/// # use tsp_sdk::test_utils::assert_eventually;
-/// # use std::time::Duration;
-/// # use std::sync::{Arc, Mutex};
-/// # tokio_test::block_on(async {
-/// let counter = Arc::new(Mutex::new(0));
-/// let counter_clone = counter.clone();
-///
-/// // Start some async process that increments counter...
-///
-/// assert_eventually(
-///     Duration::from_secs(5),
-///     Duration::from_millis(100),
-///     || {
-///         let c = counter_clone.lock().unwrap();
-///         *c > 5
-///     }
-/// ).await.expect("Counter never reached 5");
-/// # });
-/// ```
-#[cfg(feature = "async")]
-pub async fn assert_eventually<F>(
-    timeout: std::time::Duration,
-    poll_interval: std::time::Duration,
-    mut condition: F,
-) -> Result<(), &'static str>
-where
-    F: FnMut() -> bool,
-{
-    let start = std::time::Instant::now();
-    loop {
-        if condition() {
-            return Ok(());
-        }
-        if start.elapsed() > timeout {
-            return Err("Condition never became true within timeout");
-        }
-        tokio::time::sleep(poll_interval).await;
-    }
-}
-
-// =============================================================================
-// Cleanup Helpers
-// =============================================================================
-
-/// RAII wrapper for temporary wallet that cleans up on drop
-///
-/// Ensures test wallets are deleted even if the test panics.
-///
-/// # Examples
-///
-/// ```
-/// # use tsp_sdk::test_utils::TempWallet;
-/// {
-///     let wallet = TempWallet::new("test_wallet.sqlite");
-///     // Use wallet.path() in tests...
-/// } // Automatically cleaned up here
-/// ```
-pub struct TempWallet {
-    path: String,
-}
-
-impl TempWallet {
-    /// Create a new temporary wallet
-    pub fn new(path: &str) -> Self {
-        Self {
-            path: path.to_string(),
-        }
-    }
-
-    /// Get the wallet path
-    pub fn path(&self) -> &str {
-        &self.path
-    }
-}
-
-impl Drop for TempWallet {
-    fn drop(&mut self) {
-        // Clean up wallet files (including -shm and -wal files)
-        let _ = std::fs::remove_file(&self.path);
-        let _ = std::fs::remove_file(format!("{}-shm", self.path));
-        let _ = std::fs::remove_file(format!("{}-wal", self.path));
-    }
-}
-
-/// Port allocator to avoid conflicts in concurrent tests
-///
-/// Uses a global atomic counter to ensure unique ports across all tests.
+/// The allocator cycles over a dedicated test port range instead of
+/// monotonically increasing without bounds.
 pub struct TestPortAllocator;
 
-// Global port counter starting at 50000
-static GLOBAL_PORT_COUNTER: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(50000);
+static GLOBAL_PORT_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 impl TestPortAllocator {
-    /// Create a new port allocator
+    /// Create a new port allocator.
     pub fn new() -> Self {
         Self
     }
 
-    /// Allocate a new unique port using global atomic counter
+    /// Allocate a test port from the configured test port range.
     pub fn allocate(&self) -> u16 {
-        GLOBAL_PORT_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        let start =
+            GLOBAL_PORT_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % TEST_PORT_SPAN;
+
+        // Probe for an available port when the runtime environment allows socket binding.
+        // In restricted environments (e.g. sandboxed CI), fall back to deterministic cycling.
+        if *CAN_PROBE_TEST_PORTS {
+            for i in 0..TEST_PORT_SPAN {
+                let offset = (start + i) % TEST_PORT_SPAN;
+                let port = MIN_TEST_PORT + offset as u16;
+                if std::net::TcpListener::bind(("127.0.0.1", port)).is_ok() {
+                    return port;
+                }
+            }
+
+            panic!("No available test ports in range {MIN_TEST_PORT}-{MAX_TEST_PORT}");
+        }
+
+        MIN_TEST_PORT + start as u16
     }
 
-    /// Create a TCP endpoint URL with an allocated port
+    /// Create a TCP endpoint URL with an allocated port.
     pub fn tcp_endpoint(&self) -> String {
         format!("tcp://127.0.0.1:{}", self.allocate())
     }
@@ -319,10 +66,222 @@ impl Default for TestPortAllocator {
     }
 }
 
+/// Create a test VID with a unique localhost TCP endpoint.
+pub fn create_test_vid() -> OwnedVid {
+    let allocator = TestPortAllocator::new();
+    OwnedVid::new_did_peer(url::Url::parse(&allocator.tcp_endpoint()).unwrap())
+}
+
+/// Create a pair of test VIDs (alice, bob).
+pub fn create_test_vid_pair() -> (OwnedVid, OwnedVid) {
+    (create_test_vid(), create_test_vid())
+}
+
+/// Load a test VID from a file.
+#[cfg(feature = "async")]
+pub async fn create_vid_from_file(path: &str) -> OwnedVid {
+    OwnedVid::from_file(path)
+        .await
+        .unwrap_or_else(|e| panic!("Failed to load VID from {path}: {e}"))
+}
+
+/// Create a test SecureStore.
+pub fn create_test_store() -> SecureStore {
+    SecureStore::new()
+}
+
+/// Create a test AsyncSecureStore.
+#[cfg(feature = "async")]
+pub fn create_async_test_store() -> AsyncSecureStore {
+    AsyncSecureStore::new()
+}
+
+fn relationship_digest(seed: usize) -> Digest {
+    let mut digest = [0_u8; 32];
+    digest[..8].copy_from_slice(&(seed as u64).to_le_bytes());
+    digest[8..16].copy_from_slice((!(seed as u64)).to_le_bytes().as_ref());
+    digest[16..24].copy_from_slice(((seed as u64).wrapping_mul(31)).to_le_bytes().as_ref());
+    digest[24..32].copy_from_slice(((seed as u64).wrapping_mul(131)).to_le_bytes().as_ref());
+    digest
+}
+
+fn relationship_status_for(index: usize) -> RelationshipStatus {
+    match index % 4 {
+        0 => RelationshipStatus::Unrelated,
+        1 => RelationshipStatus::Unidirectional {
+            thread_id: relationship_digest(index),
+        },
+        2 => RelationshipStatus::ReverseUnidirectional {
+            thread_id: relationship_digest(index),
+        },
+        _ => RelationshipStatus::Bidirectional {
+            thread_id: relationship_digest(index),
+            outstanding_nested_thread_ids: vec![relationship_digest(index + 10_000)],
+        },
+    }
+}
+
+/// Create a store with `n` relationships in mixed states.
+pub fn create_store_with_relationships(n: usize) -> SecureStore {
+    let store = create_test_store();
+    let local_vid = create_test_vid();
+
+    store.add_private_vid(local_vid.clone(), None).unwrap();
+    store
+        .set_alias(
+            "local-owner".to_string(),
+            local_vid.identifier().to_string(),
+        )
+        .unwrap();
+
+    for i in 0..n {
+        let remote_vid = create_test_vid();
+        store.add_verified_vid(remote_vid.clone(), None).unwrap();
+        store
+            .set_relation_and_status_for_vid(
+                remote_vid.identifier(),
+                relationship_status_for(i),
+                local_vid.identifier(),
+            )
+            .unwrap();
+    }
+
+    store
+}
+
+/// Create a store that mimics a dirty wallet with existing identities,
+/// nested relationships, aliases, and key history.
+pub fn create_prepopulated_store() -> SecureStore {
+    let store = create_store_with_relationships(8);
+
+    let root_local = store.resolve_alias("local-owner").unwrap().unwrap();
+
+    let nested_local = create_test_vid();
+    store.add_private_vid(nested_local.clone(), None).unwrap();
+    store
+        .set_parent_for_vid(nested_local.identifier(), Some(&root_local))
+        .unwrap();
+
+    let remote_parent = create_test_vid();
+    store.add_verified_vid(remote_parent.clone(), None).unwrap();
+    store
+        .set_relation_and_status_for_vid(
+            remote_parent.identifier(),
+            RelationshipStatus::Bidirectional {
+                thread_id: relationship_digest(20_001),
+                outstanding_nested_thread_ids: vec![relationship_digest(20_002)],
+            },
+            &root_local,
+        )
+        .unwrap();
+
+    let remote_nested = create_test_vid();
+    store.add_verified_vid(remote_nested.clone(), None).unwrap();
+    store
+        .set_parent_for_vid(remote_nested.identifier(), Some(remote_parent.identifier()))
+        .unwrap();
+    store
+        .set_relation_and_status_for_vid(
+            remote_nested.identifier(),
+            RelationshipStatus::Bidirectional {
+                thread_id: relationship_digest(20_101),
+                outstanding_nested_thread_ids: vec![relationship_digest(20_102)],
+            },
+            nested_local.identifier(),
+        )
+        .unwrap();
+
+    // Keep some persisted key history around as part of the fixture state.
+    store
+        .add_secret_key("test-history-key-1".to_string(), vec![1, 2, 3, 4])
+        .unwrap();
+    store
+        .add_secret_key("test-history-key-2".to_string(), vec![5, 6, 7, 8])
+        .unwrap();
+
+    store
+}
+
+/// Fixture for persisted wallets backed by a real SQLite file.
+#[cfg(all(feature = "async", not(target_arch = "wasm32")))]
+pub struct PersistedStoreFixture {
+    _dir: TempDir,
+    sqlite_url: String,
+    password: Vec<u8>,
+}
+
+#[cfg(all(feature = "async", not(target_arch = "wasm32")))]
+impl PersistedStoreFixture {
+    /// Create a new persisted wallet fixture.
+    pub async fn new() -> Self {
+        let dir = tempfile::tempdir().expect("Failed to create temporary persisted wallet dir");
+        let wallet_path = dir.path().join("wallet.sqlite");
+        let sqlite_url = format!("sqlite://{}", wallet_path.to_string_lossy());
+        let password = b"test-password".to_vec();
+
+        let storage = AskarSecureStorage::new(&sqlite_url, &password)
+            .await
+            .expect("Failed to create persisted wallet storage");
+        storage
+            .close()
+            .await
+            .expect("Failed to close persisted wallet storage");
+
+        Self {
+            _dir: dir,
+            sqlite_url,
+            password,
+        }
+    }
+
+    /// Persist an in-memory async store to the SQLite wallet.
+    pub async fn persist_from(&self, store: &AsyncSecureStore) {
+        let storage = AskarSecureStorage::open(&self.sqlite_url, &self.password)
+            .await
+            .expect("Failed to open persisted wallet storage");
+        storage
+            .persist(store.export().expect("Failed to export async store"))
+            .await
+            .expect("Failed to persist async store");
+        storage
+            .close()
+            .await
+            .expect("Failed to close persisted wallet storage");
+    }
+
+    /// Reopen the SQLite wallet and import it into a fresh async store.
+    pub async fn reopen_into_store(&self) -> AsyncSecureStore {
+        let storage = AskarSecureStorage::open(&self.sqlite_url, &self.password)
+            .await
+            .expect("Failed to reopen persisted wallet storage");
+        let (vids, aliases, keys) = storage
+            .read()
+            .await
+            .expect("Failed to read persisted wallet storage");
+        storage
+            .close()
+            .await
+            .expect("Failed to close reopened wallet storage");
+
+        let store = AsyncSecureStore::new();
+        store
+            .import(vids, aliases, keys)
+            .expect("Failed to import persisted store data");
+        store
+    }
+}
+
+/// Create a persisted store fixture backed by a real SQLite file.
+#[cfg(all(feature = "async", not(target_arch = "wasm32")))]
+pub async fn create_persisted_store() -> PersistedStoreFixture {
+    PersistedStoreFixture::new().await
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
-    use crate::definitions::VerifiedVid;
 
     #[test]
     fn test_create_test_vid() {
@@ -331,180 +290,65 @@ mod tests {
     }
 
     #[test]
-    fn test_create_test_vid_with_endpoint() {
-        let vid = create_test_vid_with_endpoint("tcp://example.com:8080");
-        assert!(vid.identifier().starts_with("did:peer:"));
+    fn test_create_store_with_relationships() {
+        let store = create_store_with_relationships(6);
+        let vids = store.list_vids().unwrap();
+        assert!(vids.len() >= 7);
     }
 
     #[test]
-    fn test_create_test_vid_pair() {
-        let (alice, bob) = create_test_vid_pair();
-        assert_ne!(alice.identifier(), bob.identifier());
+    fn test_create_prepopulated_store_has_history_keys() {
+        let store = create_prepopulated_store();
+        assert_eq!(
+            store.get_secret_key("test-history-key-1").unwrap(),
+            Some(vec![1, 2, 3, 4])
+        );
+        assert_eq!(
+            store.get_secret_key("test-history-key-2").unwrap(),
+            Some(vec![5, 6, 7, 8])
+        );
     }
 
     #[test]
-    fn test_create_test_store() {
-        let store = create_test_store();
-        let vid = create_test_vid();
-        assert!(store.add_private_vid(vid, None).is_ok());
-    }
-
-    #[test]
-    fn test_create_connected_stores() {
-        let (_alice_store, alice, bob_store, bob) = create_connected_stores();
-
-        // Verify alice can seal to bob
-        let message = seal_test_message(&alice, &bob, b"test");
-        assert!(!message.is_empty());
-
-        // Verify bob can open from alice
-        let mut message_copy = message.clone();
-        let result = bob_store.open_message(&mut message_copy);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_seal_test_message() {
-        let (alice, bob) = create_test_vid_pair();
-        let message = seal_test_message(&alice, &bob, b"hello world");
-        assert!(!message.is_empty());
-        assert!(message.len() > 11);
-    }
-
-    #[test]
-    fn test_assert_bytes_eq() {
-        let a = b"hello";
-        let b = b"hello";
-        assert_bytes_eq(a, b, "should be equal");
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_assert_bytes_eq_fails() {
-        let a = b"hello";
-        let b = b"world";
-        assert_bytes_eq(a, b, "should not be equal");
-    }
-
-    #[test]
-    fn test_assert_message_encrypted() {
-        let (alice, bob) = create_test_vid_pair();
-        let plaintext = b"secret message";
-        let encrypted = seal_test_message(&alice, &bob, plaintext);
-        assert_message_encrypted(&encrypted, plaintext);
-    }
-
-    #[test]
-    fn test_assert_vid_format() {
-        let vid = create_test_vid();
-        assert_vid_format(vid.identifier(), "did:peer:");
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_assert_vid_format_fails() {
-        let vid = create_test_vid();
-        assert_vid_format(vid.identifier(), "did:web:");
-    }
-
-    #[test]
-    fn test_temp_wallet() {
-        let path = "test_temp_wallet.sqlite";
-        {
-            let wallet = TempWallet::new(path);
-            assert_eq!(wallet.path(), path);
-            // Create files to simulate wallet
-            std::fs::write(path, b"test").unwrap();
-            std::fs::write(format!("{}-shm", path), b"test").unwrap();
-            std::fs::write(format!("{}-wal", path), b"test").unwrap();
-            assert!(std::path::Path::new(path).exists());
-        }
-        // All files should be cleaned up after drop
-        assert!(!std::path::Path::new(path).exists());
-        assert!(!std::path::Path::new(&format!("{}-shm", path)).exists());
-        assert!(!std::path::Path::new(&format!("{}-wal", path)).exists());
-    }
-
-    #[test]
-    fn test_port_allocator() {
+    fn test_port_allocator_range() {
         let allocator = TestPortAllocator::new();
-        let port1 = allocator.allocate();
-        let port2 = allocator.allocate();
-        assert_ne!(port1, port2);
-        assert_eq!(port2, port1 + 1);
+        let port = allocator.allocate();
+        assert!((MIN_TEST_PORT..=MAX_TEST_PORT).contains(&port));
     }
 
     #[test]
-    fn test_port_allocator_tcp_endpoint() {
+    fn test_port_allocator_cycles_after_range() {
         let allocator = TestPortAllocator::new();
-        let endpoint = allocator.tcp_endpoint();
-        assert!(endpoint.starts_with("tcp://127.0.0.1:"));
-    }
+        let mut seen = HashSet::new();
+        let mut found_duplicate = false;
 
-    #[cfg(feature = "async")]
-    #[tokio::test]
-    async fn test_create_async_test_store() {
-        let store = create_async_test_store();
-        let vid = create_test_vid();
-        assert!(store.add_private_vid(vid, None).is_ok());
-    }
-
-    #[cfg(feature = "async")]
-    #[tokio::test]
-    async fn test_create_connected_async_stores() {
-        let (_alice_store, alice, _bob_store, bob) = create_connected_async_stores();
-        assert_ne!(alice.identifier(), bob.identifier());
-    }
-
-    #[cfg(feature = "async")]
-    #[tokio::test]
-    async fn test_with_timeout_success() {
-        let result = with_timeout(std::time::Duration::from_secs(1), async {
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-            42
-        })
-        .await;
-        assert_eq!(result, Ok(42));
-    }
-
-    #[cfg(feature = "async")]
-    #[tokio::test]
-    async fn test_with_timeout_failure() {
-        let result = with_timeout(std::time::Duration::from_millis(10), async {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            42
-        })
-        .await;
-        assert!(result.is_err());
-    }
-
-    #[cfg(feature = "async")]
-    #[tokio::test]
-    async fn test_assert_eventually() {
-        use std::sync::{Arc, Mutex};
-
-        let counter = Arc::new(Mutex::new(0));
-        let counter_clone = counter.clone();
-
-        // Spawn a task that increments the counter
-        tokio::spawn(async move {
-            for _ in 0..10 {
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                let mut c = counter_clone.lock().unwrap();
-                *c += 1;
+        for _ in 0..(TEST_PORT_SPAN as usize + 32) {
+            let port = allocator.allocate();
+            assert!((MIN_TEST_PORT..=MAX_TEST_PORT).contains(&port));
+            if !seen.insert(port) {
+                found_duplicate = true;
+                break;
             }
-        });
+        }
 
-        let result = assert_eventually(
-            std::time::Duration::from_secs(2),
-            std::time::Duration::from_millis(100),
-            || {
-                let c = counter.lock().unwrap();
-                *c > 3
-            },
-        )
-        .await;
+        assert!(found_duplicate);
+    }
 
-        assert!(result.is_ok());
+    #[cfg(all(feature = "async", not(target_arch = "wasm32")))]
+    #[tokio::test]
+    async fn test_persisted_store_fixture_roundtrip() {
+        let fixture = create_persisted_store().await;
+
+        let original = create_async_test_store();
+        let vid = create_test_vid();
+        original.add_private_vid(vid, None).unwrap();
+
+        fixture.persist_from(&original).await;
+        let reopened = fixture.reopen_into_store().await;
+
+        assert_eq!(
+            original.export().unwrap().0.len(),
+            reopened.export().unwrap().0.len()
+        );
     }
 }
