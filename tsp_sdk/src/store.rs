@@ -1303,6 +1303,10 @@ mod test {
     use crate::test_utils::*;
     use crate::{ReceivedTspMessage, RelationshipStatus, VerifiedVid};
 
+    fn assert_url_matches(url: &url::Url, expected_receiver: &dyn VerifiedVid) {
+        assert_eq!(url.as_str(), expected_receiver.endpoint().as_str());
+    }
+
     #[test]
     #[wasm_bindgen_test]
     fn test_add_private_vid() {
@@ -1357,7 +1361,7 @@ mod test {
             .seal_message(alice.identifier(), bob.identifier(), None, message)
             .unwrap();
 
-        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        assert_url_matches(&url, &bob);
 
         let received = store.open_message(&mut sealed).unwrap();
 
@@ -1393,7 +1397,7 @@ mod test {
             .make_relationship_request(alice.identifier(), bob.identifier(), None)
             .unwrap();
 
-        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        assert_url_matches(&url, &bob);
 
         let received = store.open_message(&mut sealed).unwrap();
 
@@ -1418,7 +1422,7 @@ mod test {
             .make_relationship_request(alice.identifier(), bob.identifier(), None)
             .unwrap();
 
-        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        assert_url_matches(&url, &bob);
         let received = store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::RequestRelationship {
@@ -1435,7 +1439,7 @@ mod test {
             .make_relationship_accept(bob.identifier(), alice.identifier(), thread_id, None)
             .unwrap();
 
-        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        assert_url_matches(&url, &alice);
         let received = store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::AcceptRelationship { sender, .. } = received else {
@@ -1498,7 +1502,7 @@ mod test {
             .make_relationship_request(alice.identifier(), bob.identifier(), None)
             .unwrap();
 
-        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        assert_url_matches(&url, &bob);
         let received = store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::RequestRelationship {
@@ -1514,7 +1518,7 @@ mod test {
             .make_relationship_accept(bob.identifier(), alice.identifier(), thread_id, None)
             .unwrap();
 
-        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        assert_url_matches(&url, &alice);
         let received = store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::AcceptRelationship { sender, .. } = received else {
@@ -1527,7 +1531,7 @@ mod test {
             .make_relationship_cancel(bob.identifier(), alice.identifier())
             .unwrap();
 
-        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        assert_url_matches(&url, &alice);
         let received = store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::CancelRelationship { sender, .. } = received else {
@@ -1565,7 +1569,7 @@ mod test {
             .make_new_identifier_notice(alice.identifier(), bob.identifier(), charles.identifier())
             .unwrap();
 
-        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        assert_url_matches(&url, &bob);
         let received = b_store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::NewIdentifier {
@@ -1597,7 +1601,7 @@ mod test {
             .make_relationship_referral(alice.identifier(), bob.identifier(), charles.identifier())
             .unwrap();
 
-        assert_eq!(url.as_str(), "tcp://127.0.0.1:1337");
+        assert_url_matches(&url, &bob);
         let received = store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::Referral {
