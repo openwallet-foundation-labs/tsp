@@ -673,3 +673,109 @@ async fn test_unverified_receiver_in_direct_mode() {
 
     assert!(matches!(err, crate::Error::UnverifiedVid(_)));
 }
+
+#[tokio::test]
+async fn test_prepopulated_store_import_preserves_dirty_state() {
+    let dirty_store = create_prepopulated_store();
+    let (vids, aliases, keys) = dirty_store.export().unwrap();
+    let local_vid = aliases.get("local-owner").cloned().unwrap();
+
+    let imported_store = create_async_test_store();
+    imported_store.import(vids, aliases, keys).unwrap();
+
+    assert_eq!(
+        imported_store
+            .resolve_alias("local-owner")
+            .unwrap()
+            .as_deref(),
+        Some(local_vid.as_str())
+    );
+    assert_eq!(
+        imported_store.get_secret_key("test-history-key-1").unwrap(),
+        Some(vec![1, 2, 3, 4])
+    );
+
+    let mut found_unidirectional = 0_usize;
+    let mut found_reverse_unidirectional = 0_usize;
+    let mut found_bidirectional = 0_usize;
+
+    for remote_vid in imported_store.list_vids().unwrap() {
+        if remote_vid == local_vid {
+            continue;
+        }
+
+        match imported_store
+            .get_relation_status_for_vid_pair(&local_vid, &remote_vid)
+            .unwrap()
+        {
+            RelationshipStatus::Unidirectional { .. } => found_unidirectional += 1,
+            RelationshipStatus::ReverseUnidirectional { .. } => {
+                found_reverse_unidirectional += 1;
+            }
+            RelationshipStatus::Bidirectional { .. } => found_bidirectional += 1,
+            RelationshipStatus::_Controlled | RelationshipStatus::Unrelated => {}
+        }
+    }
+
+    assert!(found_unidirectional > 0);
+    assert!(found_reverse_unidirectional > 0);
+    assert!(found_bidirectional > 0);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[tokio::test]
+async fn test_persisted_store_roundtrip_reopens_dirty_wallet() {
+    let in_memory_store = create_async_test_store();
+    let dirty_store = create_prepopulated_store();
+    let (vids, aliases, keys) = dirty_store.export().unwrap();
+    in_memory_store.import(vids, aliases, keys).unwrap();
+
+    let fixture = create_persisted_store().await;
+    fixture.persist_from(&in_memory_store).await;
+    let reopened_store = fixture.reopen_into_store().await;
+
+    let (before_vids, before_aliases, _before_keys) = in_memory_store.export().unwrap();
+    let (after_vids, after_aliases, _after_keys) = reopened_store.export().unwrap();
+
+    assert_eq!(before_vids.len(), after_vids.len());
+    assert_eq!(
+        before_aliases.get("local-owner"),
+        after_aliases.get("local-owner")
+    );
+    assert_eq!(
+        reopened_store.get_secret_key("test-history-key-2").unwrap(),
+        Some(vec![5, 6, 7, 8])
+    );
+
+    let local_vid = reopened_store
+        .resolve_alias("local-owner")
+        .unwrap()
+        .unwrap();
+
+    let receiver_vid = after_vids
+        .iter()
+        .find(|exported| {
+            if exported.id == local_vid {
+                return false;
+            }
+            if exported.relation_vid.as_deref() != Some(local_vid.as_str()) {
+                return false;
+            }
+
+            matches!(
+                reopened_store
+                    .get_relation_status_for_vid_pair(&local_vid, &exported.id)
+                    .unwrap(),
+                RelationshipStatus::Bidirectional { .. }
+                    | RelationshipStatus::Unidirectional { .. }
+                    | RelationshipStatus::ReverseUnidirectional { .. }
+            )
+        })
+        .map(|exported| exported.id.clone())
+        .unwrap();
+
+    let (_endpoint, sealed_message) = reopened_store
+        .seal_message(&local_vid, &receiver_vid, None, b"persisted-wallet-message")
+        .unwrap();
+    assert!(!sealed_message.is_empty());
+}
