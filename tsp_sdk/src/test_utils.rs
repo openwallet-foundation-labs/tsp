@@ -5,6 +5,7 @@ use crate::{
     definitions::{Digest, VerifiedVid},
 };
 use once_cell::sync::Lazy;
+use std::path::{Path, PathBuf};
 
 #[cfg(feature = "async")]
 use crate::{AskarSecureStorage, AsyncSecureStore, SecureStorage};
@@ -202,10 +203,70 @@ pub fn create_prepopulated_store() -> SecureStore {
     store
 }
 
+/// Seed data for relationship transition tests on dirty wallets.
+#[cfg(feature = "async")]
+pub struct DirtyTransitionSeed {
+    pub local_vid: String,
+    pub remote_unrelated_vid: String,
+    pub remote_bidirectional_vid: String,
+}
+
+/// Create an async store pre-seeded for relationship transition tests.
+#[cfg(feature = "async")]
+pub fn create_dirty_store_with_transition_seed() -> (AsyncSecureStore, DirtyTransitionSeed) {
+    let store = create_async_test_store();
+
+    let local = create_test_vid();
+    let remote_unrelated = create_test_vid();
+    let remote_bidirectional = create_test_vid();
+
+    store.add_private_vid(local.clone(), None).unwrap();
+    store
+        .add_verified_vid(remote_unrelated.clone(), None)
+        .unwrap();
+    store
+        .add_verified_vid(remote_bidirectional.clone(), None)
+        .unwrap();
+
+    store
+        .set_alias("local-owner".to_string(), local.identifier().to_string())
+        .unwrap();
+    store
+        .set_relation_and_status_for_vid(
+            remote_unrelated.identifier(),
+            RelationshipStatus::Unrelated,
+            local.identifier(),
+        )
+        .unwrap();
+    store
+        .set_relation_and_status_for_vid(
+            remote_bidirectional.identifier(),
+            RelationshipStatus::Bidirectional {
+                thread_id: relationship_digest(30_001),
+                outstanding_nested_thread_ids: vec![relationship_digest(30_002)],
+            },
+            local.identifier(),
+        )
+        .unwrap();
+    store
+        .add_secret_key("transition-seed-key".to_string(), vec![9, 8, 7, 6])
+        .unwrap();
+
+    (
+        store,
+        DirtyTransitionSeed {
+            local_vid: local.identifier().to_string(),
+            remote_unrelated_vid: remote_unrelated.identifier().to_string(),
+            remote_bidirectional_vid: remote_bidirectional.identifier().to_string(),
+        },
+    )
+}
+
 /// Fixture for persisted wallets backed by a real SQLite file.
 #[cfg(all(feature = "async", not(target_arch = "wasm32")))]
 pub struct PersistedStoreFixture {
     _dir: TempDir,
+    wallet_path: PathBuf,
     sqlite_url: String,
     password: Vec<u8>,
 }
@@ -229,9 +290,25 @@ impl PersistedStoreFixture {
 
         Self {
             _dir: dir,
+            wallet_path,
             sqlite_url,
             password,
         }
+    }
+
+    /// Return the storage URL used by this fixture.
+    pub fn storage_url(&self) -> &str {
+        &self.sqlite_url
+    }
+
+    /// Return the raw password used by this fixture.
+    pub fn password(&self) -> &[u8] {
+        &self.password
+    }
+
+    /// Return the SQLite file path used by this fixture.
+    pub fn sqlite_path(&self) -> &Path {
+        &self.wallet_path
     }
 
     /// Persist an in-memory async store to the SQLite wallet.
@@ -275,6 +352,33 @@ impl PersistedStoreFixture {
 #[cfg(all(feature = "async", not(target_arch = "wasm32")))]
 pub async fn create_persisted_store() -> PersistedStoreFixture {
     PersistedStoreFixture::new().await
+}
+
+/// Persist and reopen an async store repeatedly using the same fixture.
+#[cfg(all(feature = "async", not(target_arch = "wasm32")))]
+pub async fn persist_reopen_cycle(
+    store: &AsyncSecureStore,
+    fixture: &PersistedStoreFixture,
+    times: usize,
+) -> AsyncSecureStore {
+    if times == 0 {
+        return store.clone();
+    }
+
+    let mut current = store.clone();
+    for _ in 0..times {
+        fixture.persist_from(&current).await;
+        current = fixture.reopen_into_store().await;
+    }
+
+    current
+}
+
+/// Corrupt a sqlite file intentionally for failure-path testing.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn corrupt_sqlite_file(path: &Path) {
+    std::fs::write(path, b"not-a-valid-sqlite-file")
+        .expect("Failed to write corrupted sqlite fixture");
 }
 
 #[cfg(test)]
@@ -346,6 +450,35 @@ mod tests {
         fixture.persist_from(&original).await;
         let reopened = fixture.reopen_into_store().await;
 
+        assert_eq!(
+            original.export().unwrap().0.len(),
+            reopened.export().unwrap().0.len()
+        );
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn test_create_dirty_store_with_transition_seed() {
+        let (store, seed) = create_dirty_store_with_transition_seed();
+        assert_eq!(
+            store.resolve_alias("local-owner").unwrap().as_deref(),
+            Some(seed.local_vid.as_str())
+        );
+        assert_eq!(
+            store.get_secret_key("transition-seed-key").unwrap(),
+            Some(vec![9, 8, 7, 6])
+        );
+    }
+
+    #[cfg(all(feature = "async", not(target_arch = "wasm32")))]
+    #[tokio::test]
+    async fn test_persist_reopen_cycle_helper() {
+        let fixture = create_persisted_store().await;
+        let original = create_async_test_store();
+        let vid = create_test_vid();
+        original.add_private_vid(vid, None).unwrap();
+
+        let reopened = persist_reopen_cycle(&original, &fixture, 2).await;
         assert_eq!(
             original.export().unwrap().0.len(),
             reopened.export().unwrap().0.len()
