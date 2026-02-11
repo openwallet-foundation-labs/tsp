@@ -18,6 +18,7 @@ essr = []
 strict = []
 fuzzing = ["dep:arbitrary"]
 demo = []
+test-utils = ["dep:tempfile"]
 nacl = ["essr"]
 pq = ["dep:hpke_pq", "dep:ml-dsa", "essr"]
 bench-callgrind = ["dep:gungraun"]
@@ -85,6 +86,7 @@ bs58 = { workspace = true, optional = false }
 # fuzzing
 arbitrary = { workspace = true, optional = true }
 async-trait = "0.1.88"
+tempfile = { version = "3.12", optional = true }
 
 # webvh
 didwebvh-rs = { workspace = true, optional = true }
@@ -107,6 +109,7 @@ serial_test = { version = "3.0" }
 arbitrary = { workspace = true }
 wasm-bindgen-test = "0.3.0"
 rand_chacha = "0.3.1"
+tempfile = "3.12"
 
 # bench
 chrono = { version = "0.4", default-features = false, features = ["std"] }

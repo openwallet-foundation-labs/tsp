@@ -122,7 +122,7 @@ mod test;
 ///
 /// This module is available when compiling tests and provides
 /// common utilities for creating test VIDs, stores, and assertions.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 
 #[cfg(feature = "async")]
