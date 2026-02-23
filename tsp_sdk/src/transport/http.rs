@@ -7,6 +7,7 @@ use url::Url;
 use super::TransportError;
 #[cfg(feature = "use_local_certificate")]
 use {
+    rustls_native_certs,
     rustls_pki_types::{CertificateDer, pem::PemObject},
     std::sync::Arc,
     tokio_tungstenite::Connector,
@@ -60,6 +61,13 @@ pub(crate) async fn receive_messages(
         warn!("Using local root CA (should only be used for local testing)");
         let cert = include_bytes!("../../../examples/test/root-ca.pem");
         let mut store = rustls::RootCertStore::empty();
+
+        // Keep system roots to allow publicly trusted endpoints, then add local test root.
+        let native = rustls_native_certs::load_native_certs();
+        for cert in native.certs {
+            let _ = store.add(cert);
+        }
+
         store.add_parsable_certificates([CertificateDer::from_pem_slice(cert).unwrap()]);
         let rustls_client = Arc::new(
             rustls::ClientConfig::builder()

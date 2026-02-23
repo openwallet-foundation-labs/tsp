@@ -60,6 +60,30 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo doc --workspace --no-deps
 
+  coverage:
+    runs-on: ubuntu-latest
+    env:
+      TSP_SKIP_E2E: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov
+      - name: Generate coverage
+        run: cargo llvm-cov --features "nacl" --workspace --lcov --output-path lcov.info
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: lcov.info
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Archive coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: lcov.info
+
   check-wasm32:
     runs-on: ubuntu-22.04
     steps:

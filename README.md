@@ -77,6 +77,23 @@ can be found on <https://docs.teaspoon.world>.
 
 The development documentation is available at [docs.rs](https://docs.rs/tsp_sdk/).
 
+## Testing
+
+See [docs/src/testing.md](docs/src/testing.md) for comprehensive testing documentation.
+
+To run tests:
+
+```sh
+# Run all tests
+cargo test
+
+# Run tests with coverage
+./scripts/coverage.sh --open
+
+# Validate before committing
+./scripts/validate.sh
+```
+
 ## Test CLI
 
 The `examples` crate contains a test CLI interface for this library.

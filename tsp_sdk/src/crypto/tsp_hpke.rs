@@ -25,10 +25,11 @@ use hpke::{OpModeS, single_shot_seal_in_place_detached};
 use super::{CryptoError, MessageContents};
 #[cfg(feature = "pq")]
 use hpke_pq::{
-    Deserializable, OpModeR, OpModeS, Serializable, aead, kdf, kem,
-    single_shot_open_in_place_detached, single_shot_seal_in_place_detached,
+    Deserializable, OpModeR, Serializable, aead, kdf, kem, single_shot_open_in_place_detached,
 };
-#[cfg(feature = "pq")]
+#[cfg(all(not(feature = "nacl"), feature = "pq"))]
+use hpke_pq::{OpModeS, single_shot_seal_in_place_detached};
+#[cfg(all(not(feature = "nacl"), feature = "pq"))]
 use ml_dsa::{EncodedSigningKey, MlDsa65};
 
 #[cfg(not(feature = "nacl"))]
