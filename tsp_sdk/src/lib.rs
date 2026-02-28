@@ -118,6 +118,13 @@ mod secure_storage;
 #[cfg(test)]
 mod test;
 
+/// Test utilities and helpers for writing tests.
+///
+/// This module is available when compiling tests and provides
+/// common utilities for creating test VIDs, stores, and assertions.
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
+
 #[cfg(feature = "async")]
 pub use async_store::AsyncSecureStore;
 
