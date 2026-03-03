@@ -173,7 +173,7 @@ On the receiving side you should see:
 ```
  INFO tsp: received relationship request from did:web:did.teaspoon.world:endpoint:alice3, thread-id 'lrQoJ1qYIK6HEHZKvpq3p+it6djYE2YIe++5mqhASnE'
 did:web:did.teaspoon.world:endpoint:alice3      lrQoJ1qYIK6HEHZKvpq3p+it6djYE2YIe++5mqhASnE
- INFO tsp: received confidential message (11 bytes) from did:web:did.teaspoon.world:endpoint:alice3 (HPKE Auth, Ed25519 signature)
+ INFO tsp: received confidential message (11 bytes) from did:web:did.teaspoon.world:endpoint:alice3 (HPKE ESSR, Ed25519 signature)
 Hello Bob!
 ```
 

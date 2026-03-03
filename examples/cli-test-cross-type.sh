@@ -6,8 +6,8 @@ HPKE_TSP="$HPKE/bin/tsp"
 NACL_TSP="$NACL/bin/tsp"
 
 # install two different versions of the TSP command line example tool
-cargo install --path . --bin tsp --root "$HPKE"
-cargo install --path . --bin tsp --features nacl --root "$NACL"
+cargo install --path . --bin tsp --no-default-features --features essr --root "$HPKE"
+cargo install --path . --bin tsp --no-default-features --features nacl --root "$NACL"
 
 randuser() {
     head -c4 /dev/urandom | shasum | head -c8
