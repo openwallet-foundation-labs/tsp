@@ -611,7 +611,7 @@ impl OwnedVid {
     #[staticmethod]
     fn new_did_webvh(did_name: String, transport: String) -> PyResult<(Self, String)> {
         wait_for(async {
-            let (private_vid, history, _update_kid, _update_key) =
+            let (private_vid, history, _keys) =
                 tsp_sdk::vid::did::webvh::create_webvh(
                     &did_name,
                     transport.parse().map_err(py_exception)?,

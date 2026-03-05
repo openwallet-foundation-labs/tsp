@@ -302,3 +302,118 @@ fn test_webvh_creation_key_rotation() {
 
     clean_wallet();
 }
+
+/// Stress test: Create DID, send message, rotate 100 times, send message again
+/// This tests the precommit chain integrity over many rotations
+#[test]
+#[serial_test::serial(clean_wallet)]
+#[ignore] // Run with: cargo test --package examples test_100_rotations -- --ignored --nocapture
+fn test_100_rotations_stress() {
+    clean_wallet();
+
+    const NUM_ROTATIONS: usize = 100;
+
+    println!("Creating sender (webvh) and receiver (web) wallets...");
+
+    // Create sender with did:webvh (supports rotation with precommit)
+    let sender_wallet = create_wallet("sender", "webvh");
+    // Create receiver with did:web
+    let receiver_wallet = create_wallet("receiver", "web");
+
+    let sender_did = print_did(&sender_wallet, "sender");
+    let receiver_did = print_did(&receiver_wallet, "receiver");
+
+    println!("Sender DID: {}", sender_did);
+    println!("Receiver DID: {}", receiver_did);
+
+    // Receiver verifies sender
+    verify_did(&receiver_wallet, "sender", &sender_did);
+
+    // --- Test 1: Send message BEFORE any rotation ---
+    println!("\n=== Test 1: Sending message BEFORE any rotations ===");
+    thread::scope(|s| {
+        s.spawn(|| {
+            let input = "Hello before rotations";
+            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            cmd.args([
+                "--wallet",
+                sender_wallet.as_str(),
+                "send",
+                "-s",
+                "sender",
+                "-r",
+                &receiver_did,
+            ])
+            .write_stdin(input)
+            .assert()
+            .success();
+        });
+        s.spawn(|| {
+            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            cmd.args([
+                "--wallet",
+                receiver_wallet.as_str(),
+                "receive",
+                &receiver_did,
+            ])
+            .timeout(Duration::from_secs(3))
+            .assert()
+            .stdout(predicate::str::contains("Hello before rotations"))
+            .failure(); // timeout expected
+        });
+    });
+    println!("Message sent and received successfully before rotations!");
+
+    // --- Perform 100 rotations ---
+    println!("\n=== Performing {} key rotations ===", NUM_ROTATIONS);
+    for i in 1..=NUM_ROTATIONS {
+        if i % 10 == 0 {
+            println!("  Rotation {}/{}...", i, NUM_ROTATIONS);
+        }
+        rotate_keys(&sender_wallet, "sender");
+    }
+    println!("All {} rotations completed successfully!", NUM_ROTATIONS);
+
+    // --- Test 2: Send message AFTER 100 rotations ---
+    println!("\n=== Test 2: Sending message AFTER {} rotations ===", NUM_ROTATIONS);
+
+    // Give the server a moment to process
+    thread::sleep(Duration::from_millis(500));
+
+    thread::scope(|s| {
+        s.spawn(|| {
+            let input = "Hello after 100 rotations";
+            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            cmd.args([
+                "--wallet",
+                sender_wallet.as_str(),
+                "send",
+                "-s",
+                "sender",
+                "-r",
+                &receiver_did,
+            ])
+            .write_stdin(input)
+            .assert()
+            .success();
+        });
+        s.spawn(|| {
+            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            cmd.args([
+                "--wallet",
+                receiver_wallet.as_str(),
+                "receive",
+                &receiver_did,
+            ])
+            .timeout(Duration::from_secs(5))
+            .assert()
+            .stdout(predicate::str::contains("Hello after 100 rotations"))
+            .failure(); // timeout expected
+        });
+    });
+    println!("Message sent and received successfully after {} rotations!", NUM_ROTATIONS);
+
+    println!("\n=== STRESS TEST PASSED: Precommit chain intact after {} rotations ===", NUM_ROTATIONS);
+
+    clean_wallet();
+}
