@@ -526,7 +526,7 @@ async fn run() -> Result<(), Error> {
 
             // Try to get the pre-committed next key first (for precommit support)
             let next_kid_alias = format!("__next_update_kid:{}", resolved_vid.identifier());
-            let update_key = if let Ok(next_kid) = vid_wallet.try_resolve_alias(&next_kid_alias) {
+            let update_key = if let Ok(Some(next_kid)) = vid_wallet.resolve_alias(&next_kid_alias) {
                 // Use the pre-committed key
                 info!("Using pre-committed update key for rotation");
                 keys.get(&next_kid).ok_or_else(|| {

@@ -307,6 +307,54 @@ mod tests {
     use super::*;
     use url::Url;
 
+    fn create_legacy_webvh_state(
+        did_path: &str,
+        transport: Url,
+    ) -> (DIDWebVHState, serde_json::Value, Secret, String) {
+        let path_url = Url::parse(&format!("http://{did_path}")).unwrap();
+        let webvh_url = WebVHURL::parse_url(&path_url).unwrap();
+        let vid = OwnedVid::bind(webvh_url.to_string(), transport);
+        let did_doc = vid_to_did_document(vid.vid());
+
+        let current_signing_key = ed25519_dalek::SigningKey::generate(&mut rand_core::OsRng);
+        let current_sigkey_private = current_signing_key.to_bytes().to_vec();
+        let current_sigkey_public = current_signing_key.verifying_key().to_bytes();
+
+        let mut current_webvh_key = Secret::from_str(
+            "legacy-webvh-signing-key",
+            &json!({
+                "crv": "Ed25519",
+                "kty": "OKP",
+                "x": Base64UrlUnpadded::encode_string(&current_sigkey_public),
+                "d": Base64UrlUnpadded::encode_string(&current_sigkey_private),
+            }),
+        )
+        .expect("Couldn't create legacy WebVH update key");
+
+        let current_key_public = current_webvh_key
+            .get_public_keymultibase()
+            .expect("Couldn't get legacy WebVH public key");
+        current_webvh_key.id =
+            ["did:key:", &current_key_public, "#", &current_key_public].concat();
+
+        let legacy_params = Parameters::new()
+            .with_update_keys(vec![current_key_public.clone()])
+            .build();
+
+        let mut webvh = DIDWebVHState::default();
+        let legacy_entry = webvh
+            .create_log_entry(None, &did_doc, &legacy_params, &current_webvh_key)
+            .expect("Legacy genesis should be valid");
+        let legacy_state = legacy_entry.get_state().clone();
+
+        (
+            webvh,
+            legacy_state,
+            current_webvh_key,
+            current_key_public,
+        )
+    }
+
     #[tokio::test]
     async fn test_create_webvh_success() {
         // 1. Arrange
@@ -475,6 +523,52 @@ mod tests {
         assert_eq!(
             next_key_hash_in_genesis, rederived_next_hash,
             "The nextKeyHashes entry should match the hash of the returned next key"
+        );
+    }
+
+    #[test]
+    fn test_legacy_did_can_enable_precommit_on_first_rotation() {
+        let transport_url = Url::parse("tcp://example.com:1234").unwrap();
+        let (mut webvh, updated_document, current_webvh_key, current_key_public) =
+            create_legacy_webvh_state("example/endpoint/legacy-precommit-migration", transport_url);
+
+        let next_signing_key = ed25519_dalek::SigningKey::generate(&mut rand_core::OsRng);
+        let next_sigkey_private = next_signing_key.to_bytes().to_vec();
+        let next_sigkey_public = next_signing_key.verifying_key().to_bytes();
+
+        let next_webvh_key = Secret::from_str(
+            "legacy-webvh-next-signing-key",
+            &json!({
+                "crv": "Ed25519",
+                "kty": "OKP",
+                "x": Base64UrlUnpadded::encode_string(&next_sigkey_public),
+                "d": Base64UrlUnpadded::encode_string(&next_sigkey_private),
+            }),
+        )
+        .expect("Couldn't create next WebVH update key");
+
+        let next_key_hash = next_webvh_key
+            .get_public_keymultibase_hash()
+            .expect("Couldn't hash next WebVH update key");
+
+        // This matches the current update() implementation: it always sends both
+        // updateKeys and nextKeyHashes when starting or continuing precommit.
+        let params = Parameters::new()
+            .with_update_keys(vec![current_key_public])
+            .with_next_key_hashes(vec![next_key_hash])
+            .build();
+
+        let result = webvh
+            .create_log_entry(None, &updated_document, &params, &current_webvh_key)
+            .expect("Legacy DID should be able to start precommit on the first rotation");
+
+        assert!(
+            result.log_entry.get_parameters().update_keys.is_none(),
+            "Unchanged updateKeys should be omitted from the diffed log entry for legacy migration"
+        );
+        assert!(
+            result.log_entry.get_parameters().next_key_hashes.is_some(),
+            "The first precommit rotation should still publish nextKeyHashes"
         );
     }
 

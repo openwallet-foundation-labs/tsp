@@ -5,6 +5,16 @@ use rand::{Rng, thread_rng};
 use std::process::Command as StdCommand;
 use std::thread;
 use std::time::Duration;
+use tsp_sdk::{AskarSecureStorage, AsyncSecureStore, SecureStorage};
+
+struct WalletCleanupGuard;
+
+impl Drop for WalletCleanupGuard {
+    fn drop(&mut self) {
+        clean_wallet();
+    }
+}
+
 fn random_string(n: usize) -> String {
     thread_rng()
         .sample_iter(&Alphanumeric)
@@ -58,6 +68,32 @@ fn rotate_keys(wallet_name: &str, alias: &str) {
         .success();
 }
 
+fn remove_next_update_alias(wallet_name: &str, did: &str) {
+    let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+    runtime.block_on(async {
+        let url = format!("sqlite://{wallet_name}.sqlite");
+        let vault = AskarSecureStorage::open(&url, b"unsecure")
+            .await
+            .expect("Failed to open wallet storage");
+        let (vids, mut aliases, keys) = vault.read().await.expect("Failed to read wallet");
+
+        let next_kid_alias = format!("__next_update_kid:{did}");
+        let removed = aliases.remove(&next_kid_alias);
+        assert!(
+            removed.is_some(),
+            "Expected wallet to contain precommit alias {next_kid_alias}"
+        );
+
+        let db = AsyncSecureStore::new();
+        db.import(vids, aliases, keys)
+            .expect("Failed to import wallet state");
+        vault.persist(db.export().expect("Failed to export wallet state"))
+            .await
+            .expect("Failed to persist modified wallet state");
+        vault.close().await.expect("Failed to close wallet storage");
+    });
+}
+
 fn clean_wallet() {
     StdCommand::new("sh")
         .arg("-c")
@@ -66,10 +102,15 @@ fn clean_wallet() {
         .expect("Failed to clean wallet files");
 }
 
+fn wallet_cleanup_guard() -> WalletCleanupGuard {
+    clean_wallet();
+    WalletCleanupGuard
+}
+
 #[test]
 #[serial_test::serial(clean_wallet)]
 fn test_send_command_unverified_receiver_default() {
-    clean_wallet();
+    let _cleanup = wallet_cleanup_guard();
 
     // create a new sender identity
     let random_sender_name = create_wallet("marlon", "web");
@@ -120,14 +161,12 @@ fn test_send_command_unverified_receiver_default() {
             .failure();
         });
     });
-
-    clean_wallet();
 }
 
 #[test]
 #[serial_test::serial(clean_wallet)]
 fn test_send_command_unverified_receiver_ask_flag() {
-    clean_wallet();
+    let _cleanup = wallet_cleanup_guard();
 
     // create a new sender identity
     let random_sender_name = create_wallet("marlon", "web");
@@ -205,14 +244,12 @@ fn test_send_command_unverified_receiver_ask_flag() {
             .success();
         });
     });
-
-    clean_wallet();
 }
 
 #[test]
 #[serial_test::serial(clean_wallet)]
 fn test_webvh_creation_key_rotation() {
-    clean_wallet();
+    let _cleanup = wallet_cleanup_guard();
 
     // create a new sender identity
     let random_sender_name = create_wallet("foo", "webvh");
@@ -299,8 +336,25 @@ fn test_webvh_creation_key_rotation() {
             .failure();
         });
     });
+}
 
-    clean_wallet();
+#[test]
+#[serial_test::serial(clean_wallet)]
+fn test_webvh_update_reports_out_of_sync_when_precommit_alias_is_missing() {
+    let _cleanup = wallet_cleanup_guard();
+
+    let wallet_name = create_wallet("foo", "webvh");
+    let did = print_did(&wallet_name, "foo");
+
+    remove_next_update_alias(&wallet_name, &did);
+
+    let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+    cmd.args(["--wallet", wallet_name.as_str(), "update", "foo"])
+        .assert()
+        .stderr(predicate::str::contains(
+            "Server has precommit active but wallet has no matching key. Wallet may be out of sync.",
+        ))
+        .failure();
 }
 
 /// Stress test: Create DID, send message, rotate 100 times, send message again
@@ -309,7 +363,7 @@ fn test_webvh_creation_key_rotation() {
 #[serial_test::serial(clean_wallet)]
 #[ignore] // Run with: cargo test --package examples test_100_rotations -- --ignored --nocapture
 fn test_100_rotations_stress() {
-    clean_wallet();
+    let _cleanup = wallet_cleanup_guard();
 
     const NUM_ROTATIONS: usize = 100;
 
@@ -423,6 +477,4 @@ fn test_100_rotations_stress() {
         "\n=== STRESS TEST PASSED: Precommit chain intact after {} rotations ===",
         NUM_ROTATIONS
     );
-
-    clean_wallet();
 }
