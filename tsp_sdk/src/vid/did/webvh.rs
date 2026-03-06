@@ -202,7 +202,7 @@ pub async fn create_webvh(
 /// # Arguments
 /// * `updated_document` - The updated DID Document to use
 /// * `update_key` - The WebVH LogEntry update key that is authorized to make the update
-///                  (must match precommit if precommit was active)
+///   (must match precommit if precommit was active)
 ///
 /// # Returns
 /// * `UpdateResult` containing the log entry and new next key for continued precommit

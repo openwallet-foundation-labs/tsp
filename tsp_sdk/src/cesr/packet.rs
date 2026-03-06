@@ -626,12 +626,12 @@ impl<'a> EncodedSignature<'a> {
             EncodedSignature::Ed25519(signature) => {
                 encode_count(
                     TSP_ATTACH_GRP,
-                    signature.len().next_multiple_of(3) / 3,
+                    signature.len().div_ceil(3),
                     output,
                 );
                 encode_count(
                     TSP_INDEX_SIG_GRP,
-                    signature.len().next_multiple_of(3) / 3,
+                    signature.len().div_ceil(3),
                     output,
                 );
                 encode_fixed_data(ED25519_SIGNATURE, signature.as_slice(), output);
@@ -657,10 +657,10 @@ impl<'a> EncodedSignature<'a> {
         let a_size = decode_count(TSP_ATTACH_GRP, stream).ok_or(DecodeError::UnexpectedData)?;
         let i_size = decode_count(TSP_INDEX_SIG_GRP, stream).ok_or(DecodeError::UnexpectedData)?;
         if let Some(sig) = decode_fixed_data(ED25519_SIGNATURE, stream) {
-            if a_size != (sig.len() as u32).next_multiple_of(3) / 3 {
+            if a_size != (sig.len() as u32).div_ceil(3) {
                 return Err(DecodeError::InvalidSignatureType);
             }
-            if i_size != (sig.len() as u32).next_multiple_of(3) / 3 {
+            if i_size != (sig.len() as u32).div_ceil(3) {
                 return Err(DecodeError::InvalidSignatureType);
             }
             Ok(EncodedSignature::Ed25519(sig))
