@@ -126,13 +126,7 @@ pub async fn create_webvh(
             e
         ))
     })?;
-    current_webvh_key.id = [
-        "did:key:",
-        &current_key_public,
-        "#",
-        &current_key_public,
-    ]
-    .concat();
+    current_webvh_key.id = ["did:key:", &current_key_public, "#", &current_key_public].concat();
 
     // Create the NEXT WebVH UpdateKey (for precommit)
     let next_signing_key = ed25519_dalek::SigningKey::generate(&mut rand_core::OsRng);
@@ -159,10 +153,7 @@ pub async fn create_webvh(
 
     // Get the hash of the next key for precommit
     let next_key_hash = next_webvh_key.get_public_keymultibase_hash().map_err(|e| {
-        VidError::InternalError(format!(
-            "WebVH next signing key couldn't get hash: {}",
-            e
-        ))
+        VidError::InternalError(format!("WebVH next signing key couldn't get hash: {}", e))
     })?;
 
     // WebVH Parameters with precommit
@@ -232,13 +223,7 @@ pub async fn update(
             e
         ))
     })?;
-    webvh_signing_key.id = [
-        "did:key:",
-        &current_key_public,
-        "#",
-        &current_key_public,
-    ]
-    .concat();
+    webvh_signing_key.id = ["did:key:", &current_key_public, "#", &current_key_public].concat();
 
     // Generate the NEXT update key for continued precommit chain
     let next_signing_key = ed25519_dalek::SigningKey::generate(&mut rand_core::OsRng);
@@ -265,10 +250,7 @@ pub async fn update(
 
     // Get the hash of the next key for precommit
     let next_key_hash = next_webvh_key.get_public_keymultibase_hash().map_err(|e| {
-        VidError::InternalError(format!(
-            "WebVH next signing key couldn't get hash: {}",
-            e
-        ))
+        VidError::InternalError(format!("WebVH next signing key couldn't get hash: {}", e))
     })?;
 
     // Get the DID ID
@@ -293,12 +275,7 @@ pub async fn update(
         .build();
 
     // Create the new Log Entry
-    let log_entry = webvh.create_log_entry(
-        None,
-        &updated_document,
-        &params,
-        &webvh_signing_key,
-    )?;
+    let log_entry = webvh.create_log_entry(None, &updated_document, &params, &webvh_signing_key)?;
 
     Ok(UpdateResult {
         log_entry: log_entry.log_entry.clone(),
@@ -312,7 +289,10 @@ pub async fn update(
 ///
 /// NOTE: This function does NOT continue the precommit chain.
 /// Use `update()` instead for proper precommit support.
-#[deprecated(since = "0.2.0", note = "Use update() which returns UpdateResult with precommit support")]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use update() which returns UpdateResult with precommit support"
+)]
 pub async fn update_legacy(
     updated_document: serde_json::Value,
     update_key: &[u8; 32],
@@ -372,10 +352,7 @@ mod tests {
         let verification_method = genesis_log_entry["proof"][0]["verificationMethod"]
             .as_str()
             .unwrap();
-        let expected_vm = format!(
-            "did:key:{}#{}",
-            keys.update_kid, keys.update_kid
-        );
+        let expected_vm = format!("did:key:{}#{}", keys.update_kid, keys.update_kid);
         assert_eq!(
             verification_method, expected_vm,
             "Verification method in proof is incorrect"
@@ -387,7 +364,8 @@ mod tests {
         );
 
         // Re-derive the public key from the returned private key and verify they match.
-        let key_array: [u8; 32] = keys.update_key
+        let key_array: [u8; 32] = keys
+            .update_key
             .clone()
             .try_into()
             .expect("private key must be 32 bytes");
@@ -438,10 +416,24 @@ mod tests {
         );
 
         // Should have both current and next keys
-        assert!(!keys.update_kid.is_empty(), "Current update_kid should not be empty");
-        assert!(!keys.next_update_kid.is_empty(), "Next update_kid should not be empty");
-        assert_eq!(keys.update_key.len(), 32, "Current update key should be 32 bytes");
-        assert_eq!(keys.next_update_key.len(), 32, "Next update key should be 32 bytes");
+        assert!(
+            !keys.update_kid.is_empty(),
+            "Current update_kid should not be empty"
+        );
+        assert!(
+            !keys.next_update_kid.is_empty(),
+            "Next update_kid should not be empty"
+        );
+        assert_eq!(
+            keys.update_key.len(),
+            32,
+            "Current update key should be 32 bytes"
+        );
+        assert_eq!(
+            keys.next_update_key.len(),
+            32,
+            "Next update key should be 32 bytes"
+        );
 
         // Keys should be different
         assert_ne!(
@@ -457,7 +449,8 @@ mod tests {
         let next_key_hash_in_genesis = next_key_hashes[0].as_str().unwrap();
 
         // Re-create the next key and compute its hash
-        let next_key_array: [u8; 32] = keys.next_update_key
+        let next_key_array: [u8; 32] = keys
+            .next_update_key
             .clone()
             .try_into()
             .expect("next key must be 32 bytes");
@@ -508,7 +501,8 @@ mod tests {
         storage.insert(keys.next_update_kid.clone(), keys.next_update_key.clone());
 
         let json = serde_json::to_string(&storage).expect("Failed to serialize");
-        let restored: HashMap<String, Vec<u8>> = serde_json::from_str(&json).expect("Failed to deserialize");
+        let restored: HashMap<String, Vec<u8>> =
+            serde_json::from_str(&json).expect("Failed to deserialize");
 
         // Retrieve and use
         let retrieved_key = restored.get(&keys.next_update_kid).expect("Key not found");
@@ -559,11 +553,14 @@ mod tests {
 
         println!("Committed hash: {}", next_key_hash_committed);
         println!("Stored next_update_kid: {}", keys.next_update_kid);
-        println!("Stored next_update_key length: {}", keys.next_update_key.len());
+        println!(
+            "Stored next_update_key length: {}",
+            keys.next_update_key.len()
+        );
 
         // Compute hash of the stored kid (which should match)
-        let computed_hash = Secret::base58_hash_string(&keys.next_update_kid)
-            .expect("Failed to compute hash");
+        let computed_hash =
+            Secret::base58_hash_string(&keys.next_update_kid).expect("Failed to compute hash");
 
         println!("Computed hash of stored kid: {}", computed_hash);
 

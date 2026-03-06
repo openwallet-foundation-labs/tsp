@@ -375,7 +375,10 @@ fn test_100_rotations_stress() {
     println!("All {} rotations completed successfully!", NUM_ROTATIONS);
 
     // --- Test 2: Send message AFTER 100 rotations ---
-    println!("\n=== Test 2: Sending message AFTER {} rotations ===", NUM_ROTATIONS);
+    println!(
+        "\n=== Test 2: Sending message AFTER {} rotations ===",
+        NUM_ROTATIONS
+    );
 
     // Give the server a moment to process
     thread::sleep(Duration::from_millis(500));
@@ -411,9 +414,15 @@ fn test_100_rotations_stress() {
             .failure(); // timeout expected
         });
     });
-    println!("Message sent and received successfully after {} rotations!", NUM_ROTATIONS);
+    println!(
+        "Message sent and received successfully after {} rotations!",
+        NUM_ROTATIONS
+    );
 
-    println!("\n=== STRESS TEST PASSED: Precommit chain intact after {} rotations ===", NUM_ROTATIONS);
+    println!(
+        "\n=== STRESS TEST PASSED: Precommit chain intact after {} rotations ===",
+        NUM_ROTATIONS
+    );
 
     clean_wallet();
 }

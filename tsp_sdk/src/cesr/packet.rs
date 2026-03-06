@@ -624,16 +624,8 @@ impl<'a> EncodedSignature<'a> {
         match self {
             EncodedSignature::NoSignature => {}
             EncodedSignature::Ed25519(signature) => {
-                encode_count(
-                    TSP_ATTACH_GRP,
-                    signature.len().div_ceil(3),
-                    output,
-                );
-                encode_count(
-                    TSP_INDEX_SIG_GRP,
-                    signature.len().div_ceil(3),
-                    output,
-                );
+                encode_count(TSP_ATTACH_GRP, signature.len().div_ceil(3), output);
+                encode_count(TSP_INDEX_SIG_GRP, signature.len().div_ceil(3), output);
                 encode_fixed_data(ED25519_SIGNATURE, signature.as_slice(), output);
             }
             #[cfg(feature = "pq")]

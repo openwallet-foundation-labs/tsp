@@ -429,12 +429,11 @@ async fn run() -> Result<(), Error> {
                     private_vid
                 }
                 DidType::Webvh => {
-                    let (private_vid, history, keys) =
-                        tsp_sdk::vid::did::webvh::create_webvh(
-                            &format!("{did_server}/endpoint/{username}"),
-                            transport,
-                        )
-                        .await?;
+                    let (private_vid, history, keys) = tsp_sdk::vid::did::webvh::create_webvh(
+                        &format!("{did_server}/endpoint/{username}"),
+                        transport,
+                    )
+                    .await?;
 
                     // Store both current and next update keys for precommit support
                     vid_wallet
@@ -520,7 +519,8 @@ async fn run() -> Result<(), Error> {
             let vid_alias = vid_wallet.try_resolve_alias(&vid)?;
             info!("Updating VID {vid_alias}");
             let (resolved_vid, metadata) = tsp_sdk::vid::did::webvh::resolve(&vid_alias).await?;
-            let new_vid = OwnedVid::bind(resolved_vid.identifier(), resolved_vid.endpoint().clone());
+            let new_vid =
+                OwnedVid::bind(resolved_vid.identifier(), resolved_vid.endpoint().clone());
             let metadata: WebvhMetadata = serde_json::from_value(metadata)
                 .expect("metadata should be of type 'WebvhMetadata'");
 
@@ -529,10 +529,9 @@ async fn run() -> Result<(), Error> {
             let update_key = if let Ok(next_kid) = vid_wallet.try_resolve_alias(&next_kid_alias) {
                 // Use the pre-committed key
                 info!("Using pre-committed update key for rotation");
-                keys.get(&next_kid)
-                    .ok_or_else(|| Error::MissingPrivateVid(
-                        "Pre-committed key not found in wallet".to_string(),
-                    ))?
+                keys.get(&next_kid).ok_or_else(|| {
+                    Error::MissingPrivateVid("Pre-committed key not found in wallet".to_string())
+                })?
             } else {
                 // No local precommit key - check if server has precommit active
                 if metadata.next_key_hashes.is_some() {
@@ -540,7 +539,8 @@ async fn run() -> Result<(), Error> {
                     error!("This wallet may be out of sync - cannot rotate safely");
                     return Err(Error::MissingPrivateVid(
                         "Server has precommit active but wallet has no matching key. \
-                         Wallet may be out of sync.".to_string(),
+                         Wallet may be out of sync."
+                            .to_string(),
                     ));
                 }
 
@@ -552,10 +552,11 @@ async fn run() -> Result<(), Error> {
                     ));
                 };
                 info!("Using current update key (migrating legacy DID to precommit)");
-                keys.get(&update_keys[0])
-                    .ok_or_else(|| Error::MissingPrivateVid(
+                keys.get(&update_keys[0]).ok_or_else(|| {
+                    Error::MissingPrivateVid(
                         "Cannot find update keys to update the DID".to_string(),
-                    ))?
+                    )
+                })?
             };
 
             let update_result = tsp_sdk::vid::did::webvh::update(
@@ -570,7 +571,10 @@ async fn run() -> Result<(), Error> {
 
             // Store the new next key for future precommit
             vid_wallet
-                .add_secret_key(update_result.next_update_kid.clone(), update_result.next_update_key)
+                .add_secret_key(
+                    update_result.next_update_kid.clone(),
+                    update_result.next_update_key,
+                )
                 .expect("Cannot store new next update key");
             vid_wallet
                 .set_alias(next_kid_alias, update_result.next_update_kid)
