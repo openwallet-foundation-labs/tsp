@@ -87,7 +87,8 @@ fn remove_next_update_alias(wallet_name: &str, did: &str) {
         let db = AsyncSecureStore::new();
         db.import(vids, aliases, keys)
             .expect("Failed to import wallet state");
-        vault.persist(db.export().expect("Failed to export wallet state"))
+        vault
+            .persist(db.export().expect("Failed to export wallet state"))
             .await
             .expect("Failed to persist modified wallet state");
         vault.close().await.expect("Failed to close wallet storage");

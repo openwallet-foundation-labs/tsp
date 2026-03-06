@@ -334,8 +334,7 @@ mod tests {
         let current_key_public = current_webvh_key
             .get_public_keymultibase()
             .expect("Couldn't get legacy WebVH public key");
-        current_webvh_key.id =
-            ["did:key:", &current_key_public, "#", &current_key_public].concat();
+        current_webvh_key.id = ["did:key:", &current_key_public, "#", &current_key_public].concat();
 
         let legacy_params = Parameters::new()
             .with_update_keys(vec![current_key_public.clone()])
@@ -347,12 +346,7 @@ mod tests {
             .expect("Legacy genesis should be valid");
         let legacy_state = legacy_entry.get_state().clone();
 
-        (
-            webvh,
-            legacy_state,
-            current_webvh_key,
-            current_key_public,
-        )
+        (webvh, legacy_state, current_webvh_key, current_key_public)
     }
 
     #[tokio::test]
