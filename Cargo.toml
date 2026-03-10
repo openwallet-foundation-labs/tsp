@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["tsp_sdk", "examples", "fuzz", "tsp_python", "tsp_javascript"]
+members = ["tsp_sdk", "examples", "fuzz", "tsp_python", "tsp_javascript", "tsp_test_vectors"]
 exclude = ["demo"]
 
 [workspace.package]
