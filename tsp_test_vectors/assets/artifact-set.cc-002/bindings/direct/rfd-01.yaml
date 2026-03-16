@@ -1,0 +1,13 @@
+binding_id: artifact.cc-002.binding.direct.rfd-01
+binding_scope: direct
+scenario: rfd
+related_vectors:
+  - BV-003
+related_fixture_refs:
+  - fixture.conversation.direct.rfd-01
+reviewed_values:
+  digest: "226fc4875774deb91948d240b1b227cd34daa2de2d0b3e1e1a646e6200dd027f"
+  reviewed_context: "pending-request-cancel"
+comparison_boundary:
+  - digest is compared exactly where required by the vector
+  - local cleanup policy is not compared

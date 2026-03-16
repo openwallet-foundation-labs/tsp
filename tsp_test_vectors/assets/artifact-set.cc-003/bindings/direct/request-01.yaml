@@ -1,0 +1,18 @@
+binding_id: artifact.cc-003.binding.direct.request-01
+binding_scope: direct
+scenario: request
+related_vectors:
+  - BV-001
+  - BV-002
+  - SV-005
+related_fixture_refs:
+  - fixture.conversation.direct.request-01
+reviewed_values:
+  request_digest: "3f9a7c884a9735565dd8f85d1807eb0225a0a076c3f9c7c6650043c122fdc1dd"
+  nonce: "a946e17a5c79830e5cc7a5354d9d35a54f7981bf275c7282dfec714e22054ca5"
+  sender_vid: "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"
+  receiver_vid: "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob"
+comparison_boundary:
+  - digest is compared exactly where required by the vector
+  - nonce is compared exactly where required by the vector
+  - cross-case byte identity is not required

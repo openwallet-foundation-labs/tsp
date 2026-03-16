@@ -1,0 +1,10 @@
+vector_id: BV-005
+artifact_ref: artifact.cc-003.vector.BV-005.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-003.binding.nested.request-01
+  - artifact.cc-003.binding.nested.accept-01
+review_notes:
+  - "Wire artifact was generated locally under Sealed Box and decoded successfully as a refrozen nested relationship accept."
+  - "Outer sender and receiver identifiers matched the frozen outer bob and alice identity basis."
+  - "The opened nested accept carried the reviewed inner nested VID and matched `artifact.cc-003.binding.nested.accept-01.reply_digest`."

@@ -1,0 +1,14 @@
+binding_id: artifact.cc-002.binding.nested.message-01
+binding_scope: nested
+scenario: message
+related_vectors:
+  - SV-002
+related_fixture_refs:
+  - fixture.conversation.nested.message-01
+reviewed_values:
+  outer_context_ref: "cc002-outer-alice-bob-bidirectional"
+  inner_context_ref: "cc002-inner-alice-1-bob-1-bidirectional"
+  payload_semantics_ref: "cc002-nested-message-01"
+comparison_boundary:
+  - inner semantics are compared only within the reviewed outer context
+  - regenerated nested confidential bytes are not compared

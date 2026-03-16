@@ -1,0 +1,22 @@
+{
+  "id": "fixture.identity.route.hop-1",
+  "scope": "route",
+  "alias": "hop-1",
+  "identifier": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:a",
+  "transport_or_route_role": "intermediary_hop",
+  "public_material": {
+    "verification_key": {
+      "crv": "Ed25519",
+      "kty": "OKP",
+      "use": "sig",
+      "x": "LrTKGJsakoL7OHg15YVT-h2qjaEqyok1usaScgDeOu0"
+    },
+    "encryption_key": {
+      "crv": "X25519",
+      "kty": "OKP",
+      "use": "enc",
+      "x": "XI23gxiV4rhg9ANeMLKlhwseomBvaX6YNZ1lAs-ycVk"
+    }
+  },
+  "private_material_ref": "examples/test/a/piv.json"
+}

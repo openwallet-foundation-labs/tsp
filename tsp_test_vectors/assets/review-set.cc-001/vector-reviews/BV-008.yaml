@@ -1,0 +1,8 @@
+vector_id: BV-008
+artifact_ref: artifact.cc-001.vector.BV-008.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-001.binding.routed.request-01
+  - artifact.cc-001.binding.routed.accept-01
+review_notes:
+  - "Reviewed as a routed final accept decode sample; final open yields AcceptRelationship from bob to alice and binds exactly to the frozen routed request digest."

@@ -1,0 +1,13 @@
+binding_id: artifact.cc-001.binding.negative.digest-mismatch-01
+review_status: "pass"
+reviewed_for_vectors:
+  - SV-005
+reviewed_for_fixtures:
+  - fixture.conversation.negative.digest-mismatch-01
+value_checks:
+  expected_request_digest: "9349438b85c7e251fb98d9d96d82a6971247c0facc865e6adb3f0e9fcb577fa1"
+  mismatching_accept_digest: "9349438b85c7e251fb98d9d96d82a6971247c0facc865e6adb3f0e9fcb577fa0"
+review_notes:
+  - "Candidate generated under HPKE-Auth using `cargo test -p tsp_sdk --no-default-features --features async authoring_cc001_group_a_digest_mismatch_candidate -- --ignored --nocapture`."
+  - "The negative sample reuses the current reviewed direct request digest as the expected baseline and carries a deliberately different accept digest."
+  - "Receiver-side open failed with a relationship error indicating `thread_id does not match digest`."

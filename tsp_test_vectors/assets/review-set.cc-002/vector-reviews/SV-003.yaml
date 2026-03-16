@@ -1,0 +1,8 @@
+vector_id: SV-003
+artifact_ref: artifact.cc-002.vector.SV-003.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-002.binding.routed.message-01
+review_notes:
+  - "Reviewed final routed generic-message sample under HPKE-Base."
+  - "Comparison remains semantic-only after final open."

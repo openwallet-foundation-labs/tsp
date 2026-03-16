@@ -1,0 +1,8 @@
+vector_id: AV-002
+artifact_ref: artifact.cc-001.vector.AV-002.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-001.binding.mechanism.ciphertext-family
+review_notes:
+  - "This review reuses the frozen `BV-001` request wire as the ciphertext-family mechanism sample."
+  - "The reviewed `HPKE-Auth` sample decodes under the `HpkeAuth` CESR ciphertext family."

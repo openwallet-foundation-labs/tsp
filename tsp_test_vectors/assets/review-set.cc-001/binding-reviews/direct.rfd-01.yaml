@@ -1,0 +1,13 @@
+binding_id: artifact.cc-001.binding.direct.rfd-01
+review_status: "pass"
+reviewed_for_vectors:
+  - BV-003
+reviewed_for_fixtures:
+  - fixture.conversation.direct.rfd-01
+value_checks:
+  digest: "9349438b85c7e251fb98d9d96d82a6971247c0facc865e6adb3f0e9fcb577fa1"
+  reviewed_context: "pending-request-cancel"
+review_notes:
+  - "Candidate generated under HPKE-Auth using `cargo test -p tsp_sdk --no-default-features --features async authoring_cc001_group_a_rfd_candidate -- --ignored --nocapture`."
+  - "The cancel baseline reused the current reviewed direct request digest and was reviewed under the explicit context `pending-request-cancel`."
+  - "Receiver-side open succeeded and the reviewed relation state transitioned to `Unrelated`."

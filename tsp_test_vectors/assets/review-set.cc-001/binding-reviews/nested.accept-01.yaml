@@ -1,0 +1,16 @@
+binding_id: artifact.cc-001.binding.nested.accept-01
+review_status: "pass"
+reviewed_for_vectors:
+  - BV-005
+reviewed_for_fixtures:
+  - fixture.conversation.nested.accept-01
+value_checks:
+  request_digest: "daf1746aad3d772d5c02548fff5df37103580d5be191925cc60f19de68d1e59b"
+  reply_digest: "daf1746aad3d772d5c02548fff5df37103580d5be191925cc60f19de68d1e59b"
+  outer_context_ref: "cc001-outer-alice-bob-bidirectional"
+  inner_sender_vid: "did:peer:2.Vz6Mus5yb1dRr3by9TohqEcUbncAMSvv1NFZsk6pMfDq1qNyE.Ez6LbwLhVs1QZygedSAXoqJuMn9cYggwXdU91eq1MsmSw6oEA.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0"
+  inner_receiver_vid: "did:peer:2.Vz6Mv9AMFFH8BhQQ7TyhGE9byBMtudjKBSAyeSzSgR2qgQ7Ki.Ez6LbunBoqPTR42iNhZEudnLTWLhno3mpuXzzJUeXwTaxEgc2.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0"
+review_notes:
+  - "Candidate generated under HPKE-Auth using the persisted private nested basis and the repaired generated-request closure."
+  - "The reviewed nested accept reply digest matched the frozen nested request digest from `artifact.cc-001.binding.nested.request-01`."
+  - "The reviewed inner sender and receiver VIDs were recovered from the decrypted nested relation affirm payload and its signed inner message."

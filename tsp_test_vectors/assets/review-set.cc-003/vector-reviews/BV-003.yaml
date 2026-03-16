@@ -1,0 +1,9 @@
+vector_id: BV-003
+artifact_ref: artifact.cc-003.vector.BV-003.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-003.binding.direct.rfd-01
+review_notes:
+  - "Wire artifact was generated locally under Sealed Box and decoded successfully as a direct decline-or-cancel sample."
+  - "Sender and receiver identifiers matched the frozen direct identity basis for alice and bob."
+  - "The protected payload carried explicit sender identity and the reviewed cancel digest matched `artifact.cc-003.binding.direct.rfd-01.digest`."

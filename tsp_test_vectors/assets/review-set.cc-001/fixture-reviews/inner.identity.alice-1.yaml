@@ -1,0 +1,15 @@
+fixture_id: fixture.identity.inner.alice-1
+artifact_ref: artifact.cc-001.fixture.fixture.identity.inner.alice-1
+review_status: "pass"
+reviewed_for_bindings:
+  - artifact.cc-001.binding.nested.request-01
+reviewed_for_vectors:
+  - BV-004
+  - BV-005
+value_checks:
+  identifier: "did:peer:2.Vz6Murt638aDnXzMoRp7PkCu1Pi6CEFpoDh296reWvBZkUScJ.Ez6Lbxoa5AWe5fSaWGt9uXPxsp29D5TUmP1Rcqg2VXZSpmjJy.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0"
+  verification_key: "Ed25519 / OKP / x=BJ0F3KA193mlyA6ZF5ZUEmFDp7NXSHogzqfd1bMAbms"
+  encryption_key: "X25519 / OKP / x=hd736H-dnS1MCJ9JBynqHLzhfg8MNYvw2XJWwPJksmo"
+review_notes:
+  - "reviewed from the persisted authoring-only private nested basis aligned with the CC-001 Group B refreeze candidates"
+  - "accepted as the inner alice nested identity baseline for CC-001 Group B and dependent Group D work"

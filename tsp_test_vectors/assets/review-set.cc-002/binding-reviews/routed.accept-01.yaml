@@ -1,0 +1,12 @@
+binding_id: artifact.cc-002.binding.routed.accept-01
+review_status: "pass"
+reviewed_for_vectors:
+  - BV-008
+reviewed_for_fixtures:
+  - fixture.conversation.routed.accept-01
+value_checks:
+  request_digest: "eea652885bca96a88c654e385a28842dec82fe41707ac4c8ad6f3f11ca3a66ef"
+  reply_digest: "eea652885bca96a88c654e385a28842dec82fe41707ac4c8ad6f3f11ca3a66ef"
+  path_context_ref: "cc002-routed-final-delivery-01"
+review_notes:
+  - "Reviewed final routed accept baseline using the same authoring-only dropoff-1 basis and the same final-delivery path context as BV-007."

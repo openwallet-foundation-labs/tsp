@@ -1,0 +1,22 @@
+{
+  "id": "fixture.identity.route.bob",
+  "scope": "route",
+  "alias": "bob",
+  "identifier": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
+  "transport_or_route_role": "routed_endpoint",
+  "public_material": {
+    "verification_key": {
+      "crv": "Ed25519",
+      "kty": "OKP",
+      "use": "sig",
+      "x": "NBcP690uVtoJChxvBCxZyy2inI-R24G3aNBWOKwU5lI"
+    },
+    "encryption_key": {
+      "crv": "X25519",
+      "kty": "OKP",
+      "use": "enc",
+      "x": "QFn5SXupDgBTtzkGc2W3MvoSCHjd8uUD0dapfEXqET4"
+    }
+  },
+  "private_material_ref": "examples/test/bob/piv.json"
+}

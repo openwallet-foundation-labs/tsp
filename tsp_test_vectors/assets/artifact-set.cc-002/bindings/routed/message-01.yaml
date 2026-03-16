@@ -1,0 +1,13 @@
+binding_id: artifact.cc-002.binding.routed.message-01
+binding_scope: routed
+scenario: message
+related_vectors:
+  - SV-003
+related_fixture_refs:
+  - fixture.conversation.routed.message-01
+reviewed_values:
+  path_context_ref: "cc002-routed-final-delivery-01"
+  payload_semantics_ref: "cc002-routed-message-01"
+comparison_boundary:
+  - hop-local visibility and final payload semantics are compared at the semantic layer
+  - regenerated routed confidential bytes are not compared

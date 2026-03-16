@@ -1,0 +1,10 @@
+vector_id: BV-002
+artifact_ref: artifact.cc-001.vector.BV-002.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-001.binding.direct.request-01
+  - artifact.cc-001.binding.direct.accept-01
+review_notes:
+  - "Wire artifact was generated locally under HPKE-Auth and opened successfully as a direct relationship accept."
+  - "Sender and receiver identifiers matched the frozen direct identity basis for bob and alice."
+  - "The decrypted accept payload carried the frozen request digest as `reply_digest`."

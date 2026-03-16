@@ -1,0 +1,13 @@
+binding_id: artifact.cc-001.binding.nested.message-01
+review_status: "pass"
+reviewed_for_vectors:
+  - SV-002
+reviewed_for_fixtures:
+  - fixture.conversation.nested.message-01
+value_checks:
+  outer_context_ref: "cc001-outer-alice-bob-bidirectional"
+  inner_context_ref: "cc001-inner-alice-1-bob-1-bidirectional"
+  payload_semantics_ref: "cc001-nested-message-01"
+review_notes:
+  - "Reviewed against the refrozen CC-001 nested private basis shared with Group B."
+  - "Semantic baseline is sender inner alice-1, receiver inner bob-1, payload 'hello nested world', and no non-confidential data."

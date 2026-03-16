@@ -1,0 +1,8 @@
+vector_id: SV-001
+artifact_ref: artifact.cc-002.vector.SV-001.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-002.binding.direct.message-01
+review_notes:
+  - "Reviewed as a direct generic confidential-message sample under HPKE-Base."
+  - "Open result is sender alice, receiver bob, payload 'hello direct world', non-confidential data 'cc002-direct-message-01-nonconf', crypto type HpkeEssr, signature type Ed25519."

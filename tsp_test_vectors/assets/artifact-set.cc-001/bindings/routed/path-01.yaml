@@ -1,0 +1,16 @@
+binding_id: artifact.cc-001.binding.routed.path-01
+binding_scope: routed
+scenario: path
+related_vectors:
+  - BV-006
+related_fixture_refs:
+  - fixture.conversation.routed.path-01
+reviewed_values:
+  current_hop_vid: "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:a"
+  next_hop_vid: "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:b"
+  remaining_route_ref: "[\"did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob\"]"
+  opaque_payload_ref: "-EBAYTSP-AAB5BAeAGRpZDp3ZWI6cmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbTpvcGVud2FsbGV0LWZvdW5kYXRpb24tbGFiczp0c3A6bWFpbjpleGFtcGxlczp0ZXN0OmFsaWNl4BAdZGlkOndlYjpyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tOm9wZW53YWxsZXQtZm91bmRhdGlvbi1sYWJzOnRzcDptYWluOmV4YW1wbGVzOnRlc3Q6Ym9iXAAA4GAZeOxhA95soXqBitk6svnzSjM7lEs16aXPp0rNBFZp8Ek8RDg5QJ0IPj0XwcPDRg-SpdakI5j94h7PlgkaBL1dqhh7qvgDT9bfu5EF-CAW-KAW0BAGsxFAjhRKDAP1eW9diReHLK86yf4FPr0gK1x28WThgMozaRvW5JbvoGTlGjqlftWh-5W-qIxguhPNn1nd5xwP"
+comparison_boundary:
+  - next hop is compared exactly where required by the vector
+  - remaining route and opaque payload references are compared exactly where required by the vector
+  - onward forwarding bytes are not compared

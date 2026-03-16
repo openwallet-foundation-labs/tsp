@@ -1,0 +1,9 @@
+vector_id: BV-003
+artifact_ref: artifact.cc-001.vector.BV-003.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-001.binding.direct.rfd-01
+review_notes:
+  - "Wire artifact was generated locally under HPKE-Auth and opened successfully as a direct relationship cancel."
+  - "The decrypted cancel payload carried the frozen direct request digest."
+  - "The reviewed interpretation context for this sample is `pending-request-cancel`."

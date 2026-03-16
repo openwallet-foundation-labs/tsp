@@ -1,0 +1,13 @@
+binding_id: artifact.cc-003.binding.negative.digest-mismatch-01
+review_status: "pass"
+reviewed_for_vectors:
+  - SV-005
+reviewed_for_fixtures:
+  - fixture.conversation.negative.digest-mismatch-01
+value_checks:
+  expected_request_digest: "3f9a7c884a9735565dd8f85d1807eb0225a0a076c3f9c7c6650043c122fdc1dd"
+  mismatching_accept_digest: "3f9a7c884a9735565dd8f85d1807eb0225a0a076c3f9c7c6650043c122fdc1dc"
+review_notes:
+  - "Candidate generated under Sealed Box using `cargo test -p tsp_sdk --no-default-features --features async,nacl authoring_cc003_group_a_digest_mismatch_candidate -- --ignored --nocapture`."
+  - "The reviewed mismatching digest differs intentionally from the current direct request baseline."
+  - "The receiver rejected the sample as a relationship error because the thread_id did not match the digest."

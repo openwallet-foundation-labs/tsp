@@ -1,0 +1,17 @@
+binding_id: artifact.cc-001.binding.routed.request-01
+binding_scope: routed
+scenario: request
+related_vectors:
+  - BV-007
+related_fixture_refs:
+  - fixture.conversation.routed.request-01
+reviewed_values:
+  request_digest: "9d2aa6ab9fe6108dba76ad53123064fd8ed108ff31961cc257fbf66cdc74201d"
+  nonce: "cf44526d21ec4bd3180e85c3bd1f0a2b70c4b0f771c92811d8e61709f1ff1ea2"
+  path_context_ref: "cc001-routed-final-delivery-01"
+  sender_vid: "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"
+  receiver_vid: "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob"
+comparison_boundary:
+  - request digest is compared exactly where required by the vector
+  - nonce is compared exactly where required by the vector
+  - path context is reviewed as a prerequisite for final decode

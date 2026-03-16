@@ -1,0 +1,7 @@
+vector_id: BV-007
+artifact_ref: artifact.cc-001.vector.BV-007.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-001.binding.routed.request-01
+review_notes:
+  - "Reviewed as a routed final request decode sample; final open yields RequestRelationship from alice to bob with routed path preserved."

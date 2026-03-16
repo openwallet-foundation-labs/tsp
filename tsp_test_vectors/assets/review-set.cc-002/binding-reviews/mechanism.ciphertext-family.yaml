@@ -1,0 +1,10 @@
+binding_id: artifact.cc-002.binding.mechanism.ciphertext-family
+review_status: "pass"
+reviewed_for_vectors:
+  - AV-002
+value_checks:
+  confidentiality_mechanism: HPKE-Base
+  cesr_ciphertext_family: "HpkeEssr"
+review_notes:
+  - "Mechanism review reuses the frozen `BV-001` request sample under `CC-002 / HPKE-Base`."
+  - "Authoring review confirmed that the reviewed request sample decodes under the `HpkeEssr` CESR encrypted-envelope family."

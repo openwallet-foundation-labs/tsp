@@ -1,0 +1,15 @@
+id: fixture.conversation.negative.nested-without-outer-01
+scope: negative
+scenario: nested-without-outer
+sequence: "01"
+related_conversation_fixtures:
+  - fixture.conversation.nested.message-01
+binding_material:
+  source_vector_ref: "artifact.cc-003.vector.SV-002.wire"
+  source_fixture_ref: "fixture.conversation.nested.message-01"
+  missing_outer_context: true
+  outer_context_ref: "absent"
+  inner_context_ref: "cc003-inner-alice-1-bob-1-bidirectional"
+  payload_semantics_ref: "cc003-nested-message-01"
+used_by_vectors:
+  - SV-006

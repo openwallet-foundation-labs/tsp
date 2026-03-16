@@ -1,0 +1,8 @@
+vector_id: SV-006
+artifact_ref: artifact.cc-002.vector.SV-006.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-002.binding.negative.nested-without-outer-01
+review_notes:
+  - "Reviewed as a non-SDK negative semantic derivation from the already reviewed SV-002 nested generic-message baseline."
+  - "Authoritative bytes intentionally match SV-002; the rejection semantics come from the reviewed absent outer context."

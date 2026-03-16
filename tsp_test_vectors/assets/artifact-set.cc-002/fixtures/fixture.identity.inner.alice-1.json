@@ -1,0 +1,22 @@
+{
+  "alias": "alice-1",
+  "id": "fixture.identity.inner.alice-1",
+  "identifier": "did:peer:2.Vz6Mv5t5MyRrNXedzUamnuNdCo7hmJXBN61nmeSTrBivhYBLq.Ez6Lc3rDoBhjm52JW1GCujYtMXzueY9ym4DmCNg251p7CEzqu.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0",
+  "private_material_ref": "artifact-set.cc-002/private-fixtures/fixture.identity.inner.alice-1.private.json",
+  "public_material": {
+    "encryption_key": {
+      "crv": "X25519",
+      "kty": "OKP",
+      "use": "enc",
+      "x": "0Nc4SMbYFPoTWTRpKta1N79xkmDF7eGFiN1cvtzsVVA"
+    },
+    "verification_key": {
+      "crv": "Ed25519",
+      "kty": "OKP",
+      "use": "sig",
+      "x": "xcQwh2Z4A5msFTKx0nNf4lMAfKO6eAQh6Ik3djG7IZ4"
+    }
+  },
+  "scope": "inner",
+  "transport_or_route_role": "nested_inner_endpoint"
+}

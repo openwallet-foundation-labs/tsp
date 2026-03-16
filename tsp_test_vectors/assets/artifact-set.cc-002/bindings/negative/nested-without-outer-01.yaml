@@ -1,0 +1,19 @@
+binding_id: artifact.cc-002.binding.negative.nested-without-outer-01
+binding_scope: negative
+scenario: nested-without-outer
+related_vectors:
+  - SV-006
+related_fixture_refs:
+  - fixture.conversation.negative.nested-without-outer-01
+reviewed_values:
+  source_vector_ref: "artifact.cc-002.vector.SV-002.wire"
+  source_binding_ref: "artifact.cc-002.binding.nested.message-01"
+  source_fixture_ref: "fixture.conversation.nested.message-01"
+  missing_outer_context: true
+  outer_context_ref: "absent"
+  inner_context_ref: "cc002-inner-alice-1-bob-1-bidirectional"
+  payload_semantics_ref: "cc002-nested-message-01"
+comparison_boundary:
+  - authoritative wire bytes are intentionally reused from the reviewed SV-002 baseline
+  - rejection under missing outer context is compared at the semantic layer
+  - exact rejection wording is not compared

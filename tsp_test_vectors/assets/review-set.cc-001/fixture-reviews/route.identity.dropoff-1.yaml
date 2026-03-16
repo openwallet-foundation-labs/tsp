@@ -1,0 +1,15 @@
+fixture_id: fixture.identity.route.dropoff-1
+artifact_ref: artifact.cc-001.fixture.fixture.identity.route.dropoff-1
+review_status: "pass"
+reviewed_for_bindings:
+  - artifact.cc-001.binding.routed.request-01
+  - artifact.cc-001.binding.routed.accept-01
+reviewed_for_vectors:
+  - BV-007
+  - BV-008
+value_checks:
+  identifier: "reviewed"
+  verification_key: "reviewed"
+  encryption_key: "reviewed"
+review_notes:
+  - "Reviewed authoring-only final drop-off basis selected from examples/test/timestamp-server and kept distinct from routed endpoints and intermediary hops."

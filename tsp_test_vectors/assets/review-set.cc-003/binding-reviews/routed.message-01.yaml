@@ -1,0 +1,12 @@
+binding_id: artifact.cc-003.binding.routed.message-01
+review_status: "pass"
+reviewed_for_vectors:
+  - SV-003
+reviewed_for_fixtures:
+  - fixture.conversation.routed.message-01
+value_checks:
+  path_context_ref: "cc003-routed-final-delivery-01"
+  payload_semantics_ref: "cc003-routed-message-01"
+review_notes:
+  - "Reviewed against the routed final-delivery basis reused from Group C."
+  - "Final open yields the expected generic-message semantics under Sealed Box."

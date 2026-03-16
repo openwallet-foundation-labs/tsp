@@ -95,6 +95,10 @@ impl Nonce {
 
         Nonce(bytes)
     }
+
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
 }
 
 /// A type to distinguish "normal" TSP messages from "control" messages

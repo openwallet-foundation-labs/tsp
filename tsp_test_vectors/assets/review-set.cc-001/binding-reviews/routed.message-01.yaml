@@ -1,0 +1,12 @@
+binding_id: artifact.cc-001.binding.routed.message-01
+review_status: "pass"
+reviewed_for_vectors:
+  - SV-003
+reviewed_for_fixtures:
+  - fixture.conversation.routed.message-01
+value_checks:
+  path_context_ref: "cc001-routed-final-delivery-01"
+  payload_semantics_ref: "cc001-routed-message-01"
+review_notes:
+  - "Reviewed against the existing CC-001 routed final-delivery basis from Group C."
+  - "Semantic baseline is sender alice, receiver bob, payload 'hello routed world', and non-confidential data 'cc001-routed-message-01-nonconf'."

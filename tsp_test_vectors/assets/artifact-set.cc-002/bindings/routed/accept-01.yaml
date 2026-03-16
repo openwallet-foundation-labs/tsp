@@ -1,0 +1,16 @@
+binding_id: artifact.cc-002.binding.routed.accept-01
+binding_scope: routed
+scenario: accept
+related_vectors:
+  - BV-008
+related_fixture_refs:
+  - fixture.conversation.routed.accept-01
+  - fixture.conversation.routed.request-01
+reviewed_values:
+  request_digest: "eea652885bca96a88c654e385a28842dec82fe41707ac4c8ad6f3f11ca3a66ef"
+  reply_digest: "eea652885bca96a88c654e385a28842dec82fe41707ac4c8ad6f3f11ca3a66ef"
+  path_context_ref: "cc002-routed-final-delivery-01"
+comparison_boundary:
+  - request digest must bind exactly to the reviewed routed request context
+  - reply digest is compared exactly where required by the vector
+  - path context must remain the same reviewed prerequisite context

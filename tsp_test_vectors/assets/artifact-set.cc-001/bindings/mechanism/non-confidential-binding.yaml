@@ -1,0 +1,11 @@
+binding_id: artifact.cc-001.binding.mechanism.non-confidential-binding
+binding_scope: mechanism
+scenario: non-confidential-binding
+related_vectors:
+  - AV-003
+reviewed_values:
+  confidentiality_mechanism: HPKE-Auth
+  binding_rule: "non-confidential fields are part of the authenticated envelope header; a sample with explicit non-confidential data opens successfully, and tampering with that header field causes rejection"
+comparison_boundary:
+  - binding rule is compared at the reviewed semantic constraint layer
+  - implementation-specific internal crypto API shape is not compared

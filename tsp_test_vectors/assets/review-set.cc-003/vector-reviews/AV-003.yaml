@@ -1,0 +1,8 @@
+vector_id: AV-003
+artifact_ref: artifact.cc-003.vector.AV-003.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-003.binding.mechanism.non-confidential-binding
+review_notes:
+  - "This review uses a dedicated Sealed Box request sample carrying explicit non-confidential data."
+  - "The reviewed sample opens successfully before tampering and is rejected after the non-confidential header field is modified."

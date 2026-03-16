@@ -1,0 +1,12 @@
+binding_id: artifact.cc-001.binding.direct.message-01
+review_status: "pass"
+reviewed_for_vectors:
+  - SV-001
+reviewed_for_fixtures:
+  - fixture.conversation.direct.message-01
+value_checks:
+  relationship_context_ref: "cc001-direct-alice-bob-bidirectional"
+  payload_semantics_ref: "cc001-direct-message-01"
+review_notes:
+  - "Reviewed against one explicit direct bidirectional relationship context between alice and bob under HPKE-Auth."
+  - "Semantic baseline is sender alice, receiver bob, payload 'hello direct world', and non-confidential data 'cc001-direct-message-01-nonconf'."

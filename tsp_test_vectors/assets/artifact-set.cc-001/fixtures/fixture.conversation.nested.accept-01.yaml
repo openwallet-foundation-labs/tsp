@@ -1,0 +1,17 @@
+id: fixture.conversation.nested.accept-01
+scope: nested
+scenario: accept
+sequence: "01"
+related_identity_fixtures:
+  - fixture.identity.outer.alice
+  - fixture.identity.outer.bob
+  - fixture.identity.inner.alice-1
+  - fixture.identity.inner.bob-1
+related_conversation_fixtures:
+  - fixture.conversation.nested.request-01
+binding_material:
+  request_digest: "daf1746aad3d772d5c02548fff5df37103580d5be191925cc60f19de68d1e59b"
+  reply_digest: "daf1746aad3d772d5c02548fff5df37103580d5be191925cc60f19de68d1e59b"
+  outer_context_ref: "cc001-outer-alice-bob-bidirectional"
+used_by_vectors:
+  - BV-005

@@ -1,0 +1,11 @@
+binding_id: artifact.cc-003.binding.mechanism.non-confidential-binding
+review_status: "pass"
+reviewed_for_vectors:
+  - AV-003
+value_checks:
+  confidentiality_mechanism: Sealed Box
+  binding_rule: "non-confidential fields are part of the authenticated envelope header; a sample with explicit non-confidential data opens successfully, and tampering with that header field causes rejection"
+review_notes:
+  - "Candidate generated under Sealed Box using `cargo test -p tsp_sdk --no-default-features --features async,nacl authoring_cc003_group_a_nonconfidential_binding_candidate -- --ignored --nocapture`."
+  - "Authoring review confirmed that a sample carrying explicit non-confidential data opens successfully under Sealed Box."
+  - "Tampering with the non-confidential header field caused receiver-side rejection."

@@ -1,0 +1,9 @@
+vector_id: BV-004
+artifact_ref: artifact.cc-002.vector.BV-004.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-002.binding.nested.request-01
+review_notes:
+  - "Wire artifact was generated locally under HPKE-Base using the persisted private nested basis and decoded successfully as a nested relationship request."
+  - "Outer sender and receiver identifiers matched the frozen outer alice and bob identity basis."
+  - "The opened nested request carried the reviewed inner nested VID and matched `artifact.cc-002.binding.nested.request-01.request_digest`."

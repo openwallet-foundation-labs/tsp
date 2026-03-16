@@ -1,0 +1,10 @@
+vector_id: SV-005
+artifact_ref: artifact.cc-003.vector.SV-005.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-003.binding.direct.request-01
+  - artifact.cc-003.binding.negative.digest-mismatch-01
+review_notes:
+  - "Wire artifact was generated locally under Sealed Box and decoded successfully as a mismatching direct relationship accept sample."
+  - "The protected payload carried explicit sender identity and the reply digest differed intentionally from the frozen request digest."
+  - "The receiver rejected the sample when opening it because the reviewed reply digest did not match the existing relationship thread_id."

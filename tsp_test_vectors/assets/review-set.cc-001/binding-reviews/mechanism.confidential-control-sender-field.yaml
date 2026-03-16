@@ -1,0 +1,10 @@
+binding_id: artifact.cc-001.binding.mechanism.confidential-control-sender-field
+review_status: "pass"
+reviewed_for_vectors:
+  - AV-001
+value_checks:
+  confidentiality_mechanism: HPKE-Auth
+  sender_field_rule: "outer envelope sender field is present and identifies the sender; the decrypted confidential payload carries no additional sender identity field"
+review_notes:
+  - "Mechanism review reuses the frozen `BV-001` direct request sample under `CC-001 / HPKE-Auth`."
+  - "Authoring review confirmed `decode_envelope(...).envelope.crypto_type == HpkeAuth` and `decode_payload(...).sender_identity == None` for the reviewed request sample."

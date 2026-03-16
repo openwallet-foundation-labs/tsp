@@ -1,0 +1,122 @@
+case_id: CC-001
+case_profile: tsp-hpke-auth-complete-case-01
+confidentiality_mechanism: HPKE-Auth
+artifact_set_id: artifact-set.cc-001
+abstract_intent_ref: vector-model.tsp-test-vectors-01
+case_output_ref: case-output.cc-001
+artifact_namespace_root: artifact.cc-001
+applicable_vector_refs:
+  - BV-001
+  - BV-002
+  - BV-003
+  - BV-004
+  - BV-005
+  - BV-006
+  - BV-007
+  - BV-008
+  - SV-001
+  - SV-002
+  - SV-003
+  - SV-004
+  - SV-005
+  - SV-006
+  - AV-001
+  - AV-002
+  - AV-003
+applicable_fixture_refs:
+  - fixture.identity.direct.alice
+  - fixture.identity.direct.bob
+  - fixture.conversation.direct.request-01
+  - fixture.conversation.direct.accept-01
+  - fixture.conversation.direct.rfd-01
+  - fixture.conversation.negative.digest-mismatch-01
+  - fixture.identity.outer.alice
+  - fixture.identity.outer.bob
+  - fixture.identity.inner.alice-1
+  - fixture.identity.inner.bob-1
+  - fixture.conversation.nested.request-01
+  - fixture.conversation.nested.accept-01
+  - fixture.identity.route.alice
+  - fixture.identity.route.bob
+  - fixture.identity.route.hop-1
+  - fixture.identity.route.hop-2
+  - fixture.conversation.routed.path-01
+  - fixture.conversation.routed.request-01
+  - fixture.conversation.routed.accept-01
+  - fixture.conversation.direct.message-01
+  - fixture.conversation.nested.message-01
+  - fixture.conversation.routed.message-01
+  - fixture.conversation.negative.no-prior-relationship-01
+  - fixture.conversation.negative.nested-without-outer-01
+vector_artifact_refs:
+  - artifact.cc-001.vector.BV-001.wire
+  - artifact.cc-001.vector.BV-002.wire
+  - artifact.cc-001.vector.BV-003.wire
+  - artifact.cc-001.vector.BV-004.wire
+  - artifact.cc-001.vector.BV-005.wire
+  - artifact.cc-001.vector.BV-006.wire
+  - artifact.cc-001.vector.BV-007.wire
+  - artifact.cc-001.vector.BV-008.wire
+  - artifact.cc-001.vector.SV-001.wire
+  - artifact.cc-001.vector.SV-002.wire
+  - artifact.cc-001.vector.SV-003.wire
+  - artifact.cc-001.vector.SV-004.wire
+  - artifact.cc-001.vector.SV-005.wire
+  - artifact.cc-001.vector.SV-006.wire
+  - artifact.cc-001.vector.AV-001.wire
+  - artifact.cc-001.vector.AV-002.wire
+  - artifact.cc-001.vector.AV-003.wire
+fixture_artifact_refs:
+  - artifact.cc-001.fixture.fixture.identity.direct.alice
+  - artifact.cc-001.fixture.fixture.identity.direct.bob
+  - artifact.cc-001.fixture.fixture.conversation.direct.request-01
+  - artifact.cc-001.fixture.fixture.conversation.direct.accept-01
+  - artifact.cc-001.fixture.fixture.conversation.direct.rfd-01
+  - artifact.cc-001.fixture.fixture.conversation.negative.digest-mismatch-01
+  - artifact.cc-001.fixture.fixture.identity.outer.alice
+  - artifact.cc-001.fixture.fixture.identity.outer.bob
+  - artifact.cc-001.fixture.fixture.identity.inner.alice-1
+  - artifact.cc-001.fixture.fixture.identity.inner.bob-1
+  - artifact.cc-001.fixture.fixture.conversation.nested.request-01
+  - artifact.cc-001.fixture.fixture.conversation.nested.accept-01
+  - artifact.cc-001.fixture.fixture.identity.route.alice
+  - artifact.cc-001.fixture.fixture.identity.route.bob
+  - artifact.cc-001.fixture.fixture.identity.route.hop-1
+  - artifact.cc-001.fixture.fixture.identity.route.hop-2
+  - artifact.cc-001.fixture.fixture.conversation.routed.path-01
+  - artifact.cc-001.fixture.fixture.conversation.routed.request-01
+  - artifact.cc-001.fixture.fixture.conversation.routed.accept-01
+  - artifact.cc-001.fixture.fixture.conversation.direct.message-01
+  - artifact.cc-001.fixture.fixture.conversation.nested.message-01
+  - artifact.cc-001.fixture.fixture.conversation.routed.message-01
+  - artifact.cc-001.fixture.fixture.conversation.negative.no-prior-relationship-01
+  - artifact.cc-001.fixture.fixture.conversation.negative.nested-without-outer-01
+binding_artifact_refs:
+  - artifact.cc-001.binding.direct.request-01
+  - artifact.cc-001.binding.direct.accept-01
+  - artifact.cc-001.binding.direct.message-01
+  - artifact.cc-001.binding.direct.rfd-01
+  - artifact.cc-001.binding.negative.digest-mismatch-01
+  - artifact.cc-001.binding.negative.no-prior-relationship-01
+  - artifact.cc-001.binding.negative.nested-without-outer-01
+  - artifact.cc-001.binding.nested.request-01
+  - artifact.cc-001.binding.nested.accept-01
+  - artifact.cc-001.binding.nested.message-01
+  - artifact.cc-001.binding.routed.path-01
+  - artifact.cc-001.binding.routed.request-01
+  - artifact.cc-001.binding.routed.accept-01
+  - artifact.cc-001.binding.routed.message-01
+  - artifact.cc-001.binding.mechanism.confidential-control-sender-field
+  - artifact.cc-001.binding.mechanism.ciphertext-family
+  - artifact.cc-001.binding.mechanism.non-confidential-binding
+artifact_model:
+  protected_output_family: hpke-auth-case-local-artifacts
+  bound_values_family: hpke-auth-case-local-bindings
+  cross_case_output_identity: not-required
+output_boundary:
+  - outputs are authoritative only within artifact-set.cc-001
+  - outputs are not assumed to be byte-equivalent to HPKE-Base or Sealed Box outputs
+case_invariants:
+  - all artifacts belong to artifact-set.cc-001
+  - confidential-control artifacts follow HPKE-Auth requirements
+  - protocol meaning matches the realized vector intents

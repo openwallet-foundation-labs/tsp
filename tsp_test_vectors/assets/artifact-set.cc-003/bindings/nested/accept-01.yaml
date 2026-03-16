@@ -1,0 +1,18 @@
+binding_id: artifact.cc-003.binding.nested.accept-01
+binding_scope: nested
+scenario: accept
+related_vectors:
+  - BV-005
+related_fixture_refs:
+  - fixture.conversation.nested.accept-01
+  - fixture.conversation.nested.request-01
+reviewed_values:
+  request_digest: "80efa8a1fcdd3b1faace99e7c0151ab9dd895d5b16617e5cff8aed47666877bb"
+  reply_digest: "80efa8a1fcdd3b1faace99e7c0151ab9dd895d5b16617e5cff8aed47666877bb"
+  outer_context_ref: "cc003-outer-alice-bob-bidirectional"
+  inner_sender_vid: "did:peer:2.Vz6MuwngHdH671J33SBbN8mRAsXKijbnk1GUwtj3WUvYQe2bF.Ez6LburJLXmEa4cphbkFi9TZuuDEuMPzDkWAkQotfj8EtuuoY.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0"
+  inner_receiver_vid: "did:peer:2.Vz6MuxGPkQz8Kdq492rEYX5pRy8KQj9v5FxiE4zyCBpR33Y9D.Ez6Lc3ukBgTQgyFQofRnRty6eFnjt8Q4kav7wqjiBAZzhSvTj.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0"
+comparison_boundary:
+  - request digest must bind exactly to the reviewed nested request context
+  - reply digest is compared exactly where required by the vector
+  - outer context must remain the same reviewed prerequisite context

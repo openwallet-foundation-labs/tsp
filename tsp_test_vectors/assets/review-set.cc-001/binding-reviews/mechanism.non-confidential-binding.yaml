@@ -1,0 +1,11 @@
+binding_id: artifact.cc-001.binding.mechanism.non-confidential-binding
+review_status: "pass"
+reviewed_for_vectors:
+  - AV-003
+value_checks:
+  confidentiality_mechanism: HPKE-Auth
+  binding_rule: "non-confidential fields are part of the authenticated envelope header; a sample with explicit non-confidential data opens successfully, and tampering with that header field causes rejection"
+review_notes:
+  - "Candidate generated under HPKE-Auth using `cargo test -p tsp_sdk --no-default-features --features async authoring_cc001_group_a_nonconfidential_binding_candidate -- --ignored --nocapture`."
+  - "The reviewed sample carries explicit non-confidential data in the encrypted envelope header."
+  - "Mutating the non-confidential field in the reviewed sample causes receiver-side rejection, which is sufficient for this AAD-binding review."

@@ -1,0 +1,8 @@
+vector_id: AV-001
+artifact_ref: artifact.cc-001.vector.AV-001.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-001.binding.mechanism.confidential-control-sender-field
+review_notes:
+  - "This review reuses the frozen `BV-001` request wire as the sender-field mechanism sample."
+  - "The reviewed `HPKE-Auth` sample carries sender identity in the outer envelope and not in the decrypted confidential payload."

@@ -1,0 +1,22 @@
+{
+  "id": "fixture.identity.route.alice",
+  "scope": "route",
+  "alias": "alice",
+  "identifier": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
+  "transport_or_route_role": "routed_endpoint",
+  "public_material": {
+    "verification_key": {
+      "crv": "Ed25519",
+      "kty": "OKP",
+      "use": "sig",
+      "x": "7dUAj8TdKRfQwSkUqa3dyCMr8AhggYRAv2RuMZ514sE"
+    },
+    "encryption_key": {
+      "crv": "X25519",
+      "kty": "OKP",
+      "use": "enc",
+      "x": "y-FbCCEodGckHNDqCVOcIyf9uESpaepAVRewGxmt_QU"
+    }
+  },
+  "private_material_ref": "examples/test/alice/piv.json"
+}

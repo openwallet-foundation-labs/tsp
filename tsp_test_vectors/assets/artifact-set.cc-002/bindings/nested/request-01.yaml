@@ -1,0 +1,17 @@
+binding_id: artifact.cc-002.binding.nested.request-01
+binding_scope: nested
+scenario: request
+related_vectors:
+  - BV-004
+  - BV-005
+related_fixture_refs:
+  - fixture.conversation.nested.request-01
+reviewed_values:
+  request_digest: "e5551836a8db8f60e8b2850bab218d1a0dd43e83188725dd522595f7826a67b9"
+  nonce: "ebb0f7f5091144abf0447b16269342c33dc8716d82a1bc788bb675b9d55682ff"
+  outer_context_ref: "cc002-outer-alice-bob-bidirectional"
+  inner_sender_vid: "did:peer:2.Vz6Mv5t5MyRrNXedzUamnuNdCo7hmJXBN61nmeSTrBivhYBLq.Ez6Lc3rDoBhjm52JW1GCujYtMXzueY9ym4DmCNg251p7CEzqu.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0"
+comparison_boundary:
+  - digest is compared exactly where required by the vector
+  - nonce is compared exactly where required by the vector
+  - outer context is reviewed as a required prerequisite, not as optional metadata

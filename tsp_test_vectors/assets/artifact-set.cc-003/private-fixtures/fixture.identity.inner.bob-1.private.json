@@ -1,0 +1,10 @@
+{
+  "id": "did:peer:2.Vz6MuwngHdH671J33SBbN8mRAsXKijbnk1GUwtj3WUvYQe2bF.Ez6LburJLXmEa4cphbkFi9TZuuDEuMPzDkWAkQotfj8EtuuoY.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0",
+  "transport": "tsp://",
+  "sigKeyType": "Ed25519",
+  "publicSigkey": "TYSy_RTxHXI96CCshEy9zo_yePesiD9xw9vWDecwPz4",
+  "encKeyType": "X25519",
+  "publicEnckey": "Wf7bvLbw8d-mxQzrluhQuD7N95yaCc0hOjlF3cVGEgs",
+  "sigkey": "_VoMoO9lePCSWfS7eAT-YdudErYx4-LHuTqNV6G-QGI",
+  "enckey": "3kGMGu76BUF8a4lPKQJMgfO88Bb16DkKVBoyogt2pt4"
+}

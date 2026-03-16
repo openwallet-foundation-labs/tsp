@@ -1,0 +1,14 @@
+fixture_id: fixture.identity.inner.bob-1
+artifact_ref: artifact.cc-003.fixture.fixture.identity.inner.bob-1
+review_status: "pass"
+reviewed_for_bindings:
+  - artifact.cc-003.binding.nested.accept-01
+reviewed_for_vectors:
+  - BV-005
+value_checks:
+  identifier: "did:peer:2.Vz6Mv82m93yhPmAfPioRoC7U9BvmjFpg6KeXx9xxy4BzG9dcz.Ez6Lbujw1PnqQvBHRsLrrgMt3R5tzkzqcfuMc96DwfFKLeF4D.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0"
+  verification_key: "Ed25519 / OKP / x=5bUvpkfpKuoUHR6_5HpElqc-IwhJItErQWfhNmkFnwc"
+  encryption_key: "X25519 / OKP / x=WF1BcVVObZ4HRYO12KNm1uHgsOftc8nzNS44B5W6tmo"
+review_notes:
+  - "Reviewed from the persisted private nested basis emitted by authoring_cc003_group_d_nested_message_candidate and reused by authoring_cc003_group_b_accept_refreeze_candidate."
+  - "Accepted as the inner bob nested identity baseline shared by CC-003 Group B and Group D."

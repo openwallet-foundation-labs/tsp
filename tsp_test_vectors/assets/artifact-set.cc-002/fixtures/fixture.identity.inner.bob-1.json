@@ -1,0 +1,22 @@
+{
+  "alias": "bob-1",
+  "id": "fixture.identity.inner.bob-1",
+  "identifier": "did:peer:2.Vz6Mv4M5AcqR7aKyKq9cQr3G2khWEWbCHmSfH6WiuDrSxHiK2.Ez6LbrGaxu3vU2D6WEUJPWuvrbCv6ntu8z5tg5ujg6aFGy2m2.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0",
+  "private_material_ref": "artifact-set.cc-002/private-fixtures/fixture.identity.inner.bob-1.private.json",
+  "public_material": {
+    "encryption_key": {
+      "crv": "X25519",
+      "kty": "OKP",
+      "use": "enc",
+      "x": "JMjZrJRoyUcmI4I9xTdxsvVr18HwoUhRdb9DPCsZcE0"
+    },
+    "verification_key": {
+      "crv": "Ed25519",
+      "kty": "OKP",
+      "use": "sig",
+      "x": "rvdGtI-kfWr-uT3gSTKgtLYObT_E7haZyckQQYz1Fqk"
+    }
+  },
+  "scope": "inner",
+  "transport_or_route_role": "nested_inner_endpoint"
+}

@@ -1,0 +1,14 @@
+binding_id: artifact.cc-003.binding.routed.request-01
+review_status: "pass"
+reviewed_for_vectors:
+  - BV-007
+reviewed_for_fixtures:
+  - fixture.conversation.routed.request-01
+value_checks:
+  request_digest: "ae28d658322cdab503efd61c6381957a8532bde822f13c8e7afc96aebc467777"
+  nonce: "5702dfced67761bd6772cafb8d88cdbe170559f82e5c311582799eb7038e7cf2"
+  path_context_ref: "cc003-routed-final-delivery-01"
+  sender_vid: "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"
+  receiver_vid: "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob"
+review_notes:
+  - "Reviewed final routed request baseline using authoring-only dropoff-1 basis and explicit final-delivery path context."

@@ -1,0 +1,8 @@
+vector_id: SV-004
+artifact_ref: artifact.cc-003.vector.SV-004.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-003.binding.negative.no-prior-relationship-01
+review_notes:
+  - "Reviewed as a non-SDK negative semantic derivation from the already reviewed SV-001 direct generic-message baseline."
+  - "Authoritative bytes intentionally match SV-001; the rejection semantics come from the reviewed absent relationship context."

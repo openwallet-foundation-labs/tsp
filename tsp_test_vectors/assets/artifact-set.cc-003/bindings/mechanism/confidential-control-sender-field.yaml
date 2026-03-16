@@ -1,0 +1,11 @@
+binding_id: artifact.cc-003.binding.mechanism.confidential-control-sender-field
+binding_scope: mechanism
+scenario: confidential-control-sender-field
+related_vectors:
+  - AV-001
+reviewed_values:
+  confidentiality_mechanism: Sealed Box
+  sender_field_rule: "outer envelope sender field is present and identifies the sender; the decrypted confidential payload carries an explicit sender identity field equal to the sender identifier"
+comparison_boundary:
+  - the sender-field rule is compared at the semantic constraint layer
+  - cross-mechanism byte identity is not compared

@@ -1,0 +1,10 @@
+vector_id: SV-005
+artifact_ref: artifact.cc-002.vector.SV-005.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-002.binding.direct.request-01
+  - artifact.cc-002.binding.negative.digest-mismatch-01
+review_notes:
+  - "Wire artifact was generated locally under HPKE-Base and decoded successfully as a direct relationship accept carrying a mismatching digest."
+  - "Sender and receiver identifiers matched the frozen direct identity basis for bob and alice."
+  - "Receiver-side open rejected the sample because the reviewed accept digest did not match the frozen direct request digest."

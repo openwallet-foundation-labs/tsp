@@ -1,0 +1,15 @@
+fixture_id: fixture.identity.outer.alice
+artifact_ref: artifact.cc-003.fixture.fixture.identity.outer.alice
+review_status: "pass"
+reviewed_for_bindings:
+  - artifact.cc-003.binding.nested.request-01
+reviewed_for_vectors:
+  - BV-004
+  - BV-005
+value_checks:
+  identifier: "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"
+  verification_key: "Ed25519 / OKP / x=7dUAj8TdKRfQwSkUqa3dyCMr8AhggYRAv2RuMZ514sE"
+  encryption_key: "X25519 / OKP / x=y-FbCCEodGckHNDqCVOcIyf9uESpaepAVRewGxmt_QU"
+review_notes:
+  - "Reused from the reviewed direct identity basis frozen in CC-003 Group A."
+  - "Accepted as the outer alice identity baseline for CC-003 Group B."

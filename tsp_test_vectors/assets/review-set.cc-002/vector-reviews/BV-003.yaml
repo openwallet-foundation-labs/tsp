@@ -1,0 +1,9 @@
+vector_id: BV-003
+artifact_ref: artifact.cc-002.vector.BV-003.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-002.binding.direct.rfd-01
+review_notes:
+  - "Wire artifact was generated locally under HPKE-Base and decoded successfully as a direct decline-or-cancel message."
+  - "Sender and receiver identifiers matched the frozen direct identity basis for alice and bob."
+  - "The protected payload carried explicit sender identity and the reviewed cancel digest matched the direct request baseline."

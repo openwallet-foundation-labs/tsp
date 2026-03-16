@@ -1,0 +1,16 @@
+id: fixture.conversation.routed.path-01
+scope: routed
+scenario: path
+sequence: "01"
+related_identity_fixtures:
+  - fixture.identity.route.alice
+  - fixture.identity.route.hop-1
+  - fixture.identity.route.hop-2
+  - fixture.identity.route.bob
+binding_material:
+  next_hop_vid: "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:b"
+  opaque_payload_ref: -EBAYTSP-AAB5BAeAGRpZDp3ZWI6cmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbTpvcGVud2FsbGV0LWZvdW5kYXRpb24tbGFiczp0c3A6bWFpbjpleGFtcGxlczp0ZXN0OmFsaWNl4BAdZGlkOndlYjpyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tOm9wZW53YWxsZXQtZm91bmRhdGlvbi1sYWJzOnRzcDptYWluOmV4YW1wbGVzOnRlc3Q6Ym9iXAAA4FA4gymfVXv3Lbaw44U1G21Dt7hsubFSXaB2BRIUxgaL91PBM0cjWxOoJIJsrRW51mI03gD7lK3tVintXfXD0-Iiox9e-1E9lOqrysho8vy2mCIregyxZ0Dx0-xalqI0T4lUzUxXt8GztHCvZ9nwn6BKrLRmYBO5jvVxzpIniVrj8cLC4dZLoh0CjCDc1HTzn2wNnlSMJZYwUjxIhh_lZIOqM4akQcnXKLk3-CAW-KAW0BDHEahStQ_pYhodHLpjThAH_DhyeOBLn_WJv7zWQY_buT2mCIweYUiwzgJ9Ahun3g0knANv9K9WxXnNdUrkx0kF
+  remaining_route_ref: "[\"did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob\"]"
+used_by_vectors:
+  - BV-006
+  - SV-003

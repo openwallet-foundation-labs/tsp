@@ -1,0 +1,16 @@
+fixture_id: fixture.identity.outer.bob
+artifact_ref: artifact.cc-002.fixture.fixture.identity.outer.bob
+review_status: "pass"
+reviewed_for_bindings:
+  - artifact.cc-002.binding.nested.request-01
+  - artifact.cc-002.binding.nested.accept-01
+reviewed_for_vectors:
+  - BV-004
+  - BV-005
+value_checks:
+  identifier: "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob"
+  verification_key: "Ed25519 / OKP / x=NBcP690uVtoJChxvBCxZyy2inI-R24G3aNBWOKwU5lI"
+  encryption_key: "X25519 / OKP / x=QFn5SXupDgBTtzkGc2W3MvoSCHjd8uUD0dapfEXqET4"
+review_notes:
+  - "reviewed by reuse of the direct bob identity basis accepted for CC-002 Group A"
+  - "accepted as the outer bob nested identity baseline for CC-002 Group B"

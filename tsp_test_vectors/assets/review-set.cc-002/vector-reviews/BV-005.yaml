@@ -1,0 +1,10 @@
+vector_id: BV-005
+artifact_ref: artifact.cc-002.vector.BV-005.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-002.binding.nested.request-01
+  - artifact.cc-002.binding.nested.accept-01
+review_notes:
+  - "Wire artifact was generated locally under HPKE-Base using the persisted private nested basis and decoded successfully as a nested relationship accept."
+  - "Outer sender and receiver identifiers matched the frozen outer bob and alice identity basis."
+  - "The opened nested accept carried the reviewed inner nested bob VID and matched `artifact.cc-002.binding.nested.accept-01.reply_digest`."

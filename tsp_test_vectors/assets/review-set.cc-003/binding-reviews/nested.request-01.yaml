@@ -1,0 +1,16 @@
+binding_id: artifact.cc-003.binding.nested.request-01
+review_status: "pass"
+reviewed_for_vectors:
+  - BV-004
+  - BV-005
+reviewed_for_fixtures:
+  - fixture.conversation.nested.request-01
+value_checks:
+  request_digest: "80efa8a1fcdd3b1faace99e7c0151ab9dd895d5b16617e5cff8aed47666877bb"
+  nonce: "b89bd6c92451fb9200aa86e87cb2653bc10825681e0988de33da09522d7e0ad1"
+  outer_context_ref: "cc003-outer-alice-bob-bidirectional"
+  inner_sender_vid: "did:peer:2.Vz6MuxGPkQz8Kdq492rEYX5pRy8KQj9v5FxiE4zyCBpR33Y9D.Ez6Lc3ukBgTQgyFQofRnRty6eFnjt8Q4kav7wqjiBAZzhSvTj.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0"
+review_notes:
+  - "Candidate generated under Sealed Box using the persisted private nested basis and the repaired generated-request closure."
+  - "The reviewed nested request digest matched the fresh request baseline linked to the persisted private nested basis."
+  - "The reviewed nonce and inner sender VID were recovered from the decrypted nested relation proposal payload."

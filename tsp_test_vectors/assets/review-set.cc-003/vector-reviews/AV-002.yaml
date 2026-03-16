@@ -1,0 +1,8 @@
+vector_id: AV-002
+artifact_ref: artifact.cc-003.vector.AV-002.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-003.binding.mechanism.ciphertext-family
+review_notes:
+  - "This review reuses the frozen `BV-001` request wire as the ciphertext-family mechanism sample."
+  - "The reviewed `Sealed Box` sample decodes under the `NaclEssr` CESR ciphertext family."

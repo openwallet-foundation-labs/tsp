@@ -1,0 +1,17 @@
+binding_id: artifact.cc-001.binding.direct.request-01
+review_status: "pass"
+reviewed_for_vectors:
+  - BV-001
+  - BV-002
+  - SV-005
+reviewed_for_fixtures:
+  - fixture.conversation.direct.request-01
+value_checks:
+  request_digest: "9349438b85c7e251fb98d9d96d82a6971247c0facc865e6adb3f0e9fcb577fa1"
+  nonce: "f592e733dac389961dac975375ffdc61534e5a503aa46279a9e9c68198d891e8"
+  sender_vid: "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"
+  receiver_vid: "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob"
+review_notes:
+  - "Candidate generated under HPKE-Auth using `cargo test -p tsp_sdk --no-default-features --features async authoring_cc001_group_a_request_candidate -- --ignored --nocapture`."
+  - "Request digest matched the sender-side stored relationship thread_id and the receiver-side opened request thread_id."
+  - "Nonce was recovered from the decrypted direct relation proposal payload and bound to the current reviewed request baseline."

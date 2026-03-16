@@ -1,0 +1,30 @@
+[package]
+name = "tsp_test_vectors"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+essr = ["tsp_sdk/essr"]
+nacl = ["tsp_sdk/nacl"]
+pq = ["tsp_sdk/pq"]
+
+[[bin]]
+name = "tsp-vector-validator"
+path = "src/bin/tsp-vector-validator.rs"
+
+[dependencies]
+base64ct = { workspace = true }
+clap = { workspace = true }
+crypto_box = { workspace = true }
+ed25519-dalek = { workspace = true }
+hpke = { workspace = true }
+serde_json = { workspace = true }
+url = { workspace = true }
+tokio = { workspace = true }
+tsp_sdk = { path = "../tsp_sdk", default-features = false, features = ["async", "resolve"] }

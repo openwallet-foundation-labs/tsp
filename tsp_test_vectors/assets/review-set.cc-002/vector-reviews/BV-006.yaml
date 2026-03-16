@@ -1,0 +1,7 @@
+vector_id: BV-006
+artifact_ref: artifact.cc-002.vector.BV-006.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-002.binding.routed.path-01
+review_notes:
+  - "Reviewed as a routed-hop unwrap sample at hop-1; next hop and remaining route match the routed path binding."

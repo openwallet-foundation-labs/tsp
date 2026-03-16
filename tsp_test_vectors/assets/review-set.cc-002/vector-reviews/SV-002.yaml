@@ -1,0 +1,8 @@
+vector_id: SV-002
+artifact_ref: artifact.cc-002.vector.SV-002.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-002.binding.nested.message-01
+review_notes:
+  - "Reviewed as a nested generic confidential-message sample under HPKE-Base."
+  - "Open result is sender inner alice-1, receiver inner bob-1, payload 'hello nested world', no non-confidential data, crypto type HpkeEssr, signature type Ed25519."

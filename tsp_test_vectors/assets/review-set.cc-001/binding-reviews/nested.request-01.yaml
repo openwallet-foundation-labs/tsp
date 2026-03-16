@@ -1,0 +1,16 @@
+binding_id: artifact.cc-001.binding.nested.request-01
+review_status: "pass"
+reviewed_for_vectors:
+  - BV-004
+  - BV-005
+reviewed_for_fixtures:
+  - fixture.conversation.nested.request-01
+value_checks:
+  request_digest: "daf1746aad3d772d5c02548fff5df37103580d5be191925cc60f19de68d1e59b"
+  nonce: "f744d6e0b2c0dc86e5a44b20caef89312577d9f2bb5742e37e9f24537bb4c19a"
+  outer_context_ref: "cc001-outer-alice-bob-bidirectional"
+  inner_sender_vid: "did:peer:2.Vz6Mv9AMFFH8BhQQ7TyhGE9byBMtudjKBSAyeSzSgR2qgQ7Ki.Ez6LbunBoqPTR42iNhZEudnLTWLhno3mpuXzzJUeXwTaxEgc2.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0"
+review_notes:
+  - "Candidate generated under HPKE-Auth using the persisted private nested basis and the repaired generated-request closure."
+  - "The reviewed nested request digest matched the outstanding nested thread id stored on the outer bidirectional alice-bob relation."
+  - "The reviewed nonce and inner sender VID were recovered from the decrypted nested relation proposal payload."

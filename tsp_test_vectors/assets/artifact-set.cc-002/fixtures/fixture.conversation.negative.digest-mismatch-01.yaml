@@ -1,0 +1,14 @@
+id: fixture.conversation.negative.digest-mismatch-01
+scope: negative
+scenario: digest-mismatch
+sequence: "01"
+related_identity_fixtures:
+  - fixture.identity.direct.alice
+  - fixture.identity.direct.bob
+related_conversation_fixtures:
+  - fixture.conversation.direct.request-01
+binding_material:
+  expected_request_digest: "226fc4875774deb91948d240b1b227cd34daa2de2d0b3e1e1a646e6200dd027f"
+  mismatching_request_digest: "226fc4875774deb91948d240b1b227cd34daa2de2d0b3e1e1a646e6200dd027e"
+used_by_vectors:
+  - SV-005

@@ -1,0 +1,18 @@
+id: fixture.conversation.nested.message-01
+scope: nested
+scenario: message
+sequence: "01"
+related_identity_fixtures:
+  - fixture.identity.outer.alice
+  - fixture.identity.outer.bob
+  - fixture.identity.inner.alice-1
+  - fixture.identity.inner.bob-1
+related_conversation_fixtures:
+  - fixture.conversation.nested.request-01
+  - fixture.conversation.nested.accept-01
+binding_material:
+  outer_context_ref: "cc003-outer-alice-bob-bidirectional"
+  inner_context_ref: "cc003-inner-alice-1-bob-1-bidirectional"
+  payload_semantics_ref: "cc003-nested-message-01"
+used_by_vectors:
+  - SV-002

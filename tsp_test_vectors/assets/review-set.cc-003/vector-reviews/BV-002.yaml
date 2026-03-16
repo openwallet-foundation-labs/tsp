@@ -1,0 +1,10 @@
+vector_id: BV-002
+artifact_ref: artifact.cc-003.vector.BV-002.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-003.binding.direct.request-01
+  - artifact.cc-003.binding.direct.accept-01
+review_notes:
+  - "Wire artifact was generated locally under Sealed Box and decoded successfully as a direct relationship accept."
+  - "Sender and receiver identifiers matched the frozen direct identity basis for bob and alice."
+  - "The protected payload carried explicit sender identity and the opened reply digest matched `artifact.cc-003.binding.direct.accept-01.reply_digest`."

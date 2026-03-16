@@ -1,0 +1,11 @@
+binding_id: artifact.cc-003.binding.mechanism.ciphertext-family
+binding_scope: mechanism
+scenario: ciphertext-family
+related_vectors:
+  - AV-002
+reviewed_values:
+  confidentiality_mechanism: Sealed Box
+  cesr_ciphertext_family: "NaclEssr"
+comparison_boundary:
+  - ciphertext family is compared exactly
+  - payload bytes are not compared across mechanisms

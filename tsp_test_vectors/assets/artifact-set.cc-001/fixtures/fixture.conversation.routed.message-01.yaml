@@ -1,0 +1,16 @@
+id: fixture.conversation.routed.message-01
+scope: routed
+scenario: message
+sequence: "01"
+related_identity_fixtures:
+  - fixture.identity.route.alice
+  - fixture.identity.route.hop-1
+  - fixture.identity.route.hop-2
+  - fixture.identity.route.bob
+related_conversation_fixtures:
+  - fixture.conversation.routed.path-01
+binding_material:
+  path_context_ref: "cc001-routed-final-delivery-01"
+  payload_semantics_ref: "cc001-routed-message-01"
+used_by_vectors:
+  - SV-003

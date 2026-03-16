@@ -1,0 +1,15 @@
+binding_id: artifact.cc-003.binding.negative.no-prior-relationship-01
+review_status: "pass"
+reviewed_for_vectors:
+  - SV-004
+reviewed_for_fixtures:
+  - fixture.conversation.negative.no-prior-relationship-01
+value_checks:
+  source_vector_ref: "artifact.cc-003.vector.SV-001.wire"
+  source_binding_ref: "artifact.cc-003.binding.direct.message-01"
+  authorization_state: "no-prior-relationship"
+  relationship_context_ref: "absent"
+  payload_semantics_ref: "cc003-direct-message-01"
+review_notes:
+  - "Reviewed through the non-SDK Group E derivation path from the already reviewed SV-001 direct generic-message baseline."
+  - "The negative semantics come from absent relationship context, not from distinct wire bytes."

@@ -1,0 +1,16 @@
+binding_id: artifact.cc-001.binding.direct.accept-01
+binding_scope: direct
+scenario: accept
+related_vectors:
+  - BV-002
+related_fixture_refs:
+  - fixture.conversation.direct.accept-01
+  - fixture.conversation.direct.request-01
+reviewed_values:
+  request_digest: "9349438b85c7e251fb98d9d96d82a6971247c0facc865e6adb3f0e9fcb577fa1"
+  reply_digest: "9349438b85c7e251fb98d9d96d82a6971247c0facc865e6adb3f0e9fcb577fa1"
+  sender_vid: "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob"
+  receiver_vid: "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"
+comparison_boundary:
+  - request digest must bind exactly to the reviewed request context
+  - reply digest is compared exactly where required by the vector

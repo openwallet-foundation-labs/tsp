@@ -1,0 +1,13 @@
+binding_id: artifact.cc-003.binding.direct.rfd-01
+review_status: "pass"
+reviewed_for_vectors:
+  - BV-003
+reviewed_for_fixtures:
+  - fixture.conversation.direct.rfd-01
+value_checks:
+  digest: "3f9a7c884a9735565dd8f85d1807eb0225a0a076c3f9c7c6650043c122fdc1dd"
+  reviewed_context: "pending-request-cancel"
+review_notes:
+  - "Candidate generated under Sealed Box using `cargo test -p tsp_sdk --no-default-features --features async,nacl authoring_cc003_group_a_rfd_candidate -- --ignored --nocapture`."
+  - "The reviewed cancel digest matched the current direct request baseline."
+  - "The reviewed context is pending-request-cancel and the receiver-side state returned to unrelated."

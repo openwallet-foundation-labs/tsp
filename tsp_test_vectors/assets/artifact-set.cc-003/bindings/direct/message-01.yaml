@@ -1,0 +1,13 @@
+binding_id: artifact.cc-003.binding.direct.message-01
+binding_scope: direct
+scenario: message
+related_vectors:
+  - SV-001
+related_fixture_refs:
+  - fixture.conversation.direct.message-01
+reviewed_values:
+  relationship_context_ref: "cc003-direct-alice-bob-bidirectional"
+  payload_semantics_ref: "cc003-direct-message-01"
+comparison_boundary:
+  - reviewed sender, receiver, and payload semantics are compared at the semantic layer
+  - regenerated confidential bytes are not compared

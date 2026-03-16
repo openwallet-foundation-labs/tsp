@@ -1,0 +1,18 @@
+id: fixture.conversation.routed.accept-01
+scope: routed
+scenario: accept
+sequence: "01"
+related_identity_fixtures:
+  - fixture.identity.route.alice
+  - fixture.identity.route.hop-1
+  - fixture.identity.route.hop-2
+  - fixture.identity.route.dropoff-1
+  - fixture.identity.route.bob
+related_conversation_fixtures:
+  - fixture.conversation.routed.request-01
+binding_material:
+  request_digest: "ae28d658322cdab503efd61c6381957a8532bde822f13c8e7afc96aebc467777"
+  reply_digest: "ae28d658322cdab503efd61c6381957a8532bde822f13c8e7afc96aebc467777"
+  path_context_ref: "cc003-routed-final-delivery-01"
+used_by_vectors:
+  - BV-008

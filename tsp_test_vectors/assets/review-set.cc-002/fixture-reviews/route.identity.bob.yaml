@@ -1,0 +1,13 @@
+fixture_id: fixture.identity.route.bob
+artifact_ref: artifact.cc-002.fixture.fixture.identity.route.bob
+review_status: "pass"
+reviewed_for_bindings:
+  - artifact.cc-002.binding.routed.path-01
+reviewed_for_vectors:
+  - BV-006
+value_checks:
+  identifier: "reviewed"
+  verification_key: "reviewed"
+  encryption_key: "reviewed"
+review_notes:
+  - "Reviewed routed endpoint basis reused from the frozen CC-002 direct bob identity."

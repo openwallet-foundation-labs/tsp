@@ -1,0 +1,11 @@
+binding_id: artifact.cc-001.binding.mechanism.ciphertext-family
+binding_scope: mechanism
+scenario: ciphertext-family
+related_vectors:
+  - AV-002
+reviewed_values:
+  confidentiality_mechanism: HPKE-Auth
+  cesr_ciphertext_family: "HpkeAuth"
+comparison_boundary:
+  - ciphertext family is compared exactly
+  - payload bytes are not compared across mechanisms

@@ -1,0 +1,9 @@
+vector_id: AV-003
+artifact_ref: artifact.cc-001.vector.AV-003.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-001.binding.mechanism.non-confidential-binding
+review_notes:
+  - "Wire artifact is a reviewed HPKE-Auth direct relationship request sample carrying explicit non-confidential data."
+  - "The unmodified sample opens successfully and the tampered-header variant is rejected."
+  - "This sample is mechanism-review material; it is not reused as the direct request baseline for BV-001."

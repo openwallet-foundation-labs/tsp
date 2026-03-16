@@ -1,0 +1,10 @@
+vector_id: SV-005
+artifact_ref: artifact.cc-001.vector.SV-005.wire
+review_status: "pass"
+reviewed_bindings:
+  - artifact.cc-001.binding.direct.request-01
+  - artifact.cc-001.binding.negative.digest-mismatch-01
+review_notes:
+  - "Wire artifact is a direct accept-shaped confidential control sample that carries a deliberately mismatching digest."
+  - "The receiver rejected the sample with a relationship error rather than accepting it as a valid upgrade."
+  - "The mismatching accept digest differs from the frozen direct request digest by one byte."

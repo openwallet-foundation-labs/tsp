@@ -1,0 +1,18 @@
+fixture_id: fixture.identity.direct.alice
+artifact_ref: artifact.cc-002.fixture.fixture.identity.direct.alice
+review_status: "pass"
+reviewed_for_bindings:
+  - artifact.cc-002.binding.direct.request-01
+  - artifact.cc-002.binding.direct.rfd-01
+reviewed_for_vectors:
+  - BV-001
+  - BV-002
+  - BV-003
+  - SV-005
+value_checks:
+  identifier: "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice"
+  verification_key: "Ed25519 / OKP / x=7dUAj8TdKRfQwSkUqa3dyCMr8AhggYRAv2RuMZ514sE"
+  encryption_key: "X25519 / OKP / x=y-FbCCEodGckHNDqCVOcIyf9uESpaepAVRewGxmt_QU"
+review_notes:
+  - "reviewed against examples/test/alice/did.json and examples/test/alice/piv.json"
+  - "accepted as the direct identity baseline for CC-002 Group A"

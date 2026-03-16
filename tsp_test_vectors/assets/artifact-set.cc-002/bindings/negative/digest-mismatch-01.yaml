@@ -1,0 +1,14 @@
+binding_id: artifact.cc-002.binding.negative.digest-mismatch-01
+binding_scope: negative
+scenario: digest-mismatch
+related_vectors:
+  - SV-005
+related_fixture_refs:
+  - fixture.conversation.direct.request-01
+  - fixture.conversation.negative.digest-mismatch-01
+reviewed_values:
+  expected_request_digest: "226fc4875774deb91948d240b1b227cd34daa2de2d0b3e1e1a646e6200dd027f"
+  mismatching_accept_digest: "226fc4875774deb91948d240b1b227cd34daa2de2d0b3e1e1a646e6200dd027e"
+comparison_boundary:
+  - mismatch relation is compared exactly
+  - local error categorization is not compared

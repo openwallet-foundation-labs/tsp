@@ -1,0 +1,14 @@
+id: fixture.conversation.negative.no-prior-relationship-01
+scope: negative
+scenario: no-prior-relationship
+sequence: "01"
+related_conversation_fixtures:
+  - fixture.conversation.direct.message-01
+binding_material:
+  source_vector_ref: "artifact.cc-001.vector.SV-001.wire"
+  source_binding_ref: "artifact.cc-001.binding.direct.message-01"
+  authorization_state: "no-prior-relationship"
+  relationship_context_ref: "absent"
+  payload_semantics_ref: "cc001-direct-message-01"
+used_by_vectors:
+  - SV-004

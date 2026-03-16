@@ -1,0 +1,12 @@
+id: fixture.conversation.direct.message-01
+scope: direct
+scenario: message
+sequence: "01"
+related_identity_fixtures:
+  - fixture.identity.direct.alice
+  - fixture.identity.direct.bob
+binding_material:
+  relationship_context_ref: "cc003-direct-alice-bob-bidirectional"
+  payload_semantics_ref: "cc003-direct-message-01"
+used_by_vectors:
+  - SV-001

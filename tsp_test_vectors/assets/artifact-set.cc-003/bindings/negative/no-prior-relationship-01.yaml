@@ -1,0 +1,17 @@
+binding_id: artifact.cc-003.binding.negative.no-prior-relationship-01
+binding_scope: negative
+scenario: no-prior-relationship
+related_vectors:
+  - SV-004
+related_fixture_refs:
+  - fixture.conversation.negative.no-prior-relationship-01
+reviewed_values:
+  source_vector_ref: "artifact.cc-003.vector.SV-001.wire"
+  source_binding_ref: "artifact.cc-003.binding.direct.message-01"
+  source_fixture_ref: "fixture.conversation.direct.message-01"
+  authorization_state: "no-prior-relationship"
+  relationship_context_ref: "absent"
+  payload_semantics_ref: "cc003-direct-message-01"
+comparison_boundary:
+  - source wire is reused from the reviewed positive baseline
+  - missing relationship context is compared at the semantic layer

@@ -110,6 +110,7 @@ arbitrary = { workspace = true }
 wasm-bindgen-test = "0.3.0"
 rand_chacha = "0.3.1"
 tempfile = "3.12"
+tsp_test_vectors = { path = "../tsp_test_vectors" }
 
 # bench
 chrono = { version = "0.4", default-features = false, features = ["std"] }

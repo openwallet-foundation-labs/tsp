@@ -1,0 +1,15 @@
+id: fixture.conversation.direct.request-01
+scope: direct
+scenario: request
+sequence: "01"
+related_identity_fixtures:
+  - fixture.identity.direct.alice
+  - fixture.identity.direct.bob
+binding_material:
+  nonce: f592e733dac389961dac975375ffdc61534e5a503aa46279a9e9c68198d891e8
+  request_digest: 9349438b85c7e251fb98d9d96d82a6971247c0facc865e6adb3f0e9fcb577fa1
+  thread_binding: 9349438b85c7e251fb98d9d96d82a6971247c0facc865e6adb3f0e9fcb577fa1
+used_by_vectors:
+  - BV-001
+  - BV-002
+  - SV-005
