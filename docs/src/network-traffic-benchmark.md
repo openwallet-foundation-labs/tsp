@@ -3,19 +3,25 @@ TSP Network Traffic Benchmark
 
 For local `seal` and `open` benchmark, see [Benchmark](./benchmark.md).
 Use `tsp bench` for sustained transport traffic tests.
+The `bench` subcommand is behind the optional `bench` feature in `examples`.
+The commands below use `cargo run` so the required feature is explicit.
 
 ## Quick start
 
 Server:
 
 ```sh
-tsp --wallet bob bench server
+cargo run -p examples --bin tsp --features bench -- \
+  --wallet bob \
+  bench server
 ```
 
 Client:
 
 ```sh
-tsp --wallet alice bench client \
+cargo run -p examples --bin tsp --features bench -- \
+  --wallet alice \
+  bench client \
   --profile local-tcp \
   --payload-size 1KiB \
   --duration 30s
@@ -35,11 +41,16 @@ tsp --wallet alice bench client \
 Hosted HTTP baseline:
 
 ```sh
-tsp --wallet bench-http-b bench server --profile hosted-http
+cargo run -p examples --bin tsp --features bench -- \
+  --wallet bench-http-b \
+  bench server \
+  --profile hosted-http
 ```
 
 ```sh
-tsp --wallet bench-http-a bench client \
+cargo run -p examples --bin tsp --features bench -- \
+  --wallet bench-http-a \
+  bench client \
   --profile hosted-http \
   --payload-size 1KiB \
   --duration 30s
@@ -50,7 +61,9 @@ tsp --wallet bench-http-a bench client \
 Latency mode:
 
 ```sh
-tsp --wallet alice bench client \
+cargo run -p examples --bin tsp --features bench -- \
+  --wallet alice \
+  bench client \
   --payload-size 1KiB \
   --duration 30s \
   --mode latency
@@ -77,13 +90,15 @@ Server and client support `--json` for machine-readable summary output.
 Example:
 
 ```sh
-tsp --wallet alice bench client ... --json
+cargo run -p examples --bin tsp --features bench -- \
+  --wallet alice \
+  bench client ... --json
 ```
 
 ## Compare with `iperf3`
 
 1. Run `iperf3` with the same host, port, payload, and duration.
-2. Run `tsp bench` with the same settings.
+2. Run `tsp bench` with the same settings, using a binary built with `--features bench`.
 3. Compare bandwidth and latency distribution.
 
 For baseline tests, prefer HTTP(S) first because reqwest reuses pooled connections.

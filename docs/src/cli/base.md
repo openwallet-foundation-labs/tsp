@@ -200,15 +200,20 @@ The TSP SDK also provides a couple more transport types and provides methods to 
 ### Transport benchmark traffic (`bench`)
 
 The CLI includes an `iperf`-like benchmark mode for sustained traffic tests.
+This subcommand is available only when the `examples` crate is built with the `bench` feature.
 
 Quick start:
 
 ```sh
-tsp --wallet bob bench server
+cargo run -p examples --bin tsp --features bench -- \
+  --wallet bob \
+  bench server
 ```
 
 ```sh
-tsp --wallet alice bench client \
+cargo run -p examples --bin tsp --features bench -- \
+  --wallet alice \
+  bench client \
   --profile local-tcp \
   --payload-size 1KiB \
   --duration 30s
