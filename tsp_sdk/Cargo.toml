@@ -23,6 +23,7 @@ nacl = ["essr"]
 pq = ["dep:hpke_pq", "dep:ml-dsa", "essr"]
 bench-callgrind = ["dep:gungraun"]
 bench-criterion = ["dep:criterion"]
+bench-network-timings = []
 async = [
   "resolve",
   "aries-askar",

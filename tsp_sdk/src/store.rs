@@ -12,6 +12,8 @@ use crate::{
 #[cfg(feature = "async")]
 use bytes::Bytes;
 use bytes::BytesMut;
+#[cfg(feature = "bench-network-timings")]
+use std::time::Instant;
 use std::{
     collections::HashMap,
     fmt::Display,
@@ -427,14 +429,33 @@ impl SecureStore {
         receiver: &str,
         nonconfidential_data: Option<&[u8]>,
         message: &[u8],
+        #[cfg(feature = "bench-network-timings")] timings: &mut crate::BenchNetworkTimings,
     ) -> Result<(Url, Vec<u8>), Error> {
         // ANCHOR_END: seal_message-mbBook
-        self.seal_message_payload(
+        #[cfg(feature = "bench-network-timings")]
+        let signature_before = timings.signature_ns;
+        #[cfg(feature = "bench-network-timings")]
+        let started = Instant::now();
+
+        let result = self.seal_message_payload(
             sender,
             receiver,
             nonconfidential_data,
             Payload::Content(message),
-        )
+            #[cfg(feature = "bench-network-timings")]
+            timings,
+        );
+
+        #[cfg(feature = "bench-network-timings")]
+        if result.is_ok() {
+            let elapsed_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+            let signature_delta = timings.signature_ns.saturating_sub(signature_before);
+            timings.seal_core_ns = timings
+                .seal_core_ns
+                .saturating_add(elapsed_ns.saturating_sub(signature_delta));
+        }
+
+        result
     }
 
     /// Seal a TSP message.
@@ -444,8 +465,17 @@ impl SecureStore {
         receiver: &str,
         nonconfidential_data: Option<&[u8]>,
         payload: Payload<&[u8]>,
+        #[cfg(feature = "bench-network-timings")] timings: &mut crate::BenchNetworkTimings,
     ) -> Result<(url::Url, Vec<u8>), Error> {
-        self.seal_message_payload_and_hash(sender, receiver, nonconfidential_data, payload, None)
+        self.seal_message_payload_and_hash(
+            sender,
+            receiver,
+            nonconfidential_data,
+            payload,
+            None,
+            #[cfg(feature = "bench-network-timings")]
+            timings,
+        )
     }
 
     /// Seal a TSP message and return the digest of the payload
@@ -456,6 +486,7 @@ impl SecureStore {
         nonconfidential_data: Option<&[u8]>,
         payload: Payload<&[u8]>,
         digest: Option<&mut Digest>,
+        #[cfg(feature = "bench-network-timings")] timings: &mut crate::BenchNetworkTimings,
     ) -> Result<(url::Url, Vec<u8>), Error> {
         let sender = self.get_private_vid(sender)?;
         let receiver_context = self.get_vid(receiver)?;
@@ -477,6 +508,8 @@ impl SecureStore {
                         nonconfidential_data,
                         payload,
                         digest,
+                        #[cfg(feature = "bench-network-timings")]
+                        timings,
                     )?;
 
                     let first_sender = self.get_private_vid(first_sender)?;
@@ -496,6 +529,8 @@ impl SecureStore {
                 first_hop.vid.identifier(),
                 None,
                 Payload::RoutedMessage(hops, &inner_message),
+                #[cfg(feature = "bench-network-timings")]
+                timings,
             );
         }
 
@@ -522,6 +557,8 @@ impl SecureStore {
                     &*inner_sender,
                     Some(&*receiver_context.vid),
                     payload.as_bytes(),
+                    #[cfg(feature = "bench-network-timings")]
+                    timings,
                 )?
             } else {
                 crate::crypto::seal_and_hash(
@@ -530,6 +567,8 @@ impl SecureStore {
                     None,
                     payload,
                     digest,
+                    #[cfg(feature = "bench-network-timings")]
+                    timings,
                 )?
             };
 
@@ -541,6 +580,8 @@ impl SecureStore {
                 parent_receiver.identifier(),
                 nonconfidential_data,
                 Payload::NestedMessage(&inner_message),
+                #[cfg(feature = "bench-network-timings")]
+                timings,
             );
         }
 
@@ -551,6 +592,8 @@ impl SecureStore {
             nonconfidential_data,
             payload,
             digest,
+            #[cfg(feature = "bench-network-timings")]
+            timings,
         )?;
 
         Ok((receiver_context.vid.endpoint().clone(), tsp_message))
@@ -568,7 +611,15 @@ impl SecureStore {
         payload: Payload<&[u8]>,
     ) -> Result<Vec<u8>, Error> {
         let sender = self.get_private_vid(sender)?;
-        let message = crate::crypto::sign(&*sender, None, payload.as_bytes())?;
+        #[cfg(feature = "bench-network-timings")]
+        let mut timings = crate::BenchNetworkTimings::default();
+        let message = crate::crypto::sign(
+            &*sender,
+            None,
+            payload.as_bytes(),
+            #[cfg(feature = "bench-network-timings")]
+            &mut timings,
+        )?;
 
         Ok(message)
     }
@@ -595,6 +646,8 @@ impl SecureStore {
         route: Vec<&[u8]>,
         opaque_payload: &[u8],
     ) -> Result<(Url, Vec<u8>), Error> {
+        #[cfg(feature = "bench-network-timings")]
+        let mut timings = crate::BenchNetworkTimings::default();
         if route.is_empty() {
             // we are the final delivery point, we should be the 'next_hop'
             let sender = self.get_vid(next_hop)?;
@@ -613,6 +666,8 @@ impl SecureStore {
                 recipient.identifier(),
                 None,
                 Payload::NestedMessage(opaque_payload),
+                #[cfg(feature = "bench-network-timings")]
+                &mut timings,
             )
         } else {
             // we are an intermediary, continue sending the message
@@ -630,6 +685,8 @@ impl SecureStore {
                 next_hop_context.vid.identifier(),
                 None,
                 Payload::RoutedMessage(route, opaque_payload),
+                #[cfg(feature = "bench-network-timings")]
+                &mut timings,
             )
         }
     }
@@ -650,6 +707,7 @@ impl SecureStore {
     pub fn open_message<'a>(
         &self,
         message: &'a mut [u8],
+        #[cfg(feature = "bench-network-timings")] timings: &mut crate::BenchNetworkTimings,
     ) -> Result<ReceivedTspMessage<&'a [u8]>, Error> {
         // ANCHOR_END: open_message-mbBook
         let probed_message = crate::cesr::probe(message)?;
@@ -676,7 +734,13 @@ impl SecureStore {
                 };
 
                 let (nonconfidential_data, payload, crypto_type, signature_type) =
-                    crate::crypto::open(&*receiver_pid, &*sender_vid, message)?;
+                    crate::crypto::open(
+                        &*receiver_pid,
+                        &*sender_vid,
+                        message,
+                        #[cfg(feature = "bench-network-timings")]
+                        timings,
+                    )?;
 
                 match payload {
                     Payload::Content(message) => Ok(ReceivedTspMessage::GenericMessage {
@@ -703,7 +767,11 @@ impl SecureStore {
                             ));
                         }
 
-                        let mut received_message = self.open_message(inner)?;
+                        let mut received_message = self.open_message(
+                            inner,
+                            #[cfg(feature = "bench-network-timings")]
+                            timings,
+                        )?;
 
                         // if inner message was not encrypted, but outer message was encrypted by the same sender,
                         // then inner message was also sufficiently encrypted
@@ -804,7 +872,11 @@ impl SecureStore {
 
                         // the act of opening this message is simply verifying the signature, because this SDK doesn't yet
                         // support sending data as part of control messages. This can easily change.
-                        let _ = self.open_message(inner)?;
+                        let _ = self.open_message(
+                            inner,
+                            #[cfg(feature = "bench-network-timings")]
+                            timings,
+                        )?;
 
                         self.set_parent_for_vid(&inner_vid, Some(&sender))?;
 
@@ -832,7 +904,11 @@ impl SecureStore {
                         let connect_to_vid = std::str::from_utf8(connect_to_vid)?.to_string();
                         self.add_nested_vid(&vid)?;
 
-                        let _ = self.open_message(inner)?;
+                        let _ = self.open_message(
+                            inner,
+                            #[cfg(feature = "bench-network-timings")]
+                            timings,
+                        )?;
 
                         self.set_parent_for_vid(&vid, Some(&sender))?;
                         self.add_nested_relation(&sender, &vid, thread_id)?;
@@ -913,7 +989,12 @@ impl SecureStore {
                     return Err(Error::UnverifiedVid(sender.to_string()));
                 };
 
-                let (message, message_type) = crate::crypto::verify(&*sender_vid, message)?;
+                let (message, message_type) = crate::crypto::verify(
+                    &*sender_vid,
+                    message,
+                    #[cfg(feature = "bench-network-timings")]
+                    timings,
+                )?;
 
                 Ok(ReceivedTspMessage::GenericMessage {
                     sender,
@@ -935,6 +1016,8 @@ impl SecureStore {
     ) -> Result<(Url, Vec<u8>), Error> {
         let sender = self.get_private_vid(sender)?;
         let receiver = self.get_verified_vid(receiver)?;
+        #[cfg(feature = "bench-network-timings")]
+        let mut timings = crate::BenchNetworkTimings::default();
 
         let path = route;
         let route = route.map(|collection| collection.iter().map(|vid| vid.as_ref()).collect());
@@ -949,6 +1032,8 @@ impl SecureStore {
                 thread_id: Default::default(),
             },
             Some(&mut thread_id),
+            #[cfg(feature = "bench-network-timings")]
+            &mut timings,
         )?;
 
         let (transport, tsp_message) = if let Some(hop_list) = path {
@@ -977,11 +1062,15 @@ impl SecureStore {
         thread_id: Digest,
         route: Option<&[&str]>,
     ) -> Result<(Url, Vec<u8>), Error> {
+        #[cfg(feature = "bench-network-timings")]
+        let mut timings = crate::BenchNetworkTimings::default();
         let (transport, tsp_message) = self.seal_message_payload(
             sender,
             receiver,
             None,
             Payload::AcceptRelationship { thread_id },
+            #[cfg(feature = "bench-network-timings")]
+            &mut timings,
         )?;
 
         let (transport, tsp_message) = if let Some(hop_list) = route {
@@ -1022,11 +1111,15 @@ impl SecureStore {
             }
         };
 
+        #[cfg(feature = "bench-network-timings")]
+        let mut timings = crate::BenchNetworkTimings::default();
         let (transport, message) = self.seal_message_payload(
             sender,
             receiver,
             None,
             Payload::CancelRelationship { thread_id },
+            #[cfg(feature = "bench-network-timings")]
+            &mut timings,
         )?;
 
         Ok((transport, message))
@@ -1040,10 +1133,18 @@ impl SecureStore {
     ) -> Result<((Url, Vec<u8>), OwnedVid), Error> {
         let sender = self.get_private_vid(parent_sender)?;
         let receiver = self.get_verified_vid(receiver)?;
+        #[cfg(feature = "bench-network-timings")]
+        let mut timings = crate::BenchNetworkTimings::default();
 
         let nested_vid = self.make_propositioning_vid(sender.identifier())?;
 
-        let inner_message = crate::crypto::sign(&nested_vid, None, &[])?;
+        let inner_message = crate::crypto::sign(
+            &nested_vid,
+            None,
+            &[],
+            #[cfg(feature = "bench-network-timings")]
+            &mut timings,
+        )?;
 
         let mut thread_id = Default::default();
         let (endpoint, tsp_message) = self.seal_message_payload_and_hash(
@@ -1055,6 +1156,8 @@ impl SecureStore {
                 thread_id: Default::default(),
             },
             Some(&mut thread_id),
+            #[cfg(feature = "bench-network-timings")]
+            &mut timings,
         )?;
 
         self.add_nested_thread_id(receiver.identifier(), thread_id)?;
@@ -1072,6 +1175,8 @@ impl SecureStore {
         nested_receiver: &str,
         thread_id: Digest,
     ) -> Result<((Url, Vec<u8>), OwnedVid), Error> {
+        #[cfg(feature = "bench-network-timings")]
+        let mut timings = crate::BenchNetworkTimings::default();
         let nested_vid = self.make_propositioning_vid(parent_sender)?;
         self.set_relation_and_status_for_vid(
             nested_vid.identifier(),
@@ -1091,7 +1196,13 @@ impl SecureStore {
                 "missing parent for {nested_receiver}"
             )))?;
 
-        let inner_message = crate::crypto::sign(&nested_vid, Some(&*receiver_vid.vid), &[])?;
+        let inner_message = crate::crypto::sign(
+            &nested_vid,
+            Some(&*receiver_vid.vid),
+            &[],
+            #[cfg(feature = "bench-network-timings")]
+            &mut timings,
+        )?;
 
         let (transport, tsp_message) = self.seal_message_payload(
             parent_sender,
@@ -1101,6 +1212,8 @@ impl SecureStore {
                 thread_id,
                 inner: &inner_message,
             },
+            #[cfg(feature = "bench-network-timings")]
+            &mut timings,
         )?;
 
         self.set_relation_status_for_vid(
@@ -1131,6 +1244,8 @@ impl SecureStore {
             )));
         };
 
+        #[cfg(feature = "bench-network-timings")]
+        let mut timings = crate::BenchNetworkTimings::default();
         let (transport, tsp_message) = self.seal_message_payload(
             sender,
             receiver,
@@ -1139,6 +1254,8 @@ impl SecureStore {
                 thread_id,
                 new_vid: new_vid.identifier().as_ref(),
             },
+            #[cfg(feature = "bench-network-timings")]
+            &mut timings,
         )?;
 
         Ok((transport, tsp_message))
@@ -1152,6 +1269,8 @@ impl SecureStore {
     ) -> Result<(Url, Vec<u8>), Error> {
         // check that we actually know the referred vid
         let referred_vid = self.get_vid(referred_vid)?;
+        #[cfg(feature = "bench-network-timings")]
+        let mut timings = crate::BenchNetworkTimings::default();
 
         let (transport, tsp_message) = self.seal_message_payload(
             sender,
@@ -1160,6 +1279,8 @@ impl SecureStore {
             Payload::Referral {
                 referred_vid: referred_vid.vid.identifier().as_ref(),
             },
+            #[cfg(feature = "bench-network-timings")]
+            &mut timings,
         )?;
 
         Ok((transport, tsp_message))
@@ -1303,6 +1424,18 @@ mod test {
     use crate::test_utils::*;
     use crate::{ReceivedTspMessage, RelationshipStatus, VerifiedVid};
 
+    macro_rules! open_message_with_timings {
+        ($store:expr, $message:expr) => {{
+            #[cfg(feature = "bench-network-timings")]
+            let mut timings = crate::BenchNetworkTimings::default();
+            $store.open_message(
+                $message,
+                #[cfg(feature = "bench-network-timings")]
+                &mut timings,
+            )
+        }};
+    }
+
     fn assert_url_matches(url: &url::Url, expected_receiver: &dyn VerifiedVid) {
         assert_eq!(url.as_str(), expected_receiver.endpoint().as_str());
     }
@@ -1357,13 +1490,22 @@ mod test {
 
         let message = b"hello world";
 
+        #[cfg(feature = "bench-network-timings")]
+        let mut timings = crate::BenchNetworkTimings::default();
         let (url, mut sealed) = store
-            .seal_message(alice.identifier(), bob.identifier(), None, message)
+            .seal_message(
+                alice.identifier(),
+                bob.identifier(),
+                None,
+                message,
+                #[cfg(feature = "bench-network-timings")]
+                &mut timings,
+            )
             .unwrap();
 
         assert_url_matches(&url, &bob);
 
-        let received = store.open_message(&mut sealed).unwrap();
+        let received = open_message_with_timings!(store, &mut sealed).unwrap();
 
         if let ReceivedTspMessage::GenericMessage {
             sender,
@@ -1399,7 +1541,7 @@ mod test {
 
         assert_url_matches(&url, &bob);
 
-        let received = store.open_message(&mut sealed).unwrap();
+        let received = open_message_with_timings!(store, &mut sealed).unwrap();
 
         if let ReceivedTspMessage::RequestRelationship { sender, .. } = received {
             assert_eq!(sender, alice.identifier());
@@ -1423,7 +1565,7 @@ mod test {
             .unwrap();
 
         assert_url_matches(&url, &bob);
-        let received = store.open_message(&mut sealed).unwrap();
+        let received = open_message_with_timings!(store, &mut sealed).unwrap();
 
         let ReceivedTspMessage::RequestRelationship {
             sender, thread_id, ..
@@ -1440,7 +1582,7 @@ mod test {
             .unwrap();
 
         assert_url_matches(&url, &alice);
-        let received = store.open_message(&mut sealed).unwrap();
+        let received = open_message_with_timings!(store, &mut sealed).unwrap();
 
         let ReceivedTspMessage::AcceptRelationship { sender, .. } = received else {
             panic!("unexpected message type");
@@ -1467,7 +1609,7 @@ mod test {
             .make_relationship_request("alice", "bob", None)
             .unwrap();
         let ReceivedTspMessage::RequestRelationship { thread_id, .. } =
-            store.open_message(&mut sealed).unwrap()
+            open_message_with_timings!(store, &mut sealed).unwrap()
         else {
             panic!("unexpected message type");
         };
@@ -1503,7 +1645,7 @@ mod test {
             .unwrap();
 
         assert_url_matches(&url, &bob);
-        let received = store.open_message(&mut sealed).unwrap();
+        let received = open_message_with_timings!(store, &mut sealed).unwrap();
 
         let ReceivedTspMessage::RequestRelationship {
             sender, thread_id, ..
@@ -1519,7 +1661,7 @@ mod test {
             .unwrap();
 
         assert_url_matches(&url, &alice);
-        let received = store.open_message(&mut sealed).unwrap();
+        let received = open_message_with_timings!(store, &mut sealed).unwrap();
 
         let ReceivedTspMessage::AcceptRelationship { sender, .. } = received else {
             panic!("unexpected message type");
@@ -1532,7 +1674,7 @@ mod test {
             .unwrap();
 
         assert_url_matches(&url, &alice);
-        let received = store.open_message(&mut sealed).unwrap();
+        let received = open_message_with_timings!(store, &mut sealed).unwrap();
 
         let ReceivedTspMessage::CancelRelationship { sender, .. } = received else {
             panic!("unexpected message type");
@@ -1570,7 +1712,7 @@ mod test {
             .unwrap();
 
         assert_url_matches(&url, &bob);
-        let received = b_store.open_message(&mut sealed).unwrap();
+        let received = open_message_with_timings!(b_store, &mut sealed).unwrap();
 
         let ReceivedTspMessage::NewIdentifier {
             sender,
@@ -1602,7 +1744,7 @@ mod test {
             .unwrap();
 
         assert_url_matches(&url, &bob);
-        let received = store.open_message(&mut sealed).unwrap();
+        let received = open_message_with_timings!(store, &mut sealed).unwrap();
 
         let ReceivedTspMessage::Referral {
             sender,
@@ -1705,16 +1847,20 @@ mod test {
 
         let hello_world = b"hello world";
 
+        #[cfg(feature = "bench-network-timings")]
+        let mut timings = crate::BenchNetworkTimings::default();
         let (_url, mut sealed) = a_store
             .seal_message(
                 sneaky_a.identifier(),
                 sneaky_d.identifier(),
                 None,
                 hello_world,
+                #[cfg(feature = "bench-network-timings")]
+                &mut timings,
             )
             .unwrap();
 
-        let received = b_store.open_message(&mut sealed).unwrap();
+        let received = open_message_with_timings!(b_store, &mut sealed).unwrap();
 
         let ReceivedTspMessage::ForwardRequest {
             sender,
@@ -1737,7 +1883,7 @@ mod test {
             )
             .unwrap();
 
-        let received = c_store.open_message(&mut sealed).unwrap();
+        let received = open_message_with_timings!(c_store, &mut sealed).unwrap();
 
         let ReceivedTspMessage::ForwardRequest {
             sender,
@@ -1760,7 +1906,7 @@ mod test {
             )
             .unwrap();
 
-        let received = d_store.open_message(&mut sealed).unwrap();
+        let received = open_message_with_timings!(d_store, &mut sealed).unwrap();
 
         let ReceivedTspMessage::GenericMessage {
             sender,
@@ -1832,16 +1978,20 @@ mod test {
 
         let hello_world = b"hello world";
 
+        #[cfg(feature = "bench-network-timings")]
+        let mut timings = crate::BenchNetworkTimings::default();
         let (_url, mut sealed) = a_store
             .seal_message(
                 nested_a.identifier(),
                 nested_b.identifier(),
                 None,
                 hello_world,
+                #[cfg(feature = "bench-network-timings")]
+                &mut timings,
             )
             .unwrap();
 
-        let received = b_store.open_message(&mut sealed).unwrap();
+        let received = open_message_with_timings!(b_store, &mut sealed).unwrap();
 
         let ReceivedTspMessage::GenericMessage {
             sender,
@@ -1885,7 +2035,7 @@ mod test {
             .make_relationship_request(a.identifier(), b.identifier(), None)
             .unwrap();
 
-        let received = b_store.open_message(&mut sealed).unwrap();
+        let received = open_message_with_timings!(b_store, &mut sealed).unwrap();
 
         let ReceivedTspMessage::RequestRelationship {
             nested_vid: None,
@@ -1900,7 +2050,7 @@ mod test {
             .make_relationship_accept(b.identifier(), a.identifier(), thread_id, None)
             .unwrap();
 
-        let received = a_store.open_message(&mut sealed).unwrap();
+        let received = open_message_with_timings!(a_store, &mut sealed).unwrap();
 
         let ReceivedTspMessage::AcceptRelationship { .. } = received else {
             panic!()
@@ -1910,7 +2060,7 @@ mod test {
             .make_nested_relationship_request(a.identifier(), b.identifier())
             .unwrap();
 
-        let received = b_store.open_message(&mut sealed).unwrap();
+        let received = open_message_with_timings!(b_store, &mut sealed).unwrap();
 
         let ReceivedTspMessage::RequestRelationship {
             nested_vid: Some(ref nested_vid_1),
@@ -1925,7 +2075,7 @@ mod test {
             .make_nested_relationship_accept(b.identifier(), nested_vid_1, thread_id)
             .unwrap();
 
-        let received = a_store.open_message(&mut sealed).unwrap();
+        let received = open_message_with_timings!(a_store, &mut sealed).unwrap();
 
         let ReceivedTspMessage::AcceptRelationship {
             nested_vid: Some(ref nested_vid_2),
@@ -1966,16 +2116,20 @@ mod test {
 
         let hello_world = b"hello world";
 
+        #[cfg(feature = "bench-network-timings")]
+        let mut timings = crate::BenchNetworkTimings::default();
         let (_url, mut sealed) = a_store
             .seal_message(
                 nested_a.identifier(),
                 nested_b.identifier(),
                 None,
                 hello_world,
+                #[cfg(feature = "bench-network-timings")]
+                &mut timings,
             )
             .unwrap();
 
-        let received = b_store.open_message(&mut sealed).unwrap();
+        let received = open_message_with_timings!(b_store, &mut sealed).unwrap();
 
         let ReceivedTspMessage::GenericMessage {
             sender,

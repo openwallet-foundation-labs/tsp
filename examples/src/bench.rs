@@ -209,8 +209,10 @@ impl BenchMode {
 struct ThroughputStats {
     transfer_bytes: u64,
     messages: u64,
-    seal_us: Vec<f64>,
-    open_us: Vec<f64>,
+    signature_us: Vec<f64>,
+    seal_core_us: Vec<f64>,
+    verify_us: Vec<f64>,
+    open_core_us: Vec<f64>,
 }
 
 impl ThroughputStats {
@@ -218,16 +220,18 @@ impl ThroughputStats {
         self.messages == 0
     }
 
-    fn record_send(&mut self, bytes: u64, seal_us: f64) {
+    fn record_send(&mut self, bytes: u64, signature_us: f64, seal_core_us: f64) {
         self.transfer_bytes += bytes;
         self.messages += 1;
-        self.seal_us.push(seal_us);
+        self.signature_us.push(signature_us);
+        self.seal_core_us.push(seal_core_us);
     }
 
-    fn record_recv(&mut self, bytes: u64, open_us: f64) {
+    fn record_recv(&mut self, bytes: u64, verify_us: f64, open_core_us: f64) {
         self.transfer_bytes += bytes;
         self.messages += 1;
-        self.open_us.push(open_us);
+        self.verify_us.push(verify_us);
+        self.open_core_us.push(open_core_us);
     }
 
     fn reset(&mut self) {
@@ -239,7 +243,8 @@ impl ThroughputStats {
 struct LatencyStats {
     messages: u64,
     transfer_bytes: u64,
-    seal_us: Vec<f64>,
+    signature_us: Vec<f64>,
+    seal_core_us: Vec<f64>,
     rtt_us: Vec<f64>,
     jitter_us: Vec<f64>,
 }
@@ -249,10 +254,18 @@ impl LatencyStats {
         self.messages == 0
     }
 
-    fn record(&mut self, bytes: u64, seal_us: f64, rtt_us: f64, jitter_us: Option<f64>) {
+    fn record(
+        &mut self,
+        bytes: u64,
+        signature_us: f64,
+        seal_core_us: f64,
+        rtt_us: f64,
+        jitter_us: Option<f64>,
+    ) {
         self.transfer_bytes += bytes;
         self.messages += 1;
-        self.seal_us.push(seal_us);
+        self.signature_us.push(signature_us);
+        self.seal_core_us.push(seal_core_us);
         self.rtt_us.push(rtt_us);
         if let Some(v) = jitter_us {
             self.jitter_us.push(v);
@@ -293,8 +306,14 @@ struct ThroughputMetricsJson {
     messages: u64,
     msg_per_sec: f64,
     bandwidth_bps: f64,
-    seal_us: Percentiles,
-    open_us: Percentiles,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    signature_us: Option<Percentiles>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    seal_core_us: Option<Percentiles>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    verify_us: Option<Percentiles>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    open_core_us: Option<Percentiles>,
 }
 
 #[derive(Serialize)]
@@ -303,7 +322,8 @@ struct LatencyMetricsJson {
     transfer_bytes: u64,
     msg_per_sec: f64,
     bandwidth_bps: f64,
-    seal_us: Percentiles,
+    signature_us: Percentiles,
+    seal_core_us: Percentiles,
     rtt_us: PercentilesWithStddev,
     jitter_us: JitterMetrics,
 }
@@ -825,26 +845,42 @@ fn format_bits_per_sec(bps: f64) -> String {
     format!("{value:.2} {unit}")
 }
 
-fn print_throughput_header() {
-    println!(
-        "[ ID] {:>12}  {:>6}  {:>12}  {:>8}  {:>10}  {:>15}  {:>12}  {:>12}",
-        "Interval",
-        "Proto",
-        "Transfer",
-        "Messages",
-        "Msg/s",
-        "Bandwidth",
-        "Seal_us(p50)",
-        "Open_us(p50)"
-    );
+fn print_throughput_header(_server_side: bool) {
+    if _server_side {
+        println!(
+            "[ ID] {:>12}  {:>6}  {:>12}  {:>8}  {:>10}  {:>15}  {:>13}  {:>15}",
+            "Interval",
+            "Proto",
+            "Transfer",
+            "Messages",
+            "Msg/s",
+            "Bandwidth",
+            "Verify_us(p50)",
+            "OpenCore_us(p50)"
+        );
+    } else {
+        println!(
+            "[ ID] {:>12}  {:>6}  {:>12}  {:>8}  {:>10}  {:>15}  {:>11}  {:>12}",
+            "Interval",
+            "Proto",
+            "Transfer",
+            "Messages",
+            "Msg/s",
+            "Bandwidth",
+            "Sign_us(p50)",
+            "SealCore(p50)"
+        );
+    }
 }
 
 fn print_latency_header() {
     println!(
-        "[ ID] {:>12} {:>6} {:>8} {:>11} {:>7} {:>7} {:>7} {:>10} {:>10} {:>10}",
+        "[ ID] {:>12} {:>6} {:>8} {:>10} {:>10} {:>11} {:>7} {:>7} {:>7} {:>10} {:>10} {:>10}",
         "Interval",
         "Proto",
         "Messages",
+        "Sign_p50",
+        "SealCore",
         "RTT_avg(us)",
         "RTT_p50",
         "RTT_p95",
@@ -855,35 +891,62 @@ fn print_latency_header() {
     );
 }
 
-fn print_throughput_line(id: u32, interval: Duration, stats: &ThroughputStats, protocol: &str) {
+fn print_throughput_line(
+    id: u32,
+    interval: Duration,
+    stats: &ThroughputStats,
+    protocol: &str,
+    _server_side: bool,
+) {
     let elapsed = interval.as_secs_f64().max(f64::EPSILON);
     let msg_per_sec = stats.messages as f64 / elapsed;
     let bps = stats.transfer_bytes as f64 * 8.0 / elapsed;
-    let seal = summarize(&stats.seal_us);
-    let open = summarize(&stats.open_us);
+    let signature = summarize(&stats.signature_us);
+    let seal_core = summarize(&stats.seal_core_us);
+    let verify = summarize(&stats.verify_us);
+    let open_core = summarize(&stats.open_core_us);
 
-    println!(
-        "[{id:>3}] {:>8.1} sec  {:>6}  {:>12}  {:>8}  {:>10.2}  {:>15}  {:>12.1}  {:>12.1}",
-        interval.as_secs_f64(),
-        protocol,
-        format_bytes(stats.transfer_bytes),
-        stats.messages,
-        msg_per_sec,
-        format_bits_per_sec(bps),
-        seal.p50,
-        open.p50,
-    );
+    if _server_side {
+        println!(
+            "[{id:>3}] {:>8.1} sec  {:>6}  {:>12}  {:>8}  {:>10.2}  {:>15}  {:>13.1}  {:>15.1}",
+            interval.as_secs_f64(),
+            protocol,
+            format_bytes(stats.transfer_bytes),
+            stats.messages,
+            msg_per_sec,
+            format_bits_per_sec(bps),
+            verify.p50,
+            open_core.p50,
+        );
+    } else {
+        println!(
+            "[{id:>3}] {:>8.1} sec  {:>6}  {:>12}  {:>8}  {:>10.2}  {:>15}  {:>11.1}  {:>12.1}",
+            interval.as_secs_f64(),
+            protocol,
+            format_bytes(stats.transfer_bytes),
+            stats.messages,
+            msg_per_sec,
+            format_bits_per_sec(bps),
+            signature.p50,
+            seal_core.p50,
+        );
+    }
 }
 
 fn print_latency_line(id: u32, interval: Duration, stats: &LatencyStats, protocol: &str) {
     let rtt = summarize_with_stddev(&stats.rtt_us);
     let jitter = summarize_jitter(&stats.jitter_us);
 
+    let signature = summarize(&stats.signature_us);
+    let seal_core = summarize(&stats.seal_core_us);
+
     println!(
-        "[{id:>3}] {:>8.1} sec {:>6} {:>8} {:>11.1} {:>7.1} {:>7.1} {:>7.1} {:>10.1} {:>10.1} {:>10.1}",
+        "[{id:>3}] {:>8.1} sec {:>6} {:>8} {:>10.1} {:>10.1} {:>11.1} {:>7.1} {:>7.1} {:>7.1} {:>10.1} {:>10.1} {:>10.1}",
         interval.as_secs_f64(),
         protocol,
         stats.messages,
+        signature.p50,
+        seal_core.p50,
         rtt.avg,
         rtt.p50,
         rtt.p95,
@@ -980,7 +1043,7 @@ fn start_server_session(session: &mut ServerSession, started_at: Instant, protoc
 
     println!();
     println!("Session {} started ({protocol})", session.id);
-    print_throughput_header();
+    print_throughput_header(true);
 }
 
 fn maybe_emit_server_window(
@@ -997,7 +1060,7 @@ fn maybe_emit_server_window(
     let window_elapsed = elapsed.saturating_sub(session.last_report_elapsed);
 
     if should_emit_server_window(&session.window, window_elapsed, interval) {
-        print_throughput_line(0, window_elapsed, &session.window, protocol);
+        print_throughput_line(0, window_elapsed, &session.window, protocol, true);
         session.window.reset();
         session.last_report_elapsed = elapsed;
     }
@@ -1019,27 +1082,27 @@ fn finalize_server_session(
     let total_elapsed = measured_end_at.duration_since(started_at);
     if !session.window.is_empty() {
         let window_elapsed = total_elapsed.saturating_sub(session.last_report_elapsed);
-        print_throughput_line(0, window_elapsed, &session.window, protocol);
+        print_throughput_line(0, window_elapsed, &session.window, protocol, true);
         session.window.reset();
     }
 
-    let seal = summarize(&session.total.seal_us);
-    let open = summarize(&session.total.open_us);
+    let verify = summarize(&session.total.verify_us);
+    let open_core = summarize(&session.total.open_core_us);
     let elapsed = total_elapsed.as_secs_f64().max(f64::EPSILON);
     let msg_per_sec = session.total.messages as f64 / elapsed;
     let bandwidth_bps = session.total.transfer_bytes as f64 * 8.0 / elapsed;
 
     println!("Session {} summary:", session.id);
     println!(
-        "[SUM] {:>5.1} sec  {:>6}  {:>12}  {:>8}  {:>10.2}  {:>15}  {:>11.1}  {:>11.1}",
+        "[SUM] {:>5.1} sec  {:>6}  {:>12}  {:>8}  {:>10.2}  {:>15}  {:>13.1}  {:>15.1}",
         total_elapsed.as_secs_f64(),
         protocol,
         format_bytes(session.total.transfer_bytes),
         session.total.messages,
         msg_per_sec,
         format_bits_per_sec(bandwidth_bps),
-        seal.p50,
-        open.p50,
+        verify.p50,
+        open_core.p50,
     );
 
     if json {
@@ -1048,8 +1111,10 @@ fn finalize_server_session(
             messages: session.total.messages,
             msg_per_sec,
             bandwidth_bps,
-            seal_us: seal,
-            open_us: open,
+            signature_us: None,
+            seal_core_us: None,
+            verify_us: Some(verify),
+            open_core_us: Some(open_core),
         };
 
         let payload = BenchJson {
@@ -1126,15 +1191,19 @@ async fn run_server(
                 };
                 let raw_len = raw.len() as u64;
 
-                let open_started = Instant::now();
-                let opened = match store.open_message(&mut raw) {
+                let mut timings = tsp_sdk::BenchNetworkTimings::default();
+                let opened = match store.open_message(
+                    &mut raw,
+                    &mut timings,
+                ) {
                     Ok(v) => v,
                     Err(e) => {
                         eprintln!("bench server decode error: {e}");
                         continue;
                     }
                 };
-                let open_us = open_started.elapsed().as_secs_f64() * 1_000_000.0;
+                let verify_us = timings.verify_ns as f64 / 1_000.0;
+                let open_core_us = timings.open_core_ns as f64 / 1_000.0;
 
                 if let ReceivedTspMessage::GenericMessage { sender, message, .. } = opened
                     && let Some(frame) = parse_frame(message)
@@ -1166,15 +1235,22 @@ async fn run_server(
 
                     observed_any_message = true;
                     session.last_message_at = Some(now);
-                    session.total.record_recv(raw_len, open_us);
-                    session.window.record_recv(raw_len, open_us);
+                    session.total.record_recv(raw_len, verify_us, open_core_us);
+                    session.window.record_recv(raw_len, verify_us, open_core_us);
                     maybe_emit_server_window(&mut session, now, interval, &protocol);
 
                     if frame.kind == FrameKind::LatencyRequest {
                         let ack_payload =
                             build_frame(message.len().max(FRAME_HEADER_LEN), FrameKind::LatencyAck, frame.seq);
+                        let mut timings = tsp_sdk::BenchNetworkTimings::default();
                         let (ack_transport, ack_message) =
-                            store.seal_message(&vid, &sender, None, &ack_payload)?;
+                            store.seal_message(
+                                &vid,
+                                &sender,
+                                None,
+                                &ack_payload,
+                                &mut timings,
+                            )?;
                         if let Err(e) = transport::send_message(&ack_transport, &ack_message).await {
                             eprintln!("bench server failed to send ack: {e}");
                         }
@@ -1197,8 +1273,10 @@ async fn run_server(
                 messages: 0,
                 msg_per_sec: 0.0,
                 bandwidth_bps: 0.0,
-                seal_us: summarize(&[]),
-                open_us: summarize(&[]),
+                signature_us: None,
+                seal_core_us: None,
+                verify_us: Some(summarize(&[])),
+                open_core_us: Some(summarize(&[])),
             };
 
             let payload = BenchJson {
@@ -1259,7 +1337,7 @@ async fn run_client_throughput(
     let transport_url = resolve_client_transport(store, &receiver, transport_override)?;
     let protocol = transport_url.scheme().to_ascii_uppercase();
 
-    print_throughput_header();
+    print_throughput_header(false);
 
     let started_at = Instant::now();
     let mut last_report_at = Duration::ZERO;
@@ -1271,21 +1349,22 @@ async fn run_client_throughput(
         seq = seq.wrapping_add(1);
         let payload = build_frame(payload_size, FrameKind::ThroughputData, seq);
 
-        let seal_started = Instant::now();
-        let (_, message) = store.seal_message(&sender, &receiver, None, &payload)?;
-        let seal_us = seal_started.elapsed().as_secs_f64() * 1_000_000.0;
+        let mut timings = tsp_sdk::BenchNetworkTimings::default();
+        let (_, message) = store.seal_message(&sender, &receiver, None, &payload, &mut timings)?;
+        let signature_us = timings.signature_ns as f64 / 1_000.0;
+        let seal_core_us = timings.seal_core_ns as f64 / 1_000.0;
 
         transport::send_message(&transport_url, &message).await?;
 
         let elapsed = started_at.elapsed();
         if elapsed > warmup {
-            total.record_send(message.len() as u64, seal_us);
-            window.record_send(message.len() as u64, seal_us);
+            total.record_send(message.len() as u64, signature_us, seal_core_us);
+            window.record_send(message.len() as u64, signature_us, seal_core_us);
 
             let measured_elapsed = elapsed.saturating_sub(warmup);
             if measured_elapsed.saturating_sub(last_report_at) >= interval && !window.is_empty() {
                 let window_elapsed = measured_elapsed.saturating_sub(last_report_at);
-                print_throughput_line(0, window_elapsed, &window, &protocol);
+                print_throughput_line(0, window_elapsed, &window, &protocol, false);
                 window.reset();
                 last_report_at = measured_elapsed;
             }
@@ -1296,25 +1375,26 @@ async fn run_client_throughput(
     if !window.is_empty() {
         let window_elapsed = measured_total_elapsed.saturating_sub(last_report_at);
         if !window_elapsed.is_zero() {
-            print_throughput_line(0, window_elapsed, &window, &protocol);
+            print_throughput_line(0, window_elapsed, &window, &protocol, false);
         }
     }
 
-    let seal = summarize(&total.seal_us);
-    let open = summarize(&total.open_us);
+    let signature = summarize(&total.signature_us);
+    let seal_core = summarize(&total.seal_core_us);
     let measured_elapsed_secs = measured_total_elapsed.as_secs_f64().max(f64::EPSILON);
     let msg_per_sec = total.messages as f64 / measured_elapsed_secs;
     let bandwidth_bps = total.transfer_bytes as f64 * 8.0 / measured_elapsed_secs;
 
     println!(
-        "[SUM] {:>5.1} sec  {:>6}  {:>12}  {:>8}  {:>10.2}  {:>15}  {:>11.1}  {:>11}",
+        "[SUM] {:>5.1} sec  {:>6}  {:>12}  {:>8}  {:>10.2}  {:>15}  {:>11.1}  {:>12.1}  {:>11}",
         measured_elapsed_secs,
         protocol,
         format_bytes(total.transfer_bytes),
         total.messages,
         msg_per_sec,
         format_bits_per_sec(bandwidth_bps),
-        seal.p50,
+        signature.p50,
+        seal_core.p50,
         "-",
     );
 
@@ -1324,8 +1404,10 @@ async fn run_client_throughput(
             messages: total.messages,
             msg_per_sec,
             bandwidth_bps,
-            seal_us: seal,
-            open_us: open,
+            signature_us: Some(signature),
+            seal_core_us: Some(seal_core),
+            verify_us: None,
+            open_core_us: None,
         };
 
         let payload = BenchJson {
@@ -1389,9 +1471,10 @@ async fn run_client_latency(
         seq = seq.wrapping_add(1);
 
         let payload = build_frame(payload_size, FrameKind::LatencyRequest, seq);
-        let seal_started = Instant::now();
-        let (_, message) = store.seal_message(&sender, &receiver, None, &payload)?;
-        let seal_us = seal_started.elapsed().as_secs_f64() * 1_000_000.0;
+        let mut timings = tsp_sdk::BenchNetworkTimings::default();
+        let (_, message) = store.seal_message(&sender, &receiver, None, &payload, &mut timings)?;
+        let signature_us = timings.signature_ns as f64 / 1_000.0;
+        let seal_core_us = timings.seal_core_ns as f64 / 1_000.0;
         let sent_bytes = message.len() as u64;
 
         let sent_at = Instant::now();
@@ -1413,7 +1496,8 @@ async fn run_client_latency(
         };
 
         let mut raw = ack?;
-        let opened = store.open_message(&mut raw)?;
+        let mut timings = tsp_sdk::BenchNetworkTimings::default();
+        let opened = store.open_message(&mut raw, &mut timings)?;
 
         let mut accepted = false;
         if let ReceivedTspMessage::GenericMessage {
@@ -1439,8 +1523,8 @@ async fn run_client_latency(
 
         let elapsed = started_at.elapsed();
         if elapsed > warmup {
-            total.record(sent_bytes, seal_us, rtt_us, jitter);
-            window.record(sent_bytes, seal_us, rtt_us, jitter);
+            total.record(sent_bytes, signature_us, seal_core_us, rtt_us, jitter);
+            window.record(sent_bytes, signature_us, seal_core_us, rtt_us, jitter);
 
             let measured_elapsed = elapsed.saturating_sub(warmup);
             if measured_elapsed.saturating_sub(last_report_at) >= interval && !window.is_empty() {
@@ -1464,15 +1548,18 @@ async fn run_client_latency(
     let elapsed_s = measured_elapsed.as_secs_f64().max(f64::EPSILON);
     let msg_per_sec = total.messages as f64 / elapsed_s;
     let bandwidth_bps = total.transfer_bytes as f64 * 8.0 / elapsed_s;
-    let seal = summarize(&total.seal_us);
+    let signature = summarize(&total.signature_us);
+    let seal_core = summarize(&total.seal_core_us);
     let rtt = summarize_with_stddev(&total.rtt_us);
     let jitter = summarize_jitter(&total.jitter_us);
 
     println!(
-        "[SUM] {:>5.1} sec {:>6} {:>8} RTT avg/p95/p99 {:>7.1}/{:>7.1}/{:>7.1} us jitter p95 {:>7.1} us",
+        "[SUM] {:>5.1} sec {:>6} {:>8} sign/seal-core p50 {:>7.1}/{:>7.1} us RTT avg/p95/p99 {:>7.1}/{:>7.1}/{:>7.1} us jitter p95 {:>7.1} us",
         measured_elapsed.as_secs_f64(),
         protocol,
         total.messages,
+        signature.p50,
+        seal_core.p50,
         rtt.avg,
         rtt.p95,
         rtt.p99,
@@ -1485,7 +1572,8 @@ async fn run_client_latency(
             transfer_bytes: total.transfer_bytes,
             msg_per_sec,
             bandwidth_bps,
-            seal_us: seal,
+            signature_us: signature,
+            seal_core_us: seal_core,
             rtt_us: rtt,
             jitter_us: jitter,
         };
@@ -1701,7 +1789,7 @@ mod tests {
     fn server_window_emission_requires_full_interval() {
         let interval = Duration::from_secs(1);
         let mut non_empty = ThroughputStats::default();
-        non_empty.record_recv(1024, 10.0);
+        non_empty.record_recv(1024, 10.0, 20.0);
 
         assert!(!should_emit_server_window(
             &non_empty,
@@ -1739,8 +1827,10 @@ mod tests {
                 messages: 1,
                 msg_per_sec: 1.0,
                 bandwidth_bps: 8.0,
-                seal_us: summarize(&[]),
-                open_us: summarize(&[]),
+                signature_us: None,
+                seal_core_us: None,
+                verify_us: Some(summarize(&[])),
+                open_core_us: Some(summarize(&[])),
             },
         };
 

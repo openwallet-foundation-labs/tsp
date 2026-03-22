@@ -16,6 +16,7 @@ pub fn sign(
     sender: &dyn PrivateVid,
     receiver: Option<&dyn VerifiedVid>,
     payload: &[u8],
+    #[cfg(feature = "bench-network-timings")] timings: &mut crate::BenchNetworkTimings,
 ) -> Result<TSPMessage, CryptoError> {
     let mut data = Vec::with_capacity(64);
 
@@ -39,19 +40,35 @@ pub fn sign(
     // create and append signature
     match sender.signature_key_type() {
         VidSignatureKeyType::Ed25519 => {
+            #[cfg(feature = "bench-network-timings")]
+            let signature_started = std::time::Instant::now();
             let sign_key = ed25519_dalek::SigningKey::from_bytes(&TryInto::<[u8; 32]>::try_into(
                 sender.signing_key().as_slice(),
             )?);
             let signature = sign_key.sign(&data).to_bytes();
             crate::cesr::encode_signature(&signature, &mut data, SignatureType::Ed25519);
+            #[cfg(feature = "bench-network-timings")]
+            {
+                timings.signature_ns = timings.signature_ns.saturating_add(
+                    u64::try_from(signature_started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+                );
+            }
         }
         #[cfg(feature = "pq")]
         VidSignatureKeyType::MlDsa65 => {
+            #[cfg(feature = "bench-network-timings")]
+            let signature_started = std::time::Instant::now();
             let sign_key = ml_dsa::SigningKey::<MlDsa65>::decode(
                 &EncodedSigningKey::<MlDsa65>::try_from(sender.signing_key().as_slice())?,
             );
             let signature = sign_key.sign(&data).encode();
             crate::cesr::encode_signature(signature.as_slice(), &mut data, SignatureType::MlDsa65);
+            #[cfg(feature = "bench-network-timings")]
+            {
+                timings.signature_ns = timings.signature_ns.saturating_add(
+                    u64::try_from(signature_started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+                );
+            }
         }
     }
 
@@ -62,11 +79,22 @@ pub fn sign(
 pub fn verify<'a>(
     sender: &dyn VerifiedVid,
     tsp_message: &'a mut [u8],
+    #[cfg(feature = "bench-network-timings")] timings: &mut crate::BenchNetworkTimings,
 ) -> Result<(&'a [u8], MessageType), CryptoError> {
+    #[cfg(feature = "bench-network-timings")]
+    let open_core_started = std::time::Instant::now();
     let view = crate::cesr::decode_envelope(tsp_message)?;
+    #[cfg(feature = "bench-network-timings")]
+    {
+        timings.open_core_ns = timings.open_core_ns.saturating_add(
+            u64::try_from(open_core_started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+        );
+    }
 
     // verify outer signature
     let verification_challenge = view.as_challenge();
+    #[cfg(feature = "bench-network-timings")]
+    let verify_started = std::time::Instant::now();
     match view.signature_type() {
         SignatureType::NoSignature => {}
         SignatureType::Ed25519 => {
@@ -92,8 +120,16 @@ pub fn verify<'a>(
                 .map_err(|err| Verify(sender.identifier().to_string(), err))?;
         }
     }
+    #[cfg(feature = "bench-network-timings")]
+    {
+        timings.verify_ns = timings
+            .verify_ns
+            .saturating_add(u64::try_from(verify_started.elapsed().as_nanos()).unwrap_or(u64::MAX));
+    }
 
     // decode envelope
+    #[cfg(feature = "bench-network-timings")]
+    let open_core_started = std::time::Instant::now();
     let DecodedEnvelope {
         raw_header: _,
         envelope:
@@ -111,6 +147,13 @@ pub fn verify<'a>(
     else {
         return Err(CryptoError::MissingCiphertext);
     };
+
+    #[cfg(feature = "bench-network-timings")]
+    {
+        timings.open_core_ns = timings.open_core_ns.saturating_add(
+            u64::try_from(open_core_started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+        );
+    }
 
     Ok((
         nonconfidential_data,

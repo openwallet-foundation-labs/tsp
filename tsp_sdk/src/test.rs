@@ -5,6 +5,18 @@ use crate::{
 use futures::StreamExt;
 use std::collections::BTreeMap;
 
+macro_rules! open_message_with_timings {
+    ($store:expr, $message:expr) => {{
+        #[cfg(feature = "bench-network-timings")]
+        let mut timings = crate::BenchNetworkTimings::default();
+        $store.open_message(
+            $message,
+            #[cfg(feature = "bench-network-timings")]
+            &mut timings,
+        )
+    }};
+}
+
 #[tokio::test]
 #[serial_test::serial(tcp)]
 async fn test_direct_mode() {
@@ -529,8 +541,17 @@ async fn attack_failures() {
     let payload = b"hello world";
 
     for i in 0.. {
-        let mut faulty_message =
-            crate::crypto::seal(&alice, &bob, None, super::Payload::Content(payload)).unwrap();
+        #[cfg(feature = "bench-network-timings")]
+        let mut timings = crate::BenchNetworkTimings::default();
+        let mut faulty_message = crate::crypto::seal(
+            &alice,
+            &bob,
+            None,
+            super::Payload::Content(payload),
+            #[cfg(feature = "bench-network-timings")]
+            &mut timings,
+        )
+        .unwrap();
 
         if i >= faulty_message.len() {
             break;
@@ -540,7 +561,7 @@ async fn attack_failures() {
 
         // corrupting a message might only corrupt the envelope, which is something we cannot
         // detect immediately without looking up cryptographic material
-        if let Ok(msg) = bob_db.open_message(&mut faulty_message) {
+        if let Ok(msg) = open_message_with_timings!(bob_db, &mut faulty_message) {
             let crate::ReceivedTspMessage::PendingMessage {
                 unknown_vid,
                 payload,
@@ -778,8 +799,17 @@ async fn test_persisted_store_roundtrip_reopens_dirty_wallet() {
         .map(|exported| exported.id.clone())
         .unwrap();
 
+    #[cfg(feature = "bench-network-timings")]
+    let mut timings = crate::BenchNetworkTimings::default();
     let (_endpoint, sealed_message) = reopened_store
-        .seal_message(&local_vid, &receiver_vid, None, b"persisted-wallet-message")
+        .seal_message(
+            &local_vid,
+            &receiver_vid,
+            None,
+            b"persisted-wallet-message",
+            #[cfg(feature = "bench-network-timings")]
+            &mut timings,
+        )
         .unwrap();
     assert!(!sealed_message.is_empty());
 }
@@ -913,7 +943,7 @@ async fn test_relationship_transition_request_accept_after_reopen() {
     let b_store = persist_reopen_cycle(&b_store, &fixture_b, 1).await;
 
     let crate::ReceivedTspMessage::RequestRelationship { thread_id, .. } =
-        b_store.open_message(&mut request_message).unwrap()
+        open_message_with_timings!(b_store, &mut request_message).unwrap()
     else {
         panic!("receiver did not decode relationship request");
     };
@@ -935,7 +965,7 @@ async fn test_relationship_transition_request_accept_after_reopen() {
     let _ = persist_reopen_cycle(&b_store, &fixture_b, 1).await;
 
     let crate::ReceivedTspMessage::AcceptRelationship { .. } =
-        a_store.open_message(&mut accept_message).unwrap()
+        open_message_with_timings!(a_store, &mut accept_message).unwrap()
     else {
         panic!("sender did not decode relationship accept");
     };
@@ -1018,8 +1048,8 @@ async fn test_nested_relationship_transition_after_reopen() {
     let (_endpoint, mut accept_message) = b_store
         .make_relationship_accept(&b_vid, &a_vid, thread_id, None)
         .unwrap();
-    let _ = b_store.open_message(&mut request_message).unwrap();
-    let _ = a_store.open_message(&mut accept_message).unwrap();
+    let _ = open_message_with_timings!(b_store, &mut request_message).unwrap();
+    let _ = open_message_with_timings!(a_store, &mut accept_message).unwrap();
 
     let a_store = persist_reopen_cycle(&a_store, &fixture_a, 1).await;
     let b_store = persist_reopen_cycle(&b_store, &fixture_b, 1).await;
@@ -1046,7 +1076,7 @@ async fn test_nested_relationship_transition_after_reopen() {
         nested_vid: Some(nested_vid),
         thread_id,
         ..
-    } = b_store.open_message(&mut nested_request).unwrap()
+    } = open_message_with_timings!(b_store, &mut nested_request).unwrap()
     else {
         panic!("nested relationship request was not decoded");
     };
@@ -1061,7 +1091,7 @@ async fn test_nested_relationship_transition_after_reopen() {
     let crate::ReceivedTspMessage::AcceptRelationship {
         nested_vid: Some(accepted_nested_vid),
         ..
-    } = a_store.open_message(&mut nested_accept).unwrap()
+    } = open_message_with_timings!(a_store, &mut nested_accept).unwrap()
     else {
         panic!("nested relationship accept was not decoded");
     };

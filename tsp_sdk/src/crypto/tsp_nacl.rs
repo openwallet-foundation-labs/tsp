@@ -26,6 +26,7 @@ pub(crate) fn seal(
     nonconfidential_data: Option<NonConfidentialData>,
     secret_payload: Payload<&[u8]>,
     digest: Option<&mut super::Digest>,
+    #[cfg(feature = "bench-network-timings")] timings: &mut crate::BenchNetworkTimings,
 ) -> Result<TSPMessage, CryptoError> {
     let mut csprng = StdRng::from_entropy();
 
@@ -138,19 +139,35 @@ pub(crate) fn seal(
     // create and append signature
     match sender.signature_key_type() {
         VidSignatureKeyType::Ed25519 => {
+            #[cfg(feature = "bench-network-timings")]
+            let signature_started = std::time::Instant::now();
             let sign_key = ed25519_dalek::SigningKey::from_bytes(&TryInto::<[u8; 32]>::try_into(
                 sender.signing_key().as_slice(),
             )?);
             let signature = sign_key.sign(&data).to_bytes();
             crate::cesr::encode_signature(&signature, &mut data, SignatureType::Ed25519);
+            #[cfg(feature = "bench-network-timings")]
+            {
+                timings.signature_ns = timings.signature_ns.saturating_add(
+                    u64::try_from(signature_started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+                );
+            }
         }
         #[cfg(feature = "pq")]
         VidSignatureKeyType::MlDsa65 => {
+            #[cfg(feature = "bench-network-timings")]
+            let signature_started = std::time::Instant::now();
             let sign_key = ml_dsa::SigningKey::<MlDsa65>::decode(
                 &EncodedSigningKey::<MlDsa65>::try_from(sender.signing_key().as_slice())?,
             );
             let signature = sign_key.sign(&data).encode();
             crate::cesr::encode_signature(signature.as_slice(), &mut data, SignatureType::MlDsa65);
+            #[cfg(feature = "bench-network-timings")]
+            {
+                timings.signature_ns = timings.signature_ns.saturating_add(
+                    u64::try_from(signature_started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+                );
+            }
         }
     }
 
@@ -163,6 +180,7 @@ pub(crate) fn open<'a>(
     _raw_header: &'a [u8],
     envelope: Envelope<'a, &[u8]>,
     ciphertext: &'a mut [u8],
+    #[cfg(feature = "bench-network-timings")] _timings: &mut crate::BenchNetworkTimings,
 ) -> Result<MessageContents<'a>, CryptoError> {
     let (ciphertext, footer) = ciphertext.split_at_mut(ciphertext.len() - 16 - 24);
     let (tag, nonce) = footer.split_at(16);
