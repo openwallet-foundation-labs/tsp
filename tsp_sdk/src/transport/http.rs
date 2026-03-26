@@ -2,6 +2,7 @@ use crate::definitions::TSPStream;
 use async_stream::stream;
 use bytes::BytesMut;
 use futures::StreamExt;
+use tokio_tungstenite::tungstenite::Message as WsMessage;
 use url::Url;
 
 use super::TransportError;
@@ -89,20 +90,21 @@ pub(crate) async fn receive_messages(
     let (_, mut receiver) = ws_stream.split();
 
     Ok(Box::pin(stream! {
-        while let Some(Ok(msg)) = receiver.next().await {
-            match msg {
-                tokio_tungstenite::tungstenite::Message::Binary(b) => {
+        while let Some(result) = receiver.next().await {
+            match result {
+                Ok(WsMessage::Binary(b)) => {
                     yield Ok(b.into());
                 }
-                m => {
-                    yield Err(TransportError::InvalidMessageReceived(
-                        m
-                            .into_text()
-                            .map(|m| m.to_string())
-                            .map_err(|_| TransportError::InvalidMessageReceived("invalid UTF8 character encountered".to_string()))?
-                    ));
+                // Control frames — ignore silently, don't kill the stream
+                Ok(WsMessage::Ping(_) | WsMessage::Pong(_) | WsMessage::Text(_) | WsMessage::Frame(_)) => {
+                    continue;
                 }
-            };
+                // Server closed gracefully or connection error — stream ends,
+                // caller (gateway/tspchat) will silently reconnect when needed
+                Ok(WsMessage::Close(_)) | Err(_) => {
+                    break;
+                }
+            }
         }
     }))
 }
