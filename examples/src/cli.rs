@@ -150,11 +150,21 @@ enum Commands {
         sender_vid: String,
         #[arg(short, long, required = true)]
         receiver_vid: String,
-        #[arg(long)]
+        #[arg(long, conflicts_with = "parallel")]
         nested: bool,
+        #[arg(long, conflicts_with = "nested", requires = "new_vid")]
+        parallel: bool,
+        #[arg(
+            long,
+            conflicts_with = "nested",
+            requires = "parallel",
+            help = "existing local VID to propose for a parallel relationship"
+        )]
+        new_vid: Option<String>,
         #[arg(
             short,
             long,
+            conflicts_with = "parallel",
             help = "parent VID of the sender, used to listen for a response"
         )]
         parent_vid: Option<String>,
@@ -174,8 +184,10 @@ enum Commands {
         receiver_vid: String,
         #[arg(long, required = true)]
         thread_id: String,
-        #[arg(long)]
+        #[arg(long, conflicts_with = "parallel")]
         nested: bool,
+        #[arg(long, conflicts_with = "nested")]
+        parallel: bool,
     },
     #[command(arg_required_else_help = true, about = "break up a relationship")]
     Cancel {
@@ -775,7 +787,7 @@ async fn run() -> Result<(), Error> {
                                     info!(
                                         "received parallel relationship request for '{new_vid}' from {sender}"
                                     );
-                                    println!("{new_vid}");
+                                    println!("{new_vid}\t{thread_id_string}");
                                     return Action::Verify(new_vid);
                                 }
                                 (
@@ -785,7 +797,7 @@ async fn run() -> Result<(), Error> {
                                     info!(
                                         "received nested parallel relationship request from '{nested_vid}' for '{new_vid}' from {sender}"
                                     );
-                                    println!("{new_vid}");
+                                    println!("{new_vid}\t{thread_id_string}");
                                     return Action::Verify(new_vid);
                                 }
                                 (ReceivedRelationshipDelivery::Routed, _) => {
@@ -947,6 +959,8 @@ async fn run() -> Result<(), Error> {
             sender_vid,
             receiver_vid,
             nested,
+            parallel,
+            new_vid,
             parent_vid,
             ask,
             wait,
@@ -954,7 +968,13 @@ async fn run() -> Result<(), Error> {
             ensure_vid_verified(&vid_wallet, &receiver_vid, &args.wallet, ask).await?;
 
             // Setup receive stream before sending the request
-            let listener_vid = parent_vid.unwrap_or(sender_vid.clone());
+            let listener_vid = if parallel {
+                new_vid
+                    .clone()
+                    .expect("clap should require --new-vid for --parallel")
+            } else {
+                parent_vid.unwrap_or(sender_vid.clone())
+            };
             let mut messages = vid_wallet.receive(&listener_vid).await?;
 
             tracing::debug!("sending request...");
@@ -975,6 +995,24 @@ async fn run() -> Result<(), Error> {
                         return Ok(());
                     }
                 }
+            } else if parallel {
+                let new_vid = new_vid
+                    .as_deref()
+                    .expect("clap should require --new-vid for --parallel");
+
+                if let Err(e) = vid_wallet
+                    .send_parallel_relationship_request(&sender_vid, &receiver_vid, new_vid)
+                    .await
+                {
+                    tracing::error!(
+                        "error sending message from {sender_vid} to {receiver_vid}: {e}"
+                    );
+                    return Ok(());
+                }
+
+                info!(
+                    "sent a parallel relationship request from {sender_vid} to {receiver_vid} with new identity '{new_vid}'"
+                );
             } else if let Err(e) = vid_wallet
                 .send_relationship_request(&sender_vid, &receiver_vid, None)
                 .await
@@ -999,7 +1037,10 @@ async fn run() -> Result<(), Error> {
                             info!("received relationship request from {sender}")
                         }
                         ReceivedTspMessage::AcceptRelationship {
-                            sender, delivery, ..
+                            sender,
+                            delivery,
+                            form,
+                            ..
                         } => {
                             let nested_vid = match delivery {
                                 ReceivedRelationshipDelivery::Nested { nested_vid } => {
@@ -1007,12 +1048,20 @@ async fn run() -> Result<(), Error> {
                                 }
                                 _ => None,
                             };
+                            let parallel_vid = match form {
+                                ReceivedRelationshipForm::Parallel { new_vid, .. } => Some(new_vid),
+                                ReceivedRelationshipForm::Direct => None,
+                            };
                             info!(
-                                "received accept relationship from {sender} (nested_vid: {})",
-                                nested_vid.clone().unwrap_or("none".to_string())
+                                "received accept relationship from {sender} (nested_vid: {}, parallel_vid: {})",
+                                nested_vid.clone().unwrap_or("none".to_string()),
+                                parallel_vid.clone().unwrap_or("none".to_string())
                             );
                             if let Some(nested_vid) = nested_vid {
                                 println!("{nested_vid}");
+                            }
+                            if let Some(parallel_vid) = parallel_vid {
+                                println!("{parallel_vid}");
                             }
                             break;
                         }
@@ -1035,6 +1084,7 @@ async fn run() -> Result<(), Error> {
             receiver_vid,
             thread_id,
             nested,
+            parallel,
         } => {
             let mut digest: [u8; 32] = Default::default();
             Base64Unpadded::decode(&thread_id, &mut digest).unwrap();
@@ -1057,6 +1107,17 @@ async fn run() -> Result<(), Error> {
 
                         return Ok(());
                     }
+                }
+            } else if parallel {
+                if let Err(e) = vid_wallet
+                    .send_parallel_relationship_accept(&sender_vid, &receiver_vid, digest)
+                    .await
+                {
+                    tracing::error!(
+                        "error sending message from {sender_vid} to {receiver_vid}: {e}"
+                    );
+
+                    return Ok(());
                 }
             } else if let Err(e) = vid_wallet
                 .send_relationship_accept(&sender_vid, &receiver_vid, digest, None)
