@@ -222,6 +222,82 @@ pub struct DecodedEnvelope<'a, Vid, Bytes> {
 
 type Signature = [u8];
 
+fn encoded_signature_from_raw<'a>(
+    signature: &'a Signature,
+) -> Result<EncodedSignature<'a>, EncodeError> {
+    if let Ok(signature) = <&[u8; 64]>::try_from(signature) {
+        return Ok(EncodedSignature::Ed25519(signature));
+    }
+
+    #[cfg(feature = "pq")]
+    if let Ok(signature) = <&[u8; 3309]>::try_from(signature) {
+        return Ok(EncodedSignature::MlDsa65(signature));
+    }
+
+    Err(EncodeError::InvalidSignatureType)
+}
+
+fn encode_embedded_signature(
+    signature: &Signature,
+    output: &mut impl for<'a> Extend<&'a u8>,
+) -> Result<(), EncodeError> {
+    encoded_signature_from_raw(signature)?.encode(output);
+    Ok(())
+}
+
+fn decoded_signature_from_stream(
+    stream: &mut [u8],
+) -> Result<(&Signature, &mut [u8]), DecodeError> {
+    let mut immutable_stream: &[u8] = stream;
+    let original_len = immutable_stream.len();
+    let signature_len = match EncodedSignature::decode(&mut immutable_stream)? {
+        EncodedSignature::NoSignature => return Err(DecodeError::InvalidSignatureType),
+        EncodedSignature::Ed25519(signature) => signature.len(),
+        #[cfg(feature = "pq")]
+        EncodedSignature::MlDsa65(signature) => signature.len(),
+    };
+
+    let consumed = original_len - immutable_stream.len();
+    let (prefix, remaining) = stream.split_at_mut(consumed);
+    let signature = &prefix[prefix.len() - signature_len..];
+
+    Ok((signature, remaining))
+}
+
+pub(crate) fn encode_parallel_relation_proposal_challenge(
+    sender_identity: Option<&[u8]>,
+    nonce: &Nonce,
+    request_digest: Digest<'_>,
+    new_vid: &[u8],
+) -> Result<Vec<u8>, EncodeError> {
+    let mut temp = Vec::new();
+    if let Some(sender_identity) = sender_identity {
+        checked_encode_variable_data(TSP_VID, sender_identity, &mut temp)?;
+    }
+    temp.extend(&XRFI);
+    encode_digest(&request_digest, &mut temp);
+    encode_fixed_data(TSP_NONCE, &nonce.0, &mut temp);
+    checked_encode_variable_data(TSP_VID, new_vid, &mut temp)?;
+    Ok(temp)
+}
+
+pub(crate) fn encode_parallel_relation_affirm_challenge(
+    sender_identity: Option<&[u8]>,
+    request_digest: Digest<'_>,
+    reply_digest: Digest<'_>,
+    new_vid: &[u8],
+) -> Result<Vec<u8>, EncodeError> {
+    let mut temp = Vec::new();
+    if let Some(sender_identity) = sender_identity {
+        checked_encode_variable_data(TSP_VID, sender_identity, &mut temp)?;
+    }
+    temp.extend(&XRFA);
+    encode_digest(&request_digest, &mut temp);
+    encode_digest(&reply_digest, &mut temp);
+    checked_encode_variable_data(TSP_VID, new_vid, &mut temp)?;
+    Ok(temp)
+}
+
 /// Safely encode variable data, returning a soft error in case the size limit is exceeded
 fn checked_encode_variable_data(
     identifier: u32,
@@ -321,7 +397,7 @@ pub fn encode_payload(
             encode_digest(request_digest, &mut temp);
             encode_fixed_data(TSP_NONCE, &nonce.0, &mut temp);
             checked_encode_variable_data(TSP_VID, new_vid.as_ref(), &mut temp)?;
-            encode_fixed_data(ED25519_SIGNATURE, sig_new_vid, &mut temp);
+            encode_embedded_signature(sig_new_vid, &mut temp)?;
         }
         Payload::ParallelRelationAffirm {
             request_digest,
@@ -336,7 +412,7 @@ pub fn encode_payload(
             encode_digest(request_digest, &mut temp);
             encode_digest(reply_digest, &mut temp);
             checked_encode_variable_data(TSP_VID, new_vid.as_ref(), &mut temp)?;
-            encode_fixed_data(ED25519_SIGNATURE, sig_new_vid, &mut temp);
+            encode_embedded_signature(sig_new_vid, &mut temp)?;
         }
         Payload::RelationshipCancel { reply } => {
             temp.extend(&XRFD);
@@ -466,8 +542,7 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
                 }
             } else {
                 let sig_new_vid;
-                (sig_new_vid, stream) = decode_fixed_data_mut::<64>(ED25519_SIGNATURE, stream)
-                    .ok_or(DecodeError::UnexpectedData)?;
+                (sig_new_vid, stream) = decoded_signature_from_stream(stream)?;
 
                 Payload::ParallelRelationProposal {
                     nonce: Nonce(*nonce),
@@ -495,8 +570,7 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
 
                 (new_vid, stream) =
                     decode_variable_data_mut(TSP_VID, stream).ok_or(DecodeError::UnexpectedData)?;
-                (sig_new_vid, stream) = decode_fixed_data_mut::<64>(ED25519_SIGNATURE, stream)
-                    .ok_or(DecodeError::UnexpectedData)?;
+                (sig_new_vid, stream) = decoded_signature_from_stream(stream)?;
 
                 Payload::ParallelRelationAffirm {
                     request_digest,

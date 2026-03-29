@@ -22,7 +22,10 @@ use hpke::{
 #[cfg(all(not(feature = "nacl"), not(feature = "pq")))]
 use hpke::{OpModeS, single_shot_seal_in_place_detached};
 
-use super::{CryptoError, MessageContents, open_relationship_accept, open_relationship_request};
+use super::{
+    CryptoError, MessageContents, ParallelSignatureInfo, open_relationship_accept,
+    open_relationship_request,
+};
 #[cfg(not(feature = "nacl"))]
 use super::{
     RelationshipDigestAlgorithm, build_relationship_accept_payload,
@@ -43,6 +46,7 @@ pub(crate) fn seal<A, Kdf, Kem>(
     nonconfidential_data: Option<NonConfidentialData>,
     secret_payload: Payload<&[u8]>,
     digest: Option<&mut super::Digest>,
+    request_nonce_override: Option<[u8; 32]>,
 ) -> Result<TSPMessage, CryptoError>
 where
     A: aead::Aead,
@@ -84,8 +88,11 @@ where
             thread_id: _ignored,
             form,
         } => {
-            let mut nonce_bytes = [0_u8; 32];
-            csprng.fill_bytes(&mut nonce_bytes);
+            let nonce_bytes = request_nonce_override.unwrap_or_else(|| {
+                let mut nonce_bytes = [0_u8; 32];
+                csprng.fill_bytes(&mut nonce_bytes);
+                nonce_bytes
+            });
 
             let (payload, payload_digest) = build_relationship_request_payload(
                 &form,
@@ -196,7 +203,7 @@ pub(crate) fn open<'a, A, Kdf, Kem>(
     raw_header: &'a [u8],
     envelope: Envelope<'a, &[u8]>,
     ciphertext: &'a mut [u8],
-) -> Result<MessageContents<'a>, CryptoError>
+) -> Result<(MessageContents<'a>, Option<ParallelSignatureInfo<'a>>), CryptoError>
 where
     A: aead::Aead,
     Kdf: kdf::Kdf,
@@ -251,58 +258,95 @@ where
         }
     }
 
-    let secret_payload = match payload {
-        crate::cesr::Payload::GenericMessage(data) => Payload::Content(data as _),
-        crate::cesr::Payload::DirectRelationProposal { request_digest, .. } => {
+    let (secret_payload, parallel_signature_info) = match payload {
+        crate::cesr::Payload::GenericMessage(data) => (Payload::Content(data as _), None),
+        crate::cesr::Payload::DirectRelationProposal { request_digest, .. } => (
             open_relationship_request(
                 *request_digest.as_bytes(),
                 crate::definitions::RelationshipForm::Direct,
-            )
-        }
+            ),
+            None,
+        ),
         crate::cesr::Payload::DirectRelationAffirm {
             request_digest,
             reply_digest,
-        } => open_relationship_accept(
-            *request_digest.as_bytes(),
-            *reply_digest.as_bytes(),
-            crate::definitions::RelationshipForm::Direct,
+        } => (
+            open_relationship_accept(
+                *request_digest.as_bytes(),
+                *reply_digest.as_bytes(),
+                crate::definitions::RelationshipForm::Direct,
+            ),
+            None,
         ),
-        crate::cesr::Payload::RelationshipCancel { reply, .. } => Payload::CancelRelationship {
-            thread_id: *reply.as_bytes(),
-        },
-        crate::cesr::Payload::NestedMessage(data) => Payload::NestedMessage(data),
-        crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data as _),
+        crate::cesr::Payload::RelationshipCancel { reply, .. } => (
+            Payload::CancelRelationship {
+                thread_id: *reply.as_bytes(),
+            },
+            None,
+        ),
+        crate::cesr::Payload::NestedMessage(data) => (Payload::NestedMessage(data), None),
+        crate::cesr::Payload::RoutedMessage(hops, data) => {
+            (Payload::RoutedMessage(hops, data as _), None)
+        }
         crate::cesr::Payload::ParallelRelationProposal {
+            nonce,
             request_digest,
             sig_new_vid,
             new_vid,
             ..
-        } => open_relationship_request(
-            *request_digest.as_bytes(),
-            crate::definitions::RelationshipForm::Parallel {
+        } => (
+            open_relationship_request(
+                *request_digest.as_bytes(),
+                crate::definitions::RelationshipForm::Parallel {
+                    new_vid,
+                    sig_new_vid,
+                },
+            ),
+            Some(ParallelSignatureInfo {
                 new_vid,
                 sig_new_vid,
-            },
+                signed_data: crate::cesr::encode_parallel_relation_proposal_challenge(
+                    sender_identity,
+                    &nonce,
+                    request_digest,
+                    new_vid,
+                )?,
+            }),
         ),
         crate::cesr::Payload::ParallelRelationAffirm {
             request_digest,
             reply_digest,
             sig_new_vid,
             new_vid,
-        } => open_relationship_accept(
-            *request_digest.as_bytes(),
-            *reply_digest.as_bytes(),
-            crate::definitions::RelationshipForm::Parallel {
+        } => (
+            open_relationship_accept(
+                *request_digest.as_bytes(),
+                *reply_digest.as_bytes(),
+                crate::definitions::RelationshipForm::Parallel {
+                    new_vid,
+                    sig_new_vid,
+                },
+            ),
+            Some(ParallelSignatureInfo {
                 new_vid,
                 sig_new_vid,
-            },
+                signed_data: crate::cesr::encode_parallel_relation_affirm_challenge(
+                    sender_identity,
+                    request_digest,
+                    reply_digest,
+                    new_vid,
+                )?,
+            }),
         ),
     };
 
     Ok((
-        envelope.nonconfidential_data,
-        secret_payload,
-        envelope.crypto_type,
-        envelope.signature_type,
+        (
+            envelope.nonconfidential_data,
+            secret_payload,
+            envelope.crypto_type,
+            envelope.signature_type,
+        ),
+        parallel_signature_info,
     ))
 }
