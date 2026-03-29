@@ -8,6 +8,8 @@ exchanging relationship messages (the preferred way), but it can also be tested 
 setting up identifiers, having both sides explicitly verify each other’s identities
 and establishing a relationship between those identifiers.
 
+If you want to create a second independent relationship via referral instead of a private inner relationship, see [Parallel relationships](./parallel.md).
+
 ## Nested mode (using relationship control messages)
 
 ### Establishing an outer relationship

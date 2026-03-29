@@ -18,5 +18,5 @@ the [Composable Event Streaming Representation]() (CESR) encoding of messages an
 See the [command line interface](./cli/index.md) guide to get started
 with the _test_ CLI for TSP.
 The TSP CLI is an example application of Rust TSP that helps to test
-the direct, nested, and routed mode of TSP.
+the direct, parallel relationship, nested, and routed flows of TSP.
 There is some support infrastructure deployed on <https://did.teaspoon.world/>, <https://p.teaspoon.world/> and <https://q.teaspoon.world/> to get started quickly.
