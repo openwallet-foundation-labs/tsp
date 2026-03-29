@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use crate::definitions::{VidEncryptionKeyType, VidSignatureKeyType};
 use crate::{
-    Error, ExportVid, RelationshipStatus,
+    Error, ExportVid, PendingIncomingParallelRelationship, PendingParallelRelationship,
+    RelationshipStatus,
     store::{Aliases, WebvhUpdateKeys},
 };
 use aries_askar::{ErrorKind, StoreKeyMethod, entry::EntryOperation};
@@ -51,6 +52,10 @@ pub(crate) struct Metadata {
     relation_vid: Option<String>,
     parent_vid: Option<String>,
     tunnel: Option<Box<[String]>>,
+    #[serde(default)]
+    pending_parallel_requests: Vec<PendingParallelRelationship>,
+    #[serde(default)]
+    pending_incoming_parallel_requests: Vec<PendingIncomingParallelRelationship>,
     metadata: Option<serde_json::Value>,
 }
 
@@ -186,6 +191,8 @@ impl SecureStorage for AskarSecureStorage {
                 relation_vid: export.relation_vid,
                 parent_vid: export.parent_vid,
                 tunnel: export.tunnel,
+                pending_parallel_requests: export.pending_parallel_requests,
+                pending_incoming_parallel_requests: export.pending_incoming_parallel_requests,
                 metadata: export.metadata,
             }) {
                 if let Err(e) = conn.insert("vid", &id, data.as_bytes(), None, None).await {
@@ -310,6 +317,8 @@ impl SecureStorage for AskarSecureStorage {
                 relation_vid: data.relation_vid,
                 parent_vid: data.parent_vid,
                 tunnel: data.tunnel,
+                pending_parallel_requests: data.pending_parallel_requests,
+                pending_incoming_parallel_requests: data.pending_incoming_parallel_requests,
                 metadata: data.metadata,
             };
 

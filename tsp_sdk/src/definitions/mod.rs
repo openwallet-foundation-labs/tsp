@@ -51,6 +51,21 @@ pub struct PendingNestedRelationship {
 }
 
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingParallelRelationship {
+    pub thread_id: Digest,
+    pub local_parallel_vid: String,
+    pub outer_receiver: String,
+}
+
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingIncomingParallelRelationship {
+    pub thread_id: Digest,
+    pub local_outer_vid: String,
+}
+
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub enum RelationshipStatus {
     _Controlled,

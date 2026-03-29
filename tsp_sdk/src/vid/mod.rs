@@ -1,8 +1,8 @@
 use crate::{
     RelationshipStatus,
     definitions::{
-        PrivateKeyData, PrivateSigningKeyData, PrivateVid, PublicKeyData,
-        PublicVerificationKeyData, VerifiedVid,
+        PendingIncomingParallelRelationship, PendingParallelRelationship, PrivateKeyData,
+        PrivateSigningKeyData, PrivateVid, PublicKeyData, PublicVerificationKeyData, VerifiedVid,
     },
 };
 
@@ -225,6 +225,10 @@ pub struct ExportVid {
     pub relation_vid: Option<String>,
     pub parent_vid: Option<String>,
     pub tunnel: Option<Box<[String]>>,
+    #[cfg_attr(feature = "serialize", serde(default))]
+    pub pending_parallel_requests: Vec<PendingParallelRelationship>,
+    #[cfg_attr(feature = "serialize", serde(default))]
+    pub pending_incoming_parallel_requests: Vec<PendingIncomingParallelRelationship>,
     pub metadata: Option<serde_json::Value>,
 }
 

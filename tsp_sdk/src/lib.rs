@@ -134,7 +134,8 @@ pub use secure_storage::AskarSecureStorage;
 pub use secure_storage::SecureStorage;
 
 pub use definitions::{
-    Payload, PendingNestedRelationship, PrivateVid, ReceivedRelationshipDelivery,
+    Payload, PendingIncomingParallelRelationship, PendingNestedRelationship,
+    PendingParallelRelationship, PrivateVid, ReceivedRelationshipDelivery,
     ReceivedRelationshipForm, ReceivedTspMessage, RelationshipForm, RelationshipStatus,
     VerifiedVid,
 };
