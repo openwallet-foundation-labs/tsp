@@ -1,6 +1,6 @@
 use crate::{
-    AskarSecureStorage, AsyncSecureStore, OwnedVid, RelationshipStatus, SecureStorage, VerifiedVid,
-    test_utils::*,
+    AskarSecureStorage, AsyncSecureStore, OwnedVid, ReceivedRelationshipDelivery,
+    ReceivedRelationshipForm, RelationshipStatus, SecureStorage, VerifiedVid, test_utils::*,
 };
 use futures::StreamExt;
 use std::collections::BTreeMap;
@@ -332,14 +332,22 @@ async fn test_routed_mode() {
     alice_db
         .set_relation_and_status_for_vid(
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
-            RelationshipStatus::Bidirectional { thread_id: Default::default(), outstanding_nested_thread_ids: vec![] },
+            RelationshipStatus::Bidirectional {
+                thread_id: Default::default(),
+                remote_thread_id: Default::default(),
+                outstanding_nested_requests: vec![],
+            },
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
         )
         .unwrap();
     alice_db
         .set_relation_and_status_for_vid(
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
-            RelationshipStatus::Bidirectional { thread_id: Default::default(), outstanding_nested_thread_ids: vec![] },
+            RelationshipStatus::Bidirectional {
+                thread_id: Default::default(),
+                remote_thread_id: Default::default(),
+                outstanding_nested_requests: vec![],
+            },
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
         )
         .unwrap();
@@ -792,8 +800,9 @@ fn relationship_status_signature(status: RelationshipStatus) -> String {
         RelationshipStatus::ReverseUnidirectional { thread_id } => format!("RevUni:{thread_id:?}"),
         RelationshipStatus::Bidirectional {
             thread_id,
-            outstanding_nested_thread_ids,
-        } => format!("Bi:{thread_id:?}:{outstanding_nested_thread_ids:?}"),
+            remote_thread_id,
+            outstanding_nested_requests,
+        } => format!("Bi:{thread_id:?}:{remote_thread_id:?}:{outstanding_nested_requests:?}"),
     }
 }
 
@@ -1033,9 +1042,9 @@ async fn test_nested_relationship_transition_after_reopen() {
         .unwrap()
     {
         RelationshipStatus::Bidirectional {
-            outstanding_nested_thread_ids,
+            outstanding_nested_requests,
             ..
-        } => *outstanding_nested_thread_ids.last().unwrap(),
+        } => outstanding_nested_requests.last().unwrap().thread_id,
         _ => panic!("missing outstanding nested thread id"),
     };
 
@@ -1043,13 +1052,18 @@ async fn test_nested_relationship_transition_after_reopen() {
     let b_store = persist_reopen_cycle(&b_store, &fixture_b, 1).await;
 
     let crate::ReceivedTspMessage::RequestRelationship {
-        nested_vid: Some(nested_vid),
         thread_id,
+        form,
+        delivery,
         ..
     } = b_store.open_message(&mut nested_request).unwrap()
     else {
         panic!("nested relationship request was not decoded");
     };
+    let ReceivedRelationshipDelivery::Nested { nested_vid } = delivery else {
+        panic!("nested relationship request kind was not decoded");
+    };
+    assert!(matches!(form, ReceivedRelationshipForm::Direct));
     assert_eq!(nested_vid, nested_a_vid.identifier());
     assert_eq!(thread_id, nested_thread);
 
@@ -1058,17 +1072,22 @@ async fn test_nested_relationship_transition_after_reopen() {
         .unwrap();
     let a_store = persist_reopen_cycle(&a_store, &fixture_a, 1).await;
 
-    let crate::ReceivedTspMessage::AcceptRelationship {
-        nested_vid: Some(accepted_nested_vid),
-        ..
-    } = a_store.open_message(&mut nested_accept).unwrap()
+    let crate::ReceivedTspMessage::AcceptRelationship { form, delivery, .. } =
+        a_store.open_message(&mut nested_accept).unwrap()
     else {
         panic!("nested relationship accept was not decoded");
     };
+    let ReceivedRelationshipDelivery::Nested {
+        nested_vid: accepted_nested_vid,
+    } = delivery
+    else {
+        panic!("nested relationship accept kind was not decoded");
+    };
+    assert!(matches!(form, ReceivedRelationshipForm::Direct));
     assert_eq!(accepted_nested_vid, nested_b_vid.identifier());
 
     let RelationshipStatus::Bidirectional {
-        outstanding_nested_thread_ids,
+        outstanding_nested_requests,
         ..
     } = a_store
         .get_relation_status_for_vid_pair(&a_vid, &b_vid)
@@ -1077,7 +1096,9 @@ async fn test_nested_relationship_transition_after_reopen() {
         panic!("parent relation is not bidirectional after nested accept");
     };
     assert!(
-        !outstanding_nested_thread_ids.contains(&thread_id),
+        !outstanding_nested_requests
+            .iter()
+            .any(|pending| pending.thread_id == thread_id),
         "nested thread id was not consumed after nested accept"
     );
 

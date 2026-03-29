@@ -12,7 +12,7 @@ use crate::{
 #[cfg(not(feature = "nacl"))]
 use ed25519_dalek::Signer;
 #[cfg(not(feature = "nacl"))]
-use rand::{SeedableRng, rngs::StdRng};
+use rand::{RngCore, SeedableRng, rngs::StdRng};
 
 #[cfg(not(feature = "pq"))]
 use hpke::{
@@ -22,7 +22,12 @@ use hpke::{
 #[cfg(all(not(feature = "nacl"), not(feature = "pq")))]
 use hpke::{OpModeS, single_shot_seal_in_place_detached};
 
-use super::{CryptoError, MessageContents};
+use super::{CryptoError, MessageContents, open_relationship_accept, open_relationship_request};
+#[cfg(not(feature = "nacl"))]
+use super::{
+    RelationshipDigestAlgorithm, build_relationship_accept_payload,
+    build_relationship_request_payload,
+};
 #[cfg(feature = "pq")]
 use hpke_pq::{
     Deserializable, OpModeR, OpModeS, Serializable, aead, kdf, kem,
@@ -67,58 +72,52 @@ where
         &mut data,
     )?;
 
+    let sender_in_payload = Some(sender.identifier().as_bytes());
+
+    let mut request_digest_storage = [0_u8; 32];
+    let mut reply_digest_storage = [0_u8; 32];
+    let mut payload_digest_override = None;
+
     let secret_payload = match secret_payload {
         Payload::Content(data) => crate::cesr::Payload::GenericMessage(data),
         Payload::RequestRelationship {
-            route,
             thread_id: _ignored,
-        } => crate::cesr::Payload::DirectRelationProposal {
-            nonce: fresh_nonce(&mut csprng),
-            hops: route.unwrap_or_else(Vec::new),
-        },
-        Payload::AcceptRelationship { ref thread_id } => {
-            crate::cesr::Payload::DirectRelationAffirm {
-                reply: crate::cesr::Digest::Sha2_256(thread_id),
-            }
+            form,
+        } => {
+            let mut nonce_bytes = [0_u8; 32];
+            csprng.fill_bytes(&mut nonce_bytes);
+
+            let (payload, payload_digest) = build_relationship_request_payload(
+                &form,
+                sender_in_payload,
+                RelationshipDigestAlgorithm::Sha2_256,
+                nonce_bytes,
+                &mut request_digest_storage,
+            )?;
+            payload_digest_override = Some(payload_digest);
+            payload
         }
-        Payload::RequestNestedRelationship {
-            inner,
-            thread_id: _ignored,
-        } => crate::cesr::Payload::NestedRelationProposal {
-            nonce: fresh_nonce(&mut csprng),
-            message: inner,
-        },
-        Payload::AcceptNestedRelationship {
+        Payload::AcceptRelationship {
             ref thread_id,
-            inner,
-        } => crate::cesr::Payload::NestedRelationAffirm {
-            reply: crate::cesr::Digest::Sha2_256(thread_id),
-            message: inner,
-        },
+            reply_thread_id: _ignored,
+            form,
+        } => {
+            let (payload, payload_digest) = build_relationship_accept_payload(
+                thread_id,
+                &form,
+                sender_in_payload,
+                RelationshipDigestAlgorithm::Sha2_256,
+                &mut reply_digest_storage,
+            )?;
+            payload_digest_override = Some(payload_digest);
+            payload
+        }
         Payload::CancelRelationship { ref thread_id } => crate::cesr::Payload::RelationshipCancel {
             reply: crate::cesr::Digest::Sha2_256(thread_id),
         },
         Payload::NestedMessage(data) => crate::cesr::Payload::NestedMessage(data),
         Payload::RoutedMessage(hops, data) => crate::cesr::Payload::RoutedMessage(hops, data),
-        Payload::NewIdentifier {
-            ref thread_id,
-            new_vid,
-        } => crate::cesr::Payload::NewIdentifierProposal {
-            //TODO: we need to produce a signature here with `new_vid`, but we don't have the PrivateVid for it at this point and that
-            //cannot be done without changing the "upper" API.
-            thread_id: crate::cesr::Digest::Sha2_256(thread_id),
-            sig_thread_id: &[0; 64],
-            new_vid,
-        },
-        Payload::Referral { referred_vid } => {
-            crate::cesr::Payload::RelationshipReferral { referred_vid }
-        }
     };
-
-    #[cfg(feature = "essr")]
-    let sender_in_payload = Some(sender.identifier().as_bytes());
-    #[cfg(not(feature = "essr"))]
-    let sender_in_payload = None;
 
     // prepare CESR-encoded ciphertext
     let mut cesr_message = Vec::with_capacity(
@@ -149,7 +148,7 @@ where
 
     // hash the raw bytes of the plaintext before encryption
     if let Some(digest) = digest {
-        *digest = crate::crypto::sha256(&cesr_message)
+        *digest = payload_digest_override.unwrap_or_else(|| crate::crypto::sha256(&cesr_message));
     }
 
     // perform encryption
@@ -235,14 +234,6 @@ where
         &tag,
     )?;
 
-    // micro-optimization: only compute the thread_id digest if we really need it; we cannot do this
-    // later since after constructing the resulting Payload, we are giving out mutable borrows
-    let thread_id = match crate::cesr::decode_payload(ciphertext)?.payload {
-        crate::cesr::Payload::DirectRelationProposal { .. }
-        | crate::cesr::Payload::NestedRelationProposal { .. } => crate::crypto::sha256(ciphertext),
-        _ => Default::default(),
-    };
-
     #[allow(unused_variables)]
     let DecodedPayload {
         payload,
@@ -262,40 +253,50 @@ where
 
     let secret_payload = match payload {
         crate::cesr::Payload::GenericMessage(data) => Payload::Content(data as _),
-        crate::cesr::Payload::DirectRelationProposal { hops, .. } => Payload::RequestRelationship {
-            route: if hops.is_empty() { None } else { Some(hops) },
-            thread_id,
-        },
-        crate::cesr::Payload::DirectRelationAffirm { reply } => Payload::AcceptRelationship {
-            thread_id: *reply.as_bytes(),
-        },
-        crate::cesr::Payload::NestedRelationProposal { message: inner, .. } => {
-            Payload::RequestNestedRelationship { inner, thread_id }
+        crate::cesr::Payload::DirectRelationProposal { request_digest, .. } => {
+            open_relationship_request(
+                *request_digest.as_bytes(),
+                crate::definitions::RelationshipForm::Direct,
+            )
         }
-        crate::cesr::Payload::NestedRelationAffirm { message, reply } => {
-            Payload::AcceptNestedRelationship {
-                inner: message,
-                thread_id: *reply.as_bytes(),
-            }
-        }
+        crate::cesr::Payload::DirectRelationAffirm {
+            request_digest,
+            reply_digest,
+        } => open_relationship_accept(
+            *request_digest.as_bytes(),
+            *reply_digest.as_bytes(),
+            crate::definitions::RelationshipForm::Direct,
+        ),
         crate::cesr::Payload::RelationshipCancel { reply, .. } => Payload::CancelRelationship {
             thread_id: *reply.as_bytes(),
         },
         crate::cesr::Payload::NestedMessage(data) => Payload::NestedMessage(data),
         crate::cesr::Payload::RoutedMessage(hops, data) => Payload::RoutedMessage(hops, data as _),
-        crate::cesr::Payload::NewIdentifierProposal {
-            thread_id,
-            sig_thread_id: _,
+        crate::cesr::Payload::ParallelRelationProposal {
+            request_digest,
+            sig_new_vid,
             new_vid,
-        } => Payload::NewIdentifier {
-            //TODO: the 'sig_thread_id' verification cannot happen at this point, and needs to be bubbled upward
-            //so it can be checked *after* the VID has been verified and key material retrieved.
-            thread_id: *thread_id.as_bytes(),
+            ..
+        } => open_relationship_request(
+            *request_digest.as_bytes(),
+            crate::definitions::RelationshipForm::Parallel {
+                new_vid,
+                sig_new_vid,
+            },
+        ),
+        crate::cesr::Payload::ParallelRelationAffirm {
+            request_digest,
+            reply_digest,
+            sig_new_vid,
             new_vid,
-        },
-        crate::cesr::Payload::RelationshipReferral { referred_vid } => {
-            Payload::Referral { referred_vid }
-        }
+        } => open_relationship_accept(
+            *request_digest.as_bytes(),
+            *reply_digest.as_bytes(),
+            crate::definitions::RelationshipForm::Parallel {
+                new_vid,
+                sig_new_vid,
+            },
+        ),
     };
 
     Ok((
@@ -304,10 +305,4 @@ where
         envelope.crypto_type,
         envelope.signature_type,
     ))
-}
-
-/// Generate N random bytes using the provided RNG
-#[cfg(not(feature = "nacl"))]
-fn fresh_nonce(csprng: &mut (impl rand::RngCore + rand::CryptoRng)) -> crate::cesr::Nonce {
-    crate::cesr::Nonce::generate(|dst| csprng.fill_bytes(dst))
 }

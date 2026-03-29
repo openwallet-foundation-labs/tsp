@@ -368,62 +368,6 @@ impl AsyncSecureStore {
         Ok(())
     }
 
-    pub fn make_new_identifier_notice(
-        &self,
-        sender: &str,
-        receiver: &str,
-        sender_new_vid: &str,
-    ) -> Result<(Url, Vec<u8>), Error> {
-        self.inner
-            .make_new_identifier_notice(sender, receiver, sender_new_vid)
-    }
-
-    /// Send a new identifier introduction notice
-    pub async fn send_new_identifier_notice(
-        &self,
-        sender: &str,
-        receiver: &str,
-        sender_new_vid: &str,
-    ) -> Result<(), Error> {
-        let (endpoint, message) =
-            self.inner
-                .make_new_identifier_notice(sender, receiver, sender_new_vid)?;
-
-        tracing::info!("sending message to {endpoint}");
-
-        crate::transport::send_message(&endpoint, &message).await?;
-
-        Ok(())
-    }
-
-    pub fn make_relationship_referral(
-        &self,
-        sender: &str,
-        receiver: &str,
-        referred_vid: &str,
-    ) -> Result<(Url, Vec<u8>), Error> {
-        self.inner
-            .make_relationship_referral(sender, receiver, referred_vid)
-    }
-
-    /// Send a relationship referral message to `receiver`
-    pub async fn send_relationship_referral(
-        &self,
-        sender: &str,
-        receiver: &str,
-        referred_vid: &str,
-    ) -> Result<(), Error> {
-        let (endpoint, message) =
-            self.inner
-                .make_relationship_referral(sender, receiver, referred_vid)?;
-
-        tracing::info!("sending message to {endpoint}");
-
-        crate::transport::send_message(&endpoint, &message).await?;
-
-        Ok(())
-    }
-
     pub fn make_nested_relationship_request(
         &self,
         parent_sender: &str,

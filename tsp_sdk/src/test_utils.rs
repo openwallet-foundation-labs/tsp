@@ -2,7 +2,7 @@
 
 use crate::{
     OwnedVid, RelationshipStatus, SecureStore,
-    definitions::{Digest, VerifiedVid},
+    definitions::{Digest, PendingNestedRelationship, VerifiedVid},
 };
 use once_cell::sync::Lazy;
 use std::path::{Path, PathBuf};
@@ -117,7 +117,11 @@ fn relationship_status_for(index: usize) -> RelationshipStatus {
         },
         _ => RelationshipStatus::Bidirectional {
             thread_id: relationship_digest(index),
-            outstanding_nested_thread_ids: vec![relationship_digest(index + 10_000)],
+            remote_thread_id: relationship_digest(index + 1_000),
+            outstanding_nested_requests: vec![PendingNestedRelationship {
+                thread_id: relationship_digest(index + 10_000),
+                local_nested_vid: format!("did:example:nested:{index}"),
+            }],
         },
     }
 }
@@ -170,7 +174,11 @@ pub fn create_prepopulated_store() -> SecureStore {
             remote_parent.identifier(),
             RelationshipStatus::Bidirectional {
                 thread_id: relationship_digest(20_001),
-                outstanding_nested_thread_ids: vec![relationship_digest(20_002)],
+                remote_thread_id: relationship_digest(20_011),
+                outstanding_nested_requests: vec![PendingNestedRelationship {
+                    thread_id: relationship_digest(20_002),
+                    local_nested_vid: "did:example:nested:20_002".to_string(),
+                }],
             },
             &root_local,
         )
@@ -186,7 +194,11 @@ pub fn create_prepopulated_store() -> SecureStore {
             remote_nested.identifier(),
             RelationshipStatus::Bidirectional {
                 thread_id: relationship_digest(20_101),
-                outstanding_nested_thread_ids: vec![relationship_digest(20_102)],
+                remote_thread_id: relationship_digest(20_111),
+                outstanding_nested_requests: vec![PendingNestedRelationship {
+                    thread_id: relationship_digest(20_102),
+                    local_nested_vid: "did:example:nested:20_102".to_string(),
+                }],
             },
             nested_local.identifier(),
         )
@@ -243,7 +255,11 @@ pub fn create_dirty_store_with_transition_seed() -> (AsyncSecureStore, DirtyTran
             remote_bidirectional.identifier(),
             RelationshipStatus::Bidirectional {
                 thread_id: relationship_digest(30_001),
-                outstanding_nested_thread_ids: vec![relationship_digest(30_002)],
+                remote_thread_id: relationship_digest(30_011),
+                outstanding_nested_requests: vec![PendingNestedRelationship {
+                    thread_id: relationship_digest(30_002),
+                    local_nested_vid: "did:example:nested:30_002".to_string(),
+                }],
             },
             local.identifier(),
         )

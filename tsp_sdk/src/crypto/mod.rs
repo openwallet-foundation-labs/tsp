@@ -2,7 +2,8 @@
 use crate::definitions::VidEncryptionKeyType;
 use crate::definitions::{
     Digest, MessageType, NonConfidentialData, Payload, PrivateKeyData, PrivateSigningKeyData,
-    PrivateVid, PublicKeyData, PublicVerificationKeyData, TSPMessage, VerifiedVid,
+    PrivateVid, PublicKeyData, PublicVerificationKeyData, RelationshipForm, TSPMessage,
+    VerifiedVid,
 };
 #[cfg(not(feature = "pq"))]
 use hpke::kem;
@@ -24,6 +25,147 @@ mod tsp_nacl;
 use crate::cesr::{CryptoType, SignatureType};
 use crate::crypto::CryptoError::Verify;
 pub use error::CryptoError;
+
+type CesrRelationshipPayload<'a> = crate::cesr::Payload<'a, &'a [u8], &'a [u8]>;
+
+// Which digest algorithm is active depends on the crypto backend feature set.
+#[allow(dead_code)]
+#[derive(Clone, Copy)]
+pub(crate) enum RelationshipDigestAlgorithm {
+    Sha2_256,
+    Blake2b256,
+}
+
+impl RelationshipDigestAlgorithm {
+    fn field<'a>(self, digest: &'a Digest) -> crate::cesr::Digest<'a> {
+        match self {
+            RelationshipDigestAlgorithm::Sha2_256 => crate::cesr::Digest::Sha2_256(digest),
+            RelationshipDigestAlgorithm::Blake2b256 => crate::cesr::Digest::Blake2b256(digest),
+        }
+    }
+
+    fn hash(self, bytes: &[u8]) -> Digest {
+        match self {
+            RelationshipDigestAlgorithm::Sha2_256 => sha256(bytes),
+            RelationshipDigestAlgorithm::Blake2b256 => blake2b256(bytes),
+        }
+    }
+}
+
+fn encode_hashed_payload(
+    payload: &CesrRelationshipPayload<'_>,
+    sender_in_payload: Option<&[u8]>,
+    algorithm: RelationshipDigestAlgorithm,
+) -> Result<Digest, CryptoError> {
+    let mut encoded = Vec::with_capacity(payload.calculate_size(sender_in_payload));
+    crate::cesr::encode_payload(payload, sender_in_payload, &mut encoded)?;
+    Ok(algorithm.hash(&encoded))
+}
+
+fn relationship_request_payload<'a>(
+    form: &RelationshipForm<'a, &'a [u8]>,
+    digest_algorithm: RelationshipDigestAlgorithm,
+    nonce_bytes: [u8; 32],
+    request_digest: &'a Digest,
+) -> CesrRelationshipPayload<'a> {
+    match form {
+        RelationshipForm::Direct => crate::cesr::Payload::DirectRelationProposal {
+            nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+            request_digest: digest_algorithm.field(request_digest),
+        },
+        RelationshipForm::Parallel {
+            new_vid,
+            sig_new_vid,
+        } => crate::cesr::Payload::ParallelRelationProposal {
+            nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+            request_digest: digest_algorithm.field(request_digest),
+            sig_new_vid,
+            new_vid,
+        },
+    }
+}
+
+fn relationship_accept_payload<'a>(
+    thread_id: &'a Digest,
+    form: &RelationshipForm<'a, &'a [u8]>,
+    digest_algorithm: RelationshipDigestAlgorithm,
+    reply_digest: &'a Digest,
+) -> CesrRelationshipPayload<'a> {
+    match form {
+        RelationshipForm::Direct => crate::cesr::Payload::DirectRelationAffirm {
+            request_digest: digest_algorithm.field(thread_id),
+            reply_digest: digest_algorithm.field(reply_digest),
+        },
+        RelationshipForm::Parallel {
+            new_vid,
+            sig_new_vid,
+        } => crate::cesr::Payload::ParallelRelationAffirm {
+            request_digest: digest_algorithm.field(thread_id),
+            reply_digest: digest_algorithm.field(reply_digest),
+            sig_new_vid,
+            new_vid,
+        },
+    }
+}
+
+pub(crate) fn build_relationship_request_payload<'a>(
+    form: &RelationshipForm<'a, &'a [u8]>,
+    sender_in_payload: Option<&[u8]>,
+    digest_algorithm: RelationshipDigestAlgorithm,
+    nonce_bytes: [u8; 32],
+    request_digest: &'a mut Digest,
+) -> Result<(CesrRelationshipPayload<'a>, Digest), CryptoError> {
+    let placeholder_payload =
+        relationship_request_payload(form, digest_algorithm, nonce_bytes, &*request_digest);
+    *request_digest =
+        encode_hashed_payload(&placeholder_payload, sender_in_payload, digest_algorithm)?;
+
+    let digest = *request_digest;
+
+    Ok((
+        relationship_request_payload(form, digest_algorithm, nonce_bytes, &*request_digest),
+        digest,
+    ))
+}
+
+pub(crate) fn build_relationship_accept_payload<'a>(
+    thread_id: &'a Digest,
+    form: &RelationshipForm<'a, &'a [u8]>,
+    sender_in_payload: Option<&[u8]>,
+    digest_algorithm: RelationshipDigestAlgorithm,
+    reply_digest: &'a mut Digest,
+) -> Result<(CesrRelationshipPayload<'a>, Digest), CryptoError> {
+    let placeholder_payload =
+        relationship_accept_payload(thread_id, form, digest_algorithm, &*reply_digest);
+    *reply_digest =
+        encode_hashed_payload(&placeholder_payload, sender_in_payload, digest_algorithm)?;
+
+    let digest = *reply_digest;
+
+    Ok((
+        relationship_accept_payload(thread_id, form, digest_algorithm, &*reply_digest),
+        digest,
+    ))
+}
+
+pub(crate) fn open_relationship_request<'a>(
+    thread_id: Digest,
+    form: RelationshipForm<'a, &'a [u8]>,
+) -> Payload<'a, &'a [u8], &'a mut [u8]> {
+    Payload::RequestRelationship { thread_id, form }
+}
+
+pub(crate) fn open_relationship_accept<'a>(
+    thread_id: Digest,
+    reply_thread_id: Digest,
+    form: RelationshipForm<'a, &'a [u8]>,
+) -> Payload<'a, &'a [u8], &'a mut [u8]> {
+    Payload::AcceptRelationship {
+        thread_id,
+        reply_thread_id,
+        form,
+    }
+}
 
 #[cfg(not(feature = "pq"))]
 pub type Aead = hpke::aead::ChaCha20Poly1305;

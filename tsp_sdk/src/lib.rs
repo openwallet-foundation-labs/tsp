@@ -133,7 +133,11 @@ pub use secure_storage::AskarSecureStorage;
 #[cfg(feature = "async")]
 pub use secure_storage::SecureStorage;
 
-pub use definitions::{Payload, PrivateVid, ReceivedTspMessage, RelationshipStatus, VerifiedVid};
+pub use definitions::{
+    Payload, PendingNestedRelationship, PrivateVid, ReceivedRelationshipDelivery,
+    ReceivedRelationshipForm, ReceivedTspMessage, RelationshipForm, RelationshipStatus,
+    VerifiedVid,
+};
 pub use error::Error;
 pub use store::{Aliases, SecureStore};
 pub use vid::{ExportVid, OwnedVid, Vid};
