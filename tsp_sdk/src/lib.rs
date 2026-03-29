@@ -118,6 +118,11 @@ mod secure_storage;
 #[cfg(test)]
 mod test;
 
+#[cfg(feature = "async")]
+#[cfg(test)]
+#[cfg(not(target_arch = "wasm32"))]
+mod parallel_relationship_test;
+
 /// Test utilities and helpers for writing tests.
 ///
 /// This module is available when compiling tests and provides
