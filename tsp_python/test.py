@@ -54,9 +54,7 @@ class AliceBob(unittest.TestCase):
         received = self.store.open_message(sealed)
 
         match received:
-            case tsp.RequestRelationship(
-                sender, receiver, _route, _nested_vid, _thread_id
-            ):
+            case tsp.RequestRelationship(sender, receiver, _thread_id, _form, _delivery, _nested_vid, _new_vid):
                 self.assertEqual(sender, self.alice.identifier())
                 self.assertEqual(receiver, self.bob.identifier())
 
@@ -71,9 +69,7 @@ class AliceBob(unittest.TestCase):
 
         received = self.store.open_message(sealed)
         match received:
-            case tsp.RequestRelationship(
-                sender, receiver, _route, _nested_vid, thread_id
-            ):
+            case tsp.RequestRelationship(sender, receiver, thread_id, _form, _delivery, _nested_vid, _new_vid):
                 self.assertEqual(sender, self.alice.identifier())
                 self.assertEqual(receiver, self.bob.identifier())
 
@@ -87,7 +83,7 @@ class AliceBob(unittest.TestCase):
 
         received = self.store.open_message(sealed)
         match received:
-            case tsp.AcceptRelationship(sender, receiver, _nested_vid):
+            case tsp.AcceptRelationship(sender, receiver, _thread_id, _reply_thread_id, _form, _delivery, _nested_vid, _new_vid):
                 self.assertEqual(sender, self.bob.identifier())
                 self.assertEqual(receiver, self.alice.identifier())
 
@@ -102,9 +98,7 @@ class AliceBob(unittest.TestCase):
 
         received = self.store.open_message(sealed)
         match received:
-            case tsp.RequestRelationship(
-                sender, receiver, _route, _nested_vid, thread_id
-            ):
+            case tsp.RequestRelationship(sender, receiver, thread_id, _form, _delivery, _nested_vid, _new_vid):
                 self.assertEqual(sender, self.alice.identifier())
                 self.assertEqual(receiver, self.bob.identifier())
 
@@ -118,7 +112,7 @@ class AliceBob(unittest.TestCase):
 
         received = self.store.open_message(sealed)
         match received:
-            case tsp.AcceptRelationship(sender, receiver, _nested_vid):
+            case tsp.AcceptRelationship(sender, receiver, _thread_id, _reply_thread_id, _form, _delivery, _nested_vid, _new_vid):
                 self.assertEqual(sender, self.bob.identifier())
                 self.assertEqual(receiver, self.alice.identifier())
 
@@ -270,9 +264,7 @@ class AliceBob(unittest.TestCase):
 
         received = b_store.open_message(sealed)
         match received:
-            case tsp.RequestRelationship(
-                sender, receiver, _route, _nested_vid, thread_id
-            ):
+            case tsp.RequestRelationship(sender, receiver, thread_id, _form, _delivery, _nested_vid, _new_vid):
                 self.assertEqual(sender, a.identifier())
                 self.assertEqual(receiver, b.identifier())
 
@@ -286,7 +278,7 @@ class AliceBob(unittest.TestCase):
 
         received = a_store.open_message(sealed)
         match received:
-            case tsp.AcceptRelationship(sender, receiver, _nested_vid):
+            case tsp.AcceptRelationship(sender, receiver, _thread_id, _reply_thread_id, _form, _delivery, _nested_vid, _new_vid):
                 self.assertEqual(sender, b.identifier())
                 self.assertEqual(receiver, a.identifier())
 
@@ -298,9 +290,7 @@ class AliceBob(unittest.TestCase):
         )
 
         match b_store.open_message(sealed):
-            case tsp.RequestRelationship(
-                sender, receiver, _route, nested_vid_1, thread_id
-            ):
+            case tsp.RequestRelationship(sender, receiver, thread_id, _form, _delivery, nested_vid_1, _new_vid):
                 self.assertEqual(sender, a.identifier())
                 self.assertEqual(receiver, b.identifier())
 
@@ -312,7 +302,7 @@ class AliceBob(unittest.TestCase):
         )
 
         match a_store.open_message(sealed):
-            case tsp.AcceptRelationship(sender, receiver, nested_vid_2):
+            case tsp.AcceptRelationship(sender, receiver, _thread_id, _reply_thread_id, _form, _delivery, nested_vid_2, _new_vid):
                 self.assertEqual(sender, b.identifier())
 
             case other:

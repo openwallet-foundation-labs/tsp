@@ -8,6 +8,8 @@ ReceivedTspMessageVariant = tsp_python.ReceivedTspMessageVariant
 FlatReceivedTspMessage = tsp_python.FlatReceivedTspMessage
 CryptoType = tsp_python.CryptoType
 SignatureType = tsp_python.SignatureType
+RelationshipForm = tsp_python.RelationshipForm
+RelationshipDelivery = tsp_python.RelationshipDelivery
 
 
 def color_print(message: bytes) -> str:
@@ -200,11 +202,26 @@ class ReceivedTspMessage:
 
             case ReceivedTspMessageVariant.RequestRelationship:
                 return RequestRelationship(
-                    msg.sender, msg.receiver, msg.route, msg.nested_vid, msg.thread_id
+                    msg.sender,
+                    msg.receiver,
+                    bytes(msg.thread_id),
+                    msg.form,
+                    msg.delivery,
+                    msg.nested_vid,
+                    msg.new_vid,
                 )
 
             case ReceivedTspMessageVariant.AcceptRelationship:
-                return AcceptRelationship(msg.sender, msg.receiver, msg.nested_vid)
+                return AcceptRelationship(
+                    msg.sender,
+                    msg.receiver,
+                    bytes(msg.thread_id),
+                    bytes(msg.reply_thread_id),
+                    msg.form,
+                    msg.delivery,
+                    msg.nested_vid,
+                    msg.new_vid,
+                )
 
             case ReceivedTspMessageVariant.CancelRelationship:
                 return CancelRelationship(msg.sender, msg.receiver)
@@ -214,8 +231,8 @@ class ReceivedTspMessage:
                     msg.sender,
                     msg.receiver,
                     msg.next_hop,
-                    msg.route,
-                    msg.opaque_payload,
+                    [bytes(hop) for hop in msg.route],
+                    bytes(msg.opaque_payload),
                 )
 
             case ReceivedTspMessageVariant.PendingMessage:
@@ -239,7 +256,12 @@ class GenericMessage(ReceivedTspMessage):
 class AcceptRelationship(ReceivedTspMessage):
     sender: str
     receiver: str
-    nested_vid: str
+    thread_id: bytes
+    reply_thread_id: bytes
+    form: RelationshipForm
+    delivery: RelationshipDelivery
+    nested_vid: str | None
+    new_vid: str | None
 
 
 @dataclass
@@ -252,9 +274,11 @@ class CancelRelationship(ReceivedTspMessage):
 class RequestRelationship(ReceivedTspMessage):
     sender: str
     receiver: str
-    route: str
-    nested_vid: str
-    thread_id: str
+    thread_id: bytes
+    form: RelationshipForm
+    delivery: RelationshipDelivery
+    nested_vid: str | None
+    new_vid: str | None
 
 
 @dataclass
@@ -262,5 +286,5 @@ class ForwardRequest(ReceivedTspMessage):
     sender: str
     receiver: str
     next_hop: str
-    route: str
-    opaque_payload: str
+    route: list[bytes]
+    opaque_payload: bytes

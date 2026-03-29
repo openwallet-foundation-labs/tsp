@@ -4,9 +4,11 @@ use crate::{
 };
 use crypto_box::{ChaChaBox, PublicKey, SecretKey, aead::AeadInPlace};
 
+use super::{CryptoError, MessageContents, open_relationship_accept, open_relationship_request};
+#[cfg(feature = "nacl")]
 use super::{
-    CryptoError, MessageContents, RelationshipDigestAlgorithm, build_relationship_accept_payload,
-    build_relationship_request_payload, open_relationship_accept, open_relationship_request,
+    RelationshipDigestAlgorithm, build_relationship_accept_payload,
+    build_relationship_request_payload,
 };
 #[cfg(feature = "nacl")]
 use crate::{
