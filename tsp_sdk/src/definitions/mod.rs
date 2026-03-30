@@ -160,6 +160,26 @@ pub enum ReceivedTspMessage<Data: AsRef<[u8]> = BytesMut> {
     },
 }
 
+impl<Data: AsRef<[u8]>> ReceivedTspMessage<Data> {
+    pub fn pending_message_parts(&self) -> Option<(&str, &[u8])> {
+        #[cfg(feature = "async")]
+        {
+            match self {
+                Self::PendingMessage {
+                    unknown_vid,
+                    payload,
+                } => Some((unknown_vid.as_str(), payload.as_ref())),
+                _ => None,
+            }
+        }
+
+        #[cfg(not(feature = "async"))]
+        {
+            None
+        }
+    }
+}
+
 mod conversions;
 
 #[derive(Debug, PartialEq, Eq)]

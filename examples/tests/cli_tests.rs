@@ -494,10 +494,10 @@ fn test_parallel_request_and_accept_roundtrip_over_cli() {
     let tsp_bin = cargo_bin!("tsp");
 
     let outer_receive = {
-        let tsp_bin = tsp_bin;
+        let tsp_bin = tsp_bin.to_path_buf();
         let bob_wallet = bob_wallet.clone();
         thread::spawn(move || {
-            StdCommand::new(&tsp_bin)
+            StdCommand::new(tsp_bin)
                 .args(["--wallet", bob_wallet.as_str(), "receive", "--one", "bob"])
                 .output()
                 .expect("failed to receive outer relationship request")
@@ -506,7 +506,7 @@ fn test_parallel_request_and_accept_roundtrip_over_cli() {
 
     thread::sleep(Duration::from_millis(300));
 
-    let outer_request = StdCommand::new(&tsp_bin)
+    let outer_request = StdCommand::new(tsp_bin)
         .args([
             "--wallet",
             alice_wallet.as_str(),
@@ -534,10 +534,10 @@ fn test_parallel_request_and_accept_roundtrip_over_cli() {
     assert_eq!(outer_sender, alice_did);
 
     let outer_accept_receive = {
-        let tsp_bin = tsp_bin;
+        let tsp_bin = tsp_bin.to_path_buf();
         let alice_wallet = alice_wallet.clone();
         thread::spawn(move || {
-            StdCommand::new(&tsp_bin)
+            StdCommand::new(tsp_bin)
                 .args([
                     "--wallet",
                     alice_wallet.as_str(),
@@ -552,7 +552,7 @@ fn test_parallel_request_and_accept_roundtrip_over_cli() {
 
     thread::sleep(Duration::from_millis(300));
 
-    let outer_accept = StdCommand::new(&tsp_bin)
+    let outer_accept = StdCommand::new(tsp_bin)
         .args([
             "--wallet",
             bob_wallet.as_str(),
@@ -584,10 +584,10 @@ fn test_parallel_request_and_accept_roundtrip_over_cli() {
     verify_did(&alice_wallet, "alice-alt", &alice_alt_did);
 
     let parallel_receive = {
-        let tsp_bin = tsp_bin;
+        let tsp_bin = tsp_bin.to_path_buf();
         let bob_wallet = bob_wallet.clone();
         thread::spawn(move || {
-            StdCommand::new(&tsp_bin)
+            StdCommand::new(tsp_bin)
                 .args(["--wallet", bob_wallet.as_str(), "receive", "--one", "bob"])
                 .output()
                 .expect("failed to receive parallel relationship request")
@@ -597,10 +597,10 @@ fn test_parallel_request_and_accept_roundtrip_over_cli() {
     thread::sleep(Duration::from_millis(300));
 
     let parallel_request = {
-        let tsp_bin = tsp_bin;
+        let tsp_bin = tsp_bin.to_path_buf();
         let alice_wallet = alice_wallet.clone();
         thread::spawn(move || {
-            StdCommand::new(&tsp_bin)
+            StdCommand::new(tsp_bin)
                 .args([
                     "--wallet",
                     alice_wallet.as_str(),
@@ -631,7 +631,7 @@ fn test_parallel_request_and_accept_roundtrip_over_cli() {
         parse_relationship_stdout(&parallel_receive.stdout);
     assert_eq!(received_new_vid, alice_alt_did);
 
-    let parallel_accept = StdCommand::new(&tsp_bin)
+    let parallel_accept = StdCommand::new(tsp_bin)
         .args([
             "--wallet",
             bob_wallet.as_str(),

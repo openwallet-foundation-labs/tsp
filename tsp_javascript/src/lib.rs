@@ -422,16 +422,23 @@ pub enum ReceivedTspMessageVariant {
     AcceptRelationship = 2,
     CancelRelationship = 3,
     ForwardRequest = 4,
+    PendingMessage = 5,
 }
 
 impl From<&tsp_sdk::ReceivedTspMessage> for ReceivedTspMessageVariant {
     fn from(value: &tsp_sdk::ReceivedTspMessage) -> Self {
+        if value.pending_message_parts().is_some() {
+            return Self::PendingMessage;
+        }
+
+        #[allow(unreachable_patterns)]
         match value {
             tsp_sdk::ReceivedTspMessage::GenericMessage { .. } => Self::GenericMessage,
             tsp_sdk::ReceivedTspMessage::RequestRelationship { .. } => Self::RequestRelationship,
             tsp_sdk::ReceivedTspMessage::AcceptRelationship { .. } => Self::AcceptRelationship,
             tsp_sdk::ReceivedTspMessage::CancelRelationship { .. } => Self::CancelRelationship,
             tsp_sdk::ReceivedTspMessage::ForwardRequest { .. } => Self::ForwardRequest,
+            _ => unreachable!("pending messages are handled before variant flattening"),
         }
     }
 }
@@ -653,6 +660,13 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             new_vid: None,
         };
 
+        if let Some((unknown_vid, payload)) = value.pending_message_parts() {
+            this.unknown_vid = Some(unknown_vid.to_string());
+            this.payload = Some(payload.to_vec());
+            return this;
+        }
+
+        #[allow(unreachable_patterns)]
         match value {
             tsp_sdk::ReceivedTspMessage::GenericMessage {
                 sender,
@@ -736,6 +750,7 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
                 this.route = Some(route.into_iter().map(Into::into).collect());
                 this.opaque_payload = Some(opaque_payload.into());
             }
+            _ => unreachable!("pending messages are handled before flattening"),
         };
 
         this
