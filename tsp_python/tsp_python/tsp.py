@@ -161,6 +161,22 @@ class SecureStore:
                 sender, receiver, thread_id, route
             )
 
+    def make_parallel_relationship_request(
+            self, sender: str, receiver: str, sender_new_vid: str
+    ) -> tuple[str, bytes]:
+        with Wallet(self):
+            return self.inner.make_parallel_relationship_request(
+                sender, receiver, sender_new_vid
+            )
+
+    def make_parallel_relationship_accept(
+            self, sender_new_vid: str, receiver_new_vid: str, thread_id: bytes
+    ) -> tuple[str, bytes]:
+        with Wallet(self):
+            return self.inner.make_parallel_relationship_accept(
+                sender_new_vid, receiver_new_vid, thread_id
+            )
+
     def make_relationship_cancel(self, sender: str, receiver: str) -> tuple[str, bytes]:
         with Wallet(self):
             return self.inner.make_relationship_cancel(sender, receiver)

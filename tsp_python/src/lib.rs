@@ -273,6 +273,34 @@ impl Store {
         Ok((url.to_string(), bytes))
     }
 
+    fn make_parallel_relationship_request(
+        &self,
+        sender: String,
+        receiver: String,
+        sender_new_vid: String,
+    ) -> PyResult<(String, Vec<u8>)> {
+        let (url, bytes) = self
+            .inner
+            .make_parallel_relationship_request(&sender, &receiver, &sender_new_vid)
+            .map_err(py_exception)?;
+
+        Ok((url.to_string(), bytes))
+    }
+
+    fn make_parallel_relationship_accept(
+        &self,
+        sender_new_vid: String,
+        receiver_new_vid: String,
+        thread_id: [u8; 32],
+    ) -> PyResult<(String, Vec<u8>)> {
+        let (url, bytes) = self
+            .inner
+            .make_parallel_relationship_accept(&sender_new_vid, &receiver_new_vid, thread_id)
+            .map_err(py_exception)?;
+
+        Ok((url.to_string(), bytes))
+    }
+
     #[pyo3(signature = (sender, receiver))]
     fn make_relationship_cancel(
         &self,

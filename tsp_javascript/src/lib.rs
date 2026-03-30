@@ -152,6 +152,46 @@ impl Store {
     }
 
     #[wasm_bindgen]
+    pub fn make_parallel_relationship_request(
+        &self,
+        sender: String,
+        receiver: String,
+        sender_new_vid: String,
+    ) -> Result<SealedMessage, Error> {
+        let (url, sealed) = self
+            .0
+            .make_parallel_relationship_request(&sender, &receiver, &sender_new_vid)
+            .map_err(Error)?;
+
+        Ok(SealedMessage {
+            url: url.to_string(),
+            sealed,
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn make_parallel_relationship_accept(
+        &self,
+        sender_new_vid: String,
+        receiver_new_vid: String,
+        thread_id: Vec<u8>,
+    ) -> Result<SealedMessage, Error> {
+        let (url, sealed) = self
+            .0
+            .make_parallel_relationship_accept(
+                &sender_new_vid,
+                &receiver_new_vid,
+                thread_id.try_into().unwrap(),
+            )
+            .map_err(Error)?;
+
+        Ok(SealedMessage {
+            url: url.to_string(),
+            sealed,
+        })
+    }
+
+    #[wasm_bindgen]
     pub fn make_relationship_cancel(
         &self,
         sender: String,
