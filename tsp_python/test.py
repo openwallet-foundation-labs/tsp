@@ -20,6 +20,31 @@ class AliceBob(unittest.TestCase):
     def tearDown(self):
         os.remove("test_wallet.sqlite")
 
+    def establish_outer_relationship(self):
+        _url, sealed = self.store.make_relationship_request(
+            self.alice.identifier(), self.bob.identifier(), None
+        )
+
+        received = self.store.open_message(sealed)
+        match received:
+            case tsp.RequestRelationship(sender, receiver, thread_id, _form, _delivery, _nested_vid, _new_vid):
+                self.assertEqual(sender, self.alice.identifier())
+                self.assertEqual(receiver, self.bob.identifier())
+            case other:
+                self.fail(f"unexpected message type {other}")
+
+        _url, sealed = self.store.make_relationship_accept(
+            self.bob.identifier(), self.alice.identifier(), thread_id, None
+        )
+
+        received = self.store.open_message(sealed)
+        match received:
+            case tsp.AcceptRelationship(sender, receiver, _thread_id, _reply_thread_id, _form, _delivery, _nested_vid, _new_vid):
+                self.assertEqual(sender, self.bob.identifier())
+                self.assertEqual(receiver, self.alice.identifier())
+            case other:
+                self.fail(f"unexpected message type {other}")
+
     def test_open_seal(self):
         message = b"hello world"
 
@@ -57,6 +82,78 @@ class AliceBob(unittest.TestCase):
             case tsp.RequestRelationship(sender, receiver, _thread_id, _form, _delivery, _nested_vid, _new_vid):
                 self.assertEqual(sender, self.alice.identifier())
                 self.assertEqual(receiver, self.bob.identifier())
+
+            case other:
+                self.fail(f"unexpected message type {other}")
+
+    def test_make_parallel_relationship_request(self):
+        alice_parallel = new_vid()
+        self.store.add_private_vid(alice_parallel)
+        self.establish_outer_relationship()
+
+        url, sealed = self.store.make_parallel_relationship_request(
+            self.alice.identifier(),
+            self.bob.identifier(),
+            alice_parallel.identifier(),
+        )
+
+        self.assertEqual(url, "tcp://127.0.0.1:1337")
+
+        received = self.store.open_message(sealed)
+
+        match received:
+            case tsp.RequestRelationship(sender, receiver, _thread_id, form, delivery, nested_vid, parallel_vid):
+                self.assertEqual(sender, self.alice.identifier())
+                self.assertEqual(receiver, self.bob.identifier())
+                self.assertEqual(form, tsp.RelationshipForm.Parallel)
+                self.assertEqual(delivery, tsp.RelationshipDelivery.Direct)
+                self.assertIsNone(nested_vid)
+                self.assertEqual(parallel_vid, alice_parallel.identifier())
+
+            case other:
+                self.fail(f"unexpected message type {other}")
+
+    def test_make_parallel_relationship_accept(self):
+        alice_parallel = new_vid()
+        bob_parallel = new_vid()
+        self.store.add_private_vid(alice_parallel)
+        self.store.add_private_vid(bob_parallel)
+        self.establish_outer_relationship()
+
+        _url, sealed = self.store.make_parallel_relationship_request(
+            self.alice.identifier(),
+            self.bob.identifier(),
+            alice_parallel.identifier(),
+        )
+
+        received = self.store.open_message(sealed)
+        match received:
+            case tsp.RequestRelationship(sender, receiver, thread_id, form, delivery, nested_vid, parallel_vid):
+                self.assertEqual(sender, self.alice.identifier())
+                self.assertEqual(receiver, self.bob.identifier())
+                self.assertEqual(form, tsp.RelationshipForm.Parallel)
+                self.assertEqual(delivery, tsp.RelationshipDelivery.Direct)
+                self.assertIsNone(nested_vid)
+                self.assertEqual(parallel_vid, alice_parallel.identifier())
+
+            case other:
+                self.fail(f"unexpected message type {other}")
+
+        url, sealed = self.store.make_parallel_relationship_accept(
+            bob_parallel.identifier(), alice_parallel.identifier(), thread_id
+        )
+        self.assertEqual(url, "tcp://127.0.0.1:1337")
+
+        received = self.store.open_message(sealed)
+        match received:
+            case tsp.AcceptRelationship(sender, receiver, received_thread_id, _reply_thread_id, form, delivery, nested_vid, parallel_vid):
+                self.assertEqual(sender, self.bob.identifier())
+                self.assertEqual(receiver, alice_parallel.identifier())
+                self.assertEqual(received_thread_id, thread_id)
+                self.assertEqual(form, tsp.RelationshipForm.Parallel)
+                self.assertEqual(delivery, tsp.RelationshipDelivery.Direct)
+                self.assertIsNone(nested_vid)
+                self.assertEqual(parallel_vid, bob_parallel.identifier())
 
             case other:
                 self.fail(f"unexpected message type {other}")
