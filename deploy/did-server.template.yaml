@@ -18,6 +18,7 @@ spec:
     spec:
       containerConcurrency: 80
       timeoutSeconds: 300
+      serviceAccountName: 797284806017-compute@developer.gserviceaccount.com
       containers:
         - name: did-server
           image: us-central1-docker.pkg.dev/teaspoon-world-demo/tsp/openwallet-foundation-labs/tsp/did-server:${TAG}
@@ -28,13 +29,22 @@ spec:
           resources:
             limits:
               cpu: 1000m
-              memory: 256Mi
+              memory: 512Mi
           startupProbe:
             timeoutSeconds: 240
             periodSeconds: 240
             failureThreshold: 1
             tcpSocket:
               port: 3000
+          volumeMounts:
+            - name: gcs-data
+              mountPath: /app/data
+      volumes:
+        - name: gcs-data
+          csi:
+            driver: gcsfuse.run.googleapis.com
+            volumeAttributes:
+              bucketName: did-teaspoon-data
   traffic:
     - percent: 100
       latestRevision: true

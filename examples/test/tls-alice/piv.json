@@ -1,0 +1,10 @@
+{
+  "enckey": "leLd8w1nbPoKkSVbq_uzFo-wzxORu9oocrAh7X6ii6s",
+  "id": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:tls-alice",
+  "publicEnckey": "y-FbCCEodGckHNDqCVOcIyf9uESpaepAVRewGxmt_QU",
+  "encKeyType": "X25519",
+  "publicSigkey": "7dUAj8TdKRfQwSkUqa3dyCMr8AhggYRAv2RuMZ514sE",
+  "sigKeyType": "Ed25519",
+  "sigkey": "3J-rg_PjScxUcft6Vsp3pqN6RnlSbVRS32i2cok8JnA",
+  "transport": "tls://localhost:13375"
+}

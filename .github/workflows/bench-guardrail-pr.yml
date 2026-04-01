@@ -1,0 +1,68 @@
+name: Guardrail Bench (PR Run)
+
+on:
+  pull_request:
+    branches: ["main"]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  guardrail:
+    runs-on: ubuntu-latest
+    env:
+      RUST_BACKTRACE: "1"
+      ARTIFACT_DIR: target/bench-results/guardrail-pr
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Callgrind prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends valgrind
+
+      - name: Install gungraun-runner
+        run: bash .github/scripts/install-gungraun-runner.sh
+
+      - name: Prepare benchmark artifact directory
+        run: mkdir -p "${ARTIFACT_DIR}"
+
+      - name: Run Guardrail suites
+        run: |
+          set -euo pipefail
+
+          while IFS='|' read -r _ bench_target no_default features output_file; do
+            cargo_args=(-p tsp_sdk --bench "${bench_target}")
+            if [[ "${no_default}" == "true" ]]; then
+              cargo_args+=(--no-default-features)
+            fi
+            cargo_args+=(--features "${features}")
+
+            log_file="${ARTIFACT_DIR}/${output_file}"
+            if ! cargo bench "${cargo_args[@]}" > "${log_file}" 2>&1; then
+              echo "::group::${bench_target} failed log"
+              cat "${log_file}"
+              echo "::endgroup::"
+              exit 1
+            fi
+          done < <(bash .github/scripts/guardrail-variants.sh)
+
+      - name: Persist PR event payload
+        run: cp "${GITHUB_EVENT_PATH}" "${ARTIFACT_DIR}/event.json"
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: guardrail-pr-benchmarks
+          path: |
+            ${{ env.ARTIFACT_DIR }}/*.txt
+            ${{ env.ARTIFACT_DIR }}/event.json
+          if-no-files-found: error
+          retention-days: 7

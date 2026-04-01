@@ -6,10 +6,11 @@ use quinn::{
     crypto::rustls::{QuicClientConfig, QuicServerConfig},
 };
 use std::{
+    collections::HashMap,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::Arc,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex as TokioMutex, mpsc};
 use url::Url;
 
 use super::TransportError;
@@ -29,10 +30,26 @@ static QUIC_CONFIG: Lazy<ClientConfig> = Lazy::new(|| {
     ))
 });
 
-/// Send a message over QUIC
-/// Connects to the specified transport address and sends the message.
-/// Note that a new connection is opened for each message.
-pub(crate) async fn send_message(tsp_message: &[u8], url: &Url) -> Result<(), TransportError> {
+/// Cached QUIC connections keyed by URL string.
+/// Each entry holds the Endpoint (owns the UDP socket) and the Connection.
+static QUIC_CONNECTIONS: Lazy<TokioMutex<HashMap<String, (Endpoint, quinn::Connection)>>> =
+    Lazy::new(|| TokioMutex::new(HashMap::new()));
+
+/// Get an existing cached connection or create a new one.
+async fn get_or_create_connection(url: &Url) -> Result<quinn::Connection, TransportError> {
+    let key = url.to_string();
+    let mut cache = QUIC_CONNECTIONS.lock().await;
+
+    // Return cached connection if still alive
+    if let Some((_, conn)) = cache.get(&key) {
+        if conn.close_reason().is_none() {
+            return Ok(conn.clone());
+        }
+        // Connection is dead, remove it
+        cache.remove(&key);
+    }
+
+    // Create a new connection
     let addresses = url
         .socket_addrs(|| None)
         .map_err(|_| TransportError::InvalidTransportAddress(url.to_string()))?;
@@ -56,7 +73,6 @@ pub(crate) async fn send_message(tsp_message: &[u8], url: &Url) -> Result<(), Tr
     };
 
     let mut endpoint = Endpoint::client(listen_address).map_err(|_| TransportError::ListenPort)?;
-
     endpoint.set_default_client_config(QUIC_CONFIG.clone());
 
     let connection = endpoint
@@ -65,6 +81,24 @@ pub(crate) async fn send_message(tsp_message: &[u8], url: &Url) -> Result<(), Tr
         .await
         .map_err(|e| TransportError::Connection(address.to_string(), e.into()))?;
 
+    cache.insert(key, (endpoint, connection.clone()));
+
+    Ok(connection)
+}
+
+/// Evict a cached connection so the next send will reconnect.
+async fn invalidate_connection(url: &Url) {
+    let key = url.to_string();
+    let mut cache = QUIC_CONNECTIONS.lock().await;
+    cache.remove(&key);
+}
+
+/// Send a single message on an existing connection by opening a unidirectional stream.
+async fn send_on_connection(
+    connection: &quinn::Connection,
+    tsp_message: &[u8],
+    address: &str,
+) -> Result<(), TransportError> {
     let mut send = connection
         .open_uni()
         .await
@@ -77,19 +111,32 @@ pub(crate) async fn send_message(tsp_message: &[u8], url: &Url) -> Result<(), Tr
     send.finish()
         .map_err(|e| TransportError::Connection(address.to_string(), e.into()))?;
 
-    send.stopped()
-        .await
-        .map_err(|e| TransportError::Connection(address.to_string(), e.into()))?;
-
-    connection.close(0u32.into(), b"done");
-
     Ok(())
 }
 
+/// Send a message over QUIC
+/// Reuses a cached connection to the target endpoint. A new unidirectional
+/// stream is opened for each message, which is cheap in QUIC.
+/// If the cached connection is stale, it reconnects automatically.
+pub(crate) async fn send_message(tsp_message: &[u8], url: &Url) -> Result<(), TransportError> {
+    let address = url.to_string();
+    let connection = get_or_create_connection(url).await?;
+
+    match send_on_connection(&connection, tsp_message, &address).await {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            // Connection may be stale — evict and retry once
+            invalidate_connection(url).await;
+            let connection = get_or_create_connection(url).await?;
+            send_on_connection(&connection, tsp_message, &address).await
+        }
+    }
+}
+
 /// Receive (multiple) messages over QUIC
-/// Listens on the specified transport port and yields messages as they arrive
-/// This function handles multiple connections and messages and
-/// combines them in a single stream. It uses an internal queue of 16 messages.
+/// Listens on the specified transport port and yields messages as they arrive.
+/// This function handles multiple connections and multiple streams per connection,
+/// combining them in a single stream. It uses an internal queue of 16 messages.
 pub(crate) async fn receive_messages(
     address: &Url,
 ) -> Result<TSPStream<BytesMut, TransportError>, TransportError> {
@@ -129,29 +176,35 @@ pub(crate) async fn receive_messages(
                     .await
                     .map_err(|e| TransportError::Connection(address.to_string(), e.into()))?;
 
-                let receive = conn.accept_uni().await;
+                // Accept multiple unidirectional streams on this connection
+                loop {
+                    let mut receive = match conn.accept_uni().await {
+                        Ok(s) => s,
+                        Err(quinn::ConnectionError::ApplicationClosed { .. }) => break,
+                        Err(quinn::ConnectionError::ConnectionClosed { .. }) => break,
+                        Err(e) => {
+                            let _ = tx
+                                .send(Err(TransportError::Connection(
+                                    address.to_string(),
+                                    e.into(),
+                                )))
+                                .await;
+                            break;
+                        }
+                    };
 
-                let mut receive = match receive {
-                    Err(quinn::ConnectionError::ApplicationClosed { .. }) => {
-                        return Ok(());
+                    let message = receive.read_to_end(usize::MAX).await.map_err(|_| {
+                        TransportError::InvalidMessageReceived(format!(
+                            "message from {address} is too long",
+                        ))
+                    });
+
+                    if tx.send(message).await.is_err() {
+                        break;
                     }
-                    Err(e) => {
-                        return Err(TransportError::Connection(address.to_string(), e.into()));
-                    }
-                    Ok(s) => s,
-                };
+                }
 
-                let message = receive.read_to_end(8 * 1024).await.map_err(|_| {
-                    TransportError::InvalidMessageReceived(format!(
-                        "message from {address} is too long",
-                    ))
-                });
-
-                tx.send(message)
-                    .await
-                    .map_err(|_| TransportError::Internal)?;
-
-                Ok(())
+                Ok::<(), TransportError>(())
             });
         }
     });
@@ -166,19 +219,28 @@ pub(crate) async fn receive_messages(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::TestPortAllocator;
     use futures::StreamExt;
 
     #[tokio::test]
     async fn test_quic_transport() {
-        let url = Url::parse("quic://localhost:3737").unwrap();
-        let message = b"Hello, world!";
+        let allocator = TestPortAllocator::new();
+        let url = Url::parse(&format!("quic://localhost:{}", allocator.allocate())).unwrap();
 
         let mut incoming_stream = receive_messages(&url).await.unwrap();
 
-        send_message(message, &url).await.unwrap();
+        // Send multiple messages to verify connection reuse and multi-stream receiving
+        let messages: Vec<Vec<u8>> = (0..10)
+            .map(|i| format!("Hello, world! {i}").into_bytes())
+            .collect();
 
-        let received_message = incoming_stream.next().await.unwrap().unwrap();
+        for msg in &messages {
+            send_message(msg, &url).await.unwrap();
+        }
 
-        assert_eq!(message, received_message.iter().as_slice());
+        for expected in &messages {
+            let received = incoming_stream.next().await.unwrap().unwrap();
+            assert_eq!(expected.as_slice(), received.iter().as_slice());
+        }
     }
 }

@@ -1,0 +1,99 @@
+name: Guardrail Bench (Bencher)
+
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+  checks: write
+
+jobs:
+  guardrail:
+    runs-on: ubuntu-latest
+    env:
+      RUST_BACKTRACE: "1"
+      BENCHER_PROJECT: ${{ vars.BENCHER_PROJECT }}
+      BENCHER_API_TOKEN: ${{ secrets.BENCHER_API_TOKEN }}
+      BENCHER_TESTBED: ubuntu-latest
+      BENCHER_BRANCH: ${{ github.ref_name }}
+      BENCHER_HASH: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Callgrind prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends valgrind
+
+      - name: Install gungraun-runner
+        run: bash .github/scripts/install-gungraun-runner.sh
+
+      - name: Install Bencher CLI
+        uses: bencherdev/bencher@main
+
+      - name: Validate Bencher configuration
+        run: |
+          if [[ -z "${BENCHER_PROJECT}" ]]; then
+            echo "Missing BENCHER_PROJECT (repository variable)." >&2
+            exit 1
+          fi
+          if [[ -z "${BENCHER_API_TOKEN}" ]]; then
+            echo "Missing BENCHER_API_TOKEN (repository secret)." >&2
+            exit 1
+          fi
+
+      - name: Publish Bencher URL
+        run: |
+          BENCHER_PERF_HOST="${{ vars.BENCHER_HOST }}"
+          if [[ -z "${BENCHER_PERF_HOST}" ]]; then
+            BENCHER_PERF_HOST="https://bencher.dev"
+          fi
+          BENCHER_PERF_URL="${BENCHER_PERF_HOST%/}/perf/${BENCHER_PROJECT}"
+          echo "Bencher performance dashboard: ${BENCHER_PERF_URL}"
+          {
+            echo "## Bencher"
+            echo
+            echo "- Perf URL: ${BENCHER_PERF_URL}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Run Guardrail suites and upload to Bencher
+        run: |
+          set -euo pipefail
+
+          BENCHER_HOST_INPUT="${{ vars.BENCHER_HOST }}"
+          HOST_FLAGS=()
+          if [[ -n "${BENCHER_HOST_INPUT}" ]]; then
+            if [[ "${BENCHER_HOST_INPUT}" == "https://bencher.dev" || "${BENCHER_HOST_INPUT}" == "http://bencher.dev" ]]; then
+              echo "BENCHER_HOST should not be set to the Bencher Cloud UI URL. Leave it unset for bencher.dev." >&2
+              exit 1
+            fi
+            HOST_FLAGS+=(--host "${BENCHER_HOST_INPUT}")
+          fi
+
+          while IFS='|' read -r ci_id bench_target no_default features _; do
+            cargo_args=(-p tsp_sdk --bench "${bench_target}")
+            if [[ "${no_default}" == "true" ]]; then
+              cargo_args+=(--no-default-features)
+            fi
+            cargo_args+=(--features "${features}")
+
+            bencher run \
+              --project "${BENCHER_PROJECT}" \
+              --token "${BENCHER_API_TOKEN}" \
+              --testbed "${BENCHER_TESTBED}" \
+              --branch "${BENCHER_BRANCH}" \
+              --hash "${BENCHER_HASH}" \
+              --adapter rust_gungraun \
+              --ci-id "${ci_id}" \
+              --github-actions "${GITHUB_TOKEN}" \
+              "${HOST_FLAGS[@]}" \
+              -- \
+              cargo bench "${cargo_args[@]}"
+          done < <(bash .github/scripts/guardrail-variants.sh)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

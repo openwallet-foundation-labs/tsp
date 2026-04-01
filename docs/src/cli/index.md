@@ -2,6 +2,7 @@
 
 The command line interface is an _example_ application of the Rust TSP implementation.
 It helps testing and exploring TSP, the cryptography, transports, modes and message encoding.
+It also provides a `bench` command for sustained transport traffic tests.
 
 Read the next sections on how to get started.
 

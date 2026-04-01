@@ -1,0 +1,141 @@
+name: Guardrail Bench (PR Track)
+
+on:
+  workflow_run:
+    workflows: ["Guardrail Bench (PR Run)"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  guardrail:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      BENCHER_PROJECT: ${{ vars.BENCHER_PROJECT }}
+      BENCHER_API_TOKEN: ${{ secrets.BENCHER_API_TOKEN }}
+      BENCHER_TESTBED: ubuntu-latest
+      BENCH_ARTIFACT_DIR: target/bench-results/guardrail-pr
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Bencher CLI
+        uses: bencherdev/bencher@main
+
+      - name: Validate Bencher configuration
+        run: |
+          if [[ -z "${BENCHER_PROJECT}" ]]; then
+            echo "Missing BENCHER_PROJECT (repository variable)." >&2
+            exit 1
+          fi
+          if [[ -z "${BENCHER_API_TOKEN}" ]]; then
+            echo "Missing BENCHER_API_TOKEN (repository secret)." >&2
+            exit 1
+          fi
+
+      - name: Publish Bencher URL
+        run: |
+          BENCHER_PERF_HOST="${{ vars.BENCHER_HOST }}"
+          if [[ -z "${BENCHER_PERF_HOST}" ]]; then
+            BENCHER_PERF_HOST="https://bencher.dev"
+          fi
+          BENCHER_PERF_URL="${BENCHER_PERF_HOST%/}/perf/${BENCHER_PROJECT}"
+          echo "Bencher performance dashboard: ${BENCHER_PERF_URL}"
+          {
+            echo "## Bencher"
+            echo
+            echo "- Perf URL: ${BENCHER_PERF_URL}"
+        uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11 # v6
+
+      - name: Download benchmark artifacts
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          run_id: ${{ github.event.workflow_run.id }}
+          name: guardrail-pr-benchmarks
+          path: ${{ env.BENCH_ARTIFACT_DIR }}
+          workflow_conclusion: success
+
+      - name: Extract PR metadata
+        run: |
+          set -euo pipefail
+          EVENT_FILE="$(find "${BENCH_ARTIFACT_DIR}" -name event.json -print -quit)"
+          if [[ -z "${EVENT_FILE}" ]]; then
+            echo "missing event.json benchmark artifact" >&2
+            find "${BENCH_ARTIFACT_DIR}" -maxdepth 4 -type f -print >&2
+            exit 1
+          fi
+
+          while IFS='|' read -r _ _ _ _ output_file; do
+            bench_file="$(find "${BENCH_ARTIFACT_DIR}" -name "${output_file}" -print -quit)"
+            if [[ -z "${bench_file}" ]]; then
+              echo "missing expected benchmark artifact: ${output_file}" >&2
+              find "${BENCH_ARTIFACT_DIR}" -maxdepth 4 -type f -print >&2
+              exit 1
+            fi
+          done < <(bash .github/scripts/guardrail-variants.sh)
+
+          PR_NUMBER="$(jq -r '.pull_request.number' "${EVENT_FILE}")"
+          PR_BASE_REF="$(jq -r '.pull_request.base.ref' "${EVENT_FILE}")"
+          PR_BASE_SHA="$(jq -r '.pull_request.base.sha' "${EVENT_FILE}")"
+          PR_HEAD_SHA="$(jq -r '.pull_request.head.sha' "${EVENT_FILE}")"
+
+          if [[ -z "${PR_NUMBER}" || "${PR_NUMBER}" == "null" ]]; then
+            echo "failed to parse pull_request metadata from event artifact" >&2
+            exit 1
+          fi
+
+          echo "PR_NUMBER=${PR_NUMBER}" >> "${GITHUB_ENV}"
+          echo "PR_BASE_REF=${PR_BASE_REF}" >> "${GITHUB_ENV}"
+          echo "PR_BASE_SHA=${PR_BASE_SHA}" >> "${GITHUB_ENV}"
+          echo "PR_HEAD_SHA=${PR_HEAD_SHA}" >> "${GITHUB_ENV}"
+          echo "BENCHER_BRANCH=pr-${PR_NUMBER}" >> "${GITHUB_ENV}"
+          BENCHER_PERF_HOST="${{ vars.BENCHER_HOST }}"
+          if [[ -z "${BENCHER_PERF_HOST}" ]]; then
+            BENCHER_PERF_HOST="https://bencher.dev"
+          fi
+          echo "BENCHER_PERF_URL=${BENCHER_PERF_HOST%/}/perf/${BENCHER_PROJECT}" >> "${GITHUB_ENV}"
+
+      - name: Upload Guardrail suites to Bencher
+        run: |
+          set -euo pipefail
+
+          BENCHER_HOST_INPUT="${{ vars.BENCHER_HOST }}"
+          HOST_FLAGS=()
+          if [[ -n "${BENCHER_HOST_INPUT}" ]]; then
+            if [[ "${BENCHER_HOST_INPUT}" == "https://bencher.dev" || "${BENCHER_HOST_INPUT}" == "http://bencher.dev" ]]; then
+              echo "BENCHER_HOST should not be set to the Bencher Cloud UI URL. Leave it unset for bencher.dev." >&2
+              exit 1
+            fi
+            HOST_FLAGS+=(--host "${BENCHER_HOST_INPUT}")
+          fi
+
+          while IFS='|' read -r ci_id _ _ _ output_file; do
+            bench_file="$(find "${BENCH_ARTIFACT_DIR}" -name "${output_file}" -print -quit)"
+            if [[ -z "${bench_file}" ]]; then
+              echo "missing benchmark file for ${ci_id}: ${output_file}" >&2
+              exit 1
+            fi
+
+            bencher run \
+              --project "${BENCHER_PROJECT}" \
+              --token "${BENCHER_API_TOKEN}" \
+              --testbed "${BENCHER_TESTBED}" \
+              --branch "${BENCHER_BRANCH}" \
+              --hash "${PR_HEAD_SHA}" \
+              --adapter rust_gungraun \
+              --ci-id "${ci_id}" \
+              --ci-number "${PR_NUMBER}" \
+              --github-actions "${GITHUB_TOKEN}" \
+              --start-point "${PR_BASE_REF}" \
+              --start-point-hash "${PR_BASE_SHA}" \
+              --start-point-clone-thresholds \
+              --start-point-reset \
+              "${HOST_FLAGS[@]}" \
+              --file "${bench_file}"
+          done < <(bash .github/scripts/guardrail-variants.sh)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

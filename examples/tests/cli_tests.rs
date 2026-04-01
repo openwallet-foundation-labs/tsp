@@ -5,6 +5,16 @@ use rand::{Rng, thread_rng};
 use std::process::Command as StdCommand;
 use std::thread;
 use std::time::Duration;
+use tsp_sdk::{AskarSecureStorage, AsyncSecureStore, SecureStorage};
+
+struct WalletCleanupGuard;
+
+impl Drop for WalletCleanupGuard {
+    fn drop(&mut self) {
+        clean_wallet();
+    }
+}
+
 fn random_string(n: usize) -> String {
     thread_rng()
         .sample_iter(&Alphanumeric)
@@ -58,6 +68,33 @@ fn rotate_keys(wallet_name: &str, alias: &str) {
         .success();
 }
 
+fn remove_next_update_alias(wallet_name: &str, did: &str) {
+    let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+    runtime.block_on(async {
+        let url = format!("sqlite://{wallet_name}.sqlite");
+        let vault = AskarSecureStorage::open(&url, b"unsecure")
+            .await
+            .expect("Failed to open wallet storage");
+        let (vids, mut aliases, keys) = vault.read().await.expect("Failed to read wallet");
+
+        let next_kid_alias = format!("__next_update_kid:{did}");
+        let removed = aliases.remove(&next_kid_alias);
+        assert!(
+            removed.is_some(),
+            "Expected wallet to contain precommit alias {next_kid_alias}"
+        );
+
+        let db = AsyncSecureStore::new();
+        db.import(vids, aliases, keys)
+            .expect("Failed to import wallet state");
+        vault
+            .persist(db.export().expect("Failed to export wallet state"))
+            .await
+            .expect("Failed to persist modified wallet state");
+        vault.close().await.expect("Failed to close wallet storage");
+    });
+}
+
 fn clean_wallet() {
     StdCommand::new("sh")
         .arg("-c")
@@ -66,10 +103,15 @@ fn clean_wallet() {
         .expect("Failed to clean wallet files");
 }
 
+fn wallet_cleanup_guard() -> WalletCleanupGuard {
+    clean_wallet();
+    WalletCleanupGuard
+}
+
 #[test]
 #[serial_test::serial(clean_wallet)]
 fn test_send_command_unverified_receiver_default() {
-    clean_wallet();
+    let _cleanup = wallet_cleanup_guard();
 
     // create a new sender identity
     let random_sender_name = create_wallet("marlon", "web");
@@ -120,14 +162,12 @@ fn test_send_command_unverified_receiver_default() {
             .failure();
         });
     });
-
-    clean_wallet();
 }
 
 #[test]
 #[serial_test::serial(clean_wallet)]
 fn test_send_command_unverified_receiver_ask_flag() {
-    clean_wallet();
+    let _cleanup = wallet_cleanup_guard();
 
     // create a new sender identity
     let random_sender_name = create_wallet("marlon", "web");
@@ -205,14 +245,12 @@ fn test_send_command_unverified_receiver_ask_flag() {
             .success();
         });
     });
-
-    clean_wallet();
 }
 
 #[test]
 #[serial_test::serial(clean_wallet)]
 fn test_webvh_creation_key_rotation() {
-    clean_wallet();
+    let _cleanup = wallet_cleanup_guard();
 
     // create a new sender identity
     let random_sender_name = create_wallet("foo", "webvh");
@@ -299,6 +337,145 @@ fn test_webvh_creation_key_rotation() {
             .failure();
         });
     });
+}
 
-    clean_wallet();
+#[test]
+#[serial_test::serial(clean_wallet)]
+fn test_webvh_update_reports_out_of_sync_when_precommit_alias_is_missing() {
+    let _cleanup = wallet_cleanup_guard();
+
+    let wallet_name = create_wallet("foo", "webvh");
+    let did = print_did(&wallet_name, "foo");
+
+    remove_next_update_alias(&wallet_name, &did);
+
+    let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+    cmd.args(["--wallet", wallet_name.as_str(), "update", "foo"])
+        .assert()
+        .stderr(predicate::str::contains(
+            "Server has precommit active but wallet has no matching key. Wallet may be out of sync.",
+        ))
+        .failure();
+}
+
+/// Stress test: Create DID, send message, rotate 100 times, send message again
+/// This tests the precommit chain integrity over many rotations
+#[test]
+#[serial_test::serial(clean_wallet)]
+#[ignore] // Run with: cargo test --package examples test_100_rotations -- --ignored --nocapture
+fn test_100_rotations_stress() {
+    let _cleanup = wallet_cleanup_guard();
+
+    const NUM_ROTATIONS: usize = 100;
+
+    println!("Creating sender (webvh) and receiver (web) wallets...");
+
+    // Create sender with did:webvh (supports rotation with precommit)
+    let sender_wallet = create_wallet("sender", "webvh");
+    // Create receiver with did:web
+    let receiver_wallet = create_wallet("receiver", "web");
+
+    let sender_did = print_did(&sender_wallet, "sender");
+    let receiver_did = print_did(&receiver_wallet, "receiver");
+
+    println!("Sender DID: {}", sender_did);
+    println!("Receiver DID: {}", receiver_did);
+
+    // Receiver verifies sender
+    verify_did(&receiver_wallet, "sender", &sender_did);
+
+    // --- Test 1: Send message BEFORE any rotation ---
+    println!("\n=== Test 1: Sending message BEFORE any rotations ===");
+    thread::scope(|s| {
+        s.spawn(|| {
+            let input = "Hello before rotations";
+            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            cmd.args([
+                "--wallet",
+                sender_wallet.as_str(),
+                "send",
+                "-s",
+                "sender",
+                "-r",
+                &receiver_did,
+            ])
+            .write_stdin(input)
+            .assert()
+            .success();
+        });
+        s.spawn(|| {
+            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            cmd.args([
+                "--wallet",
+                receiver_wallet.as_str(),
+                "receive",
+                &receiver_did,
+            ])
+            .timeout(Duration::from_secs(3))
+            .assert()
+            .stdout(predicate::str::contains("Hello before rotations"))
+            .failure(); // timeout expected
+        });
+    });
+    println!("Message sent and received successfully before rotations!");
+
+    // --- Perform 100 rotations ---
+    println!("\n=== Performing {} key rotations ===", NUM_ROTATIONS);
+    for i in 1..=NUM_ROTATIONS {
+        if i % 10 == 0 {
+            println!("  Rotation {}/{}...", i, NUM_ROTATIONS);
+        }
+        rotate_keys(&sender_wallet, "sender");
+    }
+    println!("All {} rotations completed successfully!", NUM_ROTATIONS);
+
+    // --- Test 2: Send message AFTER 100 rotations ---
+    println!(
+        "\n=== Test 2: Sending message AFTER {} rotations ===",
+        NUM_ROTATIONS
+    );
+
+    // Give the server a moment to process
+    thread::sleep(Duration::from_millis(500));
+
+    thread::scope(|s| {
+        s.spawn(|| {
+            let input = "Hello after 100 rotations";
+            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            cmd.args([
+                "--wallet",
+                sender_wallet.as_str(),
+                "send",
+                "-s",
+                "sender",
+                "-r",
+                &receiver_did,
+            ])
+            .write_stdin(input)
+            .assert()
+            .success();
+        });
+        s.spawn(|| {
+            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            cmd.args([
+                "--wallet",
+                receiver_wallet.as_str(),
+                "receive",
+                &receiver_did,
+            ])
+            .timeout(Duration::from_secs(5))
+            .assert()
+            .stdout(predicate::str::contains("Hello after 100 rotations"))
+            .failure(); // timeout expected
+        });
+    });
+    println!(
+        "Message sent and received successfully after {} rotations!",
+        NUM_ROTATIONS
+    );
+
+    println!(
+        "\n=== STRESS TEST PASSED: Precommit chain intact after {} rotations ===",
+        NUM_ROTATIONS
+    );
 }

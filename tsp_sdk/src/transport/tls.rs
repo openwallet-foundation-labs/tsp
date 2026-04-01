@@ -1,13 +1,14 @@
 use async_stream::stream;
 use bytes::{Bytes, BytesMut};
-use futures::StreamExt;
+use futures::{SinkExt, StreamExt};
 use once_cell::sync::Lazy;
 use rustls::{ClientConfig, RootCertStore, crypto::CryptoProvider};
 use rustls_pki_types::{ServerName, pem::PemObject};
-use std::sync::Arc;
-use tokio::{io::AsyncWriteExt, net::TcpListener, sync::mpsc};
-use tokio_rustls::{TlsAcceptor, TlsConnector};
-use tokio_util::codec::{BytesCodec, Framed};
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::Mutex as TokioMutex;
+use tokio::{net::TcpListener, sync::mpsc};
+use tokio_rustls::{TlsAcceptor, TlsConnector, client::TlsStream};
+use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use url::Url;
 
 use super::TransportError;
@@ -25,13 +26,13 @@ pub(super) fn load_certificate() -> Result<
     ),
     TransportError,
 > {
-    #[cfg(not(test))]
+    #[cfg(all(not(test), not(feature = "bench-criterion")))]
     let cert_path = std::env::var("TSP_TLS_CERT").map_err(|_| TransportError::TLSConfiguration)?;
-    #[cfg(not(test))]
+    #[cfg(all(not(test), not(feature = "bench-criterion")))]
     let key_path = std::env::var("TSP_TLS_KEY").map_err(|_| TransportError::TLSConfiguration)?;
-    #[cfg(test)]
+    #[cfg(any(test, feature = "bench-criterion"))]
     let cert_path = "../examples/test/localhost.pem".to_string();
-    #[cfg(test)]
+    #[cfg(any(test, feature = "bench-criterion"))]
     let key_path = "../examples/test/localhost-key.pem".to_string();
 
     let certs: Vec<rustls_pki_types::CertificateDer<'static>> =
@@ -57,8 +58,8 @@ pub(super) fn create_tls_config() -> ClientConfig {
             .expect("could not add native certificate");
     }
 
-    // Add test CA certificate
-    #[cfg(test)]
+    // Add local test CA certificate (for tests and local dev benches only).
+    #[cfg(any(test, feature = "bench-criterion"))]
     {
         let cert_path = "../examples/test/root-ca.pem";
         let certs: Vec<rustls_pki_types::CertificateDer<'static>> =
@@ -74,6 +75,22 @@ pub(super) fn create_tls_config() -> ClientConfig {
         }
     }
 
+    // Add custom CA certificate from TSP_TLS_CA environment variable (if set)
+    #[cfg(not(test))]
+    if let Ok(ca_path) = std::env::var("TSP_TLS_CA") {
+        let certs: Vec<rustls_pki_types::CertificateDer<'static>> =
+            rustls_pki_types::CertificateDer::pem_file_iter(&ca_path)
+                .unwrap_or_else(|_| panic!("could not find CA certificate at {ca_path}"))
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap_or_else(|_| panic!("could not read CA certificate at {ca_path}"));
+
+        for cert in certs {
+            root_cert_store
+                .add(cert)
+                .expect("could not add custom CA certificate");
+        }
+    }
+
     rustls::ClientConfig::builder_with_provider(CRYPTO_PROVIDER.clone())
         .with_safe_default_protocol_versions()
         .unwrap()
@@ -85,57 +102,102 @@ pub(super) static CRYPTO_PROVIDER: Lazy<Arc<CryptoProvider>> =
     Lazy::new(|| Arc::new(rustls::crypto::aws_lc_rs::default_provider()));
 pub(super) static TLS_CONFIG: Lazy<Arc<ClientConfig>> = Lazy::new(|| Arc::new(create_tls_config()));
 
-/// Send a message over TLS
-/// Connects to the specified transport address and sends the message.
-/// Note that a new connection is opened for each message.
-pub(crate) async fn send_message(tsp_message: &[u8], url: &Url) -> Result<(), TransportError> {
-    let addresses = url
-        .socket_addrs(|| None)
-        .map_err(|_| TransportError::InvalidTransportAddress(url.to_string()))?;
+type TlsFramed = Framed<TlsStream<tokio::net::TcpStream>, LengthDelimitedCodec>;
 
-    let Some(address) = addresses.first().cloned() else {
-        return Err(TransportError::InvalidTransportAddress(url.to_string()));
-    };
+/// Cached TLS connections keyed by URL string.
+static TLS_CONNECTIONS: Lazy<TokioMutex<HashMap<String, TlsFramed>>> =
+    Lazy::new(|| TokioMutex::new(HashMap::new()));
 
-    let tcp_stream = tokio::net::TcpStream::connect(address)
-        .await
-        .map_err(|e| TransportError::Connection(address.to_string(), e))?;
+/// Get an existing cached TLS connection or create a new one.
+async fn get_or_create_connection(url: &Url) -> Result<(), TransportError> {
+    let key = url.to_string();
+    let mut cache = TLS_CONNECTIONS.lock().await;
 
-    let domain = url
-        .domain()
-        .ok_or(TransportError::InvalidTransportAddress(format!(
-            "could not resolve {url} to a domain"
-        )))?
-        .to_owned();
+    if let std::collections::hash_map::Entry::Vacant(entry) = cache.entry(key) {
+        let addresses = url
+            .socket_addrs(|| None)
+            .map_err(|_| TransportError::InvalidTransportAddress(url.to_string()))?;
 
-    let dns_name = ServerName::try_from(domain).map_err(|_| {
-        TransportError::InvalidTransportAddress(format!("could not resolve {url} to a server name"))
-    })?;
+        let Some(address) = addresses.first().cloned() else {
+            return Err(TransportError::InvalidTransportAddress(url.to_string()));
+        };
 
-    let connector = TlsConnector::from(TLS_CONFIG.clone());
+        let tcp_stream = tokio::net::TcpStream::connect(address)
+            .await
+            .map_err(|e| TransportError::Connection(address.to_string(), e))?;
 
-    let mut stream = connector
-        .connect(dns_name, tcp_stream)
-        .await
-        .map_err(|e| TransportError::Connection(address.to_string(), e))?;
+        let domain = url
+            .domain()
+            .ok_or(TransportError::InvalidTransportAddress(format!(
+                "could not resolve {url} to a domain"
+            )))?
+            .to_owned();
 
-    stream
-        .write_all(tsp_message)
-        .await
-        .map_err(|e| TransportError::Connection(address.to_string(), e))?;
+        let dns_name = ServerName::try_from(domain).map_err(|_| {
+            TransportError::InvalidTransportAddress(format!(
+                "could not resolve {url} to a server name"
+            ))
+        })?;
 
-    stream
-        .shutdown()
-        .await
-        .map_err(|e| TransportError::Connection(address.to_string(), e))?;
+        let connector = TlsConnector::from(TLS_CONFIG.clone());
+
+        let tls_stream = connector
+            .connect(dns_name, tcp_stream)
+            .await
+            .map_err(|e| TransportError::Connection(address.to_string(), e))?;
+
+        let framed = Framed::new(tls_stream, LengthDelimitedCodec::new());
+        entry.insert(framed);
+    }
 
     Ok(())
 }
 
-/// Receive (multiple) messages over TLS
-/// Listens on the specified transport port and yields messages as they arrive
-/// This function handles multiple connections and messages and
-/// combines them in a single stream. It uses an internal queue of 16 messages.
+/// Evict a cached connection so the next send will reconnect.
+async fn invalidate_connection(url: &Url) {
+    let key = url.to_string();
+    let mut cache = TLS_CONNECTIONS.lock().await;
+    cache.remove(&key);
+}
+
+/// Send a message over TLS.
+/// Reuses a cached connection with length-delimited framing.
+/// If the connection is stale, it reconnects automatically.
+pub(crate) async fn send_message(tsp_message: &[u8], url: &Url) -> Result<(), TransportError> {
+    let key = url.to_string();
+
+    // First attempt
+    {
+        get_or_create_connection(url).await?;
+        let mut cache = TLS_CONNECTIONS.lock().await;
+        if let Some(framed) = cache.get_mut(&key)
+            && framed
+                .send(Bytes::copy_from_slice(tsp_message))
+                .await
+                .is_ok()
+        {
+            return Ok(());
+        }
+    }
+
+    // Retry once on failure
+    invalidate_connection(url).await;
+    {
+        get_or_create_connection(url).await?;
+        let mut cache = TLS_CONNECTIONS.lock().await;
+        let framed = cache.get_mut(&key).ok_or(TransportError::Internal)?;
+        framed
+            .send(Bytes::copy_from_slice(tsp_message))
+            .await
+            .map_err(|e| TransportError::Connection(key, e))?;
+    }
+
+    Ok(())
+}
+
+/// Receive (multiple) messages over TLS.
+/// Listens on the specified transport port and yields messages as they arrive.
+/// Uses length-delimited framing to support multiple messages per connection.
 pub(crate) async fn receive_messages(
     address: &Url,
 ) -> Result<TSPStream<BytesMut, TransportError>, TransportError> {
@@ -172,15 +234,16 @@ pub(crate) async fn receive_messages(
                     .await
                     .map_err(|e| TransportError::Connection(peer_addr.to_string(), e))?;
 
-                let mut messages = Framed::new(stream, BytesCodec::new());
+                let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
 
-                while let Some(m) = messages.next().await {
-                    tx.send(
-                        m.map(|m| m.to_vec())
-                            .map_err(|e| TransportError::Connection(peer_addr.to_string(), e)),
-                    )
-                    .await
-                    .map_err(|_| TransportError::Internal)?;
+                while let Some(result) = framed.next().await {
+                    let message = result
+                        .map(|b| b.to_vec())
+                        .map_err(|e| TransportError::Connection(peer_addr.to_string(), e));
+
+                    if tx.send(message).await.is_err() {
+                        break;
+                    }
                 }
 
                 Ok::<(), TransportError>(())
@@ -198,19 +261,28 @@ pub(crate) async fn receive_messages(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::TestPortAllocator;
     use futures::StreamExt;
 
     #[tokio::test]
     async fn test_tls_transport() {
-        let url = Url::parse("tls://localhost:4242").unwrap();
-        let message = b"Hello, world!";
+        let allocator = TestPortAllocator::new();
+        let url = Url::parse(&format!("tls://localhost:{}", allocator.allocate())).unwrap();
 
         let mut incoming_stream = receive_messages(&url).await.unwrap();
 
-        send_message(message, &url).await.unwrap();
+        // Send multiple messages to verify connection reuse and framing
+        let messages: Vec<Vec<u8>> = (0..10)
+            .map(|i| format!("Hello, world! {i}").into_bytes())
+            .collect();
 
-        let received_message = incoming_stream.next().await.unwrap().unwrap();
+        for msg in &messages {
+            send_message(msg, &url).await.unwrap();
+        }
 
-        assert_eq!(message, received_message.iter().as_slice());
+        for expected in &messages {
+            let received = incoming_stream.next().await.unwrap().unwrap();
+            assert_eq!(expected.as_slice(), received.iter().as_slice());
+        }
     }
 }

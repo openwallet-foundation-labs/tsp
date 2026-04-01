@@ -61,6 +61,7 @@ Commands:
   refer       send an identity referral
   publish     publish a new own identity
   secret      manage custom secret data
+  bench       run transport benchmark tests
   help        Print this message or the help of the given subcommand(s)
 
 Options:

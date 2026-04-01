@@ -7,7 +7,8 @@ use axum::{
     },
     http::{Method, StatusCode, header},
     response::{Html, IntoResponse, Redirect, Response},
-    routing::{get, post},
+    routing::get,
+    routing::post,
 };
 use base64ct::{Base64UrlUnpadded, Encoding};
 use clap::Parser;
@@ -94,6 +95,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(index))
         .route("/script.js", get(script))
+        .route("/vid/{did}", get(vid_page))
         .route("/create-identity", post(create_identity))
         .route("/verify-vid", post(verify_vid))
         .route("/endpoint/{user}", get(websocket_user_handler))
@@ -158,6 +160,462 @@ async fn script() -> impl IntoResponse {
     (
         [(header::CONTENT_TYPE, "text/javascript")],
         std::include_str!("../script.js").to_string(),
+    )
+}
+
+/// VID verification page - displays verified identity information
+async fn vid_page(Path(did): Path<String>) -> Response {
+    // URL-decode the DID (handles %3A for colons, etc.)
+    let did = urlencoding::decode(&did)
+        .map(|s| s.into_owned())
+        .unwrap_or(did);
+
+    // Verify the VID and get metadata
+    match tsp_sdk::vid::resolve::verify_vid(&did).await {
+        Ok((vid, metadata)) => {
+            let html = render_vid_page(&did, &vid, metadata.as_ref());
+            Html(html).into_response()
+        }
+        Err(e) => {
+            let html = render_vid_error_page(&did, &format!("{:?}", e));
+            (StatusCode::BAD_REQUEST, Html(html)).into_response()
+        }
+    }
+}
+
+/// Render the VID verification page HTML
+fn render_vid_page(did: &str, vid: &Vid, metadata: Option<&serde_json::Value>) -> String {
+    let short_did = if did.len() > 40 {
+        format!("{}...{}", &did[..20], &did[did.len() - 12..])
+    } else {
+        did.to_string()
+    };
+
+    // Extract webvh-specific metadata if available
+    let (created, updated, version, update_keys) = if let Some(meta) = metadata {
+        let webvh_meta = meta.get("webvh_meta_data");
+        let created = webvh_meta
+            .and_then(|m| m.get("created"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let updated = webvh_meta
+            .and_then(|m| m.get("updated"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let version = webvh_meta
+            .and_then(|m| m.get("version_id"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let update_keys = meta
+            .get("update_keys")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>()
+            });
+        (created, updated, version, update_keys)
+    } else {
+        (None, None, None, None)
+    };
+
+    let endpoint = vid.endpoint().to_string();
+    let is_webvh = did.starts_with("did:webvh:");
+    let did_type = if is_webvh {
+        "did:webvh"
+    } else if did.starts_with("did:web:") {
+        "did:web"
+    } else if did.starts_with("did:peer:") {
+        "did:peer"
+    } else {
+        "DID"
+    };
+
+    // Build history section for webvh
+    let history_section = if is_webvh {
+        let version_display = version.as_deref().unwrap_or("1");
+        let created_display = created.as_deref().unwrap_or("Unknown");
+        let updated_display = updated.as_deref().unwrap_or("Unknown");
+        format!(
+            r#"
+        <div class="section">
+            <div class="section-title">VERIFICATION HISTORY</div>
+            <div class="timeline">
+                <div class="timeline-item">
+                    <div class="timeline-dot genesis"></div>
+                    <div class="timeline-content">
+                        <div class="timeline-label">Genesis</div>
+                        <div class="timeline-date">{created_display}</div>
+                    </div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-dot current"></div>
+                    <div class="timeline-content">
+                        <div class="timeline-label">Current (v{version_display})</div>
+                        <div class="timeline-date">{updated_display}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        "#
+        )
+    } else {
+        String::new()
+    };
+
+    // Build update keys section if available
+    let update_keys_section = if let Some(keys) = update_keys {
+        let keys_html: String = keys.iter()
+            .map(|k| {
+                let short_key = if k.len() > 20 {
+                    format!("{}...", &k[..20])
+                } else {
+                    k.clone()
+                };
+                format!(r#"<div class="key-item"><span class="key-icon">🔑</span><code>{}</code></div>"#, short_key)
+            })
+            .collect();
+        format!(
+            r#"
+        <div class="section">
+            <div class="section-title">UPDATE KEYS</div>
+            {keys_html}
+        </div>
+        "#
+        )
+    } else {
+        String::new()
+    };
+
+    format!(
+        r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verified Identity - {short_did}</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }}
+        .container {{
+            max-width: 480px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }}
+        .header {{
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            padding: 30px 20px;
+            text-align: center;
+            color: white;
+        }}
+        .avatar {{
+            width: 80px;
+            height: 80px;
+            background: white;
+            border-radius: 50%;
+            margin: 0 auto 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+        }}
+        .badge {{
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255,255,255,0.2);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            margin-top: 10px;
+        }}
+        .badge-icon {{ font-size: 18px; }}
+        .did-type {{
+            font-size: 12px;
+            opacity: 0.9;
+            margin-top: 5px;
+        }}
+        .content {{ padding: 20px; }}
+        .section {{
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }}
+        .section:last-child {{ border-bottom: none; margin-bottom: 0; }}
+        .section-title {{
+            font-size: 11px;
+            font-weight: 600;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+        }}
+        .did-box {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #f5f5f5;
+            padding: 12px;
+            border-radius: 10px;
+            cursor: pointer;
+        }}
+        .did-box:hover {{ background: #eee; }}
+        .did-box code {{
+            flex: 1;
+            font-size: 13px;
+            word-break: break-all;
+            color: #333;
+        }}
+        .copy-btn {{
+            background: none;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 5px;
+        }}
+        .info-row {{
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+        }}
+        .info-label {{ color: #666; font-size: 14px; }}
+        .info-value {{ font-weight: 500; font-size: 14px; color: #333; }}
+        .endpoint {{
+            font-size: 13px;
+            color: #666;
+            word-break: break-all;
+        }}
+        .timeline {{
+            position: relative;
+            padding-left: 25px;
+        }}
+        .timeline::before {{
+            content: '';
+            position: absolute;
+            left: 8px;
+            top: 5px;
+            bottom: 5px;
+            width: 2px;
+            background: #ddd;
+        }}
+        .timeline-item {{
+            position: relative;
+            padding: 10px 0;
+        }}
+        .timeline-dot {{
+            position: absolute;
+            left: -21px;
+            top: 14px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 0 2px #ddd;
+        }}
+        .timeline-dot.genesis {{ background: #667eea; box-shadow: 0 0 0 2px #667eea; }}
+        .timeline-dot.current {{ background: #38ef7d; box-shadow: 0 0 0 2px #38ef7d; }}
+        .timeline-label {{ font-weight: 500; font-size: 14px; }}
+        .timeline-date {{ font-size: 12px; color: #999; margin-top: 2px; }}
+        .key-item {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 0;
+            font-size: 13px;
+        }}
+        .key-icon {{ font-size: 14px; }}
+        .key-item code {{ color: #666; }}
+        .actions {{
+            display: flex;
+            gap: 10px;
+            padding: 20px;
+            background: #f9f9f9;
+        }}
+        .btn {{
+            flex: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }}
+        .btn-primary {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }}
+        .btn-secondary {{
+            background: white;
+            color: #333;
+            border: 1px solid #ddd;
+        }}
+        .toast {{
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            display: none;
+            z-index: 1000;
+        }}
+        .toast.show {{ display: block; animation: fadeIn 0.3s; }}
+        @keyframes fadeIn {{ from {{ opacity: 0; }} to {{ opacity: 1; }} }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="avatar">🤖</div>
+            <div class="badge">
+                <span class="badge-icon">✓</span>
+                VERIFIED
+            </div>
+            <div class="did-type">{did_type}</div>
+        </div>
+
+        <div class="content">
+            <div class="section">
+                <div class="section-title">IDENTIFIER</div>
+                <div class="did-box" onclick="copyDid()">
+                    <code id="full-did">{did}</code>
+                    <button class="copy-btn" title="Copy DID">📋</button>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">SERVICE ENDPOINT</div>
+                <div class="endpoint">{endpoint}</div>
+            </div>
+
+            {history_section}
+            {update_keys_section}
+        </div>
+
+        <div class="actions">
+            <button class="btn btn-secondary" onclick="shareDid()">
+                🔗 Share
+            </button>
+        </div>
+    </div>
+
+    <div class="toast" id="toast">Copied to clipboard!</div>
+
+    <script>
+        function copyDid() {{
+            const did = document.getElementById('full-did').textContent;
+            navigator.clipboard.writeText(did).then(() => showToast('DID copied!'));
+        }}
+
+        function shareDid() {{
+            const url = window.location.href;
+            if (navigator.share) {{
+                navigator.share({{ title: 'Verified Identity', url: url }});
+            }} else {{
+                navigator.clipboard.writeText(url).then(() => showToast('Link copied!'));
+            }}
+        }}
+
+        function showToast(msg) {{
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2000);
+        }}
+    </script>
+</body>
+</html>
+"##
+    )
+}
+
+/// Render an error page when VID verification fails
+fn render_vid_error_page(did: &str, error: &str) -> String {
+    format!(
+        r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verification Failed</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }}
+        .container {{
+            max-width: 480px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+            text-align: center;
+            padding: 40px 20px;
+        }}
+        .icon {{ font-size: 60px; margin-bottom: 20px; }}
+        h1 {{ font-size: 24px; color: #e74c3c; margin-bottom: 10px; }}
+        .did {{
+            font-size: 12px;
+            color: #999;
+            word-break: break-all;
+            margin: 15px 0;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 8px;
+        }}
+        .error {{
+            font-size: 14px;
+            color: #666;
+            margin-top: 15px;
+            padding: 10px;
+            background: #fff5f5;
+            border-radius: 8px;
+            border: 1px solid #ffe0e0;
+        }}
+        .btn {{
+            display: inline-block;
+            margin-top: 20px;
+            padding: 12px 24px;
+            background: #e74c3c;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">❌</div>
+        <h1>Verification Failed</h1>
+        <div class="did">{did}</div>
+        <div class="error">{error}</div>
+        <a href="/" class="btn">Go Home</a>
+    </div>
+</body>
+</html>
+"##
     )
 }
 

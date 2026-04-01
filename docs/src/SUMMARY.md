@@ -22,7 +22,11 @@
 - [Custom VIDs](custom-vids.md)
 - [Custom secure storage](custom-secure-storage.md)
 - [Testing Guide](./testing.md)
+- [Benchmark Strategy](benchmark-strategy.md)
+- [Guardrail Benchmarks](guardrail-bench.md)
+- [Throughput Benchmarks](throughput-bench.md)
 - [Benchmark](benchmark.md)
+- [Network Traffic Benchmark](network-traffic-benchmark.md)
 
 # Protocol Integrations
 

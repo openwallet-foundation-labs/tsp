@@ -624,16 +624,8 @@ impl<'a> EncodedSignature<'a> {
         match self {
             EncodedSignature::NoSignature => {}
             EncodedSignature::Ed25519(signature) => {
-                encode_count(
-                    TSP_ATTACH_GRP,
-                    signature.len().next_multiple_of(3) / 3,
-                    output,
-                );
-                encode_count(
-                    TSP_INDEX_SIG_GRP,
-                    signature.len().next_multiple_of(3) / 3,
-                    output,
-                );
+                encode_count(TSP_ATTACH_GRP, signature.len().div_ceil(3), output);
+                encode_count(TSP_INDEX_SIG_GRP, signature.len().div_ceil(3), output);
                 encode_fixed_data(ED25519_SIGNATURE, signature.as_slice(), output);
             }
             #[cfg(feature = "pq")]
@@ -657,10 +649,10 @@ impl<'a> EncodedSignature<'a> {
         let a_size = decode_count(TSP_ATTACH_GRP, stream).ok_or(DecodeError::UnexpectedData)?;
         let i_size = decode_count(TSP_INDEX_SIG_GRP, stream).ok_or(DecodeError::UnexpectedData)?;
         if let Some(sig) = decode_fixed_data(ED25519_SIGNATURE, stream) {
-            if a_size != (sig.len() as u32).next_multiple_of(3) / 3 {
+            if a_size != (sig.len() as u32).div_ceil(3) {
                 return Err(DecodeError::InvalidSignatureType);
             }
-            if i_size != (sig.len() as u32).next_multiple_of(3) / 3 {
+            if i_size != (sig.len() as u32).div_ceil(3) {
                 return Err(DecodeError::InvalidSignatureType);
             }
             Ok(EncodedSignature::Ed25519(sig))
@@ -1020,17 +1012,10 @@ pub struct Part<'a> {
 impl<'a> Part<'a> {
     fn decode(identifier: u32, data: &'a [u8], pos: &mut usize) -> Option<Part<'a>> {
         let begin_pos = *pos;
-        match checked_decode_variable_data_index(identifier, data, pos) {
-            Some(range) => {
-                let part = Part {
-                    prefix: &data[begin_pos..range.start],
-                    data: &data[range.start..range.end],
-                };
-
-                Some(part)
-            }
-            None => None,
-        }
+        checked_decode_variable_data_index(identifier, data, pos).map(|range| Part {
+            prefix: &data[begin_pos..range.start],
+            data: &data[range.start..range.end],
+        })
     }
 }
 

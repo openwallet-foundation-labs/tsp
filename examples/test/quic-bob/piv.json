@@ -1,0 +1,10 @@
+{
+  "enckey": "Kk-O0T0IoxGgtxyd7JYCv6moGIi83wPRINDsWKgGNVs",
+  "id": "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:quic-bob",
+  "publicEnckey": "QFn5SXupDgBTtzkGc2W3MvoSCHjd8uUD0dapfEXqET4",
+  "encKeyType": "X25519",
+  "publicSigkey": "NBcP690uVtoJChxvBCxZyy2inI-R24G3aNBWOKwU5lI",
+  "sigKeyType": "Ed25519",
+  "sigkey": "1i95TnosmKFwmW_pu300ulOaT9m1OV4xIhnFue8Ltek",
+  "transport": "quic://localhost:13374"
+}

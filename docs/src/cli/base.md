@@ -173,7 +173,7 @@ On the receiving side you should see:
 ```
  INFO tsp: received relationship request from did:web:did.teaspoon.world:endpoint:alice3, thread-id 'lrQoJ1qYIK6HEHZKvpq3p+it6djYE2YIe++5mqhASnE'
 did:web:did.teaspoon.world:endpoint:alice3      lrQoJ1qYIK6HEHZKvpq3p+it6djYE2YIe++5mqhASnE
- INFO tsp: received confidential message (11 bytes) from did:web:did.teaspoon.world:endpoint:alice3 (HPKE Auth, Ed25519 signature)
+ INFO tsp: received confidential message (11 bytes) from did:web:did.teaspoon.world:endpoint:alice3 (HPKE ESSR, Ed25519 signature)
 Hello Bob!
 ```
 
@@ -196,6 +196,26 @@ The TSP CLI can use two types of transport:
   To use TCP transport, use the `--tcp address:port` flag to `tcp create`.
 
 The TSP SDK also provides a couple more transport types and provides methods to use custom transport solutions (see [transport layers](../transport.md)), although these are not available through the CLI.
+
+### Transport benchmark traffic (`bench`)
+
+The CLI includes an `iperf`-like benchmark mode for sustained traffic tests.
+
+Quick start:
+
+```sh
+tsp --wallet bob bench server
+```
+
+```sh
+tsp --wallet alice bench client \
+  --profile local-tcp \
+  --payload-size 1KiB \
+  --duration 30s
+```
+
+For profiles, HTTP baseline commands, latency mode, and output details, see
+[Network Traffic Benchmark](../network-traffic-benchmark.md).
 
 ### Pretty print messages
 

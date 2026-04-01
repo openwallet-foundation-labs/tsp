@@ -1,6 +1,9 @@
 TSP SDK Performance metrics
 ===========================
 
+For network traffic benchmark with `tsp bench`, see
+[Network Traffic Benchmark](./network-traffic-benchmark.md).
+
 To benchmark the TSP SDK on your machine, you can create a test executable. For the
 benchmark results we list below, we use the following test executable:
 
