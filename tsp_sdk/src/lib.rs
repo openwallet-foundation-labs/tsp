@@ -133,6 +133,15 @@ pub use secure_storage::AskarSecureStorage;
 #[cfg(feature = "async")]
 pub use secure_storage::SecureStorage;
 
+#[cfg(feature = "bench-network-timings")]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct BenchNetworkTimings {
+    pub signature_ns: u64,
+    pub seal_core_ns: u64,
+    pub verify_ns: u64,
+    pub open_core_ns: u64,
+}
+
 pub use definitions::{Payload, PrivateVid, ReceivedTspMessage, RelationshipStatus, VerifiedVid};
 pub use error::Error;
 pub use store::{Aliases, SecureStore};

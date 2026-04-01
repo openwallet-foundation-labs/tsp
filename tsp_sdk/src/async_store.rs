@@ -193,9 +193,16 @@ impl AsyncSecureStore {
         receiver: &str,
         nonconfidential_data: Option<&[u8]>,
         message: &[u8],
+        #[cfg(feature = "bench-network-timings")] timings: &mut crate::BenchNetworkTimings,
     ) -> Result<(Url, Vec<u8>), Error> {
-        self.inner
-            .seal_message(sender, receiver, nonconfidential_data, message)
+        self.inner.seal_message(
+            sender,
+            receiver,
+            nonconfidential_data,
+            message,
+            #[cfg(feature = "bench-network-timings")]
+            timings,
+        )
     }
 
     /// Send a TSP message given earlier resolved VIDs
@@ -248,9 +255,16 @@ impl AsyncSecureStore {
             Err(e) => return Err(e),
         };
 
-        let (endpoint, message) =
-            self.inner
-                .seal_message(sender, receiver, nonconfidential_data, message)?;
+        #[cfg(feature = "bench-network-timings")]
+        let mut timings = crate::BenchNetworkTimings::default();
+        let (endpoint, message) = self.inner.seal_message(
+            sender,
+            receiver,
+            nonconfidential_data,
+            message,
+            #[cfg(feature = "bench-network-timings")]
+            &mut timings,
+        )?;
 
         tracing::info!("sending message to {endpoint}");
 
@@ -514,8 +528,13 @@ impl AsyncSecureStore {
     pub fn open_message<'a>(
         &self,
         message: &'a mut [u8],
+        #[cfg(feature = "bench-network-timings")] timings: &mut crate::BenchNetworkTimings,
     ) -> Result<ReceivedTspMessage<&'a [u8]>, Error> {
-        self.inner.open_message(message)
+        self.inner.open_message(
+            message,
+            #[cfg(feature = "bench-network-timings")]
+            timings,
+        )
     }
 
     /// Receive TSP messages for the private VID identified by `vid`, using the appropriate transport mechanism for it.
@@ -548,16 +567,34 @@ impl AsyncSecureStore {
                     );
                 }
 
-                match db_inner.open_message(&mut message) {
+                #[cfg(feature = "bench-network-timings")]
+                let mut timings = crate::BenchNetworkTimings::default();
+                match db_inner.open_message(
+                    &mut message,
+                    #[cfg(feature = "bench-network-timings")]
+                    &mut timings,
+                ) {
                     Err(Error::UnverifiedSource(unknown_vid, _)) => {
                         debug!("Verifying VID: {}", unknown_vid);
                         self_inner.verify_vid(&unknown_vid, None).await?;
-                        db_inner.open_message(&mut message)
+                        #[cfg(feature = "bench-network-timings")]
+                        let mut timings = crate::BenchNetworkTimings::default();
+                        db_inner.open_message(
+                            &mut message,
+                            #[cfg(feature = "bench-network-timings")]
+                            &mut timings,
+                        )
                     }
                     Err(Error::Crypto(CryptoError::Verify(vid, _))) => {
                         debug!("Re-verifying VID: {}", vid);
                         self_inner.verify_vid(&vid, None).await?;
-                        db_inner.open_message(&mut message)
+                        #[cfg(feature = "bench-network-timings")]
+                        let mut timings = crate::BenchNetworkTimings::default();
+                        db_inner.open_message(
+                            &mut message,
+                            #[cfg(feature = "bench-network-timings")]
+                            &mut timings,
+                        )
                     }
                     maybe_message => maybe_message,
                 }
@@ -598,6 +635,15 @@ impl AsyncSecureStore {
     ) -> Result<ReceivedTspMessage, Error> {
         self.verify_vid(vid, None).await?;
 
-        Ok(self.inner.open_message(&mut payload)?.into_owned())
+        #[cfg(feature = "bench-network-timings")]
+        let mut timings = crate::BenchNetworkTimings::default();
+        Ok(self
+            .inner
+            .open_message(
+                &mut payload,
+                #[cfg(feature = "bench-network-timings")]
+                &mut timings,
+            )?
+            .into_owned())
     }
 }

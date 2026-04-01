@@ -49,8 +49,17 @@ pub fn seal(
     receiver: &dyn VerifiedVid,
     nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
+    #[cfg(feature = "bench-network-timings")] timings: &mut crate::BenchNetworkTimings,
 ) -> Result<TSPMessage, CryptoError> {
-    seal_and_hash(sender, receiver, nonconfidential_data, payload, None)
+    seal_and_hash(
+        sender,
+        receiver,
+        nonconfidential_data,
+        payload,
+        None,
+        #[cfg(feature = "bench-network-timings")]
+        timings,
+    )
 }
 
 /// Encrypt, authenticate and sign and CESR encode a TSP message; also returns the hash value of the plaintext parts before encryption
@@ -60,6 +69,7 @@ pub fn seal_and_hash(
     nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
     digest: Option<&mut Digest>,
+    #[cfg(feature = "bench-network-timings")] timings: &mut crate::BenchNetworkTimings,
 ) -> Result<TSPMessage, CryptoError> {
     #[cfg(not(feature = "nacl"))]
     let msg = match receiver.encryption_key_type() {
@@ -69,6 +79,8 @@ pub fn seal_and_hash(
             nonconfidential_data,
             payload,
             digest,
+            #[cfg(feature = "bench-network-timings")]
+            timings,
         ),
         #[cfg(feature = "pq")]
         VidEncryptionKeyType::X25519Kyber768Draft00 => {
@@ -78,12 +90,22 @@ pub fn seal_and_hash(
                 nonconfidential_data,
                 payload,
                 digest,
+                #[cfg(feature = "bench-network-timings")]
+                timings,
             )
         }
     }?;
 
     #[cfg(feature = "nacl")]
-    let msg = tsp_nacl::seal(sender, receiver, nonconfidential_data, payload, digest)?;
+    let msg = tsp_nacl::seal(
+        sender,
+        receiver,
+        nonconfidential_data,
+        payload,
+        digest,
+        #[cfg(feature = "bench-network-timings")]
+        timings,
+    )?;
 
     Ok(msg)
 }
@@ -100,11 +122,22 @@ pub fn open<'a>(
     receiver: &dyn PrivateVid,
     sender: &dyn VerifiedVid,
     tsp_message: &'a mut [u8],
+    #[cfg(feature = "bench-network-timings")] timings: &mut crate::BenchNetworkTimings,
 ) -> Result<MessageContents<'a>, CryptoError> {
+    #[cfg(feature = "bench-network-timings")]
+    let open_core_started = std::time::Instant::now();
     let view = crate::cesr::decode_envelope(tsp_message)?;
+    #[cfg(feature = "bench-network-timings")]
+    {
+        timings.open_core_ns = timings.open_core_ns.saturating_add(
+            u64::try_from(open_core_started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+        );
+    }
 
     // verify outer signature
     let verification_challenge = view.as_challenge();
+    #[cfg(feature = "bench-network-timings")]
+    let verify_started = std::time::Instant::now();
     match view.signature_type() {
         SignatureType::NoSignature => {}
         SignatureType::Ed25519 => {
@@ -130,8 +163,16 @@ pub fn open<'a>(
                 .map_err(|err| Verify(sender.identifier().to_string(), err))?;
         }
     }
+    #[cfg(feature = "bench-network-timings")]
+    {
+        timings.verify_ns = timings
+            .verify_ns
+            .saturating_add(u64::try_from(verify_started.elapsed().as_nanos()).unwrap_or(u64::MAX));
+    }
 
     // decode envelope
+    #[cfg(feature = "bench-network-timings")]
+    let open_core_started = std::time::Instant::now();
     let crate::cesr::DecodedEnvelope {
         raw_header,
         envelope,
@@ -148,23 +189,48 @@ pub fn open<'a>(
         return Err(CryptoError::UnexpectedRecipient);
     }
 
-    match envelope.crypto_type {
+    let result = match envelope.crypto_type {
         #[cfg(feature = "pq")]
         CryptoType::X25519Kyber768Draft00 => {
             tsp_hpke::open::<Aead, Kdf, kem::X25519Kyber768Draft00>(
-                receiver, sender, raw_header, envelope, ciphertext,
+                receiver,
+                sender,
+                raw_header,
+                envelope,
+                ciphertext,
+                #[cfg(feature = "bench-network-timings")]
+                timings,
             )
         }
         CryptoType::HpkeAuth | CryptoType::HpkeEssr => {
             tsp_hpke::open::<Aead, Kdf, kem::X25519HkdfSha256>(
-                receiver, sender, raw_header, envelope, ciphertext,
+                receiver,
+                sender,
+                raw_header,
+                envelope,
+                ciphertext,
+                #[cfg(feature = "bench-network-timings")]
+                timings,
             )
         }
-        CryptoType::NaclAuth | CryptoType::NaclEssr => {
-            tsp_nacl::open(receiver, sender, raw_header, envelope, ciphertext)
-        }
+        CryptoType::NaclAuth | CryptoType::NaclEssr => tsp_nacl::open(
+            receiver,
+            sender,
+            raw_header,
+            envelope,
+            ciphertext,
+            #[cfg(feature = "bench-network-timings")]
+            timings,
+        ),
         CryptoType::Plaintext => Err(CryptoError::MissingCiphertext),
+    };
+    #[cfg(feature = "bench-network-timings")]
+    if result.is_ok() {
+        timings.open_core_ns = timings.open_core_ns.saturating_add(
+            u64::try_from(open_core_started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+        );
     }
+    result
 }
 
 /// Construct and sign a non-confidential TSP message
@@ -172,16 +238,29 @@ pub fn sign(
     sender: &dyn PrivateVid,
     receiver: Option<&dyn VerifiedVid>,
     payload: &[u8],
+    #[cfg(feature = "bench-network-timings")] timings: &mut crate::BenchNetworkTimings,
 ) -> Result<TSPMessage, CryptoError> {
-    nonconfidential::sign(sender, receiver, payload)
+    nonconfidential::sign(
+        sender,
+        receiver,
+        payload,
+        #[cfg(feature = "bench-network-timings")]
+        timings,
+    )
 }
 
 /// Decode a CESR Authentic Non-Confidential Message, verify the signature and return its contents
 pub fn verify<'a>(
     sender: &dyn VerifiedVid,
     tsp_message: &'a mut [u8],
+    #[cfg(feature = "bench-network-timings")] timings: &mut crate::BenchNetworkTimings,
 ) -> Result<(&'a [u8], MessageType), CryptoError> {
-    nonconfidential::verify(sender, tsp_message)
+    nonconfidential::verify(
+        sender,
+        tsp_message,
+        #[cfg(feature = "bench-network-timings")]
+        timings,
+    )
 }
 
 #[cfg(all(not(feature = "nacl"), not(feature = "pq")))]
@@ -266,17 +345,29 @@ mod tests {
 
         let secret_message: &[u8] = b"hello world";
         let nonconfidential_data = b"extra header data";
+        #[cfg(feature = "bench-network-timings")]
+        let mut timings = crate::BenchNetworkTimings::default();
 
         let mut message = seal(
             &bob,
             &alice,
             Some(nonconfidential_data),
             Payload::Content(secret_message),
+            #[cfg(feature = "bench-network-timings")]
+            &mut timings,
         )
         .unwrap();
 
-        let (received_nonconfidential_data, received_secret_message, _, _) =
-            open(&alice, &bob, &mut message).unwrap();
+        #[cfg(feature = "bench-network-timings")]
+        let mut timings = crate::BenchNetworkTimings::default();
+        let (received_nonconfidential_data, received_secret_message, _, _) = open(
+            &alice,
+            &bob,
+            &mut message,
+            #[cfg(feature = "bench-network-timings")]
+            &mut timings,
+        )
+        .unwrap();
 
         assert_eq!(received_nonconfidential_data.unwrap(), nonconfidential_data);
         assert_eq!(received_secret_message, Payload::Content(secret_message));

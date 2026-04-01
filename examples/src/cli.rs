@@ -15,6 +15,7 @@ use tsp_sdk::{
 };
 use url::Url;
 
+#[cfg(feature = "bench")]
 mod bench;
 
 #[derive(Default, Debug, Clone)]
@@ -206,6 +207,7 @@ enum Commands {
         #[clap(subcommand)]
         sub: CustomSecretManagement,
     },
+    #[cfg(feature = "bench")]
     #[command(
         arg_required_else_help = true,
         about = "run transport benchmark traffic tests"
@@ -1102,6 +1104,7 @@ async fn run() -> Result<(), Error> {
                 println!("successfully removed secret '{}'", key);
             }
         },
+        #[cfg(feature = "bench")]
         Commands::Bench { sub } => {
             bench::run(sub, &vid_wallet, &args.wallet).await?;
         }
