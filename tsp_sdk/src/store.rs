@@ -3,8 +3,10 @@ use crate::{
     cesr::EnvelopeType,
     crypto::CryptoError,
     definitions::{
-        Digest, MessageType, Payload, PrivateVid, ReceivedTspMessage, RelationshipStatus,
-        VerifiedVid,
+        Digest, MessageType, Payload, PendingIncomingParallelRelationship,
+        PendingNestedRelationship, PendingParallelRelationship, PrivateVid,
+        ReceivedRelationshipDelivery, ReceivedRelationshipForm, ReceivedTspMessage,
+        RelationshipForm, RelationshipStatus, VerifiedVid,
     },
     error::Error,
     vid::{VidError, resolve::verify_vid_offline},
@@ -12,6 +14,7 @@ use crate::{
 #[cfg(feature = "async")]
 use bytes::Bytes;
 use bytes::BytesMut;
+use rand::{RngCore, SeedableRng, rngs::StdRng};
 use std::{
     collections::HashMap,
     fmt::Display,
@@ -27,6 +30,8 @@ pub(crate) struct VidContext {
     relation_vid: Option<String>,
     parent_vid: Option<String>,
     tunnel: Option<Box<[String]>>,
+    pending_parallel_requests: Vec<PendingParallelRelationship>,
+    pending_incoming_parallel_requests: Vec<PendingIncomingParallelRelationship>,
     metadata: Option<serde_json::Value>,
 }
 
@@ -76,6 +81,139 @@ impl VidContext {
     }
 }
 
+fn nested_digest(bytes: &[u8]) -> Digest {
+    #[cfg(feature = "nacl")]
+    {
+        crate::crypto::blake2b256(bytes)
+    }
+
+    #[cfg(not(feature = "nacl"))]
+    {
+        crate::crypto::sha256(bytes)
+    }
+}
+
+fn relationship_digest_algorithm() -> crate::crypto::RelationshipDigestAlgorithm {
+    #[cfg(feature = "nacl")]
+    {
+        crate::crypto::RelationshipDigestAlgorithm::Blake2b256
+    }
+
+    #[cfg(not(feature = "nacl"))]
+    {
+        crate::crypto::RelationshipDigestAlgorithm::Sha2_256
+    }
+}
+
+fn nested_digest_field<'a>(digest: &'a Digest) -> crate::cesr::Digest<'a> {
+    #[cfg(feature = "nacl")]
+    {
+        crate::cesr::Digest::Blake2b256(digest)
+    }
+
+    #[cfg(not(feature = "nacl"))]
+    {
+        crate::cesr::Digest::Sha2_256(digest)
+    }
+}
+
+enum NestedRelationshipEvent {
+    Request {
+        nested_vid: String,
+        thread_id: Digest,
+    },
+    Accept {
+        nested_vid: String,
+        thread_id: Digest,
+        reply_thread_id: Digest,
+    },
+}
+
+fn received_relationship_form<'a>(
+    form: RelationshipForm<'a, &'a [u8]>,
+) -> Result<ReceivedRelationshipForm<&'a [u8]>, Error> {
+    match form {
+        RelationshipForm::Direct => Ok(ReceivedRelationshipForm::Direct),
+        RelationshipForm::Parallel {
+            new_vid,
+            sig_new_vid,
+        } => Ok(ReceivedRelationshipForm::Parallel {
+            new_vid: std::str::from_utf8(new_vid)?.to_string(),
+            sig_new_vid,
+        }),
+    }
+}
+
+fn unverified_parallel_vid_error(vid: &str, error: VidError) -> Error {
+    match error {
+        VidError::InvalidVid(_) => Error::UnverifiedVid(vid.to_string()),
+        other => other.into(),
+    }
+}
+
+fn unverified_source_error(vid: &str) -> Error {
+    #[cfg(feature = "async")]
+    {
+        Error::UnverifiedSource(vid.to_string(), None)
+    }
+
+    #[cfg(not(feature = "async"))]
+    {
+        Error::UnverifiedSource(vid.to_string())
+    }
+}
+
+fn requires_existing_parallel_relationship_error() -> Error {
+    Error::Relationship(
+        "parallel relationship-forming requires an existing bidirectional relationship".into(),
+    )
+}
+
+enum DeferredVerifiedVid {
+    Known(Arc<dyn VerifiedVid>),
+    Deferred(crate::Vid),
+}
+
+impl DeferredVerifiedVid {
+    fn as_verified(&self) -> &dyn VerifiedVid {
+        match self {
+            DeferredVerifiedVid::Known(vid) => &**vid,
+            DeferredVerifiedVid::Deferred(vid) => vid,
+        }
+    }
+
+    fn persist(self, store: &SecureStore) -> Result<(), Error> {
+        if let DeferredVerifiedVid::Deferred(vid) = self {
+            store.add_verified_vid(vid, None)?;
+        }
+
+        Ok(())
+    }
+}
+
+struct ParallelSignatureMaterial {
+    digest: Digest,
+    sig_new_vid: Vec<u8>,
+    request_nonce: Option<[u8; 32]>,
+}
+
+enum ParallelSignatureContext<'a> {
+    Request {
+        sender_identity: &'a str,
+        nonce: [u8; 32],
+    },
+    Accept {
+        sender_identity: &'a str,
+        thread_id: Digest,
+    },
+}
+
+fn random_nonce_bytes() -> [u8; 32] {
+    let mut nonce_bytes = [0_u8; 32];
+    StdRng::from_entropy().fill_bytes(&mut nonce_bytes);
+    nonce_bytes
+}
+
 pub type Aliases = HashMap<String, String>;
 pub type WebvhUpdateKeys = HashMap<String, Vec<u8>>;
 
@@ -119,6 +257,10 @@ impl SecureStore {
                 relation_vid: context.relation_vid.clone(),
                 parent_vid: context.parent_vid.clone(),
                 tunnel: context.tunnel.clone(),
+                pending_parallel_requests: context.pending_parallel_requests.clone(),
+                pending_incoming_parallel_requests: context
+                    .pending_incoming_parallel_requests
+                    .clone(),
                 metadata: context.metadata.clone(),
             })
             .collect::<Vec<_>>();
@@ -149,6 +291,8 @@ impl SecureStore {
                     relation_vid: vid.relation_vid,
                     parent_vid: vid.parent_vid,
                     tunnel: vid.tunnel,
+                    pending_parallel_requests: vid.pending_parallel_requests,
+                    pending_incoming_parallel_requests: vid.pending_incoming_parallel_requests,
                     metadata: vid.metadata,
                 },
             );
@@ -199,6 +343,8 @@ impl SecureStore {
                 relation_vid: None,
                 parent_vid: None,
                 tunnel: None,
+                pending_parallel_requests: vec![],
+                pending_incoming_parallel_requests: vec![],
                 metadata,
             });
 
@@ -228,6 +374,8 @@ impl SecureStore {
                 relation_vid: None,
                 parent_vid: None,
                 tunnel: None,
+                pending_parallel_requests: vec![],
+                pending_incoming_parallel_requests: vec![],
                 metadata: metadata
                     .map(serde_json::to_value)
                     .transpose()
@@ -382,6 +530,20 @@ impl SecureStore {
     /// Retrieve the [VerifiedVid] identified by `vid` from the wallet if it exists.
     pub fn get_verified_vid(&self, vid: &str) -> Result<Arc<dyn VerifiedVid>, Error> {
         Ok(self.get_vid(vid)?.vid)
+    }
+
+    fn get_verified_vid_or_resolve_offline(
+        &self,
+        vid: &str,
+        map_offline_error: impl FnOnce(VidError) -> Error,
+    ) -> Result<DeferredVerifiedVid, Error> {
+        match self.get_verified_vid(vid) {
+            Ok(verified_vid) => Ok(DeferredVerifiedVid::Known(verified_vid)),
+            Err(Error::UnverifiedVid(_)) => Ok(DeferredVerifiedVid::Deferred(
+                verify_vid_offline(vid).map_err(map_offline_error)?,
+            )),
+            Err(error) => Err(error),
+        }
     }
 
     /// Retrieve the [VidContext] identified by `vid` from the wallet, if it exists.
@@ -573,18 +735,180 @@ impl SecureStore {
         Ok(message)
     }
 
-    /// Resolve a route, extract the next hop and verify the route
-    fn resolve_route<'a>(&'a self, hop_list: &'a [&str]) -> Result<(String, Vec<&'a [u8]>), Error> {
-        let Some(next_hop) = hop_list.first() else {
-            return Err(Error::InvalidRoute(
-                "relationship route must not be empty".into(),
-            ));
+    fn make_signed_nested_request_message(
+        &self,
+        sender: &dyn PrivateVid,
+    ) -> Result<(Vec<u8>, Digest), Error> {
+        let mut csprng = StdRng::from_entropy();
+        let mut nonce_bytes = [0_u8; 32];
+        csprng.fill_bytes(&mut nonce_bytes);
+
+        let sender_identity = Some(sender.identifier().as_bytes());
+        let mut request_digest = [0_u8; 32];
+
+        let placeholder_payload: crate::cesr::Payload<'_, &[u8], &[u8]> =
+            crate::cesr::Payload::DirectRelationProposal {
+                nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+                request_digest: nested_digest_field(&request_digest),
+            };
+
+        let mut encoded_payload =
+            Vec::with_capacity(placeholder_payload.calculate_size(sender_identity));
+        crate::cesr::encode_payload(&placeholder_payload, sender_identity, &mut encoded_payload)?;
+
+        request_digest = nested_digest(&encoded_payload);
+
+        encoded_payload.clear();
+        let payload: crate::cesr::Payload<'_, &[u8], &[u8]> =
+            crate::cesr::Payload::DirectRelationProposal {
+                nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+                request_digest: nested_digest_field(&request_digest),
+            };
+        crate::cesr::encode_payload(&payload, sender_identity, &mut encoded_payload)?;
+
+        let message = crate::crypto::sign(sender, None, &encoded_payload)?;
+
+        Ok((message, request_digest))
+    }
+
+    fn make_signed_nested_accept_message(
+        &self,
+        sender: &dyn PrivateVid,
+        receiver: &dyn VerifiedVid,
+        thread_id: Digest,
+    ) -> Result<(Vec<u8>, Digest), Error> {
+        let sender_identity = Some(sender.identifier().as_bytes());
+        let mut reply_thread_id = [0_u8; 32];
+
+        let placeholder_payload: crate::cesr::Payload<'_, &[u8], &[u8]> =
+            crate::cesr::Payload::DirectRelationAffirm {
+                request_digest: nested_digest_field(&thread_id),
+                reply_digest: nested_digest_field(&reply_thread_id),
+            };
+
+        let mut encoded_payload =
+            Vec::with_capacity(placeholder_payload.calculate_size(sender_identity));
+        crate::cesr::encode_payload(&placeholder_payload, sender_identity, &mut encoded_payload)?;
+
+        reply_thread_id = nested_digest(&encoded_payload);
+
+        encoded_payload.clear();
+        let payload: crate::cesr::Payload<'_, &[u8], &[u8]> =
+            crate::cesr::Payload::DirectRelationAffirm {
+                request_digest: nested_digest_field(&thread_id),
+                reply_digest: nested_digest_field(&reply_thread_id),
+            };
+        crate::cesr::encode_payload(&payload, sender_identity, &mut encoded_payload)?;
+
+        let message = crate::crypto::sign(sender, Some(receiver), &encoded_payload)?;
+
+        Ok((message, reply_thread_id))
+    }
+
+    fn try_open_nested_relationship_message(
+        &self,
+        outer_sender: &str,
+        inner: &mut [u8],
+    ) -> Result<Option<NestedRelationshipEvent>, Error> {
+        let EnvelopeType::SignedMessage {
+            sender: inner_sender,
+            receiver: inner_receiver,
+            ..
+        } = crate::cesr::probe(inner)?
+        else {
+            return Ok(None);
         };
 
-        let next_hop = self.get_verified_vid(next_hop)?.identifier().to_owned();
-        let path = hop_list[1..].iter().map(|x| x.as_bytes()).collect();
+        let inner_sender = std::str::from_utf8(inner_sender)?.to_string();
+        let inner_receiver = inner_receiver
+            .map(std::str::from_utf8)
+            .transpose()?
+            .map(str::to_owned);
 
-        Ok((next_hop, path))
+        let (inner_message, _) = match self.get_verified_vid(&inner_sender) {
+            Ok(sender_vid) => crate::crypto::verify(&*sender_vid, inner)?,
+            Err(_) => {
+                let Ok(sender_vid) = verify_vid_offline(&inner_sender) else {
+                    return Ok(None);
+                };
+                crate::crypto::verify(&sender_vid, inner)?
+            }
+        };
+
+        let mut payload_bytes = inner_message.to_vec();
+        let crate::cesr::DecodedPayload {
+            payload,
+            sender_identity,
+        } = match crate::cesr::decode_payload(&mut payload_bytes) {
+            Ok(decoded) => decoded,
+            Err(_) => return Ok(None),
+        };
+
+        if sender_identity != Some(inner_sender.as_bytes()) {
+            return Err(Error::Relationship(
+                "nested relationship control payload sender mismatch".into(),
+            ));
+        }
+
+        match payload {
+            crate::cesr::Payload::DirectRelationProposal { request_digest, .. } => {
+                if inner_receiver.is_some() {
+                    return Err(Error::Relationship(
+                        "invalid nested relationship request receiver".into(),
+                    ));
+                }
+
+                if self.get_verified_vid(&inner_sender).is_err() {
+                    self.add_nested_vid(&inner_sender)?;
+                }
+                self.set_parent_for_vid(&inner_sender, Some(outer_sender))?;
+
+                Ok(Some(NestedRelationshipEvent::Request {
+                    nested_vid: inner_sender,
+                    thread_id: *request_digest.as_bytes(),
+                }))
+            }
+            crate::cesr::Payload::DirectRelationAffirm {
+                request_digest,
+                reply_digest,
+            } => {
+                let Some(connect_to_vid) = inner_receiver else {
+                    return Err(Error::Relationship(
+                        "invalid nested relationship accept receiver".into(),
+                    ));
+                };
+
+                if self.get_verified_vid(&inner_sender).is_err() {
+                    self.add_nested_vid(&inner_sender)?;
+                }
+                self.set_parent_for_vid(&inner_sender, Some(outer_sender))?;
+                self.consume_pending_nested_request(
+                    outer_sender,
+                    *request_digest.as_bytes(),
+                    &connect_to_vid,
+                )?;
+
+                let relation_status =
+                    RelationshipStatus::bi(*request_digest.as_bytes(), *reply_digest.as_bytes());
+                self.set_relation_and_status_for_vid(
+                    &connect_to_vid,
+                    relation_status.clone(),
+                    &inner_sender,
+                )?;
+                self.set_relation_and_status_for_vid(
+                    &inner_sender,
+                    relation_status,
+                    &connect_to_vid,
+                )?;
+
+                Ok(Some(NestedRelationshipEvent::Accept {
+                    nested_vid: inner_sender,
+                    thread_id: *request_digest.as_bytes(),
+                    reply_thread_id: *reply_digest.as_bytes(),
+                }))
+            }
+            _ => Ok(None),
+        }
     }
 
     /// Pass along an in-transit routed TSP `opaque_message` that is not meant for us, given earlier resolved VIDs.
@@ -667,16 +991,25 @@ impl SecureStore {
                 };
 
                 let sender = std::str::from_utf8(sender)?.to_string();
+                let sender_vid = self.get_verified_vid_or_resolve_offline(&sender, |_| {
+                    unverified_source_error(&sender)
+                })?;
 
-                let Ok(sender_vid) = self.get_verified_vid(&sender) else {
-                    #[cfg(feature = "async")]
-                    return Err(Error::UnverifiedSource(sender, None));
-                    #[cfg(not(feature = "async"))]
-                    return Err(Error::UnverifiedSource(sender));
-                };
+                let (
+                    (nonconfidential_data, payload, crypto_type, signature_type),
+                    parallel_signature_info,
+                ) = crate::crypto::open_with_signature_info(
+                    &*receiver_pid,
+                    sender_vid.as_verified(),
+                    message,
+                )?;
 
-                let (nonconfidential_data, payload, crypto_type, signature_type) =
-                    crate::crypto::open(&*receiver_pid, &*sender_vid, message)?;
+                let parallel_sender_vid = parallel_signature_info
+                    .map(|parallel_signature_info| {
+                        self.verify_parallel_relationship_signature(parallel_signature_info)
+                    })
+                    .transpose()?;
+                sender_vid.persist(self)?;
 
                 match payload {
                     Payload::Content(message) => Ok(ReceivedTspMessage::GenericMessage {
@@ -690,6 +1023,35 @@ impl SecureStore {
                         },
                     }),
                     Payload::NestedMessage(inner) => {
+                        if let Some(received_message) =
+                            self.try_open_nested_relationship_message(&sender, inner)?
+                        {
+                            return Ok(match received_message {
+                                NestedRelationshipEvent::Request {
+                                    nested_vid,
+                                    thread_id,
+                                } => ReceivedTspMessage::RequestRelationship {
+                                    sender,
+                                    receiver: intended_receiver,
+                                    thread_id,
+                                    form: ReceivedRelationshipForm::Direct,
+                                    delivery: ReceivedRelationshipDelivery::Nested { nested_vid },
+                                },
+                                NestedRelationshipEvent::Accept {
+                                    nested_vid,
+                                    thread_id,
+                                    reply_thread_id,
+                                } => ReceivedTspMessage::AcceptRelationship {
+                                    sender,
+                                    receiver: intended_receiver,
+                                    thread_id,
+                                    reply_thread_id,
+                                    form: ReceivedRelationshipForm::Direct,
+                                    delivery: ReceivedRelationshipDelivery::Nested { nested_vid },
+                                },
+                            });
+                        }
+
                         // in case the inner vid isn't recognized (which can realistically happen in Routed mode),
                         // in async mode we might want to ask if they still want to open the message; but for that
                         // we must communicate the payload to them so they can process it further.
@@ -737,29 +1099,80 @@ impl SecureStore {
                             opaque_payload: BytesMut::from_iter(message.iter()),
                         })
                     }
-                    Payload::RequestRelationship { route, thread_id } => {
+                    Payload::RequestRelationship { thread_id, form } => {
+                        if let Some(parallel_sender_vid) = parallel_sender_vid {
+                            parallel_sender_vid.persist(self)?;
+                        }
+                        let form = received_relationship_form(form)?;
+
+                        if let ReceivedRelationshipForm::Parallel { new_vid, .. } = &form {
+                            self.add_pending_incoming_parallel_request(
+                                new_vid,
+                                thread_id,
+                                &intended_receiver,
+                            )?;
+                        }
+
                         Ok(ReceivedTspMessage::RequestRelationship {
                             sender,
                             receiver: intended_receiver,
-                            route: route.map(|vec| vec.iter().map(|vid| vid.to_vec()).collect()),
                             thread_id,
-                            nested_vid: None,
+                            form,
+                            delivery: ReceivedRelationshipDelivery::Direct,
                         })
                     }
-                    Payload::AcceptRelationship { thread_id } => {
-                        self.upgrade_relation(receiver_pid.identifier(), &sender, thread_id)?;
+                    Payload::AcceptRelationship {
+                        thread_id,
+                        reply_thread_id,
+                        form,
+                    } => {
+                        let is_direct = matches!(&form, RelationshipForm::Direct);
+                        let form = received_relationship_form(form)?;
+
+                        if is_direct {
+                            self.upgrade_relation(
+                                receiver_pid.identifier(),
+                                &sender,
+                                thread_id,
+                                reply_thread_id,
+                            )?;
+                        } else {
+                            self.consume_pending_parallel_request(
+                                receiver_pid.identifier(),
+                                thread_id,
+                                &sender,
+                            )?;
+                            let parallel_sender_vid = parallel_sender_vid.ok_or_else(|| {
+                                Error::Relationship(
+                                    "missing verified parallel VID for accept message".into(),
+                                )
+                            })?;
+                            let parallel_sender_identifier =
+                                parallel_sender_vid.as_verified().identifier().to_string();
+                            parallel_sender_vid.persist(self)?;
+                            self.establish_bidirectional_relation(
+                                receiver_pid.identifier(),
+                                &parallel_sender_identifier,
+                                thread_id,
+                                reply_thread_id,
+                            )?;
+                        }
 
                         Ok(ReceivedTspMessage::AcceptRelationship {
                             sender,
                             receiver: intended_receiver,
-                            nested_vid: None,
+                            thread_id,
+                            reply_thread_id,
+                            form,
+                            delivery: ReceivedRelationshipDelivery::Direct,
                         })
                     }
                     Payload::CancelRelationship { thread_id } => {
                         if let Some(context) = self.vids.write()?.get_mut(&sender) {
                             match context.relation_status {
                                 RelationshipStatus::Bidirectional {
-                                    thread_id: digest, ..
+                                    remote_thread_id: digest,
+                                    ..
                                 }
                                 | RelationshipStatus::Unidirectional { thread_id: digest }
                                 | RelationshipStatus::ReverseUnidirectional { thread_id: digest } =>
@@ -784,108 +1197,6 @@ impl SecureStore {
                         Ok(ReceivedTspMessage::CancelRelationship {
                             sender,
                             receiver: intended_receiver,
-                        })
-                    }
-                    Payload::RequestNestedRelationship { inner, thread_id } => {
-                        let EnvelopeType::SignedMessage {
-                            sender: inner_vid,
-                            receiver: None,
-                            ..
-                        } = crate::cesr::probe(inner)?
-                        else {
-                            return Err(Error::Relationship(
-                                "invalid nested request, not a signed message".into(),
-                            ));
-                        };
-
-                        let inner_vid = std::str::from_utf8(inner_vid)?.to_string();
-
-                        self.add_nested_vid(&inner_vid)?;
-
-                        // the act of opening this message is simply verifying the signature, because this SDK doesn't yet
-                        // support sending data as part of control messages. This can easily change.
-                        let _ = self.open_message(inner)?;
-
-                        self.set_parent_for_vid(&inner_vid, Some(&sender))?;
-
-                        Ok(ReceivedTspMessage::RequestRelationship {
-                            sender,
-                            receiver: intended_receiver,
-                            route: None,
-                            thread_id,
-                            nested_vid: Some(inner_vid),
-                        })
-                    }
-                    Payload::AcceptNestedRelationship { thread_id, inner } => {
-                        let EnvelopeType::SignedMessage {
-                            sender: vid,
-                            receiver: Some(connect_to_vid),
-                            ..
-                        } = crate::cesr::probe(inner)?
-                        else {
-                            return Err(Error::Relationship(
-                                "invalid nested accept reply, not a signed message".into(),
-                            ));
-                        };
-
-                        let vid = std::str::from_utf8(vid)?.to_string();
-                        let connect_to_vid = std::str::from_utf8(connect_to_vid)?.to_string();
-                        self.add_nested_vid(&vid)?;
-
-                        let _ = self.open_message(inner)?;
-
-                        self.set_parent_for_vid(&vid, Some(&sender))?;
-                        self.add_nested_relation(&sender, &vid, thread_id)?;
-                        self.set_relation_and_status_for_vid(
-                            &connect_to_vid,
-                            RelationshipStatus::bi_default(),
-                            &vid,
-                        )?;
-                        self.set_relation_and_status_for_vid(
-                            &vid,
-                            RelationshipStatus::bi_default(),
-                            &connect_to_vid,
-                        )?;
-
-                        Ok(ReceivedTspMessage::AcceptRelationship {
-                            sender,
-                            receiver: intended_receiver,
-                            nested_vid: Some(vid),
-                        })
-                    }
-                    Payload::NewIdentifier { thread_id, new_vid } => {
-                        let vid = std::str::from_utf8(new_vid)?.to_string();
-                        match self.get_vid(&sender)?.relation_status {
-                            RelationshipStatus::Bidirectional {
-                                thread_id: check_id,
-                                ..
-                            } => {
-                                if check_id == thread_id {
-                                    Ok(ReceivedTspMessage::NewIdentifier {
-                                        sender,
-                                        receiver: intended_receiver,
-                                        new_vid: vid,
-                                    })
-                                } else {
-                                    Err(Error::Relationship(
-                                        "thread_id does not match, not accepting new identifier"
-                                            .into(),
-                                    ))
-                                }
-                            }
-                            _ => Err(Error::Relationship(format!(
-                                "no bidirectional relationship with {sender}, not accepting new identifier"
-                            ))),
-                        }
-                    }
-                    Payload::Referral { referred_vid } => {
-                        //NOTE: we could also check the relationship status here, but since a 3rd party introduction
-                        //might be of interest to a user anyway regardless of existing status, we are less strict about it
-                        let vid = std::str::from_utf8(referred_vid)?;
-                        Ok(ReceivedTspMessage::Referral {
-                            sender,
-                            receiver: intended_receiver,
-                            referred_vid: vid.to_string(),
                         })
                     }
                 }
@@ -933,30 +1244,25 @@ impl SecureStore {
         receiver: &str,
         route: Option<&[&str]>,
     ) -> Result<(Url, Vec<u8>), Error> {
+        if route.is_some() {
+            return Err(Error::Relationship(
+                "routed relationship-forming requires Reply_Path; not implemented".into(),
+            ));
+        }
+
         let sender = self.get_private_vid(sender)?;
         let receiver = self.get_verified_vid(receiver)?;
-
-        let path = route;
-        let route = route.map(|collection| collection.iter().map(|vid| vid.as_ref()).collect());
-
         let mut thread_id = Default::default();
         let tsp_message = crate::crypto::seal_and_hash(
             &*sender,
             &*receiver,
             None,
             Payload::RequestRelationship {
-                route,
                 thread_id: Default::default(),
+                form: RelationshipForm::Direct,
             },
             Some(&mut thread_id),
         )?;
-
-        let (transport, tsp_message) = if let Some(hop_list) = path {
-            self.set_route_for_vid(receiver.identifier(), hop_list)?;
-            self.resolve_route_and_send(hop_list, &tsp_message)?
-        } else {
-            (receiver.endpoint().clone(), tsp_message)
-        };
 
         self.set_relation_and_status_for_vid(
             receiver.identifier(),
@@ -964,7 +1270,107 @@ impl SecureStore {
             sender.identifier(),
         )?;
 
-        Ok((transport, tsp_message.to_owned()))
+        Ok((receiver.endpoint().clone(), tsp_message.to_owned()))
+    }
+
+    fn build_parallel_signature_material(
+        &self,
+        sender_new_vid: &dyn PrivateVid,
+        context: ParallelSignatureContext<'_>,
+    ) -> Result<ParallelSignatureMaterial, Error> {
+        let digest_algorithm = relationship_digest_algorithm();
+        let mut digest = [0_u8; 32];
+
+        let (signed_data, request_nonce) = match context {
+            ParallelSignatureContext::Request {
+                sender_identity,
+                nonce,
+            } => (
+                crate::crypto::build_parallel_request_signed_data(
+                    Some(sender_identity.as_bytes()),
+                    digest_algorithm,
+                    nonce,
+                    &mut digest,
+                    sender_new_vid.identifier().as_bytes(),
+                )?,
+                Some(nonce),
+            ),
+            ParallelSignatureContext::Accept {
+                sender_identity,
+                thread_id,
+            } => (
+                crate::crypto::build_parallel_accept_signed_data(
+                    &thread_id,
+                    Some(sender_identity.as_bytes()),
+                    digest_algorithm,
+                    &mut digest,
+                    sender_new_vid.identifier().as_bytes(),
+                )?,
+                None,
+            ),
+        };
+
+        let sig_new_vid = crate::crypto::sign_detached(sender_new_vid, &signed_data)?;
+
+        Ok(ParallelSignatureMaterial {
+            digest,
+            sig_new_vid,
+            request_nonce,
+        })
+    }
+
+    /// Make a parallel relationship request using an existing relationship as a referral.
+    pub fn make_parallel_relationship_request(
+        &self,
+        sender: &str,
+        receiver: &str,
+        sender_new_vid: &str,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        let sender = self.get_private_vid(sender)?;
+        let receiver = self.get_verified_vid(receiver)?;
+        let sender_new_vid = self.get_private_vid(sender_new_vid)?;
+
+        match self.relation_status_for_vid_pair(sender.identifier(), receiver.identifier())? {
+            RelationshipStatus::Bidirectional { .. } => {}
+            RelationshipStatus::_Controlled
+            | RelationshipStatus::Unidirectional { .. }
+            | RelationshipStatus::ReverseUnidirectional { .. }
+            | RelationshipStatus::Unrelated => {
+                return Err(requires_existing_parallel_relationship_error());
+            }
+        }
+
+        let signature_material = self.build_parallel_signature_material(
+            &*sender_new_vid,
+            ParallelSignatureContext::Request {
+                sender_identity: sender.identifier(),
+                nonce: random_nonce_bytes(),
+            },
+        )?;
+        let mut thread_id = signature_material.digest;
+
+        let tsp_message = crate::crypto::seal_and_hash_with_relationship_nonce(
+            &*sender,
+            &*receiver,
+            None,
+            Payload::RequestRelationship {
+                thread_id: Default::default(),
+                form: RelationshipForm::Parallel {
+                    new_vid: sender_new_vid.identifier().as_bytes(),
+                    sig_new_vid: signature_material.sig_new_vid.as_slice(),
+                },
+            },
+            Some(&mut thread_id),
+            signature_material.request_nonce,
+        )?;
+
+        self.add_pending_parallel_request(
+            receiver.identifier(),
+            thread_id,
+            sender_new_vid.identifier(),
+        )?;
+
+        Ok((receiver.endpoint().clone(), tsp_message.to_owned()))
     }
 
     /// Accept a direct relationship between the resolved VIDs identifier by `sender` and `receiver`.
@@ -977,30 +1383,75 @@ impl SecureStore {
         thread_id: Digest,
         route: Option<&[&str]>,
     ) -> Result<(Url, Vec<u8>), Error> {
-        let (transport, tsp_message) = self.seal_message_payload(
+        if route.is_some() {
+            return Err(Error::Relationship(
+                "routed relationship-forming requires Reply_Path; not implemented".into(),
+            ));
+        }
+
+        let mut reply_thread_id = Default::default();
+        let (transport, tsp_message) = self.seal_message_payload_and_hash(
             sender,
             receiver,
             None,
-            Payload::AcceptRelationship { thread_id },
-        )?;
-
-        let (transport, tsp_message) = if let Some(hop_list) = route {
-            self.set_route_for_vid(receiver, hop_list)?;
-            self.resolve_route_and_send(hop_list, &tsp_message)?
-        } else {
-            (transport.to_owned(), tsp_message)
-        };
-
-        self.set_relation_and_status_for_vid(
-            receiver,
-            RelationshipStatus::Bidirectional {
+            Payload::AcceptRelationship {
                 thread_id,
-                outstanding_nested_thread_ids: Default::default(),
+                reply_thread_id: Default::default(),
+                form: RelationshipForm::Direct,
             },
-            sender,
+            Some(&mut reply_thread_id),
         )?;
+
+        self.establish_bidirectional_relation(sender, receiver, reply_thread_id, thread_id)?;
 
         Ok((transport, tsp_message))
+    }
+
+    /// Make a parallel relationship accept message over the new relationship.
+    pub fn make_parallel_relationship_accept(
+        &self,
+        sender_new_vid: &str,
+        receiver_new_vid: &str,
+        thread_id: Digest,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        let sender_new_vid = self.get_private_vid(sender_new_vid)?;
+        let receiver_new_vid = self.get_verified_vid(receiver_new_vid)?;
+        let pending_incoming_request =
+            self.find_pending_incoming_parallel_request(receiver_new_vid.identifier(), thread_id)?;
+        let outer_sender = self.get_private_vid(&pending_incoming_request.local_outer_vid)?;
+        let signature_material = self.build_parallel_signature_material(
+            &*sender_new_vid,
+            ParallelSignatureContext::Accept {
+                sender_identity: outer_sender.identifier(),
+                thread_id,
+            },
+        )?;
+        let mut reply_thread_id = signature_material.digest;
+
+        let tsp_message = crate::crypto::seal_and_hash(
+            &*outer_sender,
+            &*receiver_new_vid,
+            None,
+            Payload::AcceptRelationship {
+                thread_id,
+                reply_thread_id: Default::default(),
+                form: RelationshipForm::Parallel {
+                    new_vid: sender_new_vid.identifier().as_bytes(),
+                    sig_new_vid: signature_material.sig_new_vid.as_slice(),
+                },
+            },
+            Some(&mut reply_thread_id),
+        )?;
+
+        self.establish_bidirectional_relation(
+            sender_new_vid.identifier(),
+            receiver_new_vid.identifier(),
+            reply_thread_id,
+            thread_id,
+        )?;
+        self.remove_pending_incoming_parallel_request(receiver_new_vid.identifier(), thread_id)?;
+
+        Ok((receiver_new_vid.endpoint().clone(), tsp_message.to_owned()))
     }
 
     /// Cancels a direct relationship between the resolved `sender` and `receiver` VIDs.
@@ -1042,22 +1493,16 @@ impl SecureStore {
         let receiver = self.get_verified_vid(receiver)?;
 
         let nested_vid = self.make_propositioning_vid(sender.identifier())?;
+        let (inner_message, thread_id) = self.make_signed_nested_request_message(&nested_vid)?;
 
-        let inner_message = crate::crypto::sign(&nested_vid, None, &[])?;
-
-        let mut thread_id = Default::default();
-        let (endpoint, tsp_message) = self.seal_message_payload_and_hash(
+        let (endpoint, tsp_message) = self.seal_message_payload(
             sender.identifier(),
             receiver.identifier(),
             None,
-            Payload::RequestNestedRelationship {
-                inner: &inner_message,
-                thread_id: Default::default(),
-            },
-            Some(&mut thread_id),
+            Payload::NestedMessage(&inner_message),
         )?;
 
-        self.add_nested_thread_id(receiver.identifier(), thread_id)?;
+        self.add_pending_nested_request(receiver.identifier(), thread_id, nested_vid.identifier())?;
 
         Ok(((endpoint, tsp_message), nested_vid))
     }
@@ -1073,17 +1518,6 @@ impl SecureStore {
         thread_id: Digest,
     ) -> Result<((Url, Vec<u8>), OwnedVid), Error> {
         let nested_vid = self.make_propositioning_vid(parent_sender)?;
-        self.set_relation_and_status_for_vid(
-            nested_vid.identifier(),
-            RelationshipStatus::bi(thread_id),
-            nested_receiver,
-        )?;
-        self.set_relation_and_status_for_vid(
-            nested_receiver,
-            RelationshipStatus::bi(thread_id),
-            nested_vid.identifier(),
-        )?;
-
         let receiver_vid = self.get_vid(nested_receiver)?;
         let parent_receiver = receiver_vid
             .get_parent_vid()
@@ -1091,78 +1525,29 @@ impl SecureStore {
                 "missing parent for {nested_receiver}"
             )))?;
 
-        let inner_message = crate::crypto::sign(&nested_vid, Some(&*receiver_vid.vid), &[])?;
+        let (inner_message, reply_thread_id) =
+            self.make_signed_nested_accept_message(&nested_vid, &*receiver_vid.vid, thread_id)?;
 
         let (transport, tsp_message) = self.seal_message_payload(
             parent_sender,
             parent_receiver,
             None,
-            Payload::AcceptNestedRelationship {
-                thread_id,
-                inner: &inner_message,
-            },
+            Payload::NestedMessage(&inner_message),
         )?;
 
-        self.set_relation_status_for_vid(
+        let relation_status = RelationshipStatus::bi(reply_thread_id, thread_id);
+        self.set_relation_and_status_for_vid(
+            nested_vid.identifier(),
+            relation_status.clone(),
             nested_receiver,
-            RelationshipStatus::Bidirectional {
-                thread_id,
-                outstanding_nested_thread_ids: Default::default(),
-            },
+        )?;
+        self.set_relation_and_status_for_vid(
+            nested_receiver,
+            relation_status,
+            nested_vid.identifier(),
         )?;
 
         Ok(((transport, tsp_message), nested_vid))
-    }
-
-    pub fn make_new_identifier_notice(
-        &self,
-        sender: &str,
-        receiver: &str,
-        new_vid: &str,
-    ) -> Result<(Url, Vec<u8>), Error> {
-        // check that the new vid is actually one of ours
-        let new_vid = self.get_private_vid(new_vid)?;
-
-        let RelationshipStatus::Bidirectional { thread_id, .. } =
-            self.get_vid(receiver)?.relation_status
-        else {
-            return Err(Error::Relationship(format!(
-                "no relationship with {receiver}"
-            )));
-        };
-
-        let (transport, tsp_message) = self.seal_message_payload(
-            sender,
-            receiver,
-            None,
-            Payload::NewIdentifier {
-                thread_id,
-                new_vid: new_vid.identifier().as_ref(),
-            },
-        )?;
-
-        Ok((transport, tsp_message))
-    }
-
-    pub fn make_relationship_referral(
-        &self,
-        sender: &str,
-        receiver: &str,
-        referred_vid: &str,
-    ) -> Result<(Url, Vec<u8>), Error> {
-        // check that we actually know the referred vid
-        let referred_vid = self.get_vid(referred_vid)?;
-
-        let (transport, tsp_message) = self.seal_message_payload(
-            sender,
-            receiver,
-            None,
-            Payload::Referral {
-                referred_vid: referred_vid.vid.identifier().as_ref(),
-            },
-        )?;
-
-        Ok((transport, tsp_message))
     }
 
     fn make_propositioning_vid(&self, parent_vid: &str) -> Result<OwnedVid, Error> {
@@ -1175,7 +1560,24 @@ impl SecureStore {
         Ok(vid)
     }
 
-    /// Send a message given a route, extracting the next hop and verifying it in the process
+    // Keep the routed relationship-forming scaffolding in place for a future
+    // Reply_Path/routed-accept implementation, even though the public entry
+    // points currently reject routed relationship-forming.
+    #[allow(dead_code)]
+    fn resolve_route<'a>(&'a self, hop_list: &'a [&str]) -> Result<(String, Vec<&'a [u8]>), Error> {
+        let Some(next_hop) = hop_list.first() else {
+            return Err(Error::InvalidRoute(
+                "relationship route must not be empty".into(),
+            ));
+        };
+
+        let next_hop = self.get_verified_vid(next_hop)?.identifier().to_owned();
+        let path = hop_list[1..].iter().map(|x| x.as_bytes()).collect();
+
+        Ok((next_hop, path))
+    }
+
+    #[allow(dead_code)]
     fn resolve_route_and_send(
         &self,
         hop_list: &[&str],
@@ -1192,11 +1594,30 @@ impl SecureStore {
         self.add_verified_vid(nested_vid, None)
     }
 
+    fn establish_bidirectional_relation(
+        &self,
+        my_vid: &str,
+        other_vid: &str,
+        thread_id: Digest,
+        remote_thread_id: Digest,
+    ) -> Result<(), Error> {
+        self.set_relation_and_status_for_vid(
+            other_vid,
+            RelationshipStatus::Bidirectional {
+                thread_id,
+                remote_thread_id,
+                outstanding_nested_requests: Default::default(),
+            },
+            my_vid,
+        )
+    }
+
     fn upgrade_relation(
         &self,
         my_vid: &str,
         other_vid: &str,
         thread_id: Digest,
+        remote_thread_id: Digest,
     ) -> Result<(), Error> {
         let mut vids = self.vids.write()?;
         let Some(context) = vids.get_mut(other_vid) else {
@@ -1222,36 +1643,211 @@ impl SecureStore {
 
         context.relation_status = RelationshipStatus::Bidirectional {
             thread_id: digest,
-            outstanding_nested_thread_ids: Default::default(),
+            remote_thread_id,
+            outstanding_nested_requests: Default::default(),
         };
 
         Ok(())
     }
 
-    fn add_nested_thread_id(&self, vid: &str, thread_id: Digest) -> Result<(), Error> {
+    fn verify_parallel_relationship_signature(
+        &self,
+        parallel_signature_info: crate::crypto::ParallelSignatureInfo<'_>,
+    ) -> Result<DeferredVerifiedVid, Error> {
+        let new_vid = std::str::from_utf8(parallel_signature_info.new_vid)?;
+        let verified_vid = self.get_verified_vid_or_resolve_offline(new_vid, |error| {
+            unverified_parallel_vid_error(new_vid, error)
+        })?;
+
+        crate::crypto::verify_detached(
+            verified_vid.as_verified(),
+            &parallel_signature_info.signed_data,
+            parallel_signature_info.sig_new_vid,
+        )?;
+
+        Ok(verified_vid)
+    }
+
+    fn add_pending_parallel_request(
+        &self,
+        outer_receiver: &str,
+        thread_id: Digest,
+        local_parallel_vid: &str,
+    ) -> Result<(), Error> {
+        let mut vids = self.vids.write()?;
+        let Some(outer_context) = vids.get(outer_receiver) else {
+            return Err(Error::MissingVid(outer_receiver.into()));
+        };
+
+        if !matches!(
+            outer_context.relation_status,
+            RelationshipStatus::Bidirectional { .. }
+        ) {
+            return Err(Error::Relationship(format!(
+                "no bidirectional relationship with {outer_receiver}"
+            )));
+        }
+
+        let Some(local_context) = vids.get_mut(local_parallel_vid) else {
+            return Err(Error::MissingVid(local_parallel_vid.into()));
+        };
+
+        local_context
+            .pending_parallel_requests
+            .push(PendingParallelRelationship {
+                thread_id,
+                local_parallel_vid: local_parallel_vid.to_string(),
+                outer_receiver: outer_receiver.to_string(),
+            });
+
+        Ok(())
+    }
+
+    fn add_pending_incoming_parallel_request(
+        &self,
+        remote_parallel_vid: &str,
+        thread_id: Digest,
+        local_outer_vid: &str,
+    ) -> Result<(), Error> {
+        let mut vids = self.vids.write()?;
+        let Some(remote_context) = vids.get_mut(remote_parallel_vid) else {
+            return Err(Error::MissingVid(remote_parallel_vid.into()));
+        };
+
+        remote_context.pending_incoming_parallel_requests.push(
+            PendingIncomingParallelRelationship {
+                thread_id,
+                local_outer_vid: local_outer_vid.to_string(),
+            },
+        );
+
+        Ok(())
+    }
+
+    fn find_pending_incoming_parallel_request(
+        &self,
+        remote_parallel_vid: &str,
+        thread_id: Digest,
+    ) -> Result<PendingIncomingParallelRelationship, Error> {
+        let vids = self.vids.read()?;
+        let Some(remote_context) = vids.get(remote_parallel_vid) else {
+            return Err(Error::MissingVid(remote_parallel_vid.into()));
+        };
+
+        remote_context
+            .pending_incoming_parallel_requests
+            .iter()
+            .find(|request| request.thread_id == thread_id)
+            .cloned()
+            .ok_or_else(|| {
+                Error::Relationship(format!(
+                    "cannot find pending incoming parallel request for {remote_parallel_vid}"
+                ))
+            })
+    }
+
+    fn remove_pending_incoming_parallel_request(
+        &self,
+        remote_parallel_vid: &str,
+        thread_id: Digest,
+    ) -> Result<(), Error> {
+        let mut vids = self.vids.write()?;
+        let Some(remote_context) = vids.get_mut(remote_parallel_vid) else {
+            return Err(Error::MissingVid(remote_parallel_vid.into()));
+        };
+
+        let Some(index) = remote_context
+            .pending_incoming_parallel_requests
+            .iter()
+            .position(|request| request.thread_id == thread_id)
+        else {
+            return Err(Error::Relationship(format!(
+                "cannot find pending incoming parallel request for {remote_parallel_vid}"
+            )));
+        };
+        remote_context
+            .pending_incoming_parallel_requests
+            .remove(index);
+
+        Ok(())
+    }
+
+    fn consume_pending_parallel_request(
+        &self,
+        local_parallel_vid: &str,
+        thread_id: Digest,
+        expected_outer_receiver: &str,
+    ) -> Result<(), Error> {
+        let mut vids = self.vids.write()?;
+
+        let Some(local_context) = vids.get_mut(local_parallel_vid) else {
+            return Err(Error::MissingVid(local_parallel_vid.into()));
+        };
+
+        if let Some(index) = local_context
+            .pending_parallel_requests
+            .iter()
+            .position(|request| {
+                request.thread_id == thread_id
+                    && request.local_parallel_vid == local_parallel_vid
+                    && request.outer_receiver == expected_outer_receiver
+            })
+        {
+            local_context.pending_parallel_requests.remove(index);
+            return Ok(());
+        }
+
+        if local_context
+            .pending_parallel_requests
+            .iter()
+            .any(|request| {
+                request.thread_id == thread_id
+                    && request.local_parallel_vid == local_parallel_vid
+                    && !request.outer_receiver.is_empty()
+            })
+        {
+            return Err(Error::Relationship(format!(
+                "parallel relationship accept sender mismatch for {local_parallel_vid}"
+            )));
+        }
+
+        Err(Error::Relationship(format!(
+            "cannot find pending parallel request for {local_parallel_vid}"
+        )))
+    }
+
+    fn add_pending_nested_request(
+        &self,
+        vid: &str,
+        thread_id: Digest,
+        local_nested_vid: &str,
+    ) -> Result<(), Error> {
         let mut vids = self.vids.write()?;
         let Some(context) = vids.get_mut(vid) else {
             return Err(Error::MissingVid(vid.into()));
         };
 
         let RelationshipStatus::Bidirectional {
-            ref mut outstanding_nested_thread_ids,
+            ref mut outstanding_nested_requests,
             ..
         } = context.relation_status
         else {
             return Err(Error::Relationship(format!("no relationship with {vid}")));
         };
 
-        outstanding_nested_thread_ids.push(thread_id);
+        outstanding_nested_requests.push(PendingNestedRelationship {
+            thread_id,
+            local_nested_vid: local_nested_vid.to_string(),
+        });
 
         Ok(())
     }
 
-    fn add_nested_relation(
+    fn consume_pending_nested_request(
         &self,
         parent_vid: &str,
-        nested_vid: &str,
         thread_id: Digest,
+        expected_local_nested_vid: &str,
     ) -> Result<(), Error> {
         let mut vids = self.vids.write()?;
         let Some(context) = vids.get_mut(parent_vid) else {
@@ -1261,7 +1857,7 @@ impl SecureStore {
         };
 
         let RelationshipStatus::Bidirectional {
-            ref mut outstanding_nested_thread_ids,
+            ref mut outstanding_nested_requests,
             ..
         } = context.relation_status
         else {
@@ -1270,27 +1866,20 @@ impl SecureStore {
             )));
         };
 
-        // find the thread_id in the list of outstanding thread id's of the parent and remove it
-        let Some(index) = outstanding_nested_thread_ids
+        let Some(index) = outstanding_nested_requests
             .iter()
-            .position(|&x| x == thread_id)
+            .position(|request| request.thread_id == thread_id)
         else {
             return Err(Error::Relationship(format!(
-                "cannot find thread_id for nested vid {nested_vid}"
+                "cannot find thread_id for parent vid {parent_vid}"
             )));
         };
-        outstanding_nested_thread_ids.remove(index);
-
-        let Some(context) = vids.get_mut(nested_vid) else {
+        if outstanding_nested_requests[index].local_nested_vid != expected_local_nested_vid {
             return Err(Error::Relationship(format!(
-                "unknown nested vid {nested_vid}"
+                "nested relationship accept receiver mismatch for parent vid {parent_vid}"
             )));
-        };
-
-        context.relation_status = RelationshipStatus::Bidirectional {
-            thread_id,
-            outstanding_nested_thread_ids: Default::default(),
-        };
+        }
+        outstanding_nested_requests.remove(index);
 
         Ok(())
     }
@@ -1298,13 +1887,56 @@ impl SecureStore {
 
 #[cfg(test)]
 mod test {
+    use rand::{RngCore, SeedableRng, rngs::StdRng};
     use wasm_bindgen_test::wasm_bindgen_test;
 
+    use crate::store::relationship_digest_algorithm;
     use crate::test_utils::*;
-    use crate::{ReceivedTspMessage, RelationshipStatus, VerifiedVid};
+    use crate::{
+        Error, Payload, PendingParallelRelationship, ReceivedRelationshipDelivery,
+        ReceivedRelationshipForm, ReceivedTspMessage, RelationshipForm, RelationshipStatus,
+        SecureStore, VerifiedVid, crypto::CryptoError,
+    };
 
     fn assert_url_matches(url: &url::Url, expected_receiver: &dyn VerifiedVid) {
         assert_eq!(url.as_str(), expected_receiver.endpoint().as_str());
+    }
+
+    fn establish_existing_relationship(
+        a_store: &SecureStore,
+        a_vid: &dyn VerifiedVid,
+        b_store: &SecureStore,
+        b_vid: &dyn VerifiedVid,
+    ) {
+        a_store
+            .set_relation_and_status_for_vid(
+                b_vid.identifier(),
+                RelationshipStatus::Bidirectional {
+                    thread_id: [1; 32],
+                    remote_thread_id: [2; 32],
+                    outstanding_nested_requests: vec![],
+                },
+                a_vid.identifier(),
+            )
+            .unwrap();
+        b_store
+            .set_relation_and_status_for_vid(
+                a_vid.identifier(),
+                RelationshipStatus::Bidirectional {
+                    thread_id: [2; 32],
+                    remote_thread_id: [1; 32],
+                    outstanding_nested_requests: vec![],
+                },
+                b_vid.identifier(),
+            )
+            .unwrap();
+    }
+
+    fn reopen_store(store: &SecureStore) -> SecureStore {
+        let reopened = SecureStore::new();
+        let (vids, aliases, keys) = store.export().unwrap();
+        reopened.import(vids, aliases, keys).unwrap();
+        reopened
     }
 
     #[test]
@@ -1542,79 +2174,694 @@ mod test {
 
     #[test]
     #[wasm_bindgen_test]
-    fn test_make_new_identity() {
+    fn test_open_parallel_relationship_request() {
         let a_store = create_test_store();
         let b_store = create_test_store();
         let (alice, bob) = create_test_vid_pair();
-        let charles = create_test_vid();
+        let alice_parallel = create_test_vid();
 
         a_store.add_private_vid(alice.clone(), None).unwrap();
         b_store.add_private_vid(bob.clone(), None).unwrap();
-        a_store.add_private_vid(charles.clone(), None).unwrap();
-
+        a_store
+            .add_private_vid(alice_parallel.clone(), None)
+            .unwrap();
         a_store.add_verified_vid(bob.clone(), None).unwrap();
         b_store.add_verified_vid(alice.clone(), None).unwrap();
-
-        let status = super::RelationshipStatus::bi_default();
-
-        a_store
-            .replace_relation_status_for_vid(bob.identifier(), status.clone())
-            .unwrap();
-        b_store
-            .replace_relation_status_for_vid(alice.identifier(), status)
-            .unwrap();
-
-        // alice introduces her new identity to bob
+        establish_existing_relationship(&a_store, &alice, &b_store, &bob);
         let (url, mut sealed) = a_store
-            .make_new_identifier_notice(alice.identifier(), bob.identifier(), charles.identifier())
+            .make_parallel_relationship_request(
+                alice.identifier(),
+                bob.identifier(),
+                alice_parallel.identifier(),
+            )
             .unwrap();
 
         assert_url_matches(&url, &bob);
         let received = b_store.open_message(&mut sealed).unwrap();
 
-        let ReceivedTspMessage::NewIdentifier {
+        let ReceivedTspMessage::RequestRelationship {
             sender,
             receiver,
-            new_vid,
+            thread_id: received_request_digest,
+            form:
+                ReceivedRelationshipForm::Parallel {
+                    new_vid,
+                    sig_new_vid,
+                },
+            delivery: ReceivedRelationshipDelivery::Direct,
         } = received
         else {
             panic!("unexpected message type");
         };
         assert_eq!(sender, alice.identifier());
         assert_eq!(receiver, bob.identifier());
-        assert_eq!(new_vid, charles.identifier());
+        assert_eq!(new_vid, alice_parallel.identifier());
+        assert_eq!(
+            b_store
+                .get_verified_vid(alice_parallel.identifier())
+                .unwrap()
+                .identifier(),
+            alice_parallel.identifier()
+        );
+        assert!(received_request_digest.iter().any(|byte| *byte != 0));
+        assert_eq!(sig_new_vid.len(), 64);
     }
 
     #[test]
     #[wasm_bindgen_test]
-    fn test_make_referral() {
-        let store = create_test_store();
+    fn test_open_parallel_relationship_accept() {
+        let a_store = create_test_store();
+        let b_store = create_test_store();
         let (alice, bob) = create_test_vid_pair();
-        let charles = create_test_vid();
+        let alice_parallel = create_test_vid();
+        let bob_parallel = create_test_vid();
 
-        store.add_private_vid(alice.clone(), None).unwrap();
-        store.add_private_vid(bob.clone(), None).unwrap();
-        store.add_verified_vid(charles.clone(), None).unwrap();
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        a_store
+            .add_private_vid(alice_parallel.clone(), None)
+            .unwrap();
+        b_store.add_private_vid(bob_parallel.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+        establish_existing_relationship(&a_store, &alice, &b_store, &bob);
 
-        // alice vouches for charlies to bob
-        let (url, mut sealed) = store
-            .make_relationship_referral(alice.identifier(), bob.identifier(), charles.identifier())
+        let (_url, mut request) = a_store
+            .make_parallel_relationship_request(
+                alice.identifier(),
+                bob.identifier(),
+                alice_parallel.identifier(),
+            )
+            .unwrap();
+        let ReceivedTspMessage::RequestRelationship { thread_id, .. } =
+            b_store.open_message(&mut request).unwrap()
+        else {
+            panic!("unexpected message type");
+        };
+
+        let (url, mut sealed) = b_store
+            .make_parallel_relationship_accept(
+                bob_parallel.identifier(),
+                alice_parallel.identifier(),
+                thread_id,
+            )
             .unwrap();
 
-        assert_url_matches(&url, &bob);
-        let received = store.open_message(&mut sealed).unwrap();
+        assert_url_matches(&url, &alice_parallel);
+        let RelationshipStatus::Bidirectional {
+            thread_id: sender_thread_id,
+            remote_thread_id: sender_remote_thread_id,
+            outstanding_nested_requests,
+        } = b_store
+            .relation_status_for_vid_pair(bob_parallel.identifier(), alice_parallel.identifier())
+            .unwrap()
+        else {
+            panic!("parallel accept did not establish sender-side relationship");
+        };
+        assert_eq!(sender_remote_thread_id, thread_id);
+        assert!(sender_thread_id.iter().any(|byte| *byte != 0));
+        assert!(outstanding_nested_requests.is_empty());
 
-        let ReceivedTspMessage::Referral {
+        let received = a_store.open_message(&mut sealed).unwrap();
+
+        let ReceivedTspMessage::AcceptRelationship {
             sender,
             receiver,
-            referred_vid,
+            thread_id: request_digest,
+            reply_thread_id: received_reply_digest,
+            form:
+                ReceivedRelationshipForm::Parallel {
+                    new_vid,
+                    sig_new_vid,
+                },
+            delivery: ReceivedRelationshipDelivery::Direct,
         } = received
         else {
             panic!("unexpected message type");
         };
-        assert_eq!(sender, alice.identifier());
-        assert_eq!(receiver, bob.identifier());
-        assert_eq!(referred_vid, charles.identifier());
+        assert_eq!(sender, bob.identifier());
+        assert_eq!(receiver, alice_parallel.identifier());
+        assert_eq!(new_vid, bob_parallel.identifier());
+        assert_eq!(
+            a_store
+                .get_verified_vid(bob_parallel.identifier())
+                .unwrap()
+                .identifier(),
+            bob_parallel.identifier()
+        );
+        assert_eq!(request_digest, thread_id);
+        assert!(received_reply_digest.iter().any(|byte| *byte != 0));
+        assert_eq!(sig_new_vid.len(), 64);
+
+        let RelationshipStatus::Bidirectional {
+            thread_id: receiver_thread_id,
+            remote_thread_id: receiver_remote_thread_id,
+            outstanding_nested_requests,
+        } = a_store
+            .relation_status_for_vid_pair(alice_parallel.identifier(), bob_parallel.identifier())
+            .unwrap()
+        else {
+            panic!("parallel accept did not establish receiver-side relationship");
+        };
+        assert_eq!(receiver_thread_id, thread_id);
+        assert_eq!(receiver_remote_thread_id, received_reply_digest);
+        assert!(outstanding_nested_requests.is_empty());
+        assert_eq!(sender_thread_id, received_reply_digest);
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_parallel_relationship_accept_requires_pending_request() {
+        let b_store = create_test_store();
+        let alice_parallel = create_test_vid();
+        let bob_parallel = create_test_vid();
+
+        b_store.add_private_vid(bob_parallel.clone(), None).unwrap();
+        b_store
+            .add_verified_vid(alice_parallel.clone(), None)
+            .unwrap();
+
+        let random_thread_id = [7; 32];
+        let Err(Error::Relationship(message)) = b_store.make_parallel_relationship_accept(
+            bob_parallel.identifier(),
+            alice_parallel.identifier(),
+            random_thread_id,
+        ) else {
+            panic!("unexpected accept construction result");
+        };
+
+        assert!(message.contains("pending incoming parallel request"));
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_parallel_relationship_accept_after_reopen() {
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+        let alice_parallel = create_test_vid();
+        let bob_parallel = create_test_vid();
+
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        a_store
+            .add_private_vid(alice_parallel.clone(), None)
+            .unwrap();
+        b_store.add_private_vid(bob_parallel.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+        establish_existing_relationship(&a_store, &alice, &b_store, &bob);
+
+        let (_url, mut request) = a_store
+            .make_parallel_relationship_request(
+                alice.identifier(),
+                bob.identifier(),
+                alice_parallel.identifier(),
+            )
+            .unwrap();
+        let reopened_a_store = reopen_store(&a_store);
+
+        let ReceivedTspMessage::RequestRelationship { thread_id, .. } =
+            b_store.open_message(&mut request).unwrap()
+        else {
+            panic!("unexpected message type");
+        };
+
+        let (_url, mut accept) = b_store
+            .make_parallel_relationship_accept(
+                bob_parallel.identifier(),
+                alice_parallel.identifier(),
+                thread_id,
+            )
+            .unwrap();
+
+        let ReceivedTspMessage::AcceptRelationship {
+            reply_thread_id, ..
+        } = reopened_a_store.open_message(&mut accept).unwrap()
+        else {
+            panic!("unexpected message type");
+        };
+
+        match reopened_a_store
+            .relation_status_for_vid_pair(alice_parallel.identifier(), bob_parallel.identifier())
+            .unwrap()
+        {
+            RelationshipStatus::Bidirectional {
+                thread_id: reopened_thread_id,
+                remote_thread_id,
+                ..
+            } => {
+                assert_eq!(reopened_thread_id, thread_id);
+                assert_eq!(remote_thread_id, reply_thread_id);
+            }
+            status => panic!("unexpected requester status after reopen: {status}"),
+        }
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_parallel_relationship_accept_can_be_sent_after_receiver_reopen() {
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+        let alice_parallel = create_test_vid();
+        let bob_parallel = create_test_vid();
+
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        a_store
+            .add_private_vid(alice_parallel.clone(), None)
+            .unwrap();
+        b_store.add_private_vid(bob_parallel.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+        establish_existing_relationship(&a_store, &alice, &b_store, &bob);
+
+        let (_url, mut request) = a_store
+            .make_parallel_relationship_request(
+                alice.identifier(),
+                bob.identifier(),
+                alice_parallel.identifier(),
+            )
+            .unwrap();
+        let ReceivedTspMessage::RequestRelationship { thread_id, .. } =
+            b_store.open_message(&mut request).unwrap()
+        else {
+            panic!("unexpected message type");
+        };
+
+        let reopened_b_store = reopen_store(&b_store);
+        let (_url, mut accept) = reopened_b_store
+            .make_parallel_relationship_accept(
+                bob_parallel.identifier(),
+                alice_parallel.identifier(),
+                thread_id,
+            )
+            .unwrap();
+
+        let ReceivedTspMessage::AcceptRelationship {
+            sender,
+            form: ReceivedRelationshipForm::Parallel { new_vid, .. },
+            ..
+        } = a_store.open_message(&mut accept).unwrap()
+        else {
+            panic!("unexpected message type");
+        };
+
+        assert_eq!(sender, bob.identifier());
+        assert_eq!(new_vid, bob_parallel.identifier());
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_parallel_relationship_accept_rejects_wrong_outer_sender() {
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let c_store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+        let alice_parallel = create_test_vid();
+        let charlie = create_test_vid();
+        let charlie_parallel = create_test_vid();
+
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        a_store
+            .add_private_vid(alice_parallel.clone(), None)
+            .unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+        establish_existing_relationship(&a_store, &alice, &b_store, &bob);
+
+        let (_url, mut request) = a_store
+            .make_parallel_relationship_request(
+                alice.identifier(),
+                bob.identifier(),
+                alice_parallel.identifier(),
+            )
+            .unwrap();
+        let ReceivedTspMessage::RequestRelationship { thread_id, .. } =
+            b_store.open_message(&mut request).unwrap()
+        else {
+            panic!("unexpected message type");
+        };
+
+        c_store.add_private_vid(charlie.clone(), None).unwrap();
+        c_store
+            .add_private_vid(charlie_parallel.clone(), None)
+            .unwrap();
+        c_store
+            .add_verified_vid(alice_parallel.clone(), None)
+            .unwrap();
+
+        let mut reply_thread_id = [0_u8; 32];
+        let signed_data = crate::crypto::build_parallel_accept_signed_data(
+            &thread_id,
+            Some(charlie.identifier().as_bytes()),
+            relationship_digest_algorithm(),
+            &mut reply_thread_id,
+            charlie_parallel.identifier().as_bytes(),
+        )
+        .unwrap();
+        let sig_new_vid = crate::crypto::sign_detached(&charlie_parallel, &signed_data).unwrap();
+        let forged_sender = c_store.get_private_vid(charlie.identifier()).unwrap();
+        let forged_receiver = c_store
+            .get_verified_vid(alice_parallel.identifier())
+            .unwrap();
+        let mut forged_accept = crate::crypto::seal_and_hash(
+            &*forged_sender,
+            &*forged_receiver,
+            None,
+            Payload::AcceptRelationship {
+                thread_id,
+                reply_thread_id: Default::default(),
+                form: RelationshipForm::Parallel {
+                    new_vid: charlie_parallel.identifier().as_bytes(),
+                    sig_new_vid: sig_new_vid.as_slice(),
+                },
+            },
+            Some(&mut reply_thread_id),
+        )
+        .unwrap();
+
+        let Err(Error::Relationship(message)) = a_store.open_message(&mut forged_accept) else {
+            panic!("unexpected message result");
+        };
+        assert!(message.contains("sender mismatch"));
+        assert!(matches!(
+            a_store
+                .relation_status_for_vid_pair(
+                    alice_parallel.identifier(),
+                    charlie_parallel.identifier()
+                )
+                .unwrap(),
+            RelationshipStatus::Unrelated
+        ));
+
+        let (vids, _, _) = a_store.export().unwrap();
+        let Some(alice_parallel_export) = vids
+            .iter()
+            .find(|vid| vid.id == alice_parallel.identifier())
+        else {
+            panic!("missing exported local parallel vid");
+        };
+        assert_eq!(alice_parallel_export.pending_parallel_requests.len(), 1);
+        assert_eq!(
+            alice_parallel_export.pending_parallel_requests[0].outer_receiver,
+            bob.identifier()
+        );
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_parallel_relationship_request_is_tracked_on_local_parallel_vid() {
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+        let alice_parallel = create_test_vid();
+
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        a_store
+            .add_private_vid(alice_parallel.clone(), None)
+            .unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+        establish_existing_relationship(&a_store, &alice, &b_store, &bob);
+
+        let (_url, mut request) = a_store
+            .make_parallel_relationship_request(
+                alice.identifier(),
+                bob.identifier(),
+                alice_parallel.identifier(),
+            )
+            .unwrap();
+
+        let ReceivedTspMessage::RequestRelationship { thread_id, .. } =
+            b_store.open_message(&mut request).unwrap()
+        else {
+            panic!("unexpected message type");
+        };
+
+        let (vids, _, _) = a_store.export().unwrap();
+        let Some(alice_parallel_export) = vids
+            .iter()
+            .find(|vid| vid.id == alice_parallel.identifier())
+        else {
+            panic!("missing exported local parallel vid");
+        };
+        assert_eq!(
+            alice_parallel_export.pending_parallel_requests,
+            vec![PendingParallelRelationship {
+                thread_id,
+                local_parallel_vid: alice_parallel.identifier().to_string(),
+                outer_receiver: bob.identifier().to_string(),
+            }]
+        );
+
+        let Some(bob_export) = vids.iter().find(|vid| vid.id == bob.identifier()) else {
+            panic!("missing exported outer receiver vid");
+        };
+        assert!(bob_export.pending_parallel_requests.is_empty());
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_parallel_relationship_request_rejects_invalid_signature_new() {
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+        let alice_parallel = create_test_vid();
+
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        a_store
+            .add_private_vid(alice_parallel.clone(), None)
+            .unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+
+        let mut nonce_bytes = [0_u8; 32];
+        StdRng::from_entropy().fill_bytes(&mut nonce_bytes);
+        let mut thread_id = [0_u8; 32];
+        let signed_data = crate::crypto::build_parallel_request_signed_data(
+            Some(alice.identifier().as_bytes()),
+            relationship_digest_algorithm(),
+            nonce_bytes,
+            &mut thread_id,
+            alice_parallel.identifier().as_bytes(),
+        )
+        .unwrap();
+        let mut sig_new_vid = crate::crypto::sign_detached(&alice_parallel, &signed_data).unwrap();
+        sig_new_vid[0] ^= 0x01;
+
+        let sender_vid = a_store.get_private_vid(alice.identifier()).unwrap();
+        let receiver_vid = a_store.get_verified_vid(bob.identifier()).unwrap();
+        let mut request_digest = Default::default();
+        let mut sealed = crate::crypto::seal_and_hash_with_relationship_nonce(
+            &*sender_vid,
+            &*receiver_vid,
+            None,
+            Payload::RequestRelationship {
+                thread_id: Default::default(),
+                form: RelationshipForm::Parallel {
+                    new_vid: alice_parallel.identifier().as_ref(),
+                    sig_new_vid: sig_new_vid.as_slice(),
+                },
+            },
+            Some(&mut request_digest),
+            Some(nonce_bytes),
+        )
+        .unwrap();
+
+        let Err(Error::Crypto(CryptoError::Verify(vid, _))) = b_store.open_message(&mut sealed)
+        else {
+            panic!("unexpected message result");
+        };
+
+        assert_eq!(vid, alice_parallel.identifier());
+        assert!(matches!(
+            b_store.get_verified_vid(alice_parallel.identifier()),
+            Err(Error::UnverifiedVid(_))
+        ));
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_invalid_outer_signature_does_not_persist_unknown_sender() {
+        let receiver_store = create_test_store();
+        let sender_store = create_test_store();
+        let sender = create_test_vid();
+        let receiver = create_test_vid();
+
+        receiver_store
+            .add_private_vid(receiver.clone(), None)
+            .unwrap();
+        sender_store.add_private_vid(sender.clone(), None).unwrap();
+        sender_store
+            .add_verified_vid(receiver.clone(), None)
+            .unwrap();
+
+        let (_url, mut sealed) = sender_store
+            .seal_message(sender.identifier(), receiver.identifier(), None, b"hello")
+            .unwrap();
+        let last = sealed
+            .last_mut()
+            .expect("sealed message should not be empty");
+        *last ^= 0x01;
+
+        let Err(Error::Crypto(CryptoError::Verify(vid, _))) =
+            receiver_store.open_message(&mut sealed)
+        else {
+            panic!("unexpected message result");
+        };
+
+        assert_eq!(vid, sender.identifier());
+        assert!(matches!(
+            receiver_store.get_verified_vid(sender.identifier()),
+            Err(Error::UnverifiedVid(_))
+        ));
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_parallel_relationship_request_requires_existing_relationship() {
+        let store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+        let alice_parallel = create_test_vid();
+
+        store.add_private_vid(alice.clone(), None).unwrap();
+        store.add_private_vid(alice_parallel.clone(), None).unwrap();
+        store.add_verified_vid(bob.clone(), None).unwrap();
+
+        let err = store
+            .make_parallel_relationship_request(
+                alice.identifier(),
+                bob.identifier(),
+                alice_parallel.identifier(),
+            )
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            Error::Relationship(message) if message.contains("existing bidirectional relationship")
+        ));
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_direct_relationship_tracks_local_and_remote_thread_ids() {
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+
+        let (_url, mut request) = a_store
+            .make_relationship_request(alice.identifier(), bob.identifier(), None)
+            .unwrap();
+
+        let request_digest = match a_store
+            .relation_status_for_vid_pair(alice.identifier(), bob.identifier())
+            .unwrap()
+        {
+            RelationshipStatus::Unidirectional { thread_id } => thread_id,
+            status => panic!("unexpected requester status after request: {status}"),
+        };
+
+        let ReceivedTspMessage::RequestRelationship { thread_id, .. } =
+            b_store.open_message(&mut request).unwrap()
+        else {
+            panic!("unexpected message type");
+        };
+        assert_eq!(thread_id, request_digest);
+
+        b_store
+            .set_relation_and_status_for_vid(
+                alice.identifier(),
+                RelationshipStatus::Unidirectional { thread_id },
+                bob.identifier(),
+            )
+            .unwrap();
+
+        let (_url, mut accept) = b_store
+            .make_relationship_accept(bob.identifier(), alice.identifier(), thread_id, None)
+            .unwrap();
+
+        let reply_digest = match b_store
+            .relation_status_for_vid_pair(bob.identifier(), alice.identifier())
+            .unwrap()
+        {
+            RelationshipStatus::Bidirectional {
+                thread_id,
+                remote_thread_id,
+                ..
+            } => {
+                assert_eq!(remote_thread_id, request_digest);
+                thread_id
+            }
+            status => panic!("unexpected replier status after accept: {status}"),
+        };
+
+        let ReceivedTspMessage::AcceptRelationship { .. } =
+            a_store.open_message(&mut accept).unwrap()
+        else {
+            panic!("unexpected message type");
+        };
+
+        match a_store
+            .relation_status_for_vid_pair(alice.identifier(), bob.identifier())
+            .unwrap()
+        {
+            RelationshipStatus::Bidirectional {
+                thread_id,
+                remote_thread_id,
+                ..
+            } => {
+                assert_eq!(thread_id, request_digest);
+                assert_eq!(remote_thread_id, reply_digest);
+            }
+            status => panic!("unexpected requester status after accept: {status}"),
+        }
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_relationship_forming_requires_reply_path_for_routes() {
+        let store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+        let hop = create_test_vid();
+
+        store.add_private_vid(alice.clone(), None).unwrap();
+        store.add_verified_vid(bob.clone(), None).unwrap();
+        store.add_verified_vid(hop.clone(), None).unwrap();
+
+        let err = store
+            .make_relationship_request(
+                alice.identifier(),
+                bob.identifier(),
+                Some(&[hop.identifier()]),
+            )
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            crate::Error::Relationship(message) if message.contains("Reply_Path")
+        ));
+
+        let err = store
+            .make_relationship_accept(
+                alice.identifier(),
+                bob.identifier(),
+                [3; 32],
+                Some(&[hop.identifier()]),
+            )
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            crate::Error::Relationship(message) if message.contains("Reply_Path")
+        ));
     }
 
     #[test]
@@ -1888,13 +3135,16 @@ mod test {
         let received = b_store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::RequestRelationship {
-            nested_vid: None,
             thread_id,
+            form,
+            delivery,
             ..
         } = received
         else {
             panic!()
         };
+        assert!(matches!(form, ReceivedRelationshipForm::Direct));
+        assert!(matches!(delivery, ReceivedRelationshipDelivery::Direct));
 
         let (_url, mut sealed) = b_store
             .make_relationship_accept(b.identifier(), a.identifier(), thread_id, None)
@@ -1913,27 +3163,38 @@ mod test {
         let received = b_store.open_message(&mut sealed).unwrap();
 
         let ReceivedTspMessage::RequestRelationship {
-            nested_vid: Some(ref nested_vid_1),
             thread_id,
+            form,
+            delivery,
             ..
         } = received
         else {
             panic!()
         };
+        let ReceivedRelationshipDelivery::Nested {
+            nested_vid: nested_vid_1,
+        } = delivery
+        else {
+            panic!()
+        };
+        assert!(matches!(form, ReceivedRelationshipForm::Direct));
 
         let ((_url, mut sealed), nested_b) = b_store
-            .make_nested_relationship_accept(b.identifier(), nested_vid_1, thread_id)
+            .make_nested_relationship_accept(b.identifier(), &nested_vid_1, thread_id)
             .unwrap();
 
         let received = a_store.open_message(&mut sealed).unwrap();
 
-        let ReceivedTspMessage::AcceptRelationship {
-            nested_vid: Some(ref nested_vid_2),
-            ..
-        } = received
+        let ReceivedTspMessage::AcceptRelationship { form, delivery, .. } = received else {
+            panic!()
+        };
+        let ReceivedRelationshipDelivery::Nested {
+            nested_vid: nested_vid_2,
+        } = delivery
         else {
             panic!()
         };
+        assert!(matches!(form, ReceivedRelationshipForm::Direct));
 
         assert_eq!(nested_a.identifier(), nested_vid_1);
         assert_eq!(nested_b.identifier(), nested_vid_2);
@@ -1955,12 +3216,12 @@ mod test {
         );
 
         assert_eq!(
-            b_store.get_vid(nested_vid_1).unwrap().get_parent_vid(),
+            b_store.get_vid(&nested_vid_1).unwrap().get_parent_vid(),
             Some(a.identifier())
         );
 
         assert_eq!(
-            a_store.get_vid(nested_vid_2).unwrap().get_parent_vid(),
+            a_store.get_vid(&nested_vid_2).unwrap().get_parent_vid(),
             Some(b.identifier())
         );
 

@@ -1,5 +1,10 @@
 const wasm = require('tsp-javascript');
-const { OwnedVid } = wasm;
+const {
+    OwnedVid,
+    Vid,
+    RelationshipForm,
+    RelationshipDelivery,
+} = wasm;
 
 const CryptoType = {
     Plaintext: 0,
@@ -58,6 +63,14 @@ class Store {
         return this.inner.make_relationship_accept(...args);
     }
 
+    make_parallel_relationship_request(...args) {
+        return this.inner.make_parallel_relationship_request(...args);
+    }
+
+    make_parallel_relationship_accept(...args) {
+        return this.inner.make_parallel_relationship_accept(...args);
+    }
+
     make_relationship_cancel(...args) {
         return this.inner.make_relationship_cancel(...args);
     }
@@ -89,28 +102,37 @@ class ReceivedTspMessage {
                     msg.receiver,
                     msg.nonconfidential_data,
                     new Uint8Array(msg.message),
-                    msg.message_type
+                    msg.crypto_type,
+                    msg.signature_type
                 );
 
             case 1: 
                 return new RequestRelationship(
                     msg.sender,
                     msg.receiver,
-                    msg.route,
-                    msg.nested_vid,
                     msg.thread_id,
+                    msg.form,
+                    msg.delivery,
+                    msg.nested_vid,
+                    msg.new_vid,
                 );
 
             case 2: 
                 return new AcceptRelationship(
                     msg.sender,
                     msg.receiver,
-                    msg.nested_vid
+                    msg.thread_id,
+                    msg.reply_thread_id,
+                    msg.form,
+                    msg.delivery,
+                    msg.nested_vid,
+                    msg.new_vid,
                 );
 
             case 3: 
                 return new CancelRelationship(
-                    msg.sender
+                    msg.sender,
+                    msg.receiver,
                 );
 
             case 4: 
@@ -132,33 +154,41 @@ class ReceivedTspMessage {
 }
 
 class GenericMessage extends ReceivedTspMessage {
-    constructor(sender, receiver, nonconfidential_data, message, message_type) {
+    constructor(sender, receiver, nonconfidential_data, message, crypto_type, signature_type) {
         super();
         this.sender = sender;
         this.receiver = receiver;
         this.nonconfidential_data = nonconfidential_data;
         this.message = message;
-        this.message_type = message_type;
+        this.crypto_type = crypto_type;
+        this.signature_type = signature_type;
     }
 }
 
 class RequestRelationship extends ReceivedTspMessage {
-    constructor(sender, receiver, route, nested_vid, thread_id) {
+    constructor(sender, receiver, thread_id, form, delivery, nested_vid, new_vid) {
         super();
         this.sender = sender;
         this.receiver = receiver;
-        this.route = route;
-        this.nested_vid = nested_vid;
         this.thread_id = thread_id;
+        this.form = form;
+        this.delivery = delivery;
+        this.nested_vid = nested_vid;
+        this.new_vid = new_vid;
     }
 }
 
 class AcceptRelationship extends ReceivedTspMessage {
-    constructor(sender, receiver, nested_vid) {
+    constructor(sender, receiver, thread_id, reply_thread_id, form, delivery, nested_vid, new_vid) {
         super();
         this.sender = sender;
         this.receiver = receiver;
+        this.thread_id = thread_id;
+        this.reply_thread_id = reply_thread_id;
+        this.form = form;
+        this.delivery = delivery;
         this.nested_vid = nested_vid;
+        this.new_vid = new_vid;
     }
 }
 
@@ -184,8 +214,11 @@ class ForwardRequest extends ReceivedTspMessage {
 module.exports = {
     CryptoType,
     SignatureType,
+    RelationshipForm,
+    RelationshipDelivery,
     Store,
     OwnedVid,
+    Vid,
     ReceivedTspMessage,
     GenericMessage,
     AcceptRelationship,

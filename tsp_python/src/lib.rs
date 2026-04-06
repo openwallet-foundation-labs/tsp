@@ -9,6 +9,8 @@ fn tsp_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_class::<CryptoType>()?;
     m.add_class::<SignatureType>()?;
+    m.add_class::<RelationshipForm>()?;
+    m.add_class::<RelationshipDelivery>()?;
     m.add_class::<ReceivedTspMessageVariant>()?;
     m.add_class::<FlatReceivedTspMessage>()?;
 
@@ -271,6 +273,34 @@ impl Store {
         Ok((url.to_string(), bytes))
     }
 
+    fn make_parallel_relationship_request(
+        &self,
+        sender: String,
+        receiver: String,
+        sender_new_vid: String,
+    ) -> PyResult<(String, Vec<u8>)> {
+        let (url, bytes) = self
+            .inner
+            .make_parallel_relationship_request(&sender, &receiver, &sender_new_vid)
+            .map_err(py_exception)?;
+
+        Ok((url.to_string(), bytes))
+    }
+
+    fn make_parallel_relationship_accept(
+        &self,
+        sender_new_vid: String,
+        receiver_new_vid: String,
+        thread_id: [u8; 32],
+    ) -> PyResult<(String, Vec<u8>)> {
+        let (url, bytes) = self
+            .inner
+            .make_parallel_relationship_accept(&sender_new_vid, &receiver_new_vid, thread_id)
+            .map_err(py_exception)?;
+
+        Ok((url.to_string(), bytes))
+    }
+
     #[pyo3(signature = (sender, receiver))]
     fn make_relationship_cancel(
         &self,
@@ -280,36 +310,6 @@ impl Store {
         let (url, bytes) = self
             .inner
             .make_relationship_cancel(&sender, &receiver)
-            .map_err(py_exception)?;
-
-        Ok((url.to_string(), bytes))
-    }
-
-    #[pyo3(signature = (sender, receiver, sender_new_vid))]
-    fn make_new_identifier_notice(
-        &self,
-        sender: String,
-        receiver: String,
-        sender_new_vid: String,
-    ) -> PyResult<(String, Vec<u8>)> {
-        let (url, bytes) = self
-            .inner
-            .make_new_identifier_notice(&sender, &receiver, &sender_new_vid)
-            .map_err(py_exception)?;
-
-        Ok((url.to_string(), bytes))
-    }
-
-    #[pyo3(signature = (sender, receiver, referred_vid))]
-    fn make_relationship_referral(
-        &self,
-        sender: String,
-        receiver: String,
-        referred_vid: String,
-    ) -> PyResult<(String, Vec<u8>)> {
-        let (url, bytes) = self
-            .inner
-            .make_relationship_referral(&sender, &receiver, &referred_vid)
             .map_err(py_exception)?;
 
         Ok((url.to_string(), bytes))
@@ -391,8 +391,6 @@ enum ReceivedTspMessageVariant {
     CancelRelationship,
     ForwardRequest,
     PendingMessage,
-    NewIdentifier,
-    Referral,
 }
 
 impl From<&tsp_sdk::ReceivedTspMessage> for ReceivedTspMessageVariant {
@@ -404,10 +402,23 @@ impl From<&tsp_sdk::ReceivedTspMessage> for ReceivedTspMessageVariant {
             tsp_sdk::ReceivedTspMessage::CancelRelationship { .. } => Self::CancelRelationship,
             tsp_sdk::ReceivedTspMessage::ForwardRequest { .. } => Self::ForwardRequest,
             tsp_sdk::ReceivedTspMessage::PendingMessage { .. } => Self::PendingMessage,
-            tsp_sdk::ReceivedTspMessage::NewIdentifier { .. } => Self::NewIdentifier,
-            tsp_sdk::ReceivedTspMessage::Referral { .. } => Self::Referral,
         }
     }
+}
+
+#[pyclass(eq, eq_int)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RelationshipForm {
+    Direct = 0,
+    Parallel = 1,
+}
+
+#[pyclass(eq, eq_int)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RelationshipDelivery {
+    Direct = 0,
+    Nested = 1,
+    Routed = 2,
 }
 
 #[pyclass(eq, eq_int)]
@@ -448,11 +459,17 @@ struct FlatReceivedTspMessage {
     #[pyo3(get, set)]
     signature_type: Option<SignatureType>,
     #[pyo3(get, set)]
-    route: Option<Option<Vec<Vec<u8>>>>,
+    form: Option<RelationshipForm>,
     #[pyo3(get, set)]
-    nested_vid: Option<Option<String>>,
+    delivery: Option<RelationshipDelivery>,
+    #[pyo3(get, set)]
+    route: Option<Vec<Vec<u8>>>,
+    #[pyo3(get, set)]
+    nested_vid: Option<String>,
     #[pyo3(get, set)]
     thread_id: Option<[u8; 32]>,
+    #[pyo3(get, set)]
+    reply_thread_id: Option<[u8; 32]>,
     #[pyo3(get, set)]
     next_hop: Option<String>,
     #[pyo3(get, set)]
@@ -463,14 +480,35 @@ struct FlatReceivedTspMessage {
     unknown_vid: Option<String>,
     #[pyo3(get, set)]
     new_vid: Option<String>,
-    #[pyo3(get, set)]
-    referred_vid: Option<String>,
 }
 
 #[pymethods]
 impl FlatReceivedTspMessage {
     fn __repr__(&self) -> String {
         format!("{self:?}")
+    }
+}
+
+fn flatten_relationship_form<Data: AsRef<[u8]>>(
+    form: tsp_sdk::ReceivedRelationshipForm<Data>,
+) -> (RelationshipForm, Option<String>) {
+    match form {
+        tsp_sdk::ReceivedRelationshipForm::Direct => (RelationshipForm::Direct, None),
+        tsp_sdk::ReceivedRelationshipForm::Parallel { new_vid, .. } => {
+            (RelationshipForm::Parallel, Some(new_vid))
+        }
+    }
+}
+
+fn flatten_relationship_delivery(
+    delivery: tsp_sdk::ReceivedRelationshipDelivery,
+) -> (RelationshipDelivery, Option<String>) {
+    match delivery {
+        tsp_sdk::ReceivedRelationshipDelivery::Direct => (RelationshipDelivery::Direct, None),
+        tsp_sdk::ReceivedRelationshipDelivery::Nested { nested_vid } => {
+            (RelationshipDelivery::Nested, Some(nested_vid))
+        }
+        tsp_sdk::ReceivedRelationshipDelivery::Routed => (RelationshipDelivery::Routed, None),
     }
 }
 
@@ -486,15 +524,17 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             message: None,
             crypto_type: None,
             signature_type: None,
+            form: None,
+            delivery: None,
             route: None,
             nested_vid: None,
             thread_id: None,
+            reply_thread_id: None,
             next_hop: None,
             payload: None,
             opaque_payload: None,
             unknown_vid: None,
             new_vid: None,
-            referred_vid: None,
         };
 
         match value {
@@ -530,46 +570,42 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             tsp_sdk::ReceivedTspMessage::RequestRelationship {
                 sender,
                 receiver,
-                route,
-                nested_vid,
                 thread_id,
+                form,
+                delivery,
             } => {
+                let (form, new_vid) = flatten_relationship_form(form);
+                let (delivery, nested_vid) = flatten_relationship_delivery(delivery);
                 this.sender = Some(sender);
                 this.receiver = Some(receiver);
-                this.route = Some(route);
-                this.nested_vid = Some(nested_vid);
+                this.form = Some(form);
+                this.delivery = Some(delivery);
+                this.nested_vid = nested_vid;
                 this.thread_id = Some(thread_id);
+                this.new_vid = new_vid;
             }
             tsp_sdk::ReceivedTspMessage::AcceptRelationship {
                 sender,
                 receiver,
-                nested_vid,
+                thread_id,
+                reply_thread_id,
+                form,
+                delivery,
             } => {
+                let (form, new_vid) = flatten_relationship_form(form);
+                let (delivery, nested_vid) = flatten_relationship_delivery(delivery);
                 this.sender = Some(sender);
                 this.receiver = Some(receiver);
-                this.nested_vid = Some(nested_vid);
+                this.form = Some(form);
+                this.delivery = Some(delivery);
+                this.nested_vid = nested_vid;
+                this.thread_id = Some(thread_id);
+                this.reply_thread_id = Some(reply_thread_id);
+                this.new_vid = new_vid;
             }
             tsp_sdk::ReceivedTspMessage::CancelRelationship { sender, receiver } => {
                 this.sender = Some(sender);
                 this.receiver = Some(receiver);
-            }
-            tsp_sdk::ReceivedTspMessage::NewIdentifier {
-                sender,
-                receiver,
-                new_vid,
-            } => {
-                this.sender = Some(sender);
-                this.receiver = Some(receiver);
-                this.new_vid = Some(new_vid);
-            }
-            tsp_sdk::ReceivedTspMessage::Referral {
-                sender,
-                receiver,
-                referred_vid,
-            } => {
-                this.sender = Some(sender);
-                this.receiver = Some(receiver);
-                this.referred_vid = Some(referred_vid);
             }
             tsp_sdk::ReceivedTspMessage::ForwardRequest {
                 sender,
@@ -581,7 +617,7 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
                 this.sender = Some(sender);
                 this.receiver = Some(receiver);
                 this.next_hop = Some(next_hop);
-                this.route = Some(Some(route.into_iter().map(Into::into).collect()));
+                this.route = Some(route.into_iter().map(Into::into).collect());
                 this.opaque_payload = Some(opaque_payload.into());
             }
             tsp_sdk::ReceivedTspMessage::PendingMessage {

@@ -8,8 +8,9 @@ use tokio::io::AsyncReadExt;
 use tracing::{debug, error, info, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{
-    Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid, ReceivedTspMessage,
-    RelationshipStatus, SecureStorage, VerifiedVid, Vid, cesr,
+    Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid,
+    ReceivedRelationshipDelivery, ReceivedRelationshipForm, ReceivedTspMessage, RelationshipStatus,
+    SecureStorage, VerifiedVid, Vid, cesr,
     definitions::Digest,
     vid::{VidError, did::webvh::WebvhMetadata, verify_vid, vid_to_did_document},
 };
@@ -149,11 +150,21 @@ enum Commands {
         sender_vid: String,
         #[arg(short, long, required = true)]
         receiver_vid: String,
-        #[arg(long)]
+        #[arg(long, conflicts_with = "parallel")]
         nested: bool,
+        #[arg(long, conflicts_with = "nested", requires = "new_vid")]
+        parallel: bool,
+        #[arg(
+            long,
+            conflicts_with = "nested",
+            requires = "parallel",
+            help = "existing local VID to propose for a parallel relationship"
+        )]
+        new_vid: Option<String>,
         #[arg(
             short,
             long,
+            conflicts_with = "parallel",
             help = "parent VID of the sender, used to listen for a response"
         )]
         parent_vid: Option<String>,
@@ -173,8 +184,10 @@ enum Commands {
         receiver_vid: String,
         #[arg(long, required = true)]
         thread_id: String,
-        #[arg(long)]
+        #[arg(long, conflicts_with = "parallel")]
         nested: bool,
+        #[arg(long, conflicts_with = "nested")]
+        parallel: bool,
     },
     #[command(arg_required_else_help = true, about = "break up a relationship")]
     Cancel {
@@ -182,24 +195,6 @@ enum Commands {
         sender_vid: String,
         #[arg(short, long, required = true)]
         receiver_vid: String,
-    },
-    #[command(arg_required_else_help = true, about = "send an identity referral")]
-    Refer {
-        #[arg(short, long, required = true)]
-        sender_vid: String,
-        #[arg(short, long, required = true)]
-        receiver_vid: String,
-        #[arg(long, required = true)]
-        referred_vid: String,
-    },
-    #[command(arg_required_else_help = true, about = "publish a new own identity")]
-    Publish {
-        #[arg(short, long, required = true)]
-        sender_vid: String,
-        #[arg(short, long, required = true)]
-        receiver_vid: String,
-        #[arg(short, long, required = true)]
-        new_vid: String,
     },
     #[command(arg_required_else_help = true, about = "manage custom secret data")]
     Secret {
@@ -760,44 +755,104 @@ async fn run() -> Result<(), Error> {
                             sender,
                             receiver: _,
                             thread_id,
-                            route: _,
-                            nested_vid,
+                            form,
+                            delivery,
                         } => {
                             let thread_id_string = Base64Unpadded::encode_string(&thread_id);
-                            match nested_vid {
-                                Some(vid) => {
-                                    info!(
-                                        "received nested relationship request from '{vid}' (new identity for {sender}), thread-id '{thread_id_string}'"
-                                    );
-                                    println!("{vid}\t{thread_id_string}");
-                                }
-                                None => {
+                            match (delivery, form) {
+                                (
+                                    ReceivedRelationshipDelivery::Direct,
+                                    ReceivedRelationshipForm::Direct,
+                                ) => {
                                     info!(
                                         "received relationship request from {sender}, thread-id '{thread_id_string}'"
                                     );
                                     println!("{sender}\t{thread_id_string}");
+                                    return Action::AssignDefaultRelation(sender, thread_id);
+                                }
+                                (
+                                    ReceivedRelationshipDelivery::Nested { nested_vid: vid },
+                                    ReceivedRelationshipForm::Direct,
+                                ) => {
+                                    info!(
+                                        "received nested relationship request from '{vid}' (new identity for {sender}), thread-id '{thread_id_string}'"
+                                    );
+                                    println!("{vid}\t{thread_id_string}");
+                                    return Action::AssignDefaultRelation(sender, thread_id);
+                                }
+                                (
+                                    ReceivedRelationshipDelivery::Direct,
+                                    ReceivedRelationshipForm::Parallel { new_vid, .. },
+                                ) => {
+                                    info!(
+                                        "received parallel relationship request for '{new_vid}' from {sender}"
+                                    );
+                                    println!("{new_vid}\t{thread_id_string}");
+                                    return Action::Verify(new_vid);
+                                }
+                                (
+                                    ReceivedRelationshipDelivery::Nested { nested_vid },
+                                    ReceivedRelationshipForm::Parallel { new_vid, .. },
+                                ) => {
+                                    info!(
+                                        "received nested parallel relationship request from '{nested_vid}' for '{new_vid}' from {sender}"
+                                    );
+                                    println!("{new_vid}\t{thread_id_string}");
+                                    return Action::Verify(new_vid);
+                                }
+                                (ReceivedRelationshipDelivery::Routed, _) => {
+                                    error!(
+                                        "received routed relationship request from {sender}, but routed relationship-forming is not implemented"
+                                    );
                                 }
                             }
-
-                            return Action::AssignDefaultRelation(sender, thread_id);
                         }
                         ReceivedTspMessage::AcceptRelationship {
                             sender,
                             receiver: _,
-                            nested_vid: None,
-                        } => {
-                            info!("received accept relationship from {}", sender);
-                        }
-                        ReceivedTspMessage::AcceptRelationship {
-                            sender,
-                            receiver: _,
-                            nested_vid: Some(vid),
-                        } => {
-                            info!(
-                                "received accept nested relationship from '{vid}' (new identity for {sender})"
-                            );
-                            println!("{vid}");
-                        }
+                            form,
+                            delivery,
+                            ..
+                        } => match (delivery, form) {
+                            (
+                                ReceivedRelationshipDelivery::Direct,
+                                ReceivedRelationshipForm::Direct,
+                            ) => {
+                                info!("received accept relationship from {}", sender);
+                            }
+                            (
+                                ReceivedRelationshipDelivery::Nested { nested_vid: vid },
+                                ReceivedRelationshipForm::Direct,
+                            ) => {
+                                info!(
+                                    "received accept nested relationship from '{vid}' (new identity for {sender})"
+                                );
+                                println!("{vid}");
+                            }
+                            (
+                                ReceivedRelationshipDelivery::Direct,
+                                ReceivedRelationshipForm::Parallel { new_vid, .. },
+                            ) => {
+                                info!(
+                                    "received parallel relationship accept for '{new_vid}' from {sender}"
+                                );
+                                println!("{new_vid}");
+                            }
+                            (
+                                ReceivedRelationshipDelivery::Nested { nested_vid },
+                                ReceivedRelationshipForm::Parallel { new_vid, .. },
+                            ) => {
+                                info!(
+                                    "received accept nested parallel relationship from '{nested_vid}' for '{new_vid}' from {sender}"
+                                );
+                                println!("{new_vid}");
+                            }
+                            (ReceivedRelationshipDelivery::Routed, _) => {
+                                error!(
+                                    "received routed relationship accept from {sender}, but routed relationship-forming is not implemented"
+                                );
+                            }
+                        },
                         ReceivedTspMessage::CancelRelationship {
                             sender,
                             receiver: _,
@@ -820,26 +875,6 @@ async fn run() -> Result<(), Error> {
                             {
                                 return Action::Forward(next_hop, route, opaque_payload);
                             }
-                        }
-                        ReceivedTspMessage::NewIdentifier {
-                            sender,
-                            receiver: _,
-                            new_vid,
-                        } => {
-                            info!("received request for new identifier '{new_vid}' from {sender}");
-                            println!("{new_vid}");
-                            return Action::Verify(new_vid);
-                        }
-                        ReceivedTspMessage::Referral {
-                            sender,
-                            receiver: _,
-                            referred_vid,
-                        } => {
-                            info!(
-                                "received relationship referral for '{referred_vid}' from {sender}"
-                            );
-                            println!("{referred_vid}");
-                            return Action::Verify(referred_vid);
                         }
                         ReceivedTspMessage::PendingMessage {
                             unknown_vid,
@@ -924,6 +959,8 @@ async fn run() -> Result<(), Error> {
             sender_vid,
             receiver_vid,
             nested,
+            parallel,
+            new_vid,
             parent_vid,
             ask,
             wait,
@@ -931,7 +968,13 @@ async fn run() -> Result<(), Error> {
             ensure_vid_verified(&vid_wallet, &receiver_vid, &args.wallet, ask).await?;
 
             // Setup receive stream before sending the request
-            let listener_vid = parent_vid.unwrap_or(sender_vid.clone());
+            let listener_vid = if parallel {
+                new_vid
+                    .clone()
+                    .expect("clap should require --new-vid for --parallel")
+            } else {
+                parent_vid.unwrap_or(sender_vid.clone())
+            };
             let mut messages = vid_wallet.receive(&listener_vid).await?;
 
             tracing::debug!("sending request...");
@@ -952,6 +995,24 @@ async fn run() -> Result<(), Error> {
                         return Ok(());
                     }
                 }
+            } else if parallel {
+                let new_vid = new_vid
+                    .as_deref()
+                    .expect("clap should require --new-vid for --parallel");
+
+                if let Err(e) = vid_wallet
+                    .send_parallel_relationship_request(&sender_vid, &receiver_vid, new_vid)
+                    .await
+                {
+                    tracing::error!(
+                        "error sending message from {sender_vid} to {receiver_vid}: {e}"
+                    );
+                    return Ok(());
+                }
+
+                info!(
+                    "sent a parallel relationship request from {sender_vid} to {receiver_vid} with new identity '{new_vid}'"
+                );
             } else if let Err(e) = vid_wallet
                 .send_relationship_request(&sender_vid, &receiver_vid, None)
                 .await
@@ -976,14 +1037,31 @@ async fn run() -> Result<(), Error> {
                             info!("received relationship request from {sender}")
                         }
                         ReceivedTspMessage::AcceptRelationship {
-                            sender, nested_vid, ..
+                            sender,
+                            delivery,
+                            form,
+                            ..
                         } => {
+                            let nested_vid = match delivery {
+                                ReceivedRelationshipDelivery::Nested { nested_vid } => {
+                                    Some(nested_vid)
+                                }
+                                _ => None,
+                            };
+                            let parallel_vid = match form {
+                                ReceivedRelationshipForm::Parallel { new_vid, .. } => Some(new_vid),
+                                ReceivedRelationshipForm::Direct => None,
+                            };
                             info!(
-                                "received accept relationship from {sender} (nested_vid: {})",
-                                nested_vid.clone().unwrap_or("none".to_string())
+                                "received accept relationship from {sender} (nested_vid: {}, parallel_vid: {})",
+                                nested_vid.clone().unwrap_or("none".to_string()),
+                                parallel_vid.clone().unwrap_or("none".to_string())
                             );
                             if let Some(nested_vid) = nested_vid {
                                 println!("{nested_vid}");
+                            }
+                            if let Some(parallel_vid) = parallel_vid {
+                                println!("{parallel_vid}");
                             }
                             break;
                         }
@@ -994,16 +1072,6 @@ async fn run() -> Result<(), Error> {
                         ReceivedTspMessage::ForwardRequest { sender, .. } => {
                             info!("received forward request from {sender}")
                         }
-                        ReceivedTspMessage::NewIdentifier {
-                            sender, new_vid, ..
-                        } => {
-                            info!("received new identifier for {sender}: {new_vid}")
-                        }
-                        ReceivedTspMessage::Referral {
-                            sender,
-                            referred_vid,
-                            ..
-                        } => info!("received referral from {sender} for {referred_vid}"),
                         ReceivedTspMessage::PendingMessage { unknown_vid, .. } => {
                             info!("received pending message from {unknown_vid}")
                         }
@@ -1016,6 +1084,7 @@ async fn run() -> Result<(), Error> {
             receiver_vid,
             thread_id,
             nested,
+            parallel,
         } => {
             let mut digest: [u8; 32] = Default::default();
             Base64Unpadded::decode(&thread_id, &mut digest).unwrap();
@@ -1039,40 +1108,19 @@ async fn run() -> Result<(), Error> {
                         return Ok(());
                     }
                 }
+            } else if parallel {
+                if let Err(e) = vid_wallet
+                    .send_parallel_relationship_accept(&sender_vid, &receiver_vid, digest)
+                    .await
+                {
+                    tracing::error!(
+                        "error sending message from {sender_vid} to {receiver_vid}: {e}"
+                    );
+
+                    return Ok(());
+                }
             } else if let Err(e) = vid_wallet
                 .send_relationship_accept(&sender_vid, &receiver_vid, digest, None)
-                .await
-            {
-                tracing::error!("error sending message from {sender_vid} to {receiver_vid}: {e}");
-
-                return Ok(());
-            }
-
-            info!("sent control message from {sender_vid} to {receiver_vid}",);
-        }
-        Commands::Refer {
-            sender_vid,
-            receiver_vid,
-            referred_vid,
-        } => {
-            if let Err(e) = vid_wallet
-                .send_relationship_referral(&sender_vid, &receiver_vid, &referred_vid)
-                .await
-            {
-                tracing::error!("error sending message from {sender_vid} to {receiver_vid}: {e}");
-
-                return Ok(());
-            }
-
-            info!("sent control message from {sender_vid} to {receiver_vid}",);
-        }
-        Commands::Publish {
-            sender_vid,
-            receiver_vid,
-            new_vid,
-        } => {
-            if let Err(e) = vid_wallet
-                .send_new_identifier_notice(&sender_vid, &receiver_vid, &new_vid)
                 .await
             {
                 tracing::error!("error sending message from {sender_vid} to {receiver_vid}: {e}");

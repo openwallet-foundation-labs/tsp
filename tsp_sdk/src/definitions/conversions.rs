@@ -1,4 +1,4 @@
-use super::ReceivedTspMessage;
+use super::{ReceivedRelationshipDelivery, ReceivedRelationshipForm, ReceivedTspMessage};
 use bytes::BytesMut;
 
 // Rust, there has to be a better way.
@@ -34,24 +34,60 @@ impl<T: AsRef<[u8]>> ReceivedTspMessage<T> {
             RequestRelationship {
                 sender,
                 receiver,
-                route,
-                nested_vid,
                 thread_id,
+                form,
+                delivery,
             } => RequestRelationship {
                 sender,
                 receiver,
-                route,
-                nested_vid,
                 thread_id,
+                form: match form {
+                    ReceivedRelationshipForm::Direct => ReceivedRelationshipForm::Direct,
+                    ReceivedRelationshipForm::Parallel {
+                        new_vid,
+                        sig_new_vid,
+                    } => ReceivedRelationshipForm::Parallel {
+                        new_vid,
+                        sig_new_vid: f(sig_new_vid),
+                    },
+                },
+                delivery: match delivery {
+                    ReceivedRelationshipDelivery::Direct => ReceivedRelationshipDelivery::Direct,
+                    ReceivedRelationshipDelivery::Nested { nested_vid } => {
+                        ReceivedRelationshipDelivery::Nested { nested_vid }
+                    }
+                    ReceivedRelationshipDelivery::Routed => ReceivedRelationshipDelivery::Routed,
+                },
             },
             AcceptRelationship {
                 sender,
                 receiver,
-                nested_vid,
+                thread_id,
+                reply_thread_id,
+                form,
+                delivery,
             } => AcceptRelationship {
                 sender,
                 receiver,
-                nested_vid,
+                thread_id,
+                reply_thread_id,
+                form: match form {
+                    ReceivedRelationshipForm::Direct => ReceivedRelationshipForm::Direct,
+                    ReceivedRelationshipForm::Parallel {
+                        new_vid,
+                        sig_new_vid,
+                    } => ReceivedRelationshipForm::Parallel {
+                        new_vid,
+                        sig_new_vid: f(sig_new_vid),
+                    },
+                },
+                delivery: match delivery {
+                    ReceivedRelationshipDelivery::Direct => ReceivedRelationshipDelivery::Direct,
+                    ReceivedRelationshipDelivery::Nested { nested_vid } => {
+                        ReceivedRelationshipDelivery::Nested { nested_vid }
+                    }
+                    ReceivedRelationshipDelivery::Routed => ReceivedRelationshipDelivery::Routed,
+                },
             },
             CancelRelationship { sender, receiver } => CancelRelationship { sender, receiver },
             ForwardRequest {
@@ -66,24 +102,6 @@ impl<T: AsRef<[u8]>> ReceivedTspMessage<T> {
                 next_hop,
                 route,
                 opaque_payload,
-            },
-            NewIdentifier {
-                sender,
-                receiver,
-                new_vid,
-            } => NewIdentifier {
-                sender,
-                receiver,
-                new_vid,
-            },
-            Referral {
-                sender,
-                receiver,
-                referred_vid,
-            } => Referral {
-                sender,
-                receiver,
-                referred_vid,
             },
             #[cfg(feature = "async")]
             PendingMessage {

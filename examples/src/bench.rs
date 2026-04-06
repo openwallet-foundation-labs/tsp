@@ -478,7 +478,8 @@ fn ensure_bidirectional_relation(
                 remote_vid,
                 RelationshipStatus::Bidirectional {
                     thread_id: [0; 32],
-                    outstanding_nested_thread_ids: vec![],
+                    remote_thread_id: [0; 32],
+                    outstanding_nested_requests: vec![],
                 },
                 local_vid,
             )?;
