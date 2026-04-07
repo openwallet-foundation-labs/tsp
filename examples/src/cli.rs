@@ -17,6 +17,12 @@ use tsp_sdk::{
 use url::Url;
 
 mod bench;
+mod builtin_profiles;
+
+use builtin_profiles::{
+    BenchProfile, BuiltinAliasKind, maybe_bootstrap_client_profile_identities,
+    maybe_bootstrap_server_profile_defaults,
+};
 
 #[derive(Default, Debug, Clone)]
 enum DidType {
@@ -130,6 +136,11 @@ enum Commands {
         sender_vid: String,
         #[arg(short, long, required = true)]
         receiver_vid: String,
+        #[arg(
+            long,
+            help = "Built-in profile: local-tcp, local-tls, local-quic, or hosted-http"
+        )]
+        profile: Option<BenchProfile>,
         #[arg(short, long)]
         non_confidential_data: Option<String>,
         #[arg(
@@ -141,6 +152,11 @@ enum Commands {
     #[command(arg_required_else_help = true, about = "listen for messages")]
     Receive {
         vid: String,
+        #[arg(
+            long,
+            help = "Built-in profile: local-tcp, local-tls, local-quic, or hosted-http"
+        )]
+        profile: Option<BenchProfile>,
         #[arg(short, long, help = "Receive only one message")]
         one: bool,
     },
@@ -150,6 +166,11 @@ enum Commands {
         sender_vid: String,
         #[arg(short, long, required = true)]
         receiver_vid: String,
+        #[arg(
+            long,
+            help = "Built-in profile: local-tcp, local-tls, local-quic, or hosted-http"
+        )]
+        profile: Option<BenchProfile>,
         #[arg(long, conflicts_with = "parallel")]
         nested: bool,
         #[arg(long, conflicts_with = "nested", requires = "new_vid")]
@@ -293,6 +314,45 @@ async fn ensure_vid_verified(
             "Message cannot be sent without verifying the receiver's DID.".to_string(),
         ))
     }
+}
+
+fn maybe_bootstrap_cli_profile_identities(
+    vid_wallet: &AsyncSecureStore,
+    profile: Option<BenchProfile>,
+    sender_vid: &str,
+    receiver_vid: &str,
+) -> Result<(), Error> {
+    let Some(profile) = profile else {
+        return Ok(());
+    };
+
+    #[cfg(feature = "emit-vectors")]
+    let receiver_kind = BuiltinAliasKind::Private;
+    #[cfg(not(feature = "emit-vectors"))]
+    let receiver_kind = BuiltinAliasKind::Verified;
+
+    maybe_bootstrap_client_profile_identities(
+        vid_wallet,
+        profile,
+        sender_vid,
+        BuiltinAliasKind::Private,
+        receiver_vid,
+        receiver_kind,
+    )?;
+
+    Ok(())
+}
+
+fn maybe_bootstrap_cli_receive_profile(
+    vid_wallet: &AsyncSecureStore,
+    profile: Option<BenchProfile>,
+    vid: &str,
+) -> Result<(), Error> {
+    let Some(profile) = profile else {
+        return Ok(());
+    };
+
+    maybe_bootstrap_server_profile_defaults(vid_wallet, profile, vid)
 }
 
 fn prompt(message: String) -> bool {
@@ -662,9 +722,16 @@ async fn run() -> Result<(), Error> {
         Commands::Send {
             sender_vid,
             receiver_vid,
+            profile,
             non_confidential_data,
             ask,
         } => {
+            maybe_bootstrap_cli_profile_identities(
+                &vid_wallet,
+                profile,
+                &sender_vid,
+                &receiver_vid,
+            )?;
             let non_confidential_data = non_confidential_data.as_deref().map(|s| s.as_bytes());
             let receiver_vid = vid_wallet.try_resolve_alias(&receiver_vid)?;
 
@@ -695,7 +762,8 @@ async fn run() -> Result<(), Error> {
                 message.len()
             );
         }
-        Commands::Receive { vid, one } => {
+        Commands::Receive { vid, profile, one } => {
+            maybe_bootstrap_cli_receive_profile(&vid_wallet, profile, &vid)?;
             let mut messages = vid_wallet.receive(&vid).await?;
             let vid = vid_wallet.try_resolve_alias(&vid)?;
 
@@ -958,6 +1026,7 @@ async fn run() -> Result<(), Error> {
         Commands::Request {
             sender_vid,
             receiver_vid,
+            profile,
             nested,
             parallel,
             new_vid,
@@ -965,6 +1034,12 @@ async fn run() -> Result<(), Error> {
             ask,
             wait,
         } => {
+            maybe_bootstrap_cli_profile_identities(
+                &vid_wallet,
+                profile,
+                &sender_vid,
+                &receiver_vid,
+            )?;
             ensure_vid_verified(&vid_wallet, &receiver_vid, &args.wallet, ask).await?;
 
             // Setup receive stream before sending the request

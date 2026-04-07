@@ -70,6 +70,8 @@ pub(crate) fn seal(
                 csprng.fill_bytes(&mut nonce_bytes);
                 nonce_bytes
             });
+            #[cfg(feature = "emit-vectors")]
+            crate::test_vectors::print_binary("rfi.request_nonce", &nonce_bytes);
 
             let (payload, payload_digest) = build_relationship_request_payload(
                 &form,
@@ -121,6 +123,29 @@ pub(crate) fn seal(
 
     // Get a random nonce to encrypt the message under
     let nonce = ChaChaBox::generate_nonce(&mut OsRng);
+    #[cfg(feature = "emit-vectors")]
+    match &secret_payload {
+        crate::cesr::Payload::GenericMessage(_) => {
+            crate::test_vectors::print_binary("message.seal_nonce", nonce.as_ref());
+        }
+        crate::cesr::Payload::DirectRelationProposal { .. }
+        | crate::cesr::Payload::ParallelRelationProposal { .. } => {
+            crate::test_vectors::print_binary("rfi.seal_nonce", nonce.as_ref());
+        }
+        crate::cesr::Payload::DirectRelationAffirm { .. }
+        | crate::cesr::Payload::ParallelRelationAffirm { .. } => {
+            crate::test_vectors::print_binary("relationship_accept.seal_nonce", nonce.as_ref());
+        }
+        crate::cesr::Payload::RelationshipCancel { .. } => {
+            crate::test_vectors::print_binary("relationship_cancel.seal_nonce", nonce.as_ref());
+        }
+        crate::cesr::Payload::NestedMessage(_) => {
+            crate::test_vectors::print_binary("nested_message.seal_nonce", nonce.as_ref());
+        }
+        crate::cesr::Payload::RoutedMessage(_, _) => {
+            crate::test_vectors::print_binary("routed_message.seal_nonce", nonce.as_ref());
+        }
+    }
 
     // aad not yet supported: https://github.com/RustCrypto/nacl-compat/blob/78b59261458923740724c84937459f0a6017a592/crypto_box/src/lib.rs#L227
     let tag = sender_box.encrypt_in_place_detached(&nonce, &[], &mut cesr_message);

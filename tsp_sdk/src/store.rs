@@ -211,6 +211,8 @@ enum ParallelSignatureContext<'a> {
 fn random_nonce_bytes() -> [u8; 32] {
     let mut nonce_bytes = [0_u8; 32];
     StdRng::from_entropy().fill_bytes(&mut nonce_bytes);
+    #[cfg(feature = "emit-vectors")]
+    crate::test_vectors::print_binary("parallel.request_nonce", &nonce_bytes);
     nonce_bytes
 }
 
@@ -233,6 +235,22 @@ pub struct SecureStore {
 
 /// This wallet is used to store and resolve VIDs
 impl SecureStore {
+    #[cfg(feature = "emit-vectors")]
+    fn get_test_vector_private_vid(
+        &self,
+        vid: &str,
+        role: &str,
+    ) -> Result<Arc<dyn PrivateVid>, Error> {
+        let resolved = self
+            .try_resolve_alias(vid)
+            .unwrap_or_else(|_| vid.to_string());
+        self.get_private_vid(vid).map_err(|_| {
+            Error::Relationship(format!(
+                "emit-vectors requires the {role} VID '{resolved}' to be a private VID in the same wallet for a complete single-run appendix"
+            ))
+        })
+    }
+
     /// Create a new, empty VID wallet
     pub fn new() -> Self {
         Default::default()
@@ -591,12 +609,24 @@ impl SecureStore {
         message: &[u8],
     ) -> Result<(Url, Vec<u8>), Error> {
         // ANCHOR_END: seal_message-mbBook
-        self.seal_message_payload(
+        #[cfg(feature = "emit-vectors")]
+        let sender_vid = self.get_private_vid(sender)?;
+        #[cfg(feature = "emit-vectors")]
+        let receiver_vid = self.get_test_vector_private_vid(receiver, "receiver")?;
+        #[cfg(feature = "emit-vectors")]
+        crate::test_vectors::print_outbound_pair(&*sender_vid, &*receiver_vid);
+
+        let (endpoint, tsp_message) = self.seal_message_payload(
             sender,
             receiver,
             nonconfidential_data,
             Payload::Content(message),
-        )
+        )?;
+
+        #[cfg(feature = "emit-vectors")]
+        crate::test_vectors::print_sealed_message(nonconfidential_data, message, &tsp_message);
+
+        Ok((endpoint, tsp_message))
     }
 
     /// Seal a TSP message.
@@ -742,6 +772,8 @@ impl SecureStore {
         let mut csprng = StdRng::from_entropy();
         let mut nonce_bytes = [0_u8; 32];
         csprng.fill_bytes(&mut nonce_bytes);
+        #[cfg(feature = "emit-vectors")]
+        crate::test_vectors::print_binary("nested.request_nonce", &nonce_bytes);
 
         let sender_identity = Some(sender.identifier().as_bytes());
         let mut request_digest = [0_u8; 32];
@@ -1252,6 +1284,11 @@ impl SecureStore {
 
         let sender = self.get_private_vid(sender)?;
         let receiver = self.get_verified_vid(receiver)?;
+        #[cfg(feature = "emit-vectors")]
+        let receiver_private =
+            self.get_test_vector_private_vid(receiver.identifier(), "receiver")?;
+        #[cfg(feature = "emit-vectors")]
+        crate::test_vectors::print_outbound_pair(&*sender, &*receiver_private);
         let mut thread_id = Default::default();
         let tsp_message = crate::crypto::seal_and_hash(
             &*sender,
@@ -1269,6 +1306,9 @@ impl SecureStore {
             RelationshipStatus::Unidirectional { thread_id },
             sender.identifier(),
         )?;
+
+        #[cfg(feature = "emit-vectors")]
+        crate::test_vectors::print_relationship_request_message(&tsp_message, &thread_id);
 
         Ok((receiver.endpoint().clone(), tsp_message.to_owned()))
     }

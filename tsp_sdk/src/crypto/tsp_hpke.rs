@@ -93,6 +93,8 @@ where
                 csprng.fill_bytes(&mut nonce_bytes);
                 nonce_bytes
             });
+            #[cfg(feature = "emit-vectors")]
+            crate::test_vectors::print_binary("rfi.request_nonce", &nonce_bytes);
 
             let (payload, payload_digest) = build_relationship_request_payload(
                 &form,
@@ -167,6 +169,47 @@ where
         &[],
         &mut csprng,
     )?;
+    #[cfg(feature = "emit-vectors")]
+    match &secret_payload {
+        crate::cesr::Payload::GenericMessage(_) => {
+            crate::test_vectors::print_binary(
+                "message.encapsulated_key",
+                encapped_key.to_bytes().as_ref(),
+            );
+        }
+        crate::cesr::Payload::DirectRelationProposal { .. }
+        | crate::cesr::Payload::ParallelRelationProposal { .. } => {
+            crate::test_vectors::print_binary(
+                "rfi.encapsulated_key",
+                encapped_key.to_bytes().as_ref(),
+            );
+        }
+        crate::cesr::Payload::DirectRelationAffirm { .. }
+        | crate::cesr::Payload::ParallelRelationAffirm { .. } => {
+            crate::test_vectors::print_binary(
+                "relationship_accept.encapsulated_key",
+                encapped_key.to_bytes().as_ref(),
+            );
+        }
+        crate::cesr::Payload::RelationshipCancel { .. } => {
+            crate::test_vectors::print_binary(
+                "relationship_cancel.encapsulated_key",
+                encapped_key.to_bytes().as_ref(),
+            );
+        }
+        crate::cesr::Payload::NestedMessage(_) => {
+            crate::test_vectors::print_binary(
+                "nested_message.encapsulated_key",
+                encapped_key.to_bytes().as_ref(),
+            );
+        }
+        crate::cesr::Payload::RoutedMessage(_, _) => {
+            crate::test_vectors::print_binary(
+                "routed_message.encapsulated_key",
+                encapped_key.to_bytes().as_ref(),
+            );
+        }
+    }
 
     // append the authentication tag and encapsulated key to the end of the ciphertext
     cesr_message.extend(tag.to_bytes());
