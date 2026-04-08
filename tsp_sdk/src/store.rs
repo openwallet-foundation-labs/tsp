@@ -169,6 +169,7 @@ fn requires_existing_parallel_relationship_error() -> Error {
     )
 }
 
+#[derive(Clone)]
 enum DeferredVerifiedVid {
     Known(Arc<dyn VerifiedVid>),
     Deferred(crate::Vid),
@@ -235,22 +236,6 @@ pub struct SecureStore {
 
 /// This wallet is used to store and resolve VIDs
 impl SecureStore {
-    #[cfg(feature = "emit-vectors")]
-    fn get_test_vector_private_vid(
-        &self,
-        vid: &str,
-        role: &str,
-    ) -> Result<Arc<dyn PrivateVid>, Error> {
-        let resolved = self
-            .try_resolve_alias(vid)
-            .unwrap_or_else(|_| vid.to_string());
-        self.get_private_vid(vid).map_err(|_| {
-            Error::Relationship(format!(
-                "emit-vectors requires the {role} VID '{resolved}' to be a private VID in the same wallet for a complete single-run appendix"
-            ))
-        })
-    }
-
     /// Create a new, empty VID wallet
     pub fn new() -> Self {
         Default::default()
@@ -612,7 +597,7 @@ impl SecureStore {
         #[cfg(feature = "emit-vectors")]
         let sender_vid = self.get_private_vid(sender)?;
         #[cfg(feature = "emit-vectors")]
-        let receiver_vid = self.get_test_vector_private_vid(receiver, "receiver")?;
+        let receiver_vid = self.get_verified_vid(receiver)?;
         #[cfg(feature = "emit-vectors")]
         crate::test_vectors::print_outbound_pair(&*sender_vid, &*receiver_vid);
 
@@ -1041,19 +1026,31 @@ impl SecureStore {
                         self.verify_parallel_relationship_signature(parallel_signature_info)
                     })
                     .transpose()?;
+                #[cfg(feature = "emit-vectors")]
+                let sender_verified = sender_vid.clone();
                 sender_vid.persist(self)?;
 
                 match payload {
-                    Payload::Content(message) => Ok(ReceivedTspMessage::GenericMessage {
-                        sender,
-                        receiver: Some(intended_receiver),
-                        nonconfidential_data,
-                        message,
-                        message_type: MessageType {
-                            crypto_type,
-                            signature_type,
-                        },
-                    }),
+                    Payload::Content(message) => {
+                        #[cfg(feature = "emit-vectors")]
+                        crate::test_vectors::print_received_message(
+                            sender_verified.as_verified(),
+                            &*receiver_pid,
+                            nonconfidential_data,
+                            message,
+                        );
+
+                        Ok(ReceivedTspMessage::GenericMessage {
+                            sender,
+                            receiver: Some(intended_receiver),
+                            nonconfidential_data,
+                            message,
+                            message_type: MessageType {
+                                crypto_type,
+                                signature_type,
+                            },
+                        })
+                    }
                     Payload::NestedMessage(inner) => {
                         if let Some(received_message) =
                             self.try_open_nested_relationship_message(&sender, inner)?
@@ -1144,6 +1141,13 @@ impl SecureStore {
                                 &intended_receiver,
                             )?;
                         }
+
+                        #[cfg(feature = "emit-vectors")]
+                        crate::test_vectors::print_received_relationship_request(
+                            sender_verified.as_verified(),
+                            &*receiver_pid,
+                            &thread_id,
+                        );
 
                         Ok(ReceivedTspMessage::RequestRelationship {
                             sender,
@@ -1285,10 +1289,7 @@ impl SecureStore {
         let sender = self.get_private_vid(sender)?;
         let receiver = self.get_verified_vid(receiver)?;
         #[cfg(feature = "emit-vectors")]
-        let receiver_private =
-            self.get_test_vector_private_vid(receiver.identifier(), "receiver")?;
-        #[cfg(feature = "emit-vectors")]
-        crate::test_vectors::print_outbound_pair(&*sender, &*receiver_private);
+        crate::test_vectors::print_outbound_pair(&*sender, &*receiver);
         let mut thread_id = Default::default();
         let tsp_message = crate::crypto::seal_and_hash(
             &*sender,
@@ -2078,6 +2079,36 @@ mod test {
         } else {
             panic!("unexpected message type");
         }
+    }
+
+    #[cfg(feature = "emit-vectors")]
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_emit_vectors_seal_message_allows_verified_receiver() {
+        let store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+
+        store.add_private_vid(alice.clone(), None).unwrap();
+        store.add_verified_vid(bob.clone(), None).unwrap();
+
+        let result = store.seal_message(alice.identifier(), bob.identifier(), None, b"hello world");
+
+        assert!(result.is_ok());
+    }
+
+    #[cfg(feature = "emit-vectors")]
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_emit_vectors_relationship_request_allows_verified_receiver() {
+        let store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+
+        store.add_private_vid(alice.clone(), None).unwrap();
+        store.add_verified_vid(bob.clone(), None).unwrap();
+
+        let result = store.make_relationship_request(alice.identifier(), bob.identifier(), None);
+
+        assert!(result.is_ok());
     }
 
     #[test]
