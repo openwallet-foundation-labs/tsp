@@ -1,10 +1,44 @@
 const assert = require('assert');
 
 const tsp = require('./tsp');
-const { Store, OwnedVid, CryptoType, SignatureType, GenericMessage, RequestRelationship, AcceptRelationship, CancelRelationship, ForwardRequest} = tsp;
+const {
+    Store,
+    OwnedVid,
+    CryptoType,
+    SignatureType,
+    RelationshipForm,
+    RelationshipDelivery,
+    GenericMessage,
+    RequestRelationship,
+    AcceptRelationship,
+    CancelRelationship,
+    ForwardRequest,
+} = tsp;
 
 function new_vid() {
     return OwnedVid.new_did_peer("tcp://127.0.0.1:1337");
+}
+
+function establishOuterRelationship(store, alice, bob) {
+    let { sealed } = store.make_relationship_request(alice.identifier(), bob.identifier(), null);
+    let received = store.open_message(sealed);
+
+    if (received instanceof RequestRelationship) {
+        assert.strictEqual(received.sender, alice.identifier());
+        assert.strictEqual(received.receiver, bob.identifier());
+    } else {
+        assert.fail(`Unexpected message type: ${received}`);
+    }
+
+    ({ sealed } = store.make_relationship_accept(bob.identifier(), alice.identifier(), received.thread_id, null));
+    received = store.open_message(sealed);
+
+    if (received instanceof AcceptRelationship) {
+        assert.strictEqual(received.sender, bob.identifier());
+        assert.strictEqual(received.receiver, alice.identifier());
+    } else {
+        assert.fail(`Unexpected message type: ${received}`);
+    }
 }
 
 describe('tsp node tests', function() {
@@ -72,6 +106,65 @@ describe('tsp node tests', function() {
         if (received instanceof AcceptRelationship) {
             const { sender } = received;
             assert.strictEqual(sender, bob.identifier());
+        } else {
+            assert.fail(`Unexpected message type: ${received}`);
+        }
+    });
+
+    it("parallel relationship accept", function() {
+        let store = new Store();
+        let alice = new_vid();
+        let bob = new_vid();
+        let aliceParallel = new_vid();
+        let bobParallel = new_vid();
+
+        store.add_private_vid(alice);
+        store.add_private_vid(bob);
+        store.add_private_vid(aliceParallel);
+        store.add_private_vid(bobParallel);
+        establishOuterRelationship(store, alice, bob);
+
+        let { url, sealed } = store.make_parallel_relationship_request(
+            alice.identifier(),
+            bob.identifier(),
+            aliceParallel.identifier(),
+        );
+
+        assert.strictEqual(url, "tcp://127.0.0.1:1337");
+
+        let received = store.open_message(sealed);
+
+        if (received instanceof RequestRelationship) {
+            assert.strictEqual(received.sender, alice.identifier());
+            assert.strictEqual(received.receiver, bob.identifier());
+            assert.strictEqual(received.form, RelationshipForm.Parallel);
+            assert.strictEqual(received.delivery, RelationshipDelivery.Direct);
+            assert.strictEqual(received.nested_vid, null);
+            assert.strictEqual(received.new_vid, aliceParallel.identifier());
+        } else {
+            assert.fail(`Unexpected message type: ${received}`);
+        }
+
+        const requestThreadId = received.thread_id;
+
+        ({ url, sealed } = store.make_parallel_relationship_accept(
+            bobParallel.identifier(),
+            aliceParallel.identifier(),
+            requestThreadId,
+        ));
+
+        assert.strictEqual(url, "tcp://127.0.0.1:1337");
+
+        received = store.open_message(sealed);
+
+        if (received instanceof AcceptRelationship) {
+            assert.strictEqual(received.sender, bob.identifier());
+            assert.strictEqual(received.receiver, aliceParallel.identifier());
+            assert.deepStrictEqual(received.thread_id, requestThreadId);
+            assert.strictEqual(received.form, RelationshipForm.Parallel);
+            assert.strictEqual(received.delivery, RelationshipDelivery.Direct);
+            assert.strictEqual(received.nested_vid, null);
+            assert.strictEqual(received.new_vid, bobParallel.identifier());
         } else {
             assert.fail(`Unexpected message type: ${received}`);
         }

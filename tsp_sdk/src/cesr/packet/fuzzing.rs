@@ -23,10 +23,8 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
             RoutedMessage,
             DirectRelationProposal,
             DirectRelationAffirm,
-            NestedRelationProposal,
-            NestedRelationAffirm,
-            NewIdentifierProposal,
-            RelationshipReferral,
+            ParallelRelationProposal,
+            ParallelRelationAffirm,
             RelationshipCancel,
         }
 
@@ -38,10 +36,8 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
                 Payload::RoutedMessage(_, _) => Variants::RoutedMessage,
                 Payload::DirectRelationProposal { .. } => Variants::DirectRelationProposal,
                 Payload::DirectRelationAffirm { .. } => Variants::DirectRelationAffirm,
-                Payload::NestedRelationProposal { .. } => Variants::NestedRelationProposal,
-                Payload::NestedRelationAffirm { .. } => Variants::NestedRelationAffirm,
-                Payload::NewIdentifierProposal { .. } => Variants::NewIdentifierProposal,
-                Payload::RelationshipReferral { .. } => Variants::RelationshipReferral,
+                Payload::ParallelRelationProposal { .. } => Variants::ParallelRelationProposal,
+                Payload::ParallelRelationAffirm { .. } => Variants::ParallelRelationAffirm,
                 Payload::RelationshipCancel { .. } => Variants::RelationshipCancel,
             }
         }
@@ -63,26 +59,23 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
             }
             Variants::DirectRelationProposal => Payload::DirectRelationProposal {
                 nonce: Nonce(Arbitrary::arbitrary(u)?),
-                hops: Arbitrary::arbitrary(u)?,
+                request_digest: digest(&DIGEST),
             },
             Variants::DirectRelationAffirm => Payload::DirectRelationAffirm {
-                reply: digest(&DIGEST),
+                request_digest: digest(&DIGEST),
+                reply_digest: digest(&DIGEST),
             },
-            Variants::NestedRelationProposal => Payload::NestedRelationProposal {
+            Variants::ParallelRelationProposal => Payload::ParallelRelationProposal {
                 nonce: Nonce(Arbitrary::arbitrary(u)?),
-                message: Arbitrary::arbitrary(u)?,
-            },
-            Variants::NestedRelationAffirm => Payload::NestedRelationAffirm {
-                reply: digest(&DIGEST),
-                message: Arbitrary::arbitrary(u)?,
-            },
-            Variants::NewIdentifierProposal => Payload::NewIdentifierProposal {
-                thread_id: digest(&DIGEST),
+                request_digest: digest(&DIGEST),
                 new_vid: Arbitrary::arbitrary(u)?,
-                sig_thread_id: &[42; 64],
+                sig_new_vid: &[42; 64],
             },
-            Variants::RelationshipReferral => Payload::RelationshipReferral {
-                referred_vid: Arbitrary::arbitrary(u)?,
+            Variants::ParallelRelationAffirm => Payload::ParallelRelationAffirm {
+                request_digest: digest(&DIGEST),
+                reply_digest: digest(&DIGEST),
+                new_vid: Arbitrary::arbitrary(u)?,
+                sig_new_vid: &[24; 64],
             },
             Variants::RelationshipCancel => Payload::RelationshipCancel {
                 reply: digest(&DIGEST),
@@ -104,57 +97,51 @@ impl<'a> PartialEq<Payload<'a, &'a mut [u8], &'a [u8]>> for Wrapper {
             (
                 Payload::DirectRelationProposal {
                     nonce: l_nonce,
-                    hops: l_hops,
+                    request_digest: l_request_digest,
                 },
                 Payload::DirectRelationProposal {
                     nonce: r_nonce,
-                    hops: r_hops,
+                    request_digest: r_request_digest,
                 },
-            ) => l_nonce.0 == r_nonce.0 && l_hops == r_hops,
+            ) => l_nonce.0 == r_nonce.0 && l_request_digest == r_request_digest,
             (
-                Payload::DirectRelationAffirm { reply: l_reply },
-                Payload::DirectRelationAffirm { reply: r_reply },
-            ) => l_reply == r_reply,
+                Payload::DirectRelationAffirm {
+                    request_digest: l_request,
+                    reply_digest: l_reply,
+                },
+                Payload::DirectRelationAffirm {
+                    request_digest: r_request,
+                    reply_digest: r_reply,
+                },
+            ) => l_request == r_request && l_reply == r_reply,
             (
-                Payload::NestedRelationProposal {
-                    message: l_msg,
+                Payload::ParallelRelationProposal {
+                    new_vid: l_vid,
+                    request_digest: l_request,
+                    sig_new_vid: _l_sig,
                     nonce: l_nonce,
                 },
-                Payload::NestedRelationProposal {
-                    message: r_msg,
+                Payload::ParallelRelationProposal {
+                    new_vid: r_vid,
+                    request_digest: r_request,
+                    sig_new_vid: _r_sig,
                     nonce: r_nonce,
                 },
-            ) => l_nonce.0 == r_nonce.0 && l_msg == r_msg,
+            ) => l_vid == r_vid && l_request == r_request && l_nonce == r_nonce,
             (
-                Payload::NestedRelationAffirm {
-                    reply: l_reply,
-                    message: l_msg,
-                },
-                Payload::NestedRelationAffirm {
-                    reply: r_reply,
-                    message: r_msg,
-                },
-            ) => l_reply == r_reply && l_msg == r_msg,
-            (
-                Payload::NewIdentifierProposal {
+                Payload::ParallelRelationAffirm {
+                    request_digest: l_request,
+                    reply_digest: l_reply,
                     new_vid: l_vid,
-                    thread_id: l_reply,
-                    sig_thread_id: _l_sig,
+                    sig_new_vid: _l_sig,
                 },
-                Payload::NewIdentifierProposal {
+                Payload::ParallelRelationAffirm {
+                    request_digest: r_request,
+                    reply_digest: r_reply,
                     new_vid: r_vid,
-                    thread_id: r_reply,
-                    sig_thread_id: _r_sig,
+                    sig_new_vid: _r_sig,
                 },
-            ) => l_vid == r_vid && l_reply == r_reply,
-            (
-                Payload::RelationshipReferral {
-                    referred_vid: l_vid,
-                },
-                Payload::RelationshipReferral {
-                    referred_vid: r_vid,
-                },
-            ) => l_vid == r_vid,
+            ) => l_request == r_request && l_reply == r_reply && l_vid == r_vid,
             (
                 Payload::RelationshipCancel { reply: l_reply },
                 Payload::RelationshipCancel { reply: r_reply },

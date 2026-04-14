@@ -313,6 +313,33 @@ impl AsyncSecureStore {
         Ok(())
     }
 
+    pub fn make_parallel_relationship_request(
+        &self,
+        sender: &str,
+        receiver: &str,
+        sender_new_vid: &str,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.inner
+            .make_parallel_relationship_request(sender, receiver, sender_new_vid)
+    }
+
+    pub async fn send_parallel_relationship_request(
+        &self,
+        sender: &str,
+        receiver: &str,
+        sender_new_vid: &str,
+    ) -> Result<(), Error> {
+        let (endpoint, message) =
+            self.inner
+                .make_parallel_relationship_request(sender, receiver, sender_new_vid)?;
+
+        tracing::info!("sending message to {endpoint}");
+
+        crate::transport::send_message(&endpoint, &message).await?;
+
+        Ok(())
+    }
+
     pub fn make_relationship_accept(
         &self,
         sender: &str,
@@ -344,6 +371,35 @@ impl AsyncSecureStore {
         Ok(())
     }
 
+    pub fn make_parallel_relationship_accept(
+        &self,
+        sender_new_vid: &str,
+        receiver_new_vid: &str,
+        thread_id: Digest,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.inner
+            .make_parallel_relationship_accept(sender_new_vid, receiver_new_vid, thread_id)
+    }
+
+    pub async fn send_parallel_relationship_accept(
+        &self,
+        sender_new_vid: &str,
+        receiver_new_vid: &str,
+        thread_id: Digest,
+    ) -> Result<(), Error> {
+        let (endpoint, message) = self.inner.make_parallel_relationship_accept(
+            sender_new_vid,
+            receiver_new_vid,
+            thread_id,
+        )?;
+
+        tracing::info!("sending message to {endpoint}");
+
+        crate::transport::send_message(&endpoint, &message).await?;
+
+        Ok(())
+    }
+
     pub fn make_relationship_cancel(
         &self,
         sender: &str,
@@ -360,62 +416,6 @@ impl AsyncSecureStore {
         receiver: &str,
     ) -> Result<(), Error> {
         let (endpoint, message) = self.inner.make_relationship_cancel(sender, receiver)?;
-
-        tracing::info!("sending message to {endpoint}");
-
-        crate::transport::send_message(&endpoint, &message).await?;
-
-        Ok(())
-    }
-
-    pub fn make_new_identifier_notice(
-        &self,
-        sender: &str,
-        receiver: &str,
-        sender_new_vid: &str,
-    ) -> Result<(Url, Vec<u8>), Error> {
-        self.inner
-            .make_new_identifier_notice(sender, receiver, sender_new_vid)
-    }
-
-    /// Send a new identifier introduction notice
-    pub async fn send_new_identifier_notice(
-        &self,
-        sender: &str,
-        receiver: &str,
-        sender_new_vid: &str,
-    ) -> Result<(), Error> {
-        let (endpoint, message) =
-            self.inner
-                .make_new_identifier_notice(sender, receiver, sender_new_vid)?;
-
-        tracing::info!("sending message to {endpoint}");
-
-        crate::transport::send_message(&endpoint, &message).await?;
-
-        Ok(())
-    }
-
-    pub fn make_relationship_referral(
-        &self,
-        sender: &str,
-        receiver: &str,
-        referred_vid: &str,
-    ) -> Result<(Url, Vec<u8>), Error> {
-        self.inner
-            .make_relationship_referral(sender, receiver, referred_vid)
-    }
-
-    /// Send a relationship referral message to `receiver`
-    pub async fn send_relationship_referral(
-        &self,
-        sender: &str,
-        receiver: &str,
-        referred_vid: &str,
-    ) -> Result<(), Error> {
-        let (endpoint, message) =
-            self.inner
-                .make_relationship_referral(sender, receiver, referred_vid)?;
 
         tracing::info!("sending message to {endpoint}");
 
@@ -640,6 +640,11 @@ impl AsyncSecureStore {
 
                 match db_inner.open_message(&mut message) {
                     Err(Error::UnverifiedSource(unknown_vid, _)) => {
+                        debug!("Verifying VID: {}", unknown_vid);
+                        self_inner.verify_vid(&unknown_vid, None).await?;
+                        db_inner.open_message(&mut message)
+                    }
+                    Err(Error::UnverifiedVid(unknown_vid)) => {
                         debug!("Verifying VID: {}", unknown_vid);
                         self_inner.verify_vid(&unknown_vid, None).await?;
                         db_inner.open_message(&mut message)

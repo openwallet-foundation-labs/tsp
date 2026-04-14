@@ -152,6 +152,46 @@ impl Store {
     }
 
     #[wasm_bindgen]
+    pub fn make_parallel_relationship_request(
+        &self,
+        sender: String,
+        receiver: String,
+        sender_new_vid: String,
+    ) -> Result<SealedMessage, Error> {
+        let (url, sealed) = self
+            .0
+            .make_parallel_relationship_request(&sender, &receiver, &sender_new_vid)
+            .map_err(Error)?;
+
+        Ok(SealedMessage {
+            url: url.to_string(),
+            sealed,
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn make_parallel_relationship_accept(
+        &self,
+        sender_new_vid: String,
+        receiver_new_vid: String,
+        thread_id: Vec<u8>,
+    ) -> Result<SealedMessage, Error> {
+        let (url, sealed) = self
+            .0
+            .make_parallel_relationship_accept(
+                &sender_new_vid,
+                &receiver_new_vid,
+                thread_id.try_into().unwrap(),
+            )
+            .map_err(Error)?;
+
+        Ok(SealedMessage {
+            url: url.to_string(),
+            sealed,
+        })
+    }
+
+    #[wasm_bindgen]
     pub fn make_relationship_cancel(
         &self,
         sender: String,
@@ -160,42 +200,6 @@ impl Store {
         let (url, sealed) = self
             .0
             .make_relationship_cancel(&sender, &receiver)
-            .map_err(Error)?;
-
-        Ok(SealedMessage {
-            url: url.to_string(),
-            sealed,
-        })
-    }
-
-    #[wasm_bindgen]
-    pub fn make_new_identifier_notice(
-        &self,
-        sender: String,
-        receiver: String,
-        sender_new_vid: String,
-    ) -> Result<SealedMessage, Error> {
-        let (url, sealed) = self
-            .0
-            .make_new_identifier_notice(&sender, &receiver, &sender_new_vid)
-            .map_err(Error)?;
-
-        Ok(SealedMessage {
-            url: url.to_string(),
-            sealed,
-        })
-    }
-
-    #[wasm_bindgen]
-    pub fn make_relationship_referral(
-        &self,
-        sender: String,
-        receiver: String,
-        referred_vid: String,
-    ) -> Result<SealedMessage, Error> {
-        let (url, sealed) = self
-            .0
-            .make_relationship_referral(&sender, &receiver, &referred_vid)
             .map_err(Error)?;
 
         Ok(SealedMessage {
@@ -418,24 +422,40 @@ pub enum ReceivedTspMessageVariant {
     AcceptRelationship = 2,
     CancelRelationship = 3,
     ForwardRequest = 4,
-    NewIdentifier = 5,
-    Referral = 6,
+    PendingMessage = 5,
 }
 
 impl From<&tsp_sdk::ReceivedTspMessage> for ReceivedTspMessageVariant {
     fn from(value: &tsp_sdk::ReceivedTspMessage) -> Self {
+        if value.pending_message_parts().is_some() {
+            return Self::PendingMessage;
+        }
+
+        #[allow(unreachable_patterns)]
         match value {
             tsp_sdk::ReceivedTspMessage::GenericMessage { .. } => Self::GenericMessage,
             tsp_sdk::ReceivedTspMessage::RequestRelationship { .. } => Self::RequestRelationship,
             tsp_sdk::ReceivedTspMessage::AcceptRelationship { .. } => Self::AcceptRelationship,
             tsp_sdk::ReceivedTspMessage::CancelRelationship { .. } => Self::CancelRelationship,
             tsp_sdk::ReceivedTspMessage::ForwardRequest { .. } => Self::ForwardRequest,
-            tsp_sdk::ReceivedTspMessage::NewIdentifier { .. } => Self::NewIdentifier,
-            tsp_sdk::ReceivedTspMessage::Referral { .. } => Self::Referral,
-            #[cfg(not(target_arch = "wasm32"))]
-            tsp_sdk::ReceivedTspMessage::PendingMessage { .. } => unreachable!(),
+            _ => unreachable!("pending messages are handled before variant flattening"),
         }
     }
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum RelationshipForm {
+    Direct = 0,
+    Parallel = 1,
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum RelationshipDelivery {
+    Direct = 0,
+    Nested = 1,
+    Routed = 2,
 }
 
 #[wasm_bindgen]
@@ -478,14 +498,16 @@ pub struct FlatReceivedTspMessage {
     message: Option<Vec<u8>>,
     pub crypto_type: Option<CryptoType>,
     pub signature_type: Option<SignatureType>,
-    route: Option<Option<Vec<Vec<u8>>>>,
-    nested_vid: Option<Option<String>>,
+    pub form: Option<RelationshipForm>,
+    pub delivery: Option<RelationshipDelivery>,
+    route: Option<Vec<Vec<u8>>>,
+    nested_vid: Option<String>,
     thread_id: Option<Vec<u8>>,
+    reply_thread_id: Option<Vec<u8>>,
     next_hop: Option<String>,
     payload: Option<Vec<u8>>,
     opaque_payload: Option<Vec<u8>>,
     unknown_vid: Option<String>,
-    referred_vid: Option<String>,
     new_vid: Option<String>,
 }
 
@@ -494,6 +516,11 @@ impl FlatReceivedTspMessage {
     #[wasm_bindgen(getter)]
     pub fn sender(&self) -> Option<String> {
         self.sender.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn receiver(&self) -> Option<String> {
+        self.receiver.clone()
     }
 
     #[wasm_bindgen(getter)]
@@ -514,23 +541,31 @@ impl FlatReceivedTspMessage {
 
     #[wasm_bindgen(getter)]
     pub fn route(&self) -> JsValue {
-        match &self.route {
-            Some(Some(routes)) => serde_wasm_bindgen::to_value(routes).unwrap(),
-            _ => JsValue::NULL,
-        }
+        self.route
+            .as_ref()
+            .map(|routes| serde_wasm_bindgen::to_value(routes).unwrap())
+            .unwrap_or(JsValue::NULL)
     }
 
     #[wasm_bindgen(getter)]
     pub fn nested_vid(&self) -> JsValue {
-        match &self.nested_vid {
-            Some(Some(vid)) => JsValue::from_str(vid),
-            _ => JsValue::NULL,
-        }
+        self.nested_vid
+            .as_ref()
+            .map(|vid| JsValue::from_str(vid))
+            .unwrap_or(JsValue::NULL)
     }
 
     #[wasm_bindgen(getter)]
     pub fn thread_id(&self) -> JsValue {
         match &self.thread_id {
+            Some(data) => serde_wasm_bindgen::to_value(data).unwrap(),
+            None => JsValue::NULL,
+        }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn reply_thread_id(&self) -> JsValue {
+        match &self.reply_thread_id {
             Some(data) => serde_wasm_bindgen::to_value(data).unwrap(),
             None => JsValue::NULL,
         }
@@ -567,6 +602,37 @@ impl FlatReceivedTspMessage {
             None => JsValue::NULL,
         }
     }
+
+    #[wasm_bindgen(getter)]
+    pub fn new_vid(&self) -> JsValue {
+        self.new_vid
+            .as_ref()
+            .map(|new_vid| JsValue::from_str(new_vid))
+            .unwrap_or(JsValue::NULL)
+    }
+}
+
+fn flatten_relationship_form<Data: AsRef<[u8]>>(
+    form: tsp_sdk::ReceivedRelationshipForm<Data>,
+) -> (RelationshipForm, Option<String>) {
+    match form {
+        tsp_sdk::ReceivedRelationshipForm::Direct => (RelationshipForm::Direct, None),
+        tsp_sdk::ReceivedRelationshipForm::Parallel { new_vid, .. } => {
+            (RelationshipForm::Parallel, Some(new_vid))
+        }
+    }
+}
+
+fn flatten_relationship_delivery(
+    delivery: tsp_sdk::ReceivedRelationshipDelivery,
+) -> (RelationshipDelivery, Option<String>) {
+    match delivery {
+        tsp_sdk::ReceivedRelationshipDelivery::Direct => (RelationshipDelivery::Direct, None),
+        tsp_sdk::ReceivedRelationshipDelivery::Nested { nested_vid } => {
+            (RelationshipDelivery::Nested, Some(nested_vid))
+        }
+        tsp_sdk::ReceivedRelationshipDelivery::Routed => (RelationshipDelivery::Routed, None),
+    }
 }
 
 impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
@@ -581,17 +647,26 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             message: None,
             crypto_type: None,
             signature_type: None,
+            form: None,
+            delivery: None,
             route: None,
             nested_vid: None,
             thread_id: None,
+            reply_thread_id: None,
             next_hop: None,
             payload: None,
             opaque_payload: None,
             unknown_vid: None,
-            referred_vid: None,
             new_vid: None,
         };
 
+        if let Some((unknown_vid, payload)) = value.pending_message_parts() {
+            this.unknown_vid = Some(unknown_vid.to_string());
+            this.payload = Some(payload.to_vec());
+            return this;
+        }
+
+        #[allow(unreachable_patterns)]
         match value {
             tsp_sdk::ReceivedTspMessage::GenericMessage {
                 sender,
@@ -625,46 +700,42 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             tsp_sdk::ReceivedTspMessage::RequestRelationship {
                 sender,
                 receiver,
-                route,
-                nested_vid,
                 thread_id,
+                form,
+                delivery,
             } => {
+                let (form, new_vid) = flatten_relationship_form(form);
+                let (delivery, nested_vid) = flatten_relationship_delivery(delivery);
                 this.sender = Some(sender);
                 this.receiver = Some(receiver);
-                this.route = Some(route);
-                this.nested_vid = Some(nested_vid);
+                this.form = Some(form);
+                this.delivery = Some(delivery);
+                this.nested_vid = nested_vid;
                 this.thread_id = Some(thread_id.to_vec());
+                this.new_vid = new_vid;
             }
             tsp_sdk::ReceivedTspMessage::AcceptRelationship {
                 sender,
                 receiver,
-                nested_vid,
+                thread_id,
+                reply_thread_id,
+                form,
+                delivery,
             } => {
+                let (form, new_vid) = flatten_relationship_form(form);
+                let (delivery, nested_vid) = flatten_relationship_delivery(delivery);
                 this.sender = Some(sender);
                 this.receiver = Some(receiver);
-                this.nested_vid = Some(nested_vid);
+                this.form = Some(form);
+                this.delivery = Some(delivery);
+                this.nested_vid = nested_vid;
+                this.thread_id = Some(thread_id.to_vec());
+                this.reply_thread_id = Some(reply_thread_id.to_vec());
+                this.new_vid = new_vid;
             }
             tsp_sdk::ReceivedTspMessage::CancelRelationship { sender, receiver } => {
                 this.sender = Some(sender);
                 this.receiver = Some(receiver);
-            }
-            tsp_sdk::ReceivedTspMessage::NewIdentifier {
-                sender,
-                receiver,
-                new_vid,
-            } => {
-                this.sender = Some(sender);
-                this.receiver = Some(receiver);
-                this.new_vid = Some(new_vid);
-            }
-            tsp_sdk::ReceivedTspMessage::Referral {
-                sender,
-                receiver,
-                referred_vid,
-            } => {
-                this.sender = Some(sender);
-                this.receiver = Some(receiver);
-                this.referred_vid = Some(referred_vid);
             }
             tsp_sdk::ReceivedTspMessage::ForwardRequest {
                 sender,
@@ -676,13 +747,10 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
                 this.sender = Some(sender);
                 this.receiver = Some(receiver);
                 this.next_hop = Some(next_hop);
-                this.route = Some(Some(route.into_iter().map(Into::into).collect()));
+                this.route = Some(route.into_iter().map(Into::into).collect());
                 this.opaque_payload = Some(opaque_payload.into());
             }
-            #[cfg(not(target_arch = "wasm32"))]
-            tsp_sdk::ReceivedTspMessage::PendingMessage { .. } => {
-                unreachable!()
-            }
+            _ => unreachable!("pending messages are handled before flattening"),
         };
 
         this

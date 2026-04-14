@@ -67,7 +67,8 @@ fn fixture_owned_vid_with_transport(which: &str, transport: &Url) -> OwnedVid {
 fn relationship_bi_default() -> RelationshipStatus {
     RelationshipStatus::Bidirectional {
         thread_id: [0u8; 32],
-        outstanding_nested_thread_ids: vec![],
+        remote_thread_id: [0u8; 32],
+        outstanding_nested_requests: vec![],
     }
 }
 

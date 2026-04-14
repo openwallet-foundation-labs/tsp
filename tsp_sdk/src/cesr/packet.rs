@@ -46,13 +46,6 @@ const XRFA: [u8; 3] = cesr_data("XRFA");
 const XRFD: [u8; 3] = cesr_data("XRFD");
 const YTSP: [u8; 3] = cesr_data("YTSP");
 
-// FIXME: a temporary code for third party referrals
-const X3RR: [u8; 3] = cesr_data("X3RR");
-
-// FIXME: a temporary code for nested relationships
-const XRNI: [u8; 3] = cesr_data("XRNI");
-const XRNA: [u8; 3] = cesr_data("XRNA");
-
 use super::{
     decode::{
         decode_count, decode_count_mut, decode_fixed_data, decode_fixed_data_mut,
@@ -109,21 +102,29 @@ pub enum Payload<'a, Bytes, Vid> {
     /// A routed payload; same as above but with routing information attached
     RoutedMessage(Vec<Vid>, Bytes),
     /// A TSP message requesting a relationship
-    DirectRelationProposal { nonce: Nonce, hops: Vec<Vid> },
+    DirectRelationProposal {
+        nonce: Nonce,
+        request_digest: Digest<'a>,
+    },
     /// A TSP message confirming a relationship
-    DirectRelationAffirm { reply: Digest<'a> },
-    /// A TSP message requesting a nested relationship
-    NestedRelationProposal { nonce: Nonce, message: Bytes },
-    /// A TSP message confirming a relationship
-    NestedRelationAffirm { message: Bytes, reply: Digest<'a> },
-    /// A TSP Message establishing a secondary relationship (parallel relationship forming)
-    NewIdentifierProposal {
-        thread_id: Digest<'a>,
-        sig_thread_id: &'a Signature,
+    DirectRelationAffirm {
+        request_digest: Digest<'a>,
+        reply_digest: Digest<'a>,
+    },
+    /// A TSP message requesting a secondary relationship alongside an existing one.
+    ParallelRelationProposal {
+        nonce: Nonce,
+        request_digest: Digest<'a>,
+        sig_new_vid: &'a Signature,
         new_vid: Vid,
     },
-    /// A TSP Message revealing a third party
-    RelationshipReferral { referred_vid: Vid },
+    /// A TSP message accepting a secondary relationship request.
+    ParallelRelationAffirm {
+        request_digest: Digest<'a>,
+        reply_digest: Digest<'a>,
+        sig_new_vid: &'a Signature,
+        new_vid: Vid,
+    },
     /// A TSP cancellation message
     RelationshipCancel { reply: Digest<'a> },
 }
@@ -221,6 +222,82 @@ pub struct DecodedEnvelope<'a, Vid, Bytes> {
 
 type Signature = [u8];
 
+fn encoded_signature_from_raw<'a>(
+    signature: &'a Signature,
+) -> Result<EncodedSignature<'a>, EncodeError> {
+    if let Ok(signature) = <&[u8; 64]>::try_from(signature) {
+        return Ok(EncodedSignature::Ed25519(signature));
+    }
+
+    #[cfg(feature = "pq")]
+    if let Ok(signature) = <&[u8; 3309]>::try_from(signature) {
+        return Ok(EncodedSignature::MlDsa65(signature));
+    }
+
+    Err(EncodeError::InvalidSignatureType)
+}
+
+fn encode_embedded_signature(
+    signature: &Signature,
+    output: &mut impl for<'a> Extend<&'a u8>,
+) -> Result<(), EncodeError> {
+    encoded_signature_from_raw(signature)?.encode(output);
+    Ok(())
+}
+
+fn decoded_signature_from_stream(
+    stream: &mut [u8],
+) -> Result<(&Signature, &mut [u8]), DecodeError> {
+    let mut immutable_stream: &[u8] = stream;
+    let original_len = immutable_stream.len();
+    let signature_len = match EncodedSignature::decode(&mut immutable_stream)? {
+        EncodedSignature::NoSignature => return Err(DecodeError::InvalidSignatureType),
+        EncodedSignature::Ed25519(signature) => signature.len(),
+        #[cfg(feature = "pq")]
+        EncodedSignature::MlDsa65(signature) => signature.len(),
+    };
+
+    let consumed = original_len - immutable_stream.len();
+    let (prefix, remaining) = stream.split_at_mut(consumed);
+    let signature = &prefix[prefix.len() - signature_len..];
+
+    Ok((signature, remaining))
+}
+
+pub(crate) fn encode_parallel_relation_proposal_challenge(
+    sender_identity: Option<&[u8]>,
+    nonce: &Nonce,
+    request_digest: Digest<'_>,
+    new_vid: &[u8],
+) -> Result<Vec<u8>, EncodeError> {
+    let mut temp = Vec::new();
+    if let Some(sender_identity) = sender_identity {
+        checked_encode_variable_data(TSP_VID, sender_identity, &mut temp)?;
+    }
+    temp.extend(&XRFI);
+    encode_digest(&request_digest, &mut temp);
+    encode_fixed_data(TSP_NONCE, &nonce.0, &mut temp);
+    checked_encode_variable_data(TSP_VID, new_vid, &mut temp)?;
+    Ok(temp)
+}
+
+pub(crate) fn encode_parallel_relation_affirm_challenge(
+    sender_identity: Option<&[u8]>,
+    request_digest: Digest<'_>,
+    reply_digest: Digest<'_>,
+    new_vid: &[u8],
+) -> Result<Vec<u8>, EncodeError> {
+    let mut temp = Vec::new();
+    if let Some(sender_identity) = sender_identity {
+        checked_encode_variable_data(TSP_VID, sender_identity, &mut temp)?;
+    }
+    temp.extend(&XRFA);
+    encode_digest(&request_digest, &mut temp);
+    encode_digest(&reply_digest, &mut temp);
+    checked_encode_variable_data(TSP_VID, new_vid, &mut temp)?;
+    Ok(temp)
+}
+
 /// Safely encode variable data, returning a soft error in case the size limit is exceeded
 fn checked_encode_variable_data(
     identifier: u32,
@@ -290,51 +367,52 @@ pub fn encode_payload(
             encode_hops(hops, &mut temp)?;
             checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), &mut temp)?;
         }
-        Payload::DirectRelationProposal { nonce, hops } => {
+        Payload::DirectRelationProposal {
+            nonce,
+            request_digest,
+        } => {
             temp.extend(&XRFI);
-            encode_hops(hops, &mut temp)?;
+            encode_digest(request_digest, &mut temp);
             encode_fixed_data(TSP_NONCE, &nonce.0, &mut temp);
             checked_encode_variable_data(TSP_VID, &[], &mut temp)?;
         }
-        Payload::DirectRelationAffirm { reply } => {
+        Payload::DirectRelationAffirm {
+            request_digest,
+            reply_digest,
+        } => {
             temp.extend(&XRFA);
-            encode_digest(reply, &mut temp);
+            encode_digest(request_digest, &mut temp);
+            encode_digest(reply_digest, &mut temp);
         }
-        Payload::NestedRelationProposal {
-            message: data,
+        Payload::ParallelRelationProposal {
             nonce,
-        } => {
-            temp.extend(&XRNI);
-            checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), &mut temp)?;
-            encode_fixed_data(TSP_NONCE, &nonce.0, &mut temp);
-        }
-        Payload::NestedRelationAffirm {
-            message: data,
-            reply,
-        } => {
-            temp.extend(&XRNA);
-            checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), &mut temp)?;
-            encode_digest(reply, &mut temp);
-        }
-        Payload::NewIdentifierProposal {
-            thread_id,
-            sig_thread_id,
+            request_digest,
+            sig_new_vid,
             new_vid,
         } => {
             if new_vid.as_ref().is_empty() {
                 return Err(EncodeError::InvalidVid);
             }
             temp.extend(&XRFI);
-            let no_hops: [&[u8]; 0] = [];
-            encode_hops(&no_hops, &mut temp)?;
-            encode_fixed_data(TSP_NONCE, &[0; 32], &mut temp); // this does not need to be a secure nonce
+            encode_digest(request_digest, &mut temp);
+            encode_fixed_data(TSP_NONCE, &nonce.0, &mut temp);
             checked_encode_variable_data(TSP_VID, new_vid.as_ref(), &mut temp)?;
-            encode_digest(thread_id, &mut temp);
-            encode_fixed_data(ED25519_SIGNATURE, sig_thread_id, &mut temp);
+            encode_embedded_signature(sig_new_vid, &mut temp)?;
         }
-        Payload::RelationshipReferral { referred_vid } => {
-            temp.extend(&X3RR);
-            checked_encode_variable_data(TSP_VID, referred_vid.as_ref(), &mut temp)?;
+        Payload::ParallelRelationAffirm {
+            request_digest,
+            reply_digest,
+            sig_new_vid,
+            new_vid,
+        } => {
+            if new_vid.as_ref().is_empty() {
+                return Err(EncodeError::InvalidVid);
+            }
+            temp.extend(&XRFA);
+            encode_digest(request_digest, &mut temp);
+            encode_digest(reply_digest, &mut temp);
+            checked_encode_variable_data(TSP_VID, new_vid.as_ref(), &mut temp)?;
+            encode_embedded_signature(sig_new_vid, &mut temp)?;
         }
         Payload::RelationshipCancel { reply } => {
             temp.extend(&XRFD);
@@ -446,8 +524,8 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
             }
         }
         XRFI => {
-            let hop_list;
-            (hop_list, stream) = decode_hops(stream)?;
+            let request_digest;
+            (request_digest, stream) = decode_digest(stream)?;
 
             let nonce;
             (nonce, stream) =
@@ -460,59 +538,47 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
             if new_vid.is_empty() {
                 Payload::DirectRelationProposal {
                     nonce: Nonce(*nonce),
-                    hops: hop_list,
+                    request_digest,
                 }
             } else {
-                let (thread_id, sig_thread_id);
-                (thread_id, stream) = decode_digest(stream)?;
-                (sig_thread_id, stream) = decode_fixed_data_mut::<64>(ED25519_SIGNATURE, stream)
-                    .ok_or(DecodeError::UnexpectedData)?;
+                let sig_new_vid;
+                (sig_new_vid, stream) = decoded_signature_from_stream(stream)?;
 
-                Payload::NewIdentifierProposal {
-                    thread_id,
-                    sig_thread_id,
+                Payload::ParallelRelationProposal {
+                    nonce: Nonce(*nonce),
+                    request_digest,
+                    sig_new_vid,
                     new_vid,
                 }
             }
         }
         XRFA => {
-            let reply;
-            (reply, stream) = decode_digest(stream)?;
+            let request_digest;
+            (request_digest, stream) = decode_digest(stream)?;
 
-            Payload::DirectRelationAffirm { reply }
-        }
-        XRNI => {
-            let data: &mut [u8];
-            (data, stream) = decode_variable_data_mut(TSP_PLAINTEXT, stream)
-                .ok_or(DecodeError::UnexpectedData)?;
+            let reply_digest;
+            (reply_digest, stream) = decode_digest(stream)?;
 
-            let nonce;
-            (nonce, stream) =
-                decode_fixed_data_mut(TSP_NONCE, stream).ok_or(DecodeError::UnexpectedData)?;
+            if stream.is_empty() {
+                Payload::DirectRelationAffirm {
+                    request_digest,
+                    reply_digest,
+                }
+            } else {
+                let new_vid: &[u8];
+                let sig_new_vid;
 
-            Payload::NestedRelationProposal {
-                message: data,
-                nonce: Nonce(*nonce),
+                (new_vid, stream) =
+                    decode_variable_data_mut(TSP_VID, stream).ok_or(DecodeError::UnexpectedData)?;
+                (sig_new_vid, stream) = decoded_signature_from_stream(stream)?;
+
+                Payload::ParallelRelationAffirm {
+                    request_digest,
+                    reply_digest,
+                    sig_new_vid,
+                    new_vid,
+                }
             }
-        }
-        XRNA => {
-            let data: &mut [u8];
-            let reply;
-            (data, stream) = decode_variable_data_mut(TSP_PLAINTEXT, stream)
-                .ok_or(DecodeError::UnexpectedData)?;
-            (reply, stream) = decode_digest(stream)?;
-
-            Payload::NestedRelationAffirm {
-                message: data,
-                reply,
-            }
-        }
-        X3RR => {
-            let referred_vid: &[u8];
-            (referred_vid, stream) =
-                decode_variable_data_mut(TSP_VID, stream).ok_or(DecodeError::UnexpectedData)?;
-
-            Payload::RelationshipReferral { referred_vid }
         }
         XRFD => {
             let reply;
@@ -1451,18 +1517,22 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_par_refer_rel() {
-        test_turn_around(Payload::NewIdentifierProposal {
-            thread_id: Digest::Sha2_256(&Default::default()),
-            sig_thread_id: &[5; 64],
+        test_turn_around(Payload::ParallelRelationProposal {
+            nonce: Nonce([7; 32]),
+            request_digest: Digest::Sha2_256(&Default::default()),
+            sig_new_vid: &[5; 64],
             new_vid: b"Charlie",
         });
     }
 
     #[test]
     #[wasm_bindgen_test]
-    fn test_3p_refer_rel() {
-        test_turn_around(Payload::RelationshipReferral {
-            referred_vid: b"Charlie",
+    fn test_parallel_relation_accept_round_trip() {
+        test_turn_around(Payload::ParallelRelationAffirm {
+            request_digest: Digest::Sha2_256(&[3; 32]),
+            reply_digest: Digest::Blake2b256(&[4; 32]),
+            sig_new_vid: &[9; 64],
+            new_vid: b"Delta",
         });
     }
 
@@ -1516,27 +1586,16 @@ mod test {
         let nonce: &[u8; 32] = temp.as_slice().try_into().unwrap();
         test_turn_around(Payload::DirectRelationProposal {
             nonce: Nonce(*nonce),
-            hops: vec![],
+            request_digest: Digest::Sha2_256(nonce),
         });
         test_turn_around(Payload::DirectRelationAffirm {
-            reply: Digest::Sha2_256(nonce),
+            request_digest: Digest::Sha2_256(nonce),
+            reply_digest: Digest::Sha2_256(nonce),
         });
         test_turn_around(Payload::DirectRelationAffirm {
-            reply: Digest::Blake2b256(nonce),
+            request_digest: Digest::Blake2b256(nonce),
+            reply_digest: Digest::Blake2b256(nonce),
         });
-        test_turn_around(Payload::NestedRelationProposal {
-            message: &mut temp.clone(),
-            nonce: Nonce(*nonce),
-        });
-        test_turn_around(Payload::NestedRelationAffirm {
-            message: &mut temp.clone(),
-            reply: Digest::Sha2_256(nonce),
-        });
-        test_turn_around(Payload::NestedRelationAffirm {
-            message: &mut temp.clone(),
-            reply: Digest::Blake2b256(nonce),
-        });
-
         test_turn_around(Payload::RelationshipCancel {
             reply: Digest::Sha2_256(nonce),
         });

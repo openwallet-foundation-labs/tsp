@@ -97,6 +97,8 @@ mod error;
 #[cfg(feature = "resolve")]
 mod http_client;
 mod store;
+#[cfg(feature = "emit-vectors")]
+mod test_vectors;
 
 /// Contains code for handling *verified identifiers* and identities.
 /// Currently only an extended form of `did:web` and `did:peer` are supported.
@@ -118,6 +120,11 @@ mod secure_storage;
 #[cfg(test)]
 mod test;
 
+#[cfg(feature = "async")]
+#[cfg(test)]
+#[cfg(not(target_arch = "wasm32"))]
+mod parallel_relationship_test;
+
 /// Test utilities and helpers for writing tests.
 ///
 /// This module is available when compiling tests and provides
@@ -133,7 +140,12 @@ pub use secure_storage::AskarSecureStorage;
 #[cfg(feature = "async")]
 pub use secure_storage::SecureStorage;
 
-pub use definitions::{Payload, PrivateVid, ReceivedTspMessage, RelationshipStatus, VerifiedVid};
+pub use definitions::{
+    Payload, PendingIncomingParallelRelationship, PendingNestedRelationship,
+    PendingParallelRelationship, PrivateVid, ReceivedRelationshipDelivery,
+    ReceivedRelationshipForm, ReceivedTspMessage, RelationshipForm, RelationshipStatus,
+    VerifiedVid,
+};
 pub use error::Error;
 pub use store::{Aliases, SecureStore};
 pub use vid::{ExportVid, OwnedVid, Vid};

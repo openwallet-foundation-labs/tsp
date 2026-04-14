@@ -14,6 +14,7 @@ nacl = ["tsp_sdk/nacl"]
 essr = ["tsp_sdk/essr"]
 use_local_certificate = ["tsp_sdk/use_local_certificate"]
 pq = ["tsp_sdk/pq"]
+emit-vectors = ["tsp_sdk/emit-vectors"]
 
 [[bin]]
 name = "create-did-web"

@@ -5,6 +5,7 @@ pub enum EncodeError {
     MissingHops,
     MissingReceiver,
     InvalidVid,
+    InvalidSignatureType,
 }
 
 /// An error type to indicate something went wrong with decoding

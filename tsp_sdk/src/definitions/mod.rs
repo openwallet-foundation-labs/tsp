@@ -44,12 +44,35 @@ pub struct MessageType {
 }
 
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingNestedRelationship {
+    pub thread_id: Digest,
+    pub local_nested_vid: String,
+}
+
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingParallelRelationship {
+    pub thread_id: Digest,
+    pub local_parallel_vid: String,
+    pub outer_receiver: String,
+}
+
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingIncomingParallelRelationship {
+    pub thread_id: Digest,
+    pub local_outer_vid: String,
+}
+
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub enum RelationshipStatus {
     _Controlled,
     Bidirectional {
         thread_id: Digest,
-        outstanding_nested_thread_ids: Vec<Digest>,
+        remote_thread_id: Digest,
+        outstanding_nested_requests: Vec<PendingNestedRelationship>,
     },
     Unidirectional {
         thread_id: Digest,
@@ -61,17 +84,11 @@ pub enum RelationshipStatus {
 }
 
 impl RelationshipStatus {
-    pub(crate) fn bi_default() -> Self {
-        RelationshipStatus::Bidirectional {
-            thread_id: [0; 32],
-            outstanding_nested_thread_ids: vec![],
-        }
-    }
-
-    pub(crate) fn bi(thread_id: Digest) -> Self {
+    pub(crate) fn bi(thread_id: Digest, remote_thread_id: Digest) -> Self {
         RelationshipStatus::Bidirectional {
             thread_id,
-            outstanding_nested_thread_ids: vec![],
+            remote_thread_id,
+            outstanding_nested_requests: vec![],
         }
     }
 }
@@ -89,6 +106,19 @@ impl Display for RelationshipStatus {
 }
 
 #[derive(Debug)]
+pub enum ReceivedRelationshipForm<Data: AsRef<[u8]> = BytesMut> {
+    Direct,
+    Parallel { new_vid: String, sig_new_vid: Data },
+}
+
+#[derive(Debug)]
+pub enum ReceivedRelationshipDelivery {
+    Direct,
+    Nested { nested_vid: String },
+    Routed,
+}
+
+#[derive(Debug)]
 pub enum ReceivedTspMessage<Data: AsRef<[u8]> = BytesMut> {
     GenericMessage {
         sender: String,
@@ -100,14 +130,17 @@ pub enum ReceivedTspMessage<Data: AsRef<[u8]> = BytesMut> {
     RequestRelationship {
         sender: String,
         receiver: String,
-        route: Option<Vec<Vec<u8>>>,
-        nested_vid: Option<String>,
         thread_id: Digest,
+        form: ReceivedRelationshipForm<Data>,
+        delivery: ReceivedRelationshipDelivery,
     },
     AcceptRelationship {
         sender: String,
         receiver: String,
-        nested_vid: Option<String>,
+        thread_id: Digest,
+        reply_thread_id: Digest,
+        form: ReceivedRelationshipForm<Data>,
+        delivery: ReceivedRelationshipDelivery,
     },
     CancelRelationship {
         sender: String,
@@ -120,16 +153,6 @@ pub enum ReceivedTspMessage<Data: AsRef<[u8]> = BytesMut> {
         route: Vec<BytesMut>,
         opaque_payload: BytesMut,
     },
-    NewIdentifier {
-        sender: String,
-        receiver: String,
-        new_vid: String,
-    },
-    Referral {
-        sender: String,
-        receiver: String,
-        referred_vid: String,
-    },
     #[cfg(feature = "async")]
     PendingMessage {
         unknown_vid: String,
@@ -137,7 +160,36 @@ pub enum ReceivedTspMessage<Data: AsRef<[u8]> = BytesMut> {
     },
 }
 
+impl<Data: AsRef<[u8]>> ReceivedTspMessage<Data> {
+    pub fn pending_message_parts(&self) -> Option<(&str, &[u8])> {
+        #[cfg(feature = "async")]
+        {
+            match self {
+                Self::PendingMessage {
+                    unknown_vid,
+                    payload,
+                } => Some((unknown_vid.as_str(), payload.as_ref())),
+                _ => None,
+            }
+        }
+
+        #[cfg(not(feature = "async"))]
+        {
+            None
+        }
+    }
+}
+
 mod conversions;
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum RelationshipForm<'a, Bytes: AsRef<[u8]>> {
+    Direct,
+    Parallel {
+        new_vid: VidData<'a>,
+        sig_new_vid: Bytes,
+    },
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Payload<'a, Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]> = Bytes> {
@@ -148,26 +200,13 @@ pub enum Payload<'a, Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]> = Bytes> {
         thread_id: Digest,
     },
     RequestRelationship {
-        route: Option<Vec<VidData<'a>>>,
         thread_id: Digest,
+        form: RelationshipForm<'a, Bytes>,
     },
     AcceptRelationship {
         thread_id: Digest,
-    },
-    RequestNestedRelationship {
-        inner: MaybeMutBytes,
-        thread_id: Digest,
-    },
-    AcceptNestedRelationship {
-        inner: MaybeMutBytes,
-        thread_id: Digest,
-    },
-    NewIdentifier {
-        thread_id: Digest,
-        new_vid: VidData<'a>,
-    },
-    Referral {
-        referred_vid: VidData<'a>,
+        reply_thread_id: Digest,
+        form: RelationshipForm<'a, Bytes>,
     },
 }
 
@@ -180,10 +219,6 @@ impl<Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]>> Payload<'_, Bytes, MaybeMut
             Payload::CancelRelationship { .. } => &[],
             Payload::RequestRelationship { .. } => &[],
             Payload::AcceptRelationship { .. } => &[],
-            Payload::RequestNestedRelationship { .. } => &[],
-            Payload::AcceptNestedRelationship { .. } => &[],
-            Payload::NewIdentifier { .. } => &[],
-            Payload::Referral { .. } => &[],
         }
     }
 }
@@ -213,10 +248,6 @@ impl<Bytes: AsRef<[u8]>> fmt::Display for Payload<'_, Bytes> {
             Payload::CancelRelationship { .. } => write!(f, "Cancel Relationship"),
             Payload::RequestRelationship { .. } => write!(f, "Request Relationship"),
             Payload::AcceptRelationship { .. } => write!(f, "Accept Relationship"),
-            Payload::RequestNestedRelationship { .. } => write!(f, "Request Nested Relationship"),
-            Payload::AcceptNestedRelationship { .. } => write!(f, "Accept Nested Relationship"),
-            Payload::NewIdentifier { .. } => write!(f, "Request Identifier Change"),
-            Payload::Referral { .. } => write!(f, "Relationship Referral"),
         }
     }
 }

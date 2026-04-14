@@ -5,6 +5,7 @@
 - [Command line interface](./cli/index.md)
   - [Installation](./cli/installation.md)
   - [Base mode](./cli/base.md)
+  - [Parallel relationships](./cli/parallel.md)
   - [Nested mode](./cli/nested.md)
   - [Routed mode](./cli/routed.md)
 - [Intermediary server](./intermediary.md)

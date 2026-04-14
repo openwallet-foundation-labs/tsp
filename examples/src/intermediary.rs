@@ -24,8 +24,9 @@ use std::{
 use tokio::sync::{Mutex, Notify, RwLock, RwLockWriteGuard, broadcast, mpsc};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{
-    AsyncSecureStore, OwnedVid, ReceivedTspMessage, VerifiedVid, cesr, definitions::Digest,
-    transport, vid::vid_to_did_document,
+    AsyncSecureStore, OwnedVid, ReceivedRelationshipDelivery, ReceivedRelationshipForm,
+    ReceivedTspMessage, VerifiedVid, cesr, definitions::Digest, transport,
+    vid::vid_to_did_document,
 };
 use url::Url;
 use uuid::Uuid;
@@ -448,47 +449,57 @@ async fn new_message(
         return (StatusCode::BAD_REQUEST, "error verifying VID").into_response();
     }
 
-    let handle_relationship_request = async |sender: String,
-                                             route: Option<Vec<Vec<u8>>>,
-                                             nested_vid: Option<String>,
-                                             thread_id: Digest|
-           -> Result<(), tsp_sdk::Error> {
-        if let Some(nested_vid) = nested_vid {
-            tracing::trace!("Requested new nested relationship");
-            let ((endpoint, message), my_new_nested_vid) = state
-                .db
-                .read()
-                .await
-                .make_nested_relationship_accept(&receiver, &nested_vid, thread_id)?;
+    let handle_relationship_request =
+        async |sender: String, form, delivery, thread_id: Digest| -> Result<(), tsp_sdk::Error> {
+            match (delivery, form) {
+                (ReceivedRelationshipDelivery::Direct, ReceivedRelationshipForm::Direct) => {
+                    tracing::trace!("Received relationship request from {}", sender);
+                    let (endpoint, message) = state
+                        .db
+                        .read()
+                        .await
+                        .make_relationship_accept(&receiver, &sender, thread_id, None)?;
 
-            transport::send_message(&endpoint, &message).await?;
+                    transport::send_message(&endpoint, &message).await?;
+                    Ok(())
+                }
+                (
+                    ReceivedRelationshipDelivery::Nested { nested_vid },
+                    ReceivedRelationshipForm::Direct,
+                ) => {
+                    tracing::trace!("Requested new nested relationship");
+                    let ((endpoint, message), my_new_nested_vid) = state
+                        .db
+                        .read()
+                        .await
+                        .make_nested_relationship_accept(&receiver, &nested_vid, thread_id)?;
 
-            tracing::debug!(
-                "Created nested {} for {nested_vid}",
-                my_new_nested_vid.vid().identifier()
-            );
+                    transport::send_message(&endpoint, &message).await?;
 
-            Ok(())
-        } else {
-            tracing::trace!("Received relationship request from {}", sender);
-            let route: Option<Vec<&str>> = route.as_ref().map(|vec| {
-                vec.iter()
-                    .map(|vid| std::str::from_utf8(vid).unwrap())
-                    .collect()
-            });
+                    tracing::debug!(
+                        "Created nested {} for {nested_vid}",
+                        my_new_nested_vid.vid().identifier()
+                    );
 
-            let (endpoint, message) = state.db.read().await.make_relationship_accept(
-                &receiver,
-                &sender,
-                thread_id,
-                route.as_deref(),
-            )?;
-
-            transport::send_message(&endpoint, &message).await?;
-
-            Ok(())
-        }
-    };
+                    Ok(())
+                }
+                (
+                    ReceivedRelationshipDelivery::Direct,
+                    ReceivedRelationshipForm::Parallel { new_vid, .. },
+                )
+                | (
+                    ReceivedRelationshipDelivery::Nested { .. },
+                    ReceivedRelationshipForm::Parallel { new_vid, .. },
+                ) => {
+                    tracing::error!("parallel relationship request from {sender}: {new_vid}");
+                    Ok(())
+                }
+                (ReceivedRelationshipDelivery::Routed, _) => {
+                    tracing::error!("routed relationship request from {sender}");
+                    Ok(())
+                }
+            }
+        };
 
     // yes, this must be a separate variable https://github.com/rust-lang/rust/issues/37612
     let res = state.db.read().await.open_message(message.as_mut());
@@ -502,13 +513,17 @@ async fn new_message(
         Ok(ReceivedTspMessage::RequestRelationship {
             sender,
             receiver: _,
-            route,
-            nested_vid,
             thread_id,
+            form,
+            delivery,
         }) => {
+            let nested_vid = match &delivery {
+                ReceivedRelationshipDelivery::Nested { nested_vid } => Some(nested_vid.clone()),
+                _ => None,
+            };
+
             if let Err(e) =
-                handle_relationship_request(sender.clone(), route, nested_vid.clone(), thread_id)
-                    .await
+                handle_relationship_request(sender.clone(), form, delivery, thread_id).await
             {
                 state.log_error(e.to_string()).await;
                 return (StatusCode::BAD_REQUEST, "error accepting relationship").into_response();
@@ -522,9 +537,14 @@ async fn new_message(
                     format!("Accepted relationship request from {sender}")
                 }).await;
         }
-        Ok(ReceivedTspMessage::AcceptRelationship { sender, .. }) => {
-            tracing::error!("accept relationship message from {sender}")
-        }
+        Ok(ReceivedTspMessage::AcceptRelationship { sender, form, .. }) => match form {
+            ReceivedRelationshipForm::Parallel { new_vid, .. } => {
+                tracing::error!("parallel relationship accept from {sender}: {new_vid}")
+            }
+            ReceivedRelationshipForm::Direct => {
+                tracing::error!("accept relationship message from {sender}")
+            }
+        },
         Ok(ReceivedTspMessage::CancelRelationship { sender, .. }) => {
             tracing::error!("cancel relationship message from {sender}")
         }
@@ -591,16 +611,6 @@ async fn new_message(
                     .await;
             }
         }
-        Ok(ReceivedTspMessage::NewIdentifier {
-            sender, new_vid, ..
-        }) => {
-            tracing::error!("new identifier message from {sender}: {new_vid}")
-        }
-        Ok(ReceivedTspMessage::Referral {
-            sender,
-            referred_vid,
-            ..
-        }) => tracing::error!("referral from {sender}: {referred_vid}"),
         Ok(ReceivedTspMessage::PendingMessage { unknown_vid, .. }) => {
             tracing::error!("pending message message from unknown VID {unknown_vid}")
         }

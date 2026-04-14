@@ -2,8 +2,10 @@
 use crate::definitions::VidEncryptionKeyType;
 use crate::definitions::{
     Digest, MessageType, NonConfidentialData, Payload, PrivateKeyData, PrivateSigningKeyData,
-    PrivateVid, PublicKeyData, PublicVerificationKeyData, TSPMessage, VerifiedVid,
+    PrivateVid, PublicKeyData, PublicVerificationKeyData, RelationshipForm, TSPMessage,
+    VerifiedVid,
 };
+use ed25519_dalek::Signer;
 #[cfg(not(feature = "pq"))]
 use hpke::kem;
 #[cfg(feature = "pq")]
@@ -24,6 +26,297 @@ mod tsp_nacl;
 use crate::cesr::{CryptoType, SignatureType};
 use crate::crypto::CryptoError::Verify;
 pub use error::CryptoError;
+
+type CesrRelationshipPayload<'a> = crate::cesr::Payload<'a, &'a [u8], &'a [u8]>;
+
+pub(crate) struct ParallelSignatureInfo<'a> {
+    pub new_vid: &'a [u8],
+    pub sig_new_vid: &'a [u8],
+    pub signed_data: Vec<u8>,
+}
+
+// Which digest algorithm is active depends on the crypto backend feature set.
+#[allow(dead_code)]
+#[derive(Clone, Copy)]
+pub(crate) enum RelationshipDigestAlgorithm {
+    Sha2_256,
+    Blake2b256,
+}
+
+impl RelationshipDigestAlgorithm {
+    fn field<'a>(self, digest: &'a Digest) -> crate::cesr::Digest<'a> {
+        match self {
+            RelationshipDigestAlgorithm::Sha2_256 => crate::cesr::Digest::Sha2_256(digest),
+            RelationshipDigestAlgorithm::Blake2b256 => crate::cesr::Digest::Blake2b256(digest),
+        }
+    }
+
+    fn hash(self, bytes: &[u8]) -> Digest {
+        match self {
+            RelationshipDigestAlgorithm::Sha2_256 => sha256(bytes),
+            RelationshipDigestAlgorithm::Blake2b256 => blake2b256(bytes),
+        }
+    }
+}
+
+fn encode_hashed_payload(
+    payload: &CesrRelationshipPayload<'_>,
+    sender_in_payload: Option<&[u8]>,
+    algorithm: RelationshipDigestAlgorithm,
+) -> Result<Digest, CryptoError> {
+    let mut encoded = Vec::with_capacity(payload.calculate_size(sender_in_payload));
+    crate::cesr::encode_payload(payload, sender_in_payload, &mut encoded)?;
+    Ok(algorithm.hash(&encoded))
+}
+
+pub(crate) fn build_parallel_request_signed_data(
+    sender_in_payload: Option<&[u8]>,
+    digest_algorithm: RelationshipDigestAlgorithm,
+    nonce_bytes: [u8; 32],
+    request_digest: &mut Digest,
+    new_vid: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
+    let nonce = crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes);
+    let mut signed_data = crate::cesr::encode_parallel_relation_proposal_challenge(
+        sender_in_payload,
+        &nonce,
+        digest_algorithm.field(request_digest),
+        new_vid,
+    )?;
+    *request_digest = digest_algorithm.hash(&signed_data);
+    signed_data = crate::cesr::encode_parallel_relation_proposal_challenge(
+        sender_in_payload,
+        &nonce,
+        digest_algorithm.field(request_digest),
+        new_vid,
+    )?;
+    Ok(signed_data)
+}
+
+pub(crate) fn build_parallel_accept_signed_data(
+    thread_id: &Digest,
+    sender_in_payload: Option<&[u8]>,
+    digest_algorithm: RelationshipDigestAlgorithm,
+    reply_digest: &mut Digest,
+    new_vid: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
+    let mut signed_data = crate::cesr::encode_parallel_relation_affirm_challenge(
+        sender_in_payload,
+        digest_algorithm.field(thread_id),
+        digest_algorithm.field(reply_digest),
+        new_vid,
+    )?;
+    *reply_digest = digest_algorithm.hash(&signed_data);
+    signed_data = crate::cesr::encode_parallel_relation_affirm_challenge(
+        sender_in_payload,
+        digest_algorithm.field(thread_id),
+        digest_algorithm.field(reply_digest),
+        new_vid,
+    )?;
+    Ok(signed_data)
+}
+
+fn relationship_request_payload<'a>(
+    form: &RelationshipForm<'a, &'a [u8]>,
+    digest_algorithm: RelationshipDigestAlgorithm,
+    nonce_bytes: [u8; 32],
+    request_digest: &'a Digest,
+) -> CesrRelationshipPayload<'a> {
+    match form {
+        RelationshipForm::Direct => crate::cesr::Payload::DirectRelationProposal {
+            nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+            request_digest: digest_algorithm.field(request_digest),
+        },
+        RelationshipForm::Parallel {
+            new_vid,
+            sig_new_vid,
+        } => crate::cesr::Payload::ParallelRelationProposal {
+            nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+            request_digest: digest_algorithm.field(request_digest),
+            sig_new_vid,
+            new_vid,
+        },
+    }
+}
+
+fn relationship_accept_payload<'a>(
+    thread_id: &'a Digest,
+    form: &RelationshipForm<'a, &'a [u8]>,
+    digest_algorithm: RelationshipDigestAlgorithm,
+    reply_digest: &'a Digest,
+) -> CesrRelationshipPayload<'a> {
+    match form {
+        RelationshipForm::Direct => crate::cesr::Payload::DirectRelationAffirm {
+            request_digest: digest_algorithm.field(thread_id),
+            reply_digest: digest_algorithm.field(reply_digest),
+        },
+        RelationshipForm::Parallel {
+            new_vid,
+            sig_new_vid,
+        } => crate::cesr::Payload::ParallelRelationAffirm {
+            request_digest: digest_algorithm.field(thread_id),
+            reply_digest: digest_algorithm.field(reply_digest),
+            sig_new_vid,
+            new_vid,
+        },
+    }
+}
+
+pub(crate) fn build_relationship_request_payload<'a>(
+    form: &RelationshipForm<'a, &'a [u8]>,
+    sender_in_payload: Option<&[u8]>,
+    digest_algorithm: RelationshipDigestAlgorithm,
+    nonce_bytes: [u8; 32],
+    request_digest: &'a mut Digest,
+) -> Result<(CesrRelationshipPayload<'a>, Digest), CryptoError> {
+    match form {
+        RelationshipForm::Direct => {
+            let placeholder_payload =
+                relationship_request_payload(form, digest_algorithm, nonce_bytes, &*request_digest);
+            *request_digest =
+                encode_hashed_payload(&placeholder_payload, sender_in_payload, digest_algorithm)?;
+
+            let digest = *request_digest;
+
+            Ok((
+                relationship_request_payload(form, digest_algorithm, nonce_bytes, &*request_digest),
+                digest,
+            ))
+        }
+        RelationshipForm::Parallel {
+            new_vid,
+            sig_new_vid: _,
+        } => {
+            build_parallel_request_signed_data(
+                sender_in_payload,
+                digest_algorithm,
+                nonce_bytes,
+                request_digest,
+                new_vid,
+            )?;
+
+            let digest = *request_digest;
+
+            Ok((
+                relationship_request_payload(form, digest_algorithm, nonce_bytes, &*request_digest),
+                digest,
+            ))
+        }
+    }
+}
+
+pub(crate) fn build_relationship_accept_payload<'a>(
+    thread_id: &'a Digest,
+    form: &RelationshipForm<'a, &'a [u8]>,
+    sender_in_payload: Option<&[u8]>,
+    digest_algorithm: RelationshipDigestAlgorithm,
+    reply_digest: &'a mut Digest,
+) -> Result<(CesrRelationshipPayload<'a>, Digest), CryptoError> {
+    match form {
+        RelationshipForm::Direct => {
+            let placeholder_payload =
+                relationship_accept_payload(thread_id, form, digest_algorithm, &*reply_digest);
+            *reply_digest =
+                encode_hashed_payload(&placeholder_payload, sender_in_payload, digest_algorithm)?;
+
+            let digest = *reply_digest;
+
+            Ok((
+                relationship_accept_payload(thread_id, form, digest_algorithm, &*reply_digest),
+                digest,
+            ))
+        }
+        RelationshipForm::Parallel {
+            new_vid,
+            sig_new_vid: _,
+        } => {
+            build_parallel_accept_signed_data(
+                thread_id,
+                sender_in_payload,
+                digest_algorithm,
+                reply_digest,
+                new_vid,
+            )?;
+
+            let digest = *reply_digest;
+
+            Ok((
+                relationship_accept_payload(thread_id, form, digest_algorithm, &*reply_digest),
+                digest,
+            ))
+        }
+    }
+}
+
+pub(crate) fn open_relationship_request<'a>(
+    thread_id: Digest,
+    form: RelationshipForm<'a, &'a [u8]>,
+) -> Payload<'a, &'a [u8], &'a mut [u8]> {
+    Payload::RequestRelationship { thread_id, form }
+}
+
+pub(crate) fn open_relationship_accept<'a>(
+    thread_id: Digest,
+    reply_thread_id: Digest,
+    form: RelationshipForm<'a, &'a [u8]>,
+) -> Payload<'a, &'a [u8], &'a mut [u8]> {
+    Payload::AcceptRelationship {
+        thread_id,
+        reply_thread_id,
+        form,
+    }
+}
+
+pub(crate) fn sign_detached(sender: &dyn PrivateVid, data: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    Ok(match sender.signature_key_type() {
+        crate::definitions::VidSignatureKeyType::Ed25519 => {
+            let sign_key = ed25519_dalek::SigningKey::from_bytes(&TryInto::<[u8; 32]>::try_into(
+                sender.signing_key().as_slice(),
+            )?);
+            sign_key.sign(data).to_bytes().to_vec()
+        }
+        #[cfg(feature = "pq")]
+        crate::definitions::VidSignatureKeyType::MlDsa65 => {
+            use ml_dsa::EncodedSigningKey;
+            let sign_key = ml_dsa::SigningKey::<MlDsa65>::decode(
+                &EncodedSigningKey::<MlDsa65>::try_from(sender.signing_key().as_slice())?,
+            );
+            sign_key.sign(data).encode().to_vec()
+        }
+    })
+}
+
+pub(crate) fn verify_detached(
+    sender: &dyn VerifiedVid,
+    signed_data: &[u8],
+    signature: &[u8],
+) -> Result<(), CryptoError> {
+    match sender.signature_key_type() {
+        crate::definitions::VidSignatureKeyType::Ed25519 => {
+            let signature = ed25519_dalek::Signature::from_slice(signature)
+                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+            let verifying_key =
+                ed25519_dalek::VerifyingKey::try_from(sender.verifying_key().as_slice())
+                    .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+            verifying_key
+                .verify_strict(signed_data, &signature)
+                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+        }
+        #[cfg(feature = "pq")]
+        crate::definitions::VidSignatureKeyType::MlDsa65 => {
+            let signature: ml_dsa::Signature<MlDsa65> = ml_dsa::Signature::try_from(signature)
+                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+            let verifying_key = ml_dsa::VerifyingKey::decode(
+                &EncodedVerifyingKey::<MlDsa65>::try_from(sender.verifying_key().as_slice())?,
+            );
+            verifying_key
+                .verify(signed_data, &signature)
+                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+        }
+    }
+
+    Ok(())
+}
 
 #[cfg(not(feature = "pq"))]
 pub type Aead = hpke::aead::ChaCha20Poly1305;
@@ -61,6 +354,24 @@ pub fn seal_and_hash(
     payload: Payload<&[u8]>,
     digest: Option<&mut Digest>,
 ) -> Result<TSPMessage, CryptoError> {
+    seal_and_hash_with_relationship_nonce(
+        sender,
+        receiver,
+        nonconfidential_data,
+        payload,
+        digest,
+        None,
+    )
+}
+
+pub(crate) fn seal_and_hash_with_relationship_nonce(
+    sender: &dyn PrivateVid,
+    receiver: &dyn VerifiedVid,
+    nonconfidential_data: Option<NonConfidentialData>,
+    payload: Payload<&[u8]>,
+    digest: Option<&mut Digest>,
+    request_nonce_override: Option<[u8; 32]>,
+) -> Result<TSPMessage, CryptoError> {
     #[cfg(not(feature = "nacl"))]
     let msg = match receiver.encryption_key_type() {
         VidEncryptionKeyType::X25519 => tsp_hpke::seal::<Aead, Kdf, kem::X25519HkdfSha256>(
@@ -69,6 +380,7 @@ pub fn seal_and_hash(
             nonconfidential_data,
             payload,
             digest,
+            request_nonce_override,
         ),
         #[cfg(feature = "pq")]
         VidEncryptionKeyType::X25519Kyber768Draft00 => {
@@ -78,12 +390,20 @@ pub fn seal_and_hash(
                 nonconfidential_data,
                 payload,
                 digest,
+                request_nonce_override,
             )
         }
     }?;
 
     #[cfg(feature = "nacl")]
-    let msg = tsp_nacl::seal(sender, receiver, nonconfidential_data, payload, digest)?;
+    let msg = tsp_nacl::seal(
+        sender,
+        receiver,
+        nonconfidential_data,
+        payload,
+        digest,
+        request_nonce_override,
+    )?;
 
     Ok(msg)
 }
@@ -101,34 +421,25 @@ pub fn open<'a>(
     sender: &dyn VerifiedVid,
     tsp_message: &'a mut [u8],
 ) -> Result<MessageContents<'a>, CryptoError> {
+    open_with_signature_info(receiver, sender, tsp_message)
+        .map(|(message_contents, _parallel_signature_info)| message_contents)
+}
+
+pub(crate) fn open_with_signature_info<'a>(
+    receiver: &dyn PrivateVid,
+    sender: &dyn VerifiedVid,
+    tsp_message: &'a mut [u8],
+) -> Result<(MessageContents<'a>, Option<ParallelSignatureInfo<'a>>), CryptoError> {
     let view = crate::cesr::decode_envelope(tsp_message)?;
 
     // verify outer signature
     let verification_challenge = view.as_challenge();
-    match view.signature_type() {
-        SignatureType::NoSignature => {}
-        SignatureType::Ed25519 => {
-            let signature = ed25519_dalek::Signature::from_slice(verification_challenge.signature)
-                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
-            let verifying_key =
-                ed25519_dalek::VerifyingKey::try_from(sender.verifying_key().as_slice())
-                    .map_err(|err| Verify(sender.identifier().to_string(), err))?;
-            verifying_key
-                .verify_strict(verification_challenge.signed_data, &signature)
-                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
-        }
-        #[cfg(feature = "pq")]
-        SignatureType::MlDsa65 => {
-            let signature: ml_dsa::Signature<MlDsa65> =
-                ml_dsa::Signature::try_from(verification_challenge.signature)
-                    .map_err(|err| Verify(sender.identifier().to_string(), err))?;
-            let verifying_key = ml_dsa::VerifyingKey::decode(
-                &EncodedVerifyingKey::<MlDsa65>::try_from(sender.verifying_key().as_slice())?,
-            );
-            verifying_key
-                .verify(verification_challenge.signed_data, &signature)
-                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
-        }
+    if !matches!(view.signature_type(), SignatureType::NoSignature) {
+        verify_detached(
+            sender,
+            verification_challenge.signed_data,
+            verification_challenge.signature,
+        )?;
     }
 
     // decode envelope
