@@ -16,8 +16,16 @@ pub enum VidError {
     Connection(String, std::io::Error),
     #[error("invalid VID '{0}'")]
     InvalidVid(String),
+    #[error("resolution context required for '{0}'")]
+    ResolutionContextRequired(String),
     #[error("could not resolve VID '{0}'")]
     ResolveVid(&'static str),
+    #[error("unsupported did:scid source method '{0}'")]
+    UnsupportedScidSource(String),
+    #[error("invalid did:scid '{0}'")]
+    InvalidScid(String),
+    #[error("source DID mismatch for '{0}'")]
+    SourceDidMismatch(String),
     #[error("{0}")]
     InternalError(String),
     #[error("{0}")]

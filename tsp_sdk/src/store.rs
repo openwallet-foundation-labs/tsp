@@ -22,6 +22,9 @@ use std::{
 };
 use url::Url;
 
+#[cfg(feature = "serialize")]
+use serde::{Deserialize, Serialize};
+
 #[derive(Clone)]
 pub(crate) struct VidContext {
     vid: Arc<dyn VerifiedVid>,
@@ -215,7 +218,19 @@ fn random_nonce_bytes() -> [u8; 32] {
 }
 
 pub type Aliases = HashMap<String, String>;
-pub type WebvhUpdateKeys = HashMap<String, Vec<u8>>;
+pub type MethodSecretKeys = HashMap<String, Vec<u8>>;
+pub type ResolutionContexts = HashMap<String, crate::vid::ResolutionContext>;
+
+#[cfg_attr(
+    feature = "serialize",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
+#[derive(Clone, Debug, Default)]
+pub struct WalletMethodState {
+    pub secret_keys: MethodSecretKeys,
+    pub resolution_contexts: ResolutionContexts,
+}
 
 /// Holds private and verified VIDs
 ///
@@ -228,7 +243,7 @@ pub type WebvhUpdateKeys = HashMap<String, Vec<u8>>;
 pub struct SecureStore {
     pub(crate) vids: Arc<RwLock<HashMap<String, VidContext>>>,
     pub(crate) aliases: Arc<RwLock<Aliases>>,
-    pub(crate) keys: Arc<RwLock<WebvhUpdateKeys>>,
+    pub(crate) method_state: Arc<RwLock<WalletMethodState>>,
 }
 
 /// This wallet is used to store and resolve VIDs
@@ -239,7 +254,7 @@ impl SecureStore {
     }
 
     /// Export the wallet to serializable default types
-    pub fn export(&self) -> Result<(Vec<ExportVid>, Aliases, WebvhUpdateKeys), Error> {
+    pub fn export(&self) -> Result<(Vec<ExportVid>, Aliases, WalletMethodState), Error> {
         let vids = self
             .vids
             .read()?
@@ -268,7 +283,7 @@ impl SecureStore {
         Ok((
             vids,
             self.aliases.read()?.clone(),
-            self.keys.read()?.clone(),
+            self.method_state.read()?.clone(),
         ))
     }
 
@@ -277,7 +292,7 @@ impl SecureStore {
         &self,
         vids: Vec<ExportVid>,
         aliases: Aliases,
-        keys: WebvhUpdateKeys,
+        method_state: WalletMethodState,
     ) -> Result<(), Error> {
         vids.into_iter().try_for_each(|vid| {
             self.vids.write()?.insert(
@@ -300,10 +315,7 @@ impl SecureStore {
             Ok::<(), Error>(())
         })?;
 
-        keys.into_iter().try_for_each(|(k, v)| {
-            self.add_secret_key(k, v)?;
-            Ok::<(), Error>(())
-        })?;
+        *self.method_state.write()? = method_state;
 
         aliases.into_iter().try_for_each(|(k, v)| {
             self.set_alias(k, v)?;
@@ -312,12 +324,39 @@ impl SecureStore {
     }
 
     pub fn add_secret_key(&self, kid: String, secret_key: Vec<u8>) -> Result<(), Error> {
-        self.keys.write()?.insert(kid, secret_key);
+        self.method_state
+            .write()?
+            .secret_keys
+            .insert(kid, secret_key);
         Ok(())
     }
 
     pub fn get_secret_key(&self, kid: &str) -> Result<Option<Vec<u8>>, Error> {
-        Ok(self.keys.read()?.get(kid).cloned())
+        Ok(self.method_state.read()?.secret_keys.get(kid).cloned())
+    }
+
+    pub fn register_resolution_context(
+        &self,
+        did: String,
+        context: crate::vid::ResolutionContext,
+    ) -> Result<(), Error> {
+        self.method_state
+            .write()?
+            .resolution_contexts
+            .insert(did, context);
+        Ok(())
+    }
+
+    pub fn get_resolution_context(
+        &self,
+        did: &str,
+    ) -> Result<Option<crate::vid::ResolutionContext>, Error> {
+        Ok(self
+            .method_state
+            .read()?
+            .resolution_contexts
+            .get(did)
+            .cloned())
     }
 
     /// Add the already resolved `verified_vid` to the wallet as a relationship
@@ -516,6 +555,19 @@ impl SecureStore {
             Some(private) => Ok(private),
             None => Err(Error::MissingPrivateVid(vid.to_string())),
         }
+    }
+
+    pub fn get_owned_private_vid(&self, vid: &str) -> Result<OwnedVid, Error> {
+        let context = self.get_vid(vid)?;
+        let Some(private) = context.private else {
+            return Err(Error::MissingPrivateVid(vid.to_string()));
+        };
+
+        Ok(OwnedVid::from_parts(
+            crate::vid::Vid::from_verified(context.vid.as_ref()),
+            private.signing_key().clone(),
+            private.decryption_key().clone(),
+        ))
     }
 
     /// Check whether the [VerifiedVid] identified by `vid` exists in the wallet

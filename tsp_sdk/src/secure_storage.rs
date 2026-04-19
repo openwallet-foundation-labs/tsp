@@ -6,7 +6,7 @@ use crate::definitions::{
 use crate::{
     Error, ExportVid, PendingIncomingParallelRelationship, PendingParallelRelationship,
     RelationshipStatus,
-    store::{Aliases, WebvhUpdateKeys},
+    store::{Aliases, WalletMethodState},
 };
 use aries_askar::{ErrorKind, StoreKeyMethod, entry::EntryOperation};
 use async_trait::async_trait;
@@ -24,11 +24,11 @@ pub trait SecureStorage: Sized {
     /// Write data from memory to secure storage
     async fn persist(
         &self,
-        (vids, aliases, update_keys): (Vec<ExportVid>, Aliases, WebvhUpdateKeys),
+        state: (Vec<ExportVid>, Aliases, WalletMethodState),
     ) -> Result<(), Error>;
 
     /// Read data from secure storage to memory
-    async fn read(&self) -> Result<(Vec<ExportVid>, Aliases, WebvhUpdateKeys), Error>;
+    async fn read(&self) -> Result<(Vec<ExportVid>, Aliases, WalletMethodState), Error>;
 
     /// Close the secure storage
     async fn close(self) -> Result<(), Error>;
@@ -187,7 +187,7 @@ impl SecureStorage for AskarSecureStorage {
 
     async fn persist(
         &self,
-        (vids, aliases, keys): (Vec<ExportVid>, Aliases, WebvhUpdateKeys),
+        (vids, aliases, method_state): (Vec<ExportVid>, Aliases, WalletMethodState),
     ) -> Result<(), Error> {
         let mut conn = self.inner.session(None).await?;
 
@@ -338,23 +338,51 @@ impl SecureStorage for AskarSecureStorage {
             }
         }
 
-        if let Ok(update_keys) = serde_json::to_value(&keys)
-            && let Err(e) = conn
-                .insert(
-                    "webvh_update_keys",
-                    "all",
-                    update_keys.to_string().as_bytes(),
-                    None,
-                    None,
-                )
-                .await
+        let secret_keys = serde_json::to_value(&method_state.secret_keys)
+            .map_err(|_| Error::DecodeState("could not encode secret keys for storage"))?;
+        if let Err(e) = conn
+            .insert(
+                "method_state",
+                "secret_keys",
+                secret_keys.to_string().as_bytes(),
+                None,
+                None,
+            )
+            .await
         {
             if e.kind() == ErrorKind::Duplicate {
                 conn.update(
                     EntryOperation::Replace,
-                    "webvh_update_keys",
-                    "all",
-                    Some(update_keys.to_string().as_bytes()),
+                    "method_state",
+                    "secret_keys",
+                    Some(secret_keys.to_string().as_bytes()),
+                    None,
+                    None,
+                )
+                .await?;
+            } else {
+                Err(Error::from(e))?;
+            }
+        }
+
+        let resolution_contexts = serde_json::to_value(&method_state.resolution_contexts)
+            .map_err(|_| Error::DecodeState("could not encode resolution contexts for storage"))?;
+        if let Err(e) = conn
+            .insert(
+                "method_state",
+                "resolution_contexts",
+                resolution_contexts.to_string().as_bytes(),
+                None,
+                None,
+            )
+            .await
+        {
+            if e.kind() == ErrorKind::Duplicate {
+                conn.update(
+                    EntryOperation::Replace,
+                    "method_state",
+                    "resolution_contexts",
+                    Some(resolution_contexts.to_string().as_bytes()),
                     None,
                     None,
                 )
@@ -369,7 +397,7 @@ impl SecureStorage for AskarSecureStorage {
         Ok(())
     }
 
-    async fn read(&self) -> Result<(Vec<ExportVid>, Aliases, WebvhUpdateKeys), Error> {
+    async fn read(&self) -> Result<(Vec<ExportVid>, Aliases, WalletMethodState), Error> {
         let mut vids = Vec::new();
 
         let mut conn = self.inner.session(None).await?;
@@ -446,15 +474,36 @@ impl SecureStorage for AskarSecureStorage {
             None => HashMap::new(),
         };
 
-        let keys = match conn.fetch("webvh_update_keys", "all", false).await? {
+        let secret_keys = match conn.fetch("method_state", "secret_keys", false).await? {
             Some(data) => serde_json::from_slice(&data.value)
-                .map_err(|_| Error::DecodeState("could not webvh keys from storage"))?,
+                .map_err(|_| Error::DecodeState("could not decode secret keys from storage"))?,
+            None => match conn.fetch("webvh_update_keys", "all", false).await? {
+                Some(data) => serde_json::from_slice(&data.value)
+                    .map_err(|_| Error::DecodeState("could not webvh keys from storage"))?,
+                None => HashMap::new(),
+            },
+        };
+
+        let resolution_contexts = match conn
+            .fetch("method_state", "resolution_contexts", false)
+            .await?
+        {
+            Some(data) => serde_json::from_slice(&data.value).map_err(|_| {
+                Error::DecodeState("could not decode resolution contexts from storage")
+            })?,
             None => HashMap::new(),
         };
 
         conn.commit().await?;
 
-        Ok((vids, aliases, keys))
+        Ok((
+            vids,
+            aliases,
+            WalletMethodState {
+                secret_keys,
+                resolution_contexts,
+            },
+        ))
     }
 
     async fn close(self) -> Result<(), Error> {

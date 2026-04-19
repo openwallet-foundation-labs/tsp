@@ -30,7 +30,30 @@ use url::Url;
 
 use crate::definitions::{VidEncryptionKeyType, VidSignatureKeyType};
 #[cfg(feature = "resolve")]
-pub use resolve::verify_vid;
+pub use resolve::{
+    verify_vid, verify_vid_offline, verify_vid_offline_with_options, verify_vid_with_options,
+};
+
+#[cfg_attr(
+    feature = "serialize",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
+#[derive(Clone, Debug, Default)]
+pub struct VerifyVidOptions {
+    pub resolution_context: Option<ResolutionContext>,
+}
+
+#[cfg_attr(
+    feature = "serialize",
+    derive(Serialize, Deserialize),
+    serde(tag = "kind", content = "value", rename_all = "camelCase")
+)]
+#[derive(Clone, Debug)]
+pub enum ResolutionContext {
+    #[cfg(feature = "resolve")]
+    Scid(did::scid::ScidResolutionContext),
+}
 
 /// A Vid represents a *verified* Identifier
 /// (so it doesn't carry any information that allows to verify it)
@@ -203,6 +226,50 @@ impl OwnedVid {
 
     pub fn into_vid(self) -> Vid {
         self.vid
+    }
+
+    pub(crate) fn from_parts(
+        vid: Vid,
+        sigkey: PrivateSigningKeyData,
+        enckey: PrivateKeyData,
+    ) -> Self {
+        Self {
+            vid,
+            sigkey,
+            enckey,
+        }
+    }
+
+    pub(crate) fn with_identifier(&self, id: impl Into<String>) -> Self {
+        Self {
+            vid: self.vid.with_identifier(id),
+            sigkey: self.sigkey.clone(),
+            enckey: self.enckey.clone(),
+        }
+    }
+}
+
+impl Vid {
+    pub(crate) fn from_verified(vid: &dyn VerifiedVid) -> Self {
+        Self {
+            id: vid.identifier().to_string(),
+            transport: vid.endpoint().clone(),
+            sig_key_type: vid.signature_key_type(),
+            public_sigkey: vid.verifying_key().clone(),
+            enc_key_type: vid.encryption_key_type(),
+            public_enckey: vid.encryption_key().clone(),
+        }
+    }
+
+    pub(crate) fn with_identifier(&self, id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            transport: self.transport.clone(),
+            sig_key_type: self.sig_key_type,
+            public_sigkey: self.public_sigkey.clone(),
+            enc_key_type: self.enc_key_type,
+            public_enckey: self.public_enckey.clone(),
+        }
     }
 }
 

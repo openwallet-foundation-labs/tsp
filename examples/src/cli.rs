@@ -12,7 +12,16 @@ use tsp_sdk::{
     ReceivedRelationshipDelivery, ReceivedRelationshipForm, ReceivedTspMessage, RelationshipStatus,
     SecureStorage, VerifiedVid, Vid, cesr,
     definitions::Digest,
-    vid::{VidError, did::webvh::WebvhMetadata, verify_vid, vid_to_did_document},
+    vid::{
+        ResolutionContext, VerifyVidOptions, VidError,
+        did::{
+            scid::{
+                ScidLocator, ScidMethod, ScidResolutionContext, ScidSourceMethod, ScidVidMetadata,
+            },
+            webvh::WebvhMetadata,
+        },
+        verify_vid, verify_vid_with_options, vid_to_did_document,
+    },
 };
 use url::Url;
 
@@ -25,6 +34,7 @@ enum DidType {
     Web,
     Peer,
     Webvh,
+    Scid,
 }
 
 impl FromStr for DidType {
@@ -35,6 +45,7 @@ impl FromStr for DidType {
             "web" => Ok(DidType::Web),
             "peer" => Ok(DidType::Peer),
             "webvh" => Ok(DidType::Webvh),
+            "scid" => Ok(DidType::Scid),
             _ => Err(format!("invalid did type: {s}")),
         }
     }
@@ -84,6 +95,12 @@ enum Commands {
         vid: String,
         #[arg(short, long)]
         alias: Option<String>,
+        #[arg(long)]
+        src: Option<String>,
+        #[arg(long)]
+        peer_src: Option<String>,
+        #[arg(long)]
+        source_method: Option<String>,
     },
     #[command(arg_required_else_help = true)]
     Print { alias: String },
@@ -102,6 +119,12 @@ enum Commands {
             help = "Specify a network address and port instead of HTTPS transport"
         )]
         tcp: Option<String>,
+        #[arg(long)]
+        source_method: Option<String>,
+        #[arg(long)]
+        src: Option<String>,
+        #[arg(long)]
+        peer_src: Option<String>,
     },
     #[command(about = "Update the DID:WEBVH. Currently, only a rotation of TSP keys is supported")]
     Update {
@@ -297,6 +320,230 @@ async fn ensure_vid_verified(
     }
 }
 
+fn build_scid_resolution_context(
+    vid: &str,
+    source_method: Option<String>,
+    src: Option<String>,
+    peer_src: Option<String>,
+) -> Result<Option<ScidResolutionContext>, Error> {
+    if !vid.starts_with("did:scid:") {
+        return Ok(None);
+    }
+
+    if source_method.is_none() && src.is_none() && peer_src.is_none() {
+        return tsp_sdk::vid::did::scid::query_resolution_context(vid).map_err(Error::Vid);
+    }
+
+    let did = tsp_sdk::vid::did::scid::parse(vid)?;
+    let context = build_create_scid_context(source_method, src, peer_src, None)?;
+
+    Ok(Some(canonicalize_scid_context(&did.scid, context)?))
+}
+
+fn build_create_scid_context(
+    source_method: Option<String>,
+    src: Option<String>,
+    peer_src: Option<String>,
+    default_src: Option<String>,
+) -> Result<ScidResolutionContext, Error> {
+    let source_method = match source_method {
+        Some(source_method) => parse_scid_source_method(&source_method)?,
+        None => ScidSourceMethod::Webvh,
+    };
+    let source_value = src.or(peer_src).or(default_src);
+
+    let locator = match source_method {
+        ScidSourceMethod::Webvh => ScidLocator::Src(source_value.ok_or_else(|| {
+            Error::Vid(VidError::ResolutionContextRequired(
+                "did:scid source path (--src or --peer-src) is required".to_string(),
+            ))
+        })?),
+        ScidSourceMethod::Cheqd => ScidLocator::Network(normalize_scid_cheqd_locator(
+            source_value.ok_or_else(|| {
+                Error::Vid(VidError::ResolutionContextRequired(
+                    "did:scid cheqd network (--src or --peer-src) is required".to_string(),
+                ))
+            })?,
+        )?),
+    };
+
+    Ok(ScidResolutionContext {
+        version: 1,
+        method: ScidMethod::Vh,
+        source_method,
+        locator,
+    })
+}
+
+fn parse_scid_source_method(value: &str) -> Result<ScidSourceMethod, Error> {
+    match value.to_ascii_lowercase().as_str() {
+        "webvh" => Ok(ScidSourceMethod::Webvh),
+        "cheqd" => Ok(ScidSourceMethod::Cheqd),
+        _ => Err(Error::Vid(VidError::UnsupportedScidSource(
+            value.to_string(),
+        ))),
+    }
+}
+
+fn merge_method_state(
+    vid_wallet: &AsyncSecureStore,
+    method_state: tsp_sdk::WalletMethodState,
+) -> Result<(), Error> {
+    for (kid, secret) in method_state.secret_keys {
+        vid_wallet.add_secret_key(kid, secret)?;
+    }
+
+    for (did, context) in method_state.resolution_contexts {
+        vid_wallet.register_resolution_context(did, context)?;
+    }
+
+    Ok(())
+}
+
+fn canonicalize_scid_context(
+    scid: &str,
+    context: ScidResolutionContext,
+) -> Result<ScidResolutionContext, Error> {
+    let locator = match context.locator {
+        ScidLocator::Src(src) => ScidLocator::Src(normalize_scid_webvh_locator(scid, &src)?),
+        ScidLocator::Network(network) => {
+            ScidLocator::Network(normalize_scid_cheqd_locator(network)?)
+        }
+    };
+
+    Ok(ScidResolutionContext {
+        version: context.version,
+        method: context.method,
+        source_method: context.source_method,
+        locator,
+    })
+}
+
+fn normalize_scid_webvh_locator(scid: &str, src: &str) -> Result<String, Error> {
+    if src.starts_with("did:webvh:") {
+        let parts = src.split(':').collect::<Vec<_>>();
+        match parts.get(2) {
+            Some(source_scid) if *source_scid == scid => Ok(src.to_string()),
+            _ => Err(Error::Vid(VidError::SourceDidMismatch(src.to_string()))),
+        }
+    } else {
+        let Some((host, path)) = src.split_once('/') else {
+            return Ok(format!("did:webvh:{scid}:{src}"));
+        };
+        Ok(format!(
+            "did:webvh:{scid}:{}:{}",
+            host.replace(':', "%3A"),
+            path.replace('/', ":")
+        ))
+    }
+}
+
+fn normalize_scid_cheqd_locator(src: String) -> Result<String, Error> {
+    if let Some(network) = src.strip_prefix("did:cheqd:") {
+        if network.is_empty() {
+            return Err(Error::Vid(VidError::InvalidScid(src)));
+        }
+
+        return Ok(network.to_string());
+    }
+
+    if src.starts_with("did:") {
+        return Err(Error::Vid(VidError::InvalidScid(src)));
+    }
+
+    Ok(src)
+}
+
+fn merge_scid_metadata(
+    verified_metadata: Option<serde_json::Value>,
+    private_state: Option<tsp_sdk::vid::did::scid::ScidPrivateState>,
+) -> Result<Option<serde_json::Value>, Error> {
+    let Some(metadata) = verified_metadata else {
+        return Ok(None);
+    };
+
+    let mut metadata: ScidVidMetadata =
+        serde_json::from_value(metadata).map_err(|error| Error::Vid(VidError::Serde(error)))?;
+    metadata.private_state = private_state;
+
+    Ok(Some(
+        serde_json::to_value(metadata).map_err(|error| Error::Vid(VidError::Serde(error)))?,
+    ))
+}
+
+async fn publish_scid_source(
+    client: &reqwest::Client,
+    did_server: &str,
+    source_vid: &Vid,
+    source_history: Option<&serde_json::Value>,
+    replace: bool,
+) -> Result<(), Error> {
+    let request = if replace {
+        client.put(format!("https://{did_server}/add-vid"))
+    } else {
+        client.post(format!("https://{did_server}/add-vid"))
+    };
+
+    let _: Vid = request
+        .json(source_vid)
+        .send()
+        .await
+        .inspect(|r| debug!("DID server responded with status code {}", r.status()))
+        .expect("Could not publish VID on server")
+        .error_for_status()
+        .map_err(|_| {
+            Error::Vid(VidError::InvalidVid(
+                "An error occurred while publishing the DID. Maybe this DID exists already?"
+                    .to_string(),
+            ))
+        })?
+        .json()
+        .await
+        .expect("Could not decode VID");
+
+    if let Some(source_history) = source_history {
+        let request = if replace {
+            client.put(format!(
+                "https://{did_server}/add-history/{}",
+                source_vid.identifier()
+            ))
+        } else {
+            client.post(format!(
+                "https://{did_server}/add-history/{}",
+                source_vid.identifier()
+            ))
+        };
+
+        request
+            .json(source_history)
+            .send()
+            .await
+            .inspect(|r| debug!("DID server responded with status code {}", r.status()))
+            .expect("Could not publish history on server")
+            .error_for_status()
+            .map_err(|_| {
+                Error::Vid(VidError::InvalidVid(
+                    "An error occurred while publishing the DID history.".to_string(),
+                ))
+            })?;
+    }
+
+    Ok(())
+}
+
+fn map_scid_update_error(error: VidError) -> Error {
+    match error {
+        VidError::InternalError(message)
+            if message
+                == "Server has precommit active but wallet has no matching key. Wallet may be out of sync."
+                || message == "Cannot find update keys to update the DID" =>
+        {
+            Error::MissingPrivateVid(message)
+        }
+        other => Error::Vid(other),
+    }
+}
+
 fn prompt(message: String) -> bool {
     use std::io::{self, BufRead, Write};
     print!("{message}? [y/n]");
@@ -381,8 +628,21 @@ async fn run() -> Result<(), Error> {
                 show_relations(&vids, None, &aliases)?;
             }
         }
-        Commands::Verify { vid, alias } => {
-            vid_wallet.verify_vid(&vid, alias).await?;
+        Commands::Verify {
+            vid,
+            alias,
+            src,
+            peer_src,
+            source_method,
+        } => {
+            let context = build_scid_resolution_context(&vid, source_method, src, peer_src)?;
+            let options = VerifyVidOptions {
+                resolution_context: context.clone().map(ResolutionContext::Scid),
+            };
+
+            vid_wallet
+                .verify_vid_with_options(&vid, alias, options)
+                .await?;
 
             info!("{vid} is verified and added to the wallet {}", &args.wallet);
         }
@@ -398,6 +658,9 @@ async fn run() -> Result<(), Error> {
             username,
             alias,
             tcp,
+            source_method,
+            src,
+            peer_src,
         } => {
             let transport = if let Some(address) = tcp {
                 Url::parse(&format!("tcp://{address}")).unwrap()
@@ -405,8 +668,8 @@ async fn run() -> Result<(), Error> {
                 Url::parse(&format!("https://{server}/endpoint/[vid_placeholder]",)).unwrap()
             };
 
-            let private_vid = match r#type {
-                DidType::Web => {
+            let (private_vid, metadata) = match r#type {
+                DidType::Web => (
                     create_did_web(
                         &did_server,
                         transport,
@@ -415,15 +678,16 @@ async fn run() -> Result<(), Error> {
                         alias,
                         &client,
                     )
-                    .await?
-                }
+                    .await?,
+                    None,
+                ),
                 DidType::Peer => {
                     let private_vid = OwnedVid::new_did_peer(transport);
 
                     vid_wallet.set_alias(username, private_vid.identifier().to_string())?;
 
                     info!("created peer identity {}", private_vid.identifier());
-                    private_vid
+                    (private_vid, None)
                 }
                 DidType::Webvh => {
                     let (private_vid, history, keys) = tsp_sdk::vid::did::webvh::create_webvh(
@@ -439,8 +703,6 @@ async fn run() -> Result<(), Error> {
                     vid_wallet
                         .add_secret_key(keys.next_update_kid.clone(), keys.next_update_key)
                         .expect("Cannot store next update key");
-
-                    // Store the next_update_kid in metadata so we know which key to use for next update
                     vid_wallet
                         .set_alias(
                             format!("__next_update_kid:{}", private_vid.identifier()),
@@ -502,109 +764,211 @@ async fn run() -> Result<(), Error> {
                         vid_wallet.set_alias(alias, private_vid.identifier().to_string())?;
                     }
 
-                    private_vid
+                    (private_vid, None)
+                }
+                DidType::Scid => {
+                    let default_src = format!("{did_server}/endpoint/{username}");
+                    let context =
+                        build_create_scid_context(source_method, src, peer_src, Some(default_src))?;
+                    let result =
+                        tsp_sdk::vid::did::scid::create(transport, context.clone()).await?;
+
+                    merge_method_state(&vid_wallet, result.method_state)?;
+                    publish_scid_source(
+                        &client,
+                        &did_server,
+                        &result.source_vid,
+                        result.source_history.as_ref(),
+                        false,
+                    )
+                    .await?;
+
+                    if let Some(alias) = alias {
+                        vid_wallet.set_alias(alias, result.private_vid.identifier().to_string())?;
+                    }
+
+                    let (_, verified_metadata) = verify_vid_with_options(
+                        result.private_vid.identifier(),
+                        VerifyVidOptions {
+                            resolution_context: Some(
+                                vid_wallet
+                                    .get_resolution_context(result.private_vid.identifier())?
+                                    .ok_or_else(|| {
+                                        Error::MissingVid(format!(
+                                            "Missing resolution context for {}",
+                                            result.private_vid.identifier()
+                                        ))
+                                    })?,
+                            ),
+                        },
+                    )
+                    .await
+                    .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
+
+                    (
+                        result.private_vid,
+                        merge_scid_metadata(verified_metadata, result.metadata.private_state)?,
+                    )
                 }
             };
-            let (_, metadata) = verify_vid(private_vid.identifier())
-                .await
-                .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
+            let metadata = match metadata {
+                Some(metadata) => Some(metadata),
+                None => {
+                    let (_, metadata) = verify_vid(private_vid.identifier())
+                        .await
+                        .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
+                    metadata
+                }
+            };
             vid_wallet.add_private_vid(private_vid.clone(), metadata)?;
             info!("created VID {}", private_vid.identifier());
         }
         Commands::Update { vid } => {
-            let (_, _, keys) = vid_wallet.export()?;
+            let (_, _, method_state) = vid_wallet.export()?;
             let vid_alias = vid_wallet.try_resolve_alias(&vid)?;
             info!("Updating VID {vid_alias}");
-            let (resolved_vid, metadata) = tsp_sdk::vid::did::webvh::resolve(&vid_alias).await?;
-            let new_vid =
-                OwnedVid::bind(resolved_vid.identifier(), resolved_vid.endpoint().clone());
-            let metadata: WebvhMetadata = serde_json::from_value(metadata)
-                .expect("metadata should be of type 'WebvhMetadata'");
+            let exported = vid_wallet
+                .export()?
+                .0
+                .into_iter()
+                .find(|exported| exported.id == vid_alias)
+                .ok_or_else(|| Error::MissingVid(format!("Cannot find VID {vid_alias}")))?;
+            let private_vid = vid_wallet.get_private_vid(&vid_alias)?;
 
-            // Try to get the pre-committed next key first (for precommit support)
-            let next_kid_alias = format!("__next_update_kid:{}", resolved_vid.identifier());
-            let update_key = if let Ok(Some(next_kid)) = vid_wallet.resolve_alias(&next_kid_alias) {
-                // Use the pre-committed key
-                info!("Using pre-committed update key for rotation");
-                keys.get(&next_kid).ok_or_else(|| {
-                    Error::MissingPrivateVid("Pre-committed key not found in wallet".to_string())
-                })?
-            } else {
-                // No local precommit key - check if server has precommit active
-                if metadata.next_key_hashes.is_some() {
-                    error!("Server has nextKeyHashes but wallet has no precommit key");
-                    error!("This wallet may be out of sync - cannot rotate safely");
-                    return Err(Error::MissingPrivateVid(
-                        "Server has precommit active but wallet has no matching key. \
-                         Wallet may be out of sync."
-                            .to_string(),
-                    ));
-                }
+            if let Some(metadata) = exported.metadata.clone()
+                && let Ok(scid_metadata) = serde_json::from_value::<ScidVidMetadata>(metadata)
+            {
+                let update_result =
+                    tsp_sdk::vid::did::scid::update(&private_vid, scid_metadata, &method_state)
+                        .await
+                        .map_err(map_scid_update_error)?;
 
-                // Fall back to current update key (legacy DIDs without precommit)
-                let Some(update_keys) = metadata.update_keys else {
-                    error!("Cannot find update keys to update the DID");
-                    return Err(Error::MissingPrivateVid(
-                        "Cannot find update keys to update the DID".to_string(),
-                    ));
-                };
-                info!("Using current update key (migrating legacy DID to precommit)");
-                keys.get(&update_keys[0]).ok_or_else(|| {
-                    Error::MissingPrivateVid(
-                        "Cannot find update keys to update the DID".to_string(),
-                    )
-                })?
-            };
-
-            let update_result = tsp_sdk::vid::did::webvh::update(
-                vid_to_did_document(new_vid.vid()),
-                update_key.first_chunk::<32>().ok_or_else(|| {
-                    Error::Vid(VidError::WebVHError(
-                        "Couldn't get WebVH UpdateKey Secret bytes".to_string(),
-                    ))
-                })?,
-            )
-            .await?;
-
-            // Store the new next key for future precommit
-            vid_wallet
-                .add_secret_key(
-                    update_result.next_update_kid.clone(),
-                    update_result.next_update_key,
+                merge_method_state(&vid_wallet, update_result.method_state)?;
+                publish_scid_source(
+                    &client,
+                    &did_server,
+                    &update_result.source_vid,
+                    update_result.source_history_entry.as_ref(),
+                    true,
                 )
-                .expect("Cannot store new next update key");
-            vid_wallet
-                .set_alias(next_kid_alias, update_result.next_update_kid)
-                .expect("Cannot update next update key reference");
+                .await?;
 
-            client
-                .put(format!(
-                    "https://{did_server}/add-history/{}",
-                    new_vid.identifier()
-                ))
-                .json(&update_result.log_entry)
-                .send()
-                .await
-                .expect("Could not append history");
-
-            let update_response = client
-                .put(format!("https://{did_server}/add-vid"))
-                .json(new_vid.vid())
-                .send()
-                .await
-                .expect("Could not update DID")
-                .text()
-                .await
-                .expect("cannot extract text from server response");
-
-            debug!("did server responded: {}", update_response);
-
-            let (_, new_metadata) = verify_vid(new_vid.identifier())
+                let context = vid_wallet
+                    .get_resolution_context(update_result.private_vid.identifier())?
+                    .ok_or_else(|| {
+                        Error::MissingVid(format!(
+                            "Missing resolution context for {}",
+                            update_result.private_vid.identifier()
+                        ))
+                    })?;
+                let (_, new_metadata) = verify_vid_with_options(
+                    update_result.private_vid.identifier(),
+                    VerifyVidOptions {
+                        resolution_context: Some(context),
+                    },
+                )
                 .await
                 .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
-            vid_wallet.add_private_vid(new_vid, new_metadata)?;
+                let new_metadata =
+                    merge_scid_metadata(new_metadata, update_result.metadata.private_state)?;
+                vid_wallet.add_private_vid(update_result.private_vid, new_metadata)?;
 
-            info!("VID updated with precommit - next key committed for future rotation");
+                info!("VID updated with presented/source scid flow");
+            } else {
+                let (resolved_vid, metadata) =
+                    tsp_sdk::vid::did::webvh::resolve(&vid_alias).await?;
+                let new_vid =
+                    OwnedVid::bind(resolved_vid.identifier(), resolved_vid.endpoint().clone());
+                let metadata: WebvhMetadata = serde_json::from_value(metadata)
+                    .expect("metadata should be of type 'WebvhMetadata'");
+
+                let next_kid_alias = format!("__next_update_kid:{}", resolved_vid.identifier());
+                let update_key =
+                    if let Ok(Some(next_kid)) = vid_wallet.resolve_alias(&next_kid_alias) {
+                        info!("Using pre-committed update key for rotation");
+                        method_state.secret_keys.get(&next_kid).ok_or_else(|| {
+                            Error::MissingPrivateVid(
+                                "Pre-committed key not found in wallet".to_string(),
+                            )
+                        })?
+                    } else {
+                        if metadata.next_key_hashes.is_some() {
+                            error!("Server has nextKeyHashes but wallet has no precommit key");
+                            error!("This wallet may be out of sync - cannot rotate safely");
+                            return Err(Error::MissingPrivateVid(
+                                "Server has precommit active but wallet has no matching key. \
+                             Wallet may be out of sync."
+                                    .to_string(),
+                            ));
+                        }
+
+                        let Some(update_keys) = metadata.update_keys else {
+                            error!("Cannot find update keys to update the DID");
+                            return Err(Error::MissingPrivateVid(
+                                "Cannot find update keys to update the DID".to_string(),
+                            ));
+                        };
+
+                        info!("Using current update key (migrating legacy DID to precommit)");
+                        method_state
+                            .secret_keys
+                            .get(&update_keys[0])
+                            .ok_or_else(|| {
+                                Error::MissingPrivateVid(
+                                    "Cannot find update keys to update the DID".to_string(),
+                                )
+                            })?
+                    };
+
+                let update_result = tsp_sdk::vid::did::webvh::update(
+                    vid_to_did_document(new_vid.vid()),
+                    update_key.first_chunk::<32>().ok_or_else(|| {
+                        Error::Vid(VidError::WebVHError(
+                            "Couldn't get WebVH UpdateKey Secret bytes".to_string(),
+                        ))
+                    })?,
+                )
+                .await?;
+
+                vid_wallet
+                    .add_secret_key(
+                        update_result.next_update_kid.clone(),
+                        update_result.next_update_key,
+                    )
+                    .expect("Cannot store new next update key");
+                vid_wallet
+                    .set_alias(next_kid_alias, update_result.next_update_kid)
+                    .expect("Cannot update next update key reference");
+
+                client
+                    .put(format!(
+                        "https://{did_server}/add-history/{}",
+                        new_vid.identifier()
+                    ))
+                    .json(&update_result.log_entry)
+                    .send()
+                    .await
+                    .expect("Could not append history");
+
+                let update_response = client
+                    .put(format!("https://{did_server}/add-vid"))
+                    .json(new_vid.vid())
+                    .send()
+                    .await
+                    .expect("Could not update DID")
+                    .text()
+                    .await
+                    .expect("cannot extract text from server response");
+
+                debug!("did server responded: {}", update_response);
+
+                let (_, new_metadata) = verify_vid(new_vid.identifier())
+                    .await
+                    .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
+                vid_wallet.add_private_vid(new_vid, new_metadata)?;
+
+                info!("VID updated with precommit - next key committed for future rotation");
+            }
         }
         Commands::ImportPiv { file, alias } => {
             let private_vid = OwnedVid::from_file(file).await?;
@@ -1353,4 +1717,42 @@ async fn main() -> Result<(), ()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scid_peer_source_method_is_rejected() {
+        assert!(matches!(
+            parse_scid_source_method("peer"),
+            Err(Error::Vid(VidError::UnsupportedScidSource(method))) if method == "peer"
+        ));
+    }
+
+    #[test]
+    fn scid_peer_src_is_treated_as_external_webvh_source_value() {
+        let context = build_create_scid_context(
+            None,
+            None,
+            Some("example.com/users/alice".to_string()),
+            None,
+        )
+        .expect("context should build");
+
+        assert_eq!(context.source_method, ScidSourceMethod::Webvh);
+        assert_eq!(
+            context.locator,
+            ScidLocator::Src("example.com/users/alice".to_string())
+        );
+    }
+
+    #[test]
+    fn scid_webvh_locator_escapes_host_port() {
+        let locator = normalize_scid_webvh_locator("testscid", "localhost:3000/vid/path")
+            .expect("locator should normalize");
+
+        assert_eq!(locator, "did:webvh:testscid:localhost%3A3000:vid:path");
+    }
 }
