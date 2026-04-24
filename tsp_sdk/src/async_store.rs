@@ -158,6 +158,43 @@ impl AsyncSecureStore {
         Ok(())
     }
 
+    /// Return the raw 32-byte Ed25519 private signing key for `vid`.
+    ///
+    /// SECURITY: This surfaces private key material. Only use it when
+    /// interoperating with an external signing scheme that embeds the
+    /// signing step in its own construction (e.g. biscuit-auth token
+    /// building). For detached signatures over arbitrary bytes, prefer
+    /// `sign_raw` — it keeps the key inside the store.
+    ///
+    /// Errors if the VID is not present in the store, has no private
+    /// key material, or uses a non-Ed25519 signature key type.
+    pub fn ed25519_signing_key(&self, vid: &str) -> Result<[u8; 32], Error> {
+        let signer = self.inner.get_private_vid(vid)?;
+        if signer.signature_key_type() != crate::definitions::VidSignatureKeyType::Ed25519 {
+            return Err(Error::UnsupportedSignatureKeyType);
+        }
+        let slice = signer.signing_key().as_slice();
+        <[u8; 32]>::try_from(slice).map_err(|_| Error::UnsupportedSignatureKeyType)
+    }
+
+    /// Produce a raw detached signature over `data` using the private
+    /// signing key of the private VID identified by `vid`.
+    ///
+    /// Does not construct a CESR envelope — the caller is responsible
+    /// for any domain-separation prefix or framing. The returned bytes
+    /// are the signature only; their format depends on the VID's
+    /// signature key type (Ed25519 → 64 bytes; MlDsa65 with the `pq`
+    /// feature → ML-DSA-65 signature).
+    ///
+    /// Typical callers: issuers of non-TSP-envelope artefacts (e.g.
+    /// Biscuit capabilities) that want to sign with the VID key.
+    /// Verifiers should resolve the matching public key via
+    /// `verify_vid(…)` and use the corresponding primitive.
+    pub fn sign_raw(&self, vid: &str, data: &[u8]) -> Result<Vec<u8>, Error> {
+        let signer = self.inner.get_private_vid(vid)?;
+        Ok(crate::crypto::sign_raw(signer.as_ref(), data)?)
+    }
+
     /// Resolve alias to its corresponding DID
     pub fn resolve_alias(&self, alias: &str) -> Result<Option<String>, Error> {
         self.inner.resolve_alias(alias)

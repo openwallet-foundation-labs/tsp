@@ -184,6 +184,39 @@ pub fn verify<'a>(
     nonconfidential::verify(sender, tsp_message)
 }
 
+/// Produce a raw detached signature over `data` using the private signing
+/// key of `signer`. Does not construct a CESR envelope — the caller is
+/// responsible for any domain separation or framing.
+///
+/// Returned bytes are the signature only. Their length and format depend
+/// on the signer's `signature_key_type()`:
+/// - `Ed25519` → 64 bytes
+/// - `MlDsa65` → ML-DSA-65 signature (feature `pq`)
+///
+/// Verification is the caller's responsibility and must use the matching
+/// public key (e.g. from `VerifiedVid::verifying_key()` resolved via
+/// `verify_vid(…)`).
+pub fn sign_raw(signer: &dyn PrivateVid, data: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    use ed25519_dalek::ed25519::signature::Signer;
+
+    match signer.signature_key_type() {
+        crate::definitions::VidSignatureKeyType::Ed25519 => {
+            let sign_key = ed25519_dalek::SigningKey::from_bytes(&TryInto::<[u8; 32]>::try_into(
+                signer.signing_key().as_slice(),
+            )?);
+            Ok(sign_key.sign(data).to_bytes().to_vec())
+        }
+        #[cfg(feature = "pq")]
+        crate::definitions::VidSignatureKeyType::MlDsa65 => {
+            use ml_dsa::{EncodedSigningKey, MlDsa65};
+            let sign_key = ml_dsa::SigningKey::<MlDsa65>::decode(
+                &EncodedSigningKey::<MlDsa65>::try_from(signer.signing_key().as_slice())?,
+            );
+            Ok(sign_key.sign(data).encode().as_slice().to_vec())
+        }
+    }
+}
+
 #[cfg(all(not(feature = "nacl"), not(feature = "pq")))]
 /// Generate a new encryption / decryption key pair
 pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {

@@ -45,6 +45,8 @@ pub enum Error {
     MissingDropOff(String),
     #[error("Internal error")]
     Internal,
+    #[error("Unsupported signature key type for this operation")]
+    UnsupportedSignatureKeyType,
 }
 
 impl<T> From<std::sync::PoisonError<T>> for Error {
