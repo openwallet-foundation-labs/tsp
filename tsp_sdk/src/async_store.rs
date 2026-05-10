@@ -625,11 +625,8 @@ impl AsyncSecureStore {
                 async move {
                     let mut message = message?;
 
-                    if tracing::enabled!(tracing::Level::TRACE) {
-                        println!(
-                            "CESR-encoded message: {}",
-                            crate::cesr::color_format(&message)?
-                        );
+                    if let Ok(colored) = crate::cesr::color_format(&message) {
+                        tracing::trace!("CESR-encoded message: {}", colored);
                     }
 
                     match db_inner.open_message(&mut message) {
@@ -695,11 +692,8 @@ impl AsyncSecureStore {
             async move {
                 let mut message = message?;
 
-                if tracing::enabled!(tracing::Level::TRACE) {
-                    println!(
-                        "CESR-encoded message: {}",
-                        crate::cesr::color_format(&message)?
-                    );
+                if let Ok(colored) = crate::cesr::color_format(&message) {
+                    tracing::trace!("CESR-encoded message: {}", colored);
                 }
 
                 match db_inner.open_message(&mut message) {

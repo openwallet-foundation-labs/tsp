@@ -14,12 +14,8 @@ pub use http::SseCursor;
 pub use http::receive_messages_tracked;
 
 pub async fn send_message(transport: &Url, tsp_message: &[u8]) -> Result<(), TransportError> {
-    if tracing::enabled!(tracing::Level::TRACE) {
-        println!(
-            "CESR-encoded message: {}",
-            crate::cesr::color_format(tsp_message)
-                .map_err(|_| TransportError::InvalidMessageReceived("DecodeError".to_string()))?
-        );
+    if let Ok(colored) = crate::cesr::color_format(tsp_message) {
+        tracing::trace!("CESR-encoded message: {}", colored);
     }
 
     match transport.scheme() {
