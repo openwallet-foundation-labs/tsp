@@ -168,6 +168,36 @@ impl OwnedVid {
             enckey,
         }
     }
+    #[cfg(feature = "fuzzing")]
+    pub fn from_bytes(
+        id: impl Into<String>,
+        transport: url::Url,
+        sign_key: [u8; 32],
+        enc_key: [u8; 32],
+    ) -> Self {
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&sign_key);
+        let public_sigkey: PublicVerificationKeyData =
+            signing_key.verifying_key().to_bytes().to_vec().into();
+
+        let secret_key = crypto_box::SecretKey::from(enc_key);
+        let public_enckey: PublicKeyData = crypto_box::PublicKey::from(&secret_key)
+            .to_bytes()
+            .to_vec()
+            .into();
+
+        Self {
+            vid: Vid {
+                id: id.into(),
+                transport,
+                sig_key_type: VidSignatureKeyType::Ed25519,
+                public_sigkey,
+                enc_key_type: VidEncryptionKeyType::X25519,
+                public_enckey,
+            },
+            sigkey: sign_key.to_vec().into(),
+            enckey: enc_key.to_vec().into(),
+        }
+    }
 
     pub fn new_did_peer(transport: Url) -> OwnedVid {
         let (sigkey, public_sigkey) = crate::crypto::gen_sign_keypair();
