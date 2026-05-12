@@ -950,4 +950,46 @@ mod tests {
             }
         ));
     }
+
+    #[test]
+    fn open_wrong_recipient() {
+        let alice = OwnedVid::bind(
+            "did:test:alice",
+            Url::parse("tcp://127.0.0.1:13371").unwrap(),
+        );
+        let bob = OwnedVid::bind("did:test:bob", Url::parse("tcp://127.0.0.1:13372").unwrap());
+        let carol = OwnedVid::bind(
+            "did:test:carol",
+            Url::parse("tcp://127.0.0.1:13373").unwrap(),
+        );
+
+        let mut message = seal(&bob, &alice, None, Payload::Content(b"secret")).unwrap();
+
+        let result = open(&carol, &bob, &mut message);
+
+        assert!(matches!(result, Err(CryptoError::UnexpectedRecipient)))
+    }
+
+    #[cfg(feature = "fuzzing")]
+    #[test]
+    fn open_wrong_key() {
+        let alice = OwnedVid::bind(
+            "did:test:alice",
+            Url::parse("tcp://127.0.0.1:13371").unwrap(),
+        );
+        let bob = OwnedVid::bind("did:test:bob", Url::parse("tcp://127.0.0.1:13372").unwrap());
+
+        let mut message = seal(&bob, &alice, None, Payload::Content(b"secret")).unwrap();
+
+        let wrong_alice = OwnedVid::from_bytes(
+            "did:test:alice",
+            Url::parse("tcp://127.0.0.1:13371").unwrap(),
+            [1u8; 32],
+            [2u8; 32],
+        );
+
+        let result = open(&wrong_alice, &bob, &mut message);
+
+        assert!(matches!(result, Err(CryptoError::CryptographicNacl(_))))
+    }
 }
