@@ -35,4 +35,11 @@ pub enum CryptoError {
         crypto_type: CryptoType,
         key_type: VidEncryptionKeyType,
     },
+    #[error(
+        "outbound crypto selection {crypto_type:?} is incompatible with sender encryption key type {key_type:?}"
+    )]
+    IncompatibleSenderCryptoSelection {
+        crypto_type: CryptoType,
+        key_type: VidEncryptionKeyType,
+    },
 }

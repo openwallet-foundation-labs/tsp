@@ -96,10 +96,11 @@ fn nested_digest_field<'a>(
 }
 
 fn selected_outbound_crypto(
+    sender: &dyn VerifiedVid,
     receiver: &dyn VerifiedVid,
     selection: Option<OutboundCryptoSelection>,
 ) -> OutboundCryptoSelection {
-    selection.unwrap_or_else(|| crate::crypto::default_outbound_crypto_selection(receiver))
+    selection.unwrap_or_else(|| crate::crypto::default_outbound_crypto_selection(sender, receiver))
 }
 
 fn digest_algorithm_for_selection(
@@ -126,7 +127,7 @@ fn seal_envelope(
         payload,
         digest,
         request_nonce_override,
-        selected_outbound_crypto(receiver, selection),
+        selected_outbound_crypto(sender, receiver, selection),
     )?)
 }
 
@@ -1503,7 +1504,7 @@ impl SecureStore {
             }
         }
 
-        let selection = selected_outbound_crypto(&*receiver, None);
+        let selection = selected_outbound_crypto(&*sender, &*receiver, None);
         let digest_algorithm = digest_algorithm_for_selection(selection)?;
         let signature_material = self.build_parallel_signature_material(
             &*sender_new_vid,
@@ -1586,7 +1587,7 @@ impl SecureStore {
         let pending_incoming_request =
             self.find_pending_incoming_parallel_request(receiver_new_vid.identifier(), thread_id)?;
         let outer_sender = self.get_private_vid(&pending_incoming_request.local_outer_vid)?;
-        let selection = selected_outbound_crypto(&*receiver_new_vid, None);
+        let selection = selected_outbound_crypto(&*outer_sender, &*receiver_new_vid, None);
         let digest_algorithm = digest_algorithm_for_selection(selection)?;
         let signature_material = self.build_parallel_signature_material(
             &*sender_new_vid,
@@ -1665,7 +1666,7 @@ impl SecureStore {
         let receiver = self.get_verified_vid(receiver)?;
 
         let nested_vid = self.make_propositioning_vid(sender.identifier())?;
-        let selection = selected_outbound_crypto(&*receiver, None);
+        let selection = selected_outbound_crypto(&*sender, &*receiver, None);
         let digest_algorithm = digest_algorithm_for_selection(selection)?;
         let (inner_message, thread_id) =
             self.make_signed_nested_request_message(&nested_vid, digest_algorithm)?;
@@ -1702,8 +1703,9 @@ impl SecureStore {
                 "missing parent for {nested_receiver}"
             )))?;
 
+        let parent_sender_vid = self.get_private_vid(parent_sender)?;
         let parent_receiver_vid = self.get_verified_vid(parent_receiver)?;
-        let selection = selected_outbound_crypto(&*parent_receiver_vid, None);
+        let selection = selected_outbound_crypto(&*parent_sender_vid, &*parent_receiver_vid, None);
         let digest_algorithm = digest_algorithm_for_selection(selection)?;
         let (inner_message, reply_thread_id) = self.make_signed_nested_accept_message(
             &nested_vid,
@@ -2089,10 +2091,13 @@ mod test {
     }
 
     fn relationship_digest_algorithm(
+        sender: &dyn VerifiedVid,
         receiver: &dyn VerifiedVid,
     ) -> crate::crypto::RelationshipDigestAlgorithm {
-        super::digest_algorithm_for_selection(super::selected_outbound_crypto(receiver, None))
-            .unwrap()
+        super::digest_algorithm_for_selection(super::selected_outbound_crypto(
+            sender, receiver, None,
+        ))
+        .unwrap()
     }
 
     fn establish_existing_relationship(
@@ -2713,7 +2718,7 @@ mod test {
         let signed_data = crate::crypto::build_parallel_accept_signed_data(
             &thread_id,
             Some(charlie.identifier().as_bytes()),
-            relationship_digest_algorithm(&*forged_receiver),
+            relationship_digest_algorithm(&charlie, &*forged_receiver),
             &mut reply_thread_id,
             charlie_parallel.identifier().as_bytes(),
         )
@@ -2838,7 +2843,7 @@ mod test {
         let mut thread_id = [0_u8; 32];
         let signed_data = crate::crypto::build_parallel_request_signed_data(
             Some(alice.identifier().as_bytes()),
-            relationship_digest_algorithm(&bob),
+            relationship_digest_algorithm(&alice, &bob),
             nonce_bytes,
             &mut thread_id,
             alice_parallel.identifier().as_bytes(),
@@ -2899,7 +2904,7 @@ mod test {
         let mut thread_id = [0_u8; 32];
         let signed_data = crate::crypto::build_parallel_request_signed_data(
             Some(alice.identifier().as_bytes()),
-            relationship_digest_algorithm(&bob),
+            relationship_digest_algorithm(&alice, &bob),
             nonce_bytes,
             &mut thread_id,
             alice_parallel.identifier().as_bytes(),
