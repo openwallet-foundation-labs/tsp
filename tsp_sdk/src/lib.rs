@@ -177,5 +177,5 @@ pub use definitions::{
     VerifiedVid,
 };
 pub use error::Error;
-pub use store::{Aliases, SecureStore};
-pub use vid::{ExportVid, OwnedVid, Vid};
+pub use store::{Aliases, SecureStore, WalletMethodState};
+pub use vid::{ExportVid, OwnedVid, ResolutionContext, VerifyVidOptions, Vid};

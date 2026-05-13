@@ -5,7 +5,8 @@ use crate::{
     crypto::CryptoError,
     definitions::{Digest, ReceivedTspMessage, TSPStream, VerifiedVid},
     error::Error,
-    store::{Aliases, SecureStore, WebvhUpdateKeys},
+    store::{Aliases, SecureStore, WalletMethodState},
+    vid::{ResolutionContext, VerifyVidOptions},
 };
 use bytes::BytesMut;
 use futures::StreamExt;
@@ -52,7 +53,7 @@ impl AsyncSecureStore {
     }
 
     /// Export the wallet to serializable default types
-    pub fn export(&self) -> Result<(Vec<ExportVid>, Aliases, WebvhUpdateKeys), Error> {
+    pub fn export(&self) -> Result<(Vec<ExportVid>, Aliases, WalletMethodState), Error> {
         self.inner.export()
     }
 
@@ -66,9 +67,9 @@ impl AsyncSecureStore {
         &self,
         vids: Vec<ExportVid>,
         aliases: Aliases,
-        keys: WebvhUpdateKeys,
+        method_state: WalletMethodState,
     ) -> Result<(), Error> {
-        self.inner.import(vids, aliases, keys)
+        self.inner.import(vids, aliases, method_state)
     }
 
     /// Get the current relationship status for a VID pair
@@ -135,6 +136,11 @@ impl AsyncSecureStore {
         self.inner.has_private_vid(vid)
     }
 
+    /// Retrieve the [OwnedVid] identified by `vid` from the wallet if it exists.
+    pub fn get_private_vid(&self, vid: &str) -> Result<OwnedVid, Error> {
+        self.inner.get_owned_private_vid(vid)
+    }
+
     /// Check whether the [VerifiedVid] identified by `vid` exists in the wallet
     pub fn has_verified_vid(&self, vid: &str) -> Result<bool, Error> {
         self.inner.has_verified_vid(vid)
@@ -147,12 +153,29 @@ impl AsyncSecureStore {
 
     /// Resolve and verify public key material for a VID identified by `vid` and add it to the wallet as a relationship
     pub async fn verify_vid(&self, vid: &str, alias: Option<String>) -> Result<(), Error> {
-        let (verified_vid, metadata) = crate::vid::verify_vid(vid).await?;
+        self.verify_vid_with_options(vid, alias, VerifyVidOptions::default())
+            .await
+    }
 
+    /// Resolve and verify public key material for a VID identified by `vid` and add it to the wallet as a relationship
+    pub async fn verify_vid_with_options(
+        &self,
+        vid: &str,
+        alias: Option<String>,
+        options: VerifyVidOptions,
+    ) -> Result<(), Error> {
+        let resolution_context = verification_resolution_context(vid, &options)?;
+        let (verified_vid, metadata) = crate::vid::verify_vid_with_options(vid, options).await?;
+
+        let verified_vid_id = verified_vid.identifier().to_string();
         self.inner.add_verified_vid(verified_vid, metadata)?;
 
+        if let Some(context) = resolution_context {
+            self.register_resolution_context(verified_vid_id.clone(), context)?;
+        }
+
         if let Some(alias) = alias {
-            self.set_alias(alias, vid.to_owned())?;
+            self.set_alias(alias, verified_vid_id)?;
         }
 
         Ok(())
@@ -186,6 +209,18 @@ impl AsyncSecureStore {
     /// Returns `None` if no key is stored under `kid`.
     pub fn get_secret_key(&self, kid: &str) -> Result<Option<Vec<u8>>, Error> {
         self.inner.get_secret_key(kid)
+    }
+
+    pub fn register_resolution_context(
+        &self,
+        did: String,
+        context: ResolutionContext,
+    ) -> Result<(), Error> {
+        self.inner.register_resolution_context(did, context)
+    }
+
+    pub fn get_resolution_context(&self, did: &str) -> Result<Option<ResolutionContext>, Error> {
+        self.inner.get_resolution_context(did)
     }
 
     /// Seal a TSP message.
@@ -632,12 +667,23 @@ impl AsyncSecureStore {
                     match db_inner.open_message(&mut message) {
                         Err(Error::UnverifiedSource(unknown_vid, _)) => {
                             debug!("Verifying VID: {}", unknown_vid);
-                            self_inner.verify_vid(&unknown_vid, None).await?;
+                            let options = VerifyVidOptions {
+                                resolution_context: self_inner
+                                    .get_resolution_context(&unknown_vid)?,
+                            };
+                            self_inner
+                                .verify_vid_with_options(&unknown_vid, None, options)
+                                .await?;
                             db_inner.open_message(&mut message)
                         }
                         Err(Error::Crypto(CryptoError::Verify(vid, _))) => {
                             debug!("Re-verifying VID: {}", vid);
-                            self_inner.verify_vid(&vid, None).await?;
+                            let options = VerifyVidOptions {
+                                resolution_context: self_inner.get_resolution_context(&vid)?,
+                            };
+                            self_inner
+                                .verify_vid_with_options(&vid, None, options)
+                                .await?;
                             db_inner.open_message(&mut message)
                         }
                         maybe_message => maybe_message,
@@ -699,7 +745,12 @@ impl AsyncSecureStore {
                 match db_inner.open_message(&mut message) {
                     Err(Error::UnverifiedSource(unknown_vid, _)) => {
                         debug!("Verifying VID: {}", unknown_vid);
-                        self_inner.verify_vid(&unknown_vid, None).await?;
+                        let options = VerifyVidOptions {
+                            resolution_context: self_inner.get_resolution_context(&unknown_vid)?,
+                        };
+                        self_inner
+                            .verify_vid_with_options(&unknown_vid, None, options)
+                            .await?;
                         db_inner.open_message(&mut message)
                     }
                     Err(Error::UnverifiedVid(unknown_vid)) => {
@@ -709,7 +760,12 @@ impl AsyncSecureStore {
                     }
                     Err(Error::Crypto(CryptoError::Verify(vid, _))) => {
                         debug!("Re-verifying VID: {}", vid);
-                        self_inner.verify_vid(&vid, None).await?;
+                        let options = VerifyVidOptions {
+                            resolution_context: self_inner.get_resolution_context(&vid)?,
+                        };
+                        self_inner
+                            .verify_vid_with_options(&vid, None, options)
+                            .await?;
                         db_inner.open_message(&mut message)
                     }
                     maybe_message => maybe_message,
@@ -749,8 +805,93 @@ impl AsyncSecureStore {
         vid: &str,
         mut payload: BytesMut,
     ) -> Result<ReceivedTspMessage, Error> {
-        self.verify_vid(vid, None).await?;
+        let options = VerifyVidOptions {
+            resolution_context: self.get_resolution_context(vid)?,
+        };
+        self.verify_vid_with_options(vid, None, options).await?;
 
         Ok(self.inner.open_message(&mut payload)?.into_owned())
+    }
+}
+
+fn verification_resolution_context(
+    vid: &str,
+    options: &VerifyVidOptions,
+) -> Result<Option<ResolutionContext>, Error> {
+    if !vid.starts_with("did:scid:") {
+        return Ok(None);
+    }
+
+    if let Some(context) = options.resolution_context.clone() {
+        return Ok(Some(context));
+    }
+
+    Ok(crate::vid::did::scid::query_resolution_context(vid)?.map(ResolutionContext::Scid))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vid::did::scid::{ScidLocator, ScidMethod, ScidResolutionContext, ScidSourceMethod};
+
+    #[test]
+    fn verification_context_prefers_explicit_options() {
+        let context = ResolutionContext::Scid(ScidResolutionContext {
+            version: 1,
+            method: ScidMethod::Vh,
+            source_method: ScidSourceMethod::Webvh,
+            locator: ScidLocator::Src("did:webvh:testscid:example.com:explicit".to_string()),
+        });
+        let options = VerifyVidOptions {
+            resolution_context: Some(context),
+        };
+
+        let resolved = verification_resolution_context(
+            "did:scid:vh:1:testscid?src=example.com/query",
+            &options,
+        )
+        .expect("context should resolve");
+
+        match resolved {
+            Some(ResolutionContext::Scid(context)) => assert_eq!(
+                context.locator,
+                ScidLocator::Src("did:webvh:testscid:example.com:explicit".to_string())
+            ),
+            _ => panic!("expected scid context"),
+        }
+    }
+
+    #[test]
+    fn verification_context_ignores_non_scid_vids() {
+        let options = VerifyVidOptions {
+            resolution_context: Some(ResolutionContext::Scid(ScidResolutionContext {
+                version: 1,
+                method: ScidMethod::Vh,
+                source_method: ScidSourceMethod::Webvh,
+                locator: ScidLocator::Src("did:webvh:testscid:example.com:explicit".to_string()),
+            })),
+        };
+
+        let resolved = verification_resolution_context("did:web:example.com:alice", &options)
+            .expect("non-scid context check should not fail");
+
+        assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn verification_context_derives_query_src() {
+        let resolved = verification_resolution_context(
+            "did:scid:vh:1:testscid?src=localhost:3000/vid/path",
+            &VerifyVidOptions::default(),
+        )
+        .expect("context should resolve");
+
+        match resolved {
+            Some(ResolutionContext::Scid(context)) => assert_eq!(
+                context.locator,
+                ScidLocator::Src("did:webvh:testscid:localhost%3A3000:vid:path".to_string())
+            ),
+            _ => panic!("expected scid context"),
+        }
     }
 }

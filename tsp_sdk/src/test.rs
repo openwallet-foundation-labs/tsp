@@ -791,6 +791,94 @@ async fn test_persisted_store_roundtrip_reopens_dirty_wallet() {
     assert!(!sealed_message.is_empty());
 }
 
+#[tokio::test]
+async fn test_resolution_context_export_import_roundtrip() {
+    let store = create_async_test_store();
+    let presented_did = "did:scid:vh:1:testscid";
+    let context = create_test_scid_context(presented_did);
+
+    store
+        .register_resolution_context(presented_did.to_string(), context.clone())
+        .unwrap();
+
+    let (vids, aliases, method_state) = store.export().unwrap();
+    let reopened = create_async_test_store();
+    reopened.import(vids, aliases, method_state).unwrap();
+
+    assert!(
+        reopened
+            .get_resolution_context(presented_did)
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(
+        format!(
+            "{:?}",
+            reopened.get_resolution_context(presented_did).unwrap()
+        ),
+        format!("{:?}", Some(context))
+    );
+}
+
+#[test]
+fn test_resolution_context_json_roundtrip() {
+    let presented_did = "did:scid:vh:1:testscid";
+    let context = create_test_scid_context(presented_did);
+
+    let json = serde_json::to_value(&context).expect("resolution context should serialize");
+    let decoded: crate::ResolutionContext =
+        serde_json::from_value(json).expect("resolution context should deserialize");
+
+    assert_eq!(format!("{decoded:?}"), format!("{context:?}"));
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[tokio::test]
+async fn test_persisted_store_roundtrip_preserves_resolution_contexts() {
+    let presented_did = "did:scid:vh:1:testscid";
+    let store = create_async_test_store();
+    store
+        .add_private_vid(
+            OwnedVid::bind(
+                presented_did,
+                "tcp://127.0.0.1:45123"
+                    .parse()
+                    .expect("test transport should parse"),
+            ),
+            None,
+        )
+        .unwrap();
+    store
+        .register_resolution_context(
+            presented_did.to_string(),
+            create_test_scid_context(presented_did),
+        )
+        .unwrap();
+
+    let fixture = create_persisted_store().await;
+    fixture.persist_from(&store).await;
+
+    let storage = AskarSecureStorage::open(fixture.storage_url(), fixture.password())
+        .await
+        .expect("persisted wallet should reopen");
+    let (_vids, _aliases, method_state) =
+        storage.read().await.expect("persisted wallet should read");
+    storage
+        .close()
+        .await
+        .expect("persisted wallet should close");
+
+    assert!(method_state.resolution_contexts.contains_key(presented_did));
+
+    let reopened = fixture.reopen_into_store().await;
+
+    assert!(
+        reopened
+            .get_resolution_context(presented_did)
+            .unwrap()
+            .is_some()
+    );
+}
 fn setup_transition_pair() -> (AsyncSecureStore, String, AsyncSecureStore, String) {
     let a_store = create_async_test_store();
     let b_store = create_async_test_store();

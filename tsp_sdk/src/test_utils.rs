@@ -3,7 +3,12 @@
 use crate::{
     ExportVid, OwnedVid, RelationshipStatus, SecureStore,
     definitions::{Digest, PendingNestedRelationship, VerifiedVid},
-    store::{Aliases, WebvhUpdateKeys},
+    store::{Aliases, WalletMethodState},
+};
+#[cfg(feature = "resolve")]
+use crate::{
+    ResolutionContext,
+    vid::did::scid::{ScidLocator, ScidMethod, ScidResolutionContext, ScidSourceMethod},
 };
 use once_cell::sync::Lazy;
 use std::{
@@ -93,6 +98,21 @@ pub async fn create_vid_from_file(path: &str) -> OwnedVid {
 /// Create a test SecureStore.
 pub fn create_test_store() -> SecureStore {
     SecureStore::new()
+}
+
+/// Create a test did:scid resolution context for WebVH-backed identities.
+#[cfg(feature = "resolve")]
+pub fn create_test_scid_context(presented_did: &str) -> ResolutionContext {
+    let scid = crate::vid::did::scid::parse(presented_did)
+        .expect("presented did:scid should parse")
+        .scid;
+
+    ResolutionContext::Scid(ScidResolutionContext {
+        version: 1,
+        method: ScidMethod::Vh,
+        source_method: ScidSourceMethod::Webvh,
+        locator: ScidLocator::Src(format!("did:webvh:{scid}:example.com:test")),
+    })
 }
 
 /// Create a test AsyncSecureStore.
@@ -254,7 +274,7 @@ pub fn relationship_status_signature(status: RelationshipStatus) -> String {
 fn export_snapshot_parts(
     vids: Vec<ExportVid>,
     aliases: Aliases,
-    keys: WebvhUpdateKeys,
+    method_state: WalletMethodState,
 ) -> StoreExportSnapshot {
     let mut vid_rows = vids
         .into_iter()
@@ -277,10 +297,17 @@ fn export_snapshot_parts(
         .collect::<Vec<_>>();
     vid_rows.sort();
 
-    let key_rows = keys
+    let mut key_rows = method_state
+        .secret_keys
         .into_iter()
         .map(|(k, v)| (k, format!("{v:?}")))
         .collect::<BTreeMap<_, _>>();
+    key_rows.extend(
+        method_state
+            .resolution_contexts
+            .into_iter()
+            .map(|(k, v)| (format!("resolution_context:{k}"), format!("{v:?}"))),
+    );
 
     (
         aliases.into_iter().collect::<BTreeMap<_, _>>(),
@@ -979,10 +1006,12 @@ mod tests {
     async fn test_repo_wallet_fixture_roundtrip() {
         let fixture = create_repo_wallet_fixture(RepoWalletFixture::CurrentDirtySmall);
         let reopened = fixture.reopen_into_store().await;
-        let (vids, aliases, keys) = reopened.export().unwrap();
+        let (vids, aliases, method_state) = reopened.export().unwrap();
         assert!(!vids.is_empty());
         assert!(
-            !aliases.is_empty() || !keys.is_empty(),
+            !aliases.is_empty()
+                || !method_state.secret_keys.is_empty()
+                || !method_state.resolution_contexts.is_empty(),
             "repo wallet fixture should carry dirty wallet state"
         );
     }

@@ -143,8 +143,7 @@ fn remove_next_update_alias(wallet_name: &str, did: &str) {
         let vault = AskarSecureStorage::open(&url, b"unsecure")
             .await
             .expect("Failed to open wallet storage");
-        let (vids, mut aliases, keys) = vault.read().await.expect("Failed to read wallet");
-
+        let (vids, mut aliases, method_state) = vault.read().await.expect("Failed to read wallet");
         let next_kid_alias = format!("__next_update_kid:{did}");
         let removed = aliases.remove(&next_kid_alias);
         assert!(
@@ -153,7 +152,7 @@ fn remove_next_update_alias(wallet_name: &str, did: &str) {
         );
 
         let db = AsyncSecureStore::new();
-        db.import(vids, aliases, keys)
+        db.import(vids, aliases, method_state)
             .expect("Failed to import wallet state");
         vault
             .persist(db.export().expect("Failed to export wallet state"))

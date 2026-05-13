@@ -9,4 +9,7 @@ pub mod web;
 pub mod webvh;
 
 #[cfg(feature = "resolve")]
+pub mod scid;
+
+#[cfg(feature = "resolve")]
 pub use web::get_resolve_url;

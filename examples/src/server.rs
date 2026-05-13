@@ -32,7 +32,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{
     SecureStore, cesr,
     definitions::{Payload, VerifiedVid},
-    vid::{OwnedVid, Vid},
+    vid::{OwnedVid, Vid, did::scid::ScidVidMetadata},
 };
 
 #[derive(Debug, Parser)]
@@ -191,8 +191,15 @@ fn render_vid_page(did: &str, vid: &Vid, metadata: Option<&serde_json::Value>) -
         did.to_string()
     };
 
-    // Extract webvh-specific metadata if available
-    let (created, updated, version, update_keys) = if let Some(meta) = metadata {
+    let scid_metadata = metadata
+        .cloned()
+        .and_then(|meta| serde_json::from_value::<ScidVidMetadata>(meta).ok());
+    let source_metadata = scid_metadata
+        .as_ref()
+        .and_then(|meta| meta.source_metadata.as_ref())
+        .or(metadata);
+
+    let (created, updated, version, update_keys) = if let Some(meta) = source_metadata {
         let webvh_meta = meta.get("webvh_meta_data");
         let created = webvh_meta
             .and_then(|m| m.get("created"))
@@ -221,8 +228,11 @@ fn render_vid_page(did: &str, vid: &Vid, metadata: Option<&serde_json::Value>) -
     };
 
     let endpoint = vid.endpoint().to_string();
-    let is_webvh = did.starts_with("did:webvh:");
-    let did_type = if is_webvh {
+    let is_scid = scid_metadata.is_some();
+    let is_webvh = did.starts_with("did:webvh:") || is_scid;
+    let did_type = if is_scid {
+        "did:scid"
+    } else if did.starts_with("did:webvh:") {
         "did:webvh"
     } else if did.starts_with("did:web:") {
         "did:web"
@@ -283,6 +293,22 @@ fn render_vid_page(did: &str, vid: &Vid, metadata: Option<&serde_json::Value>) -
             {keys_html}
         </div>
         "#
+        )
+    } else {
+        String::new()
+    };
+
+    let source_section = if let Some(metadata) = scid_metadata.as_ref() {
+        format!(
+            r#"
+        <div class="section">
+            <div class="section-title">SCID SOURCE</div>
+            <div class="detail-row"><span>Presented DID</span><code>{}</code></div>
+            <div class="detail-row"><span>Source DID</span><code>{}</code></div>
+            <div class="detail-row"><span>Source Method</span><code>{:?}</code></div>
+        </div>
+        "#,
+            metadata.scid.presented_id, metadata.scid.source_did, metadata.scid.source_method
         )
     } else {
         String::new()
@@ -394,6 +420,20 @@ fn render_vid_page(did: &str, vid: &Vid, metadata: Option<&serde_json::Value>) -
             color: #666;
             word-break: break-all;
         }}
+        .detail-row {{
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 12px;
+        }}
+        .detail-row span {{
+            font-size: 12px;
+            color: #666;
+        }}
+        .detail-row code {{
+            font-size: 12px;
+            word-break: break-all;
+        }}
         .timeline {{
             position: relative;
             padding-left: 25px;
@@ -503,6 +543,7 @@ fn render_vid_page(did: &str, vid: &Vid, metadata: Option<&serde_json::Value>) -
                 <div class="endpoint">{endpoint}</div>
             </div>
 
+            {source_section}
             {history_section}
             {update_keys_section}
         </div>
