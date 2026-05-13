@@ -122,8 +122,7 @@ fn bench_oneway(c: &mut Criterion, scheme: &'static str, host: &'static str, pay
                     sample_attempts,
                     sample_failures,
                 );
-                let elapsed = start.elapsed();
-                elapsed
+                start.elapsed()
             })
         });
 
@@ -218,8 +217,7 @@ fn bench_roundtrip(
                     sample_attempts,
                     sample_failures,
                 );
-                let elapsed = start.elapsed();
-                elapsed
+                start.elapsed()
             })
         });
 

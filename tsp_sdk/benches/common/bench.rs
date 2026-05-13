@@ -122,18 +122,18 @@ pub fn cesr_decode_envelope(message: &mut [u8]) -> usize {
 }
 
 pub enum VidVerifyInput {
-    DidPeer(String),
-    DidWeb {
+    Peer(String),
+    Web {
         did: String,
         doc_json: String,
     },
-    DidWebvh {
+    Webvh {
         log_entry: didwebvh_rs::log_entry::LogEntry,
     },
 }
 
 fn setup_did_peer() -> VidVerifyInput {
-    VidVerifyInput::DidPeer(
+    VidVerifyInput::Peer(
         "did:peer:2.Vz6MurhTjqX5uhQ5bJbAaoEwSDFcKDwVJTvoii51JBtSPpKzX.Ez6LbvBvy92yWENk8xKYmaX9X9nzMtQCQ2EqgdLKv2YkcpHo7.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0"
             .to_string(),
     )
@@ -146,7 +146,7 @@ fn setup_did_web() -> VidVerifyInput {
     let doc_value = tsp_sdk::vid::did::web::vid_to_did_document(alice.vid());
     let doc_json = serde_json::to_string(&doc_value).unwrap();
 
-    VidVerifyInput::DidWeb { did, doc_json }
+    VidVerifyInput::Web { did, doc_json }
 }
 
 fn setup_did_webvh() -> VidVerifyInput {
@@ -207,7 +207,7 @@ fn setup_did_webvh() -> VidVerifyInput {
         )
         .unwrap();
 
-    VidVerifyInput::DidWebvh {
+    VidVerifyInput::Webvh {
         log_entry: log_entry_state.log_entry.clone(),
     }
 }
@@ -229,16 +229,16 @@ pub fn setup_vid_verify(benchmark_id: &'static str) -> VidVerifyInput {
 
 pub fn vid_verify(input: &VidVerifyInput) -> usize {
     match input {
-        VidVerifyInput::DidPeer(did) => {
+        VidVerifyInput::Peer(did) => {
             let vid = verify_vid_offline(black_box(did)).unwrap();
             black_box(vid.identifier().len())
         }
-        VidVerifyInput::DidWeb { did, doc_json } => {
+        VidVerifyInput::Web { did, doc_json } => {
             let did_doc: DidDocument = serde_json::from_str(doc_json).unwrap();
             let vid = tsp_sdk::vid::did::web::resolve_document(did_doc, did).unwrap();
             black_box(vid.identifier().len())
         }
-        VidVerifyInput::DidWebvh { log_entry } => {
+        VidVerifyInput::Webvh { log_entry } => {
             use didwebvh_rs::log_entry::LogEntryMethods;
             let state = log_entry.get_state().to_owned();
             let did_doc: DidDocument = serde_json::from_value(state).unwrap();
