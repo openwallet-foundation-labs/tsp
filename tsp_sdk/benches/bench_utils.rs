@@ -52,13 +52,17 @@ pub fn deterministic_owned_vid_mldsa65_x25519kyber768(
     use base64ct::{Base64UrlUnpadded, Encoding as _};
     use hpke_pq::Kem as _;
     use hpke_pq::Serializable as _;
-    use ml_dsa::{KeyGen, MlDsa65};
+    use ml_dsa::MlDsa65;
 
-    use rand::SeedableRng as _;
+    use rand::{RngCore as _, SeedableRng as _};
     let mut rng = rand_chacha::ChaCha20Rng::seed_from_u64(seed ^ 0x4D4C44534136355Fu64);
-    let sig = MlDsa65::key_gen(&mut rng);
-    let sigkey = sig.signing_key().encode();
-    let public_sigkey = sig.verifying_key().encode();
+    let mut sig_seed = [0u8; 32];
+    rng.fill_bytes(&mut sig_seed);
+    let sig = ml_dsa::SigningKey::<MlDsa65>::from_seed(&ml_dsa::Seed::from(sig_seed));
+    #[allow(deprecated)]
+    let sigkey = sig.expanded_key().to_expanded();
+    let public_sigkey =
+        <ml_dsa::SigningKey<MlDsa65> as ml_dsa::Keypair>::verifying_key(&sig).encode();
 
     let ikm = seeded_bytes(seed ^ 0x454E435F4B594245u64, 32);
     let (enckey, public_enckey) =

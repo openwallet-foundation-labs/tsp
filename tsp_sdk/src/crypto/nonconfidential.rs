@@ -4,7 +4,6 @@ use crate::{
     cesr::{CryptoType, DecodedEnvelope, Envelope, SignatureType},
     definitions::{MessageType, PrivateVid, TSPMessage, VerifiedVid},
 };
-use ed25519_dalek::Verifier;
 use ml_dsa::{EncodedVerifyingKey, MlDsa65};
 
 /// Construct and sign a non-confidential TSP message
@@ -50,24 +49,27 @@ pub fn verify<'a>(
         SignatureType::NoSignature => {}
         SignatureType::Ed25519 => {
             let signature = ed25519_dalek::Signature::from_slice(verification_challenge.signature)
-                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+                .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
             let verifying_key =
                 ed25519_dalek::VerifyingKey::try_from(sender.verifying_key().as_slice())
-                    .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+                    .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
             verifying_key
                 .verify_strict(verification_challenge.signed_data, &signature)
-                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+                .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
         }
         SignatureType::MlDsa65 => {
             let signature: ml_dsa::Signature<MlDsa65> =
                 ml_dsa::Signature::try_from(verification_challenge.signature)
-                    .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+                    .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
             let verifying_key = ml_dsa::VerifyingKey::decode(
                 &EncodedVerifyingKey::<MlDsa65>::try_from(sender.verifying_key().as_slice())?,
             );
-            verifying_key
-                .verify(verification_challenge.signed_data, &signature)
-                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+            ml_dsa::Verifier::verify(
+                &verifying_key,
+                verification_challenge.signed_data,
+                &signature,
+            )
+            .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
         }
     }
     #[cfg(feature = "bench-network-timings")]

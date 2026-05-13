@@ -57,7 +57,7 @@ once_cell = { workspace = true }
 ed25519-dalek = { workspace = true }
 hpke = { workspace = true }
 hpke_pq = { workspace = true }
-ml-dsa = { version = "0.0.4", features = ["rand_core"] }
+ml-dsa = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }
 sha2 = { workspace = true }

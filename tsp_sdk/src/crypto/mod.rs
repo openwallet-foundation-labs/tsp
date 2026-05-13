@@ -4,7 +4,7 @@ use crate::definitions::{
     VerifiedVid, VidEncryptionKeyType, VidSignatureKeyType,
 };
 use ed25519_dalek::Signer;
-use ml_dsa::{EncodedVerifyingKey, KeyGen, MlDsa65, signature::Verifier};
+use ml_dsa::{EncodedVerifyingKey, ExpandedSigningKey, ExpandedSigningKeyBytes, MlDsa65};
 use rand_core::OsRng;
 #[cfg(feature = "bench-network-timings")]
 use std::time::Instant;
@@ -119,12 +119,8 @@ pub(crate) fn append_signature(
         VidSignatureKeyType::MlDsa65 => {
             #[cfg(feature = "bench-network-timings")]
             let signature_started = std::time::Instant::now();
-            let sign_key = ml_dsa::SigningKey::<MlDsa65>::decode(&ml_dsa::EncodedSigningKey::<
-                MlDsa65,
-            >::try_from(
-                sender.signing_key().as_slice(),
-            )?);
-            let signature = sign_key.sign(data).encode();
+            let sign_key = mldsa65_signing_key_from_bytes(sender.signing_key().as_slice())?;
+            let signature = ml_dsa::Signer::sign(&sign_key, data).encode();
             crate::cesr::encode_signature(signature.as_slice(), data, SignatureType::MlDsa65);
             #[cfg(feature = "bench-network-timings")]
             crate::bench::record_signature(signature_started);
@@ -132,6 +128,14 @@ pub(crate) fn append_signature(
     }
 
     Ok(())
+}
+
+fn mldsa65_signing_key_from_bytes(
+    signing_key: &[u8],
+) -> Result<ExpandedSigningKey<MlDsa65>, CryptoError> {
+    let signing_key = ExpandedSigningKeyBytes::<MlDsa65>::try_from(signing_key)?;
+    #[allow(deprecated)]
+    Ok(ExpandedSigningKey::<MlDsa65>::from_expanded(&signing_key))
 }
 
 fn encode_hashed_payload(
@@ -351,11 +355,8 @@ pub(crate) fn sign_detached(sender: &dyn PrivateVid, data: &[u8]) -> Result<Vec<
             sign_key.sign(data).to_bytes().to_vec()
         }
         crate::definitions::VidSignatureKeyType::MlDsa65 => {
-            use ml_dsa::EncodedSigningKey;
-            let sign_key = ml_dsa::SigningKey::<MlDsa65>::decode(
-                &EncodedSigningKey::<MlDsa65>::try_from(sender.signing_key().as_slice())?,
-            );
-            sign_key.sign(data).encode().to_vec()
+            let sign_key = mldsa65_signing_key_from_bytes(sender.signing_key().as_slice())?;
+            ml_dsa::Signer::sign(&sign_key, data).encode().to_vec()
         }
     })
 }
@@ -368,23 +369,22 @@ pub(crate) fn verify_detached(
     match sender.signature_key_type() {
         crate::definitions::VidSignatureKeyType::Ed25519 => {
             let signature = ed25519_dalek::Signature::from_slice(signature)
-                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+                .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
             let verifying_key =
                 ed25519_dalek::VerifyingKey::try_from(sender.verifying_key().as_slice())
-                    .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+                    .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
             verifying_key
                 .verify_strict(signed_data, &signature)
-                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+                .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
         }
         crate::definitions::VidSignatureKeyType::MlDsa65 => {
             let signature: ml_dsa::Signature<MlDsa65> = ml_dsa::Signature::try_from(signature)
-                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+                .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
             let verifying_key = ml_dsa::VerifyingKey::decode(
                 &EncodedVerifyingKey::<MlDsa65>::try_from(sender.verifying_key().as_slice())?,
             );
-            verifying_key
-                .verify(signed_data, &signature)
-                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+            ml_dsa::Verifier::verify(&verifying_key, signed_data, &signature)
+                .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
         }
     }
 
@@ -717,11 +717,15 @@ pub fn gen_sign_keypair_for(
             )
         }
         VidSignatureKeyType::MlDsa65 => {
-            let sigkey = MlDsa65::key_gen(&mut OsRng);
+            let sigkey = <ml_dsa::SigningKey<MlDsa65> as ml_dsa::Generate>::generate();
+            let verifying_key =
+                <ml_dsa::SigningKey<MlDsa65> as ml_dsa::Keypair>::verifying_key(&sigkey);
+            #[allow(deprecated)]
+            let signing_key = sigkey.expanded_key().to_expanded();
 
             (
-                sigkey.signing_key().encode().to_vec().into(),
-                sigkey.verifying_key().encode().to_vec().into(),
+                signing_key.to_vec().into(),
+                verifying_key.encode().to_vec().into(),
             )
         }
     }

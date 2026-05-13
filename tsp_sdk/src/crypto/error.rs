@@ -17,7 +17,7 @@ pub enum CryptoError {
     #[error("Wrong key length")]
     Key(#[from] TryFromSliceError),
     #[error("could not verify signature for sender VID {0}: {1}")]
-    Verify(String, ed25519_dalek::ed25519::Error),
+    Verify(String, String),
     #[error("unexpected recipient")]
     UnexpectedRecipient,
     #[error("no ciphertext found in encrypted message")]
