@@ -1,15 +1,11 @@
-use super::CryptoError;
+use super::{CryptoError, append_signature, signature_type};
 use crate::crypto::CryptoError::Verify;
-use crate::definitions::VidSignatureKeyType;
 use crate::{
     cesr::{CryptoType, DecodedEnvelope, Envelope, SignatureType},
     definitions::{MessageType, PrivateVid, TSPMessage, VerifiedVid},
 };
-#[cfg(feature = "pq")]
 use ed25519_dalek::Verifier;
-use ed25519_dalek::ed25519::signature::Signer;
-#[cfg(feature = "pq")]
-use ml_dsa::{EncodedSigningKey, EncodedVerifyingKey, MlDsa65};
+use ml_dsa::{EncodedVerifyingKey, MlDsa65};
 
 /// Construct and sign a non-confidential TSP message
 pub fn sign(
@@ -19,16 +15,10 @@ pub fn sign(
 ) -> Result<TSPMessage, CryptoError> {
     let mut data = Vec::with_capacity(64);
 
-    let signature_type = match sender.signature_key_type() {
-        VidSignatureKeyType::Ed25519 => SignatureType::Ed25519,
-        #[cfg(feature = "pq")]
-        VidSignatureKeyType::MlDsa65 => SignatureType::MlDsa65,
-    };
-
     crate::cesr::encode_s_envelope(
         crate::cesr::Envelope {
             crypto_type: CryptoType::Plaintext,
-            signature_type,
+            signature_type: signature_type(sender),
             sender: sender.identifier(),
             receiver: receiver.map(|r| r.identifier()),
             nonconfidential_data: Some(payload),
@@ -36,32 +26,7 @@ pub fn sign(
         &mut data,
     )?;
 
-    // create and append signature
-    match sender.signature_key_type() {
-        VidSignatureKeyType::Ed25519 => {
-            #[cfg(feature = "bench-network-timings")]
-            let signature_started = std::time::Instant::now();
-            let sign_key = ed25519_dalek::SigningKey::from_bytes(&TryInto::<[u8; 32]>::try_into(
-                sender.signing_key().as_slice(),
-            )?);
-            let signature = sign_key.sign(&data).to_bytes();
-            crate::cesr::encode_signature(&signature, &mut data, SignatureType::Ed25519);
-            #[cfg(feature = "bench-network-timings")]
-            crate::bench::record_signature(signature_started);
-        }
-        #[cfg(feature = "pq")]
-        VidSignatureKeyType::MlDsa65 => {
-            #[cfg(feature = "bench-network-timings")]
-            let signature_started = std::time::Instant::now();
-            let sign_key = ml_dsa::SigningKey::<MlDsa65>::decode(
-                &EncodedSigningKey::<MlDsa65>::try_from(sender.signing_key().as_slice())?,
-            );
-            let signature = sign_key.sign(&data).encode();
-            crate::cesr::encode_signature(signature.as_slice(), &mut data, SignatureType::MlDsa65);
-            #[cfg(feature = "bench-network-timings")]
-            crate::bench::record_signature(signature_started);
-        }
-    }
+    append_signature(sender, &mut data)?;
 
     Ok(data)
 }
@@ -93,7 +58,6 @@ pub fn verify<'a>(
                 .verify_strict(verification_challenge.signed_data, &signature)
                 .map_err(|err| Verify(sender.identifier().to_string(), err))?;
         }
-        #[cfg(feature = "pq")]
         SignatureType::MlDsa65 => {
             let signature: ml_dsa::Signature<MlDsa65> =
                 ml_dsa::Signature::try_from(verification_challenge.signature)

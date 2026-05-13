@@ -21,7 +21,6 @@ pub fn encode_did_peer(vid: &Vid) -> String {
             // key bytes length
             v.push(0x20);
         }
-        #[cfg(feature = "pq")]
         VidSignatureKeyType::MlDsa65 => {
             // private use area (0x300001) => encoded as unsigned varint, see: https://github.com/multiformats/unsigned-varint
             v.extend_from_slice(&0x8180c001u32.to_be_bytes());
@@ -46,7 +45,6 @@ pub fn encode_did_peer(vid: &Vid) -> String {
             // key bytes length
             v.push(0x20);
         }
-        #[cfg(feature = "pq")]
         VidEncryptionKeyType::X25519Kyber768Draft00 => {
             #[cfg(feature = "async")]
             trace!("serializing X25519Kyber768Draft00 encryption key");
@@ -114,7 +112,6 @@ pub fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
                         public_enckey = Some(rest[..0x20].to_vec());
                         enc_key_type = Some(VidEncryptionKeyType::X25519)
                     }
-                    #[cfg(feature = "pq")]
                     // multicodec reserved range (0x300000), followed by length (1216)
                     [
                         0b10000000,
@@ -154,7 +151,6 @@ pub fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
                         public_sigkey = Some(rest[..0x20].to_vec());
                         sig_key_type = Some(VidSignatureKeyType::Ed25519)
                     }
-                    #[cfg(feature = "pq")]
                     // multicodec reserved range (0x300001), followed by length (1952) (https://go.dev/play/p/KskwkAiBV7D)
                     [
                         0b10000001,

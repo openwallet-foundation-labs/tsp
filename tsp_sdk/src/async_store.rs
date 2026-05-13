@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     ExportVid, OwnedVid, PrivateVid, RelationshipStatus,
+    cesr::CryptoType,
     crypto::CryptoError,
     definitions::{Digest, ReceivedTspMessage, TSPStream, VerifiedVid},
     error::Error,
@@ -301,6 +302,48 @@ impl AsyncSecureStore {
         Ok(())
     }
 
+    pub async fn send_with_crypto_type(
+        &self,
+        sender: &str,
+        receiver: &str,
+        nonconfidential_data: Option<&[u8]>,
+        message: &[u8],
+        crypto_type: CryptoType,
+    ) -> Result<(), Error> {
+        match self.inner.relation_status_for_vid_pair(sender, receiver) {
+            Ok(relation) => {
+                if matches!(relation, RelationshipStatus::Unrelated) {
+                    self.send_relationship_request_with_crypto_type(
+                        sender,
+                        receiver,
+                        None,
+                        crypto_type,
+                    )
+                    .await?
+                }
+            }
+            Err(Error::Relationship(_)) => {
+                self.send_relationship_request_with_crypto_type(sender, receiver, None, crypto_type)
+                    .await?
+            }
+            Err(e) => return Err(e),
+        };
+
+        let (endpoint, message) = self.inner.seal_message_with_crypto_type(
+            sender,
+            receiver,
+            nonconfidential_data,
+            message,
+            crypto_type,
+        )?;
+
+        tracing::info!("sending message to {endpoint}");
+
+        crate::transport::send_message(&endpoint, &message).await?;
+
+        Ok(())
+    }
+
     /// Build a relationship request message without transmitting it.
     ///
     /// Returns `(endpoint, message)` where `endpoint` is the receiver's transport
@@ -355,6 +398,27 @@ impl AsyncSecureStore {
         let (endpoint, message) = self
             .inner
             .make_relationship_request(sender, receiver, route)?;
+
+        tracing::info!("sending message to {endpoint}");
+
+        crate::transport::send_message(&endpoint, &message).await?;
+
+        Ok(())
+    }
+
+    pub async fn send_relationship_request_with_crypto_type(
+        &self,
+        sender: &str,
+        receiver: &str,
+        route: Option<&[&str]>,
+        crypto_type: CryptoType,
+    ) -> Result<(), Error> {
+        let (endpoint, message) = self.inner.make_relationship_request_with_crypto_type(
+            sender,
+            receiver,
+            route,
+            crypto_type,
+        )?;
 
         tracing::info!("sending message to {endpoint}");
 

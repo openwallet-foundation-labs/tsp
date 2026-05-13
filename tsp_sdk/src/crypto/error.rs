@@ -1,12 +1,13 @@
 use std::array::TryFromSliceError;
 
+use crate::{cesr::CryptoType, definitions::VidEncryptionKeyType};
+
 #[derive(thiserror::Error, Debug)]
 pub enum CryptoError {
     #[error("failed to encode message {0}")]
     Encode(#[from] crate::cesr::error::EncodeError),
     #[error("failed to decode message {0}")]
     Decode(#[from] crate::cesr::error::DecodeError),
-    #[cfg(feature = "pq")]
     #[error("encryption or decryption failed: {0}")]
     CryptographicHpkePq(#[from] hpke_pq::HpkeError),
     #[error("encryption or decryption failed: {0}")]
@@ -25,4 +26,13 @@ pub enum CryptoError {
     UnexpectedSender,
     #[error("no sender identity found in encrypted message")]
     MissingSender,
+    #[error("invalid outbound crypto selection {0:?}")]
+    InvalidCryptoSelection(CryptoType),
+    #[error(
+        "outbound crypto selection {crypto_type:?} is incompatible with receiver encryption key type {key_type:?}"
+    )]
+    IncompatibleCryptoSelection {
+        crypto_type: CryptoType,
+        key_type: VidEncryptionKeyType,
+    },
 }

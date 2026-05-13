@@ -1,7 +1,8 @@
-use super::did::{scid, webvh};
+#[cfg(feature = "resolve")]
+use super::did::{scid, web, webvh};
 use super::{
     VerifyVidOptions,
-    did::{self, peer, web},
+    did::{self, peer},
     error::VidError,
 };
 use crate::Vid;
@@ -47,6 +48,7 @@ pub fn verify_vid_offline_with_options(
 
     match parts.get(0..2) {
         Some([did::SCHEME, peer::SCHEME]) => peer::verify_did_peer(&parts),
+        #[cfg(feature = "resolve")]
         Some([did::SCHEME, scid::SCHEME]) => scid::resolve_offline(id, options),
         _ => Err(VidError::InvalidVid(id.to_string())),
     }
