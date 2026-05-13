@@ -412,10 +412,10 @@ fn select_webvh_update_key<'a>(
     method_state: &'a WalletMethodState,
     private_state: &ScidPrivateState,
 ) -> Result<&'a Vec<u8>, VidError> {
-    if let Some(next_update_kid) = private_state.next_update_kid.as_deref() {
-        if let Some(secret) = method_state.secret_keys.get(next_update_kid) {
-            return Ok(secret);
-        }
+    if let Some(next_update_kid) = private_state.next_update_kid.as_deref()
+        && let Some(secret) = method_state.secret_keys.get(next_update_kid)
+    {
+        return Ok(secret);
     }
 
     let source_metadata = metadata
@@ -435,20 +435,19 @@ fn select_webvh_update_key<'a>(
         ));
     }
 
-    if let Some(current_update_kid) = private_state.current_update_kid.as_deref() {
-        if let Some(secret) = method_state.secret_keys.get(current_update_kid) {
-            return Ok(secret);
-        }
+    if let Some(current_update_kid) = private_state.current_update_kid.as_deref()
+        && let Some(secret) = method_state.secret_keys.get(current_update_kid)
+    {
+        return Ok(secret);
     }
 
     if let Some(update_kid) = source_metadata
         .as_ref()
         .and_then(|metadata| metadata.update_keys.as_ref())
         .and_then(|update_keys| update_keys.first())
+        && let Some(secret) = method_state.secret_keys.get(update_kid)
     {
-        if let Some(secret) = method_state.secret_keys.get(update_kid) {
-            return Ok(secret);
-        }
+        return Ok(secret);
     }
 
     Err(VidError::InternalError(

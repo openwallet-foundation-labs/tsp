@@ -22,10 +22,10 @@ pub fn project_root() -> anyhow::Result<PathBuf> {
 }
 
 pub fn git_sha(project_root: &Path) -> anyhow::Result<String> {
-    if let Ok(sha) = env::var("GITHUB_SHA") {
-        if !sha.trim().is_empty() {
-            return Ok(sha);
-        }
+    if let Ok(sha) = env::var("GITHUB_SHA")
+        && !sha.trim().is_empty()
+    {
+        return Ok(sha);
     }
     let out = Command::new("git")
         .current_dir(project_root)
@@ -86,10 +86,10 @@ pub fn read_lock_version(project_root: &Path, package_name: &str) -> Option<Stri
             name = rest.trim().trim_matches('"').into();
             continue;
         }
-        if name == Some(package_name) {
-            if let Some(rest) = line.strip_prefix("version = ") {
-                return Some(rest.trim().trim_matches('"').to_string());
-            }
+        if name == Some(package_name)
+            && let Some(rest) = line.strip_prefix("version = ")
+        {
+            return Some(rest.trim().trim_matches('"').to_string());
         }
     }
     None
