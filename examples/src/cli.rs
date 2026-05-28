@@ -51,6 +51,19 @@ impl FromStr for DidType {
     }
 }
 
+fn parse_crypto_type(value: &str) -> Result<cesr::CryptoType, String> {
+    let normalized = value.to_ascii_lowercase().replace('_', "-");
+    match normalized.as_str() {
+        "hpke-auth" => Ok(cesr::CryptoType::HpkeAuth),
+        "hpke-essr" => Ok(cesr::CryptoType::HpkeEssr),
+        "nacl-auth" => Ok(cesr::CryptoType::NaclAuth),
+        "nacl-essr" => Ok(cesr::CryptoType::NaclEssr),
+        "pq" | "x25519-kyber768-draft00" => Ok(cesr::CryptoType::X25519Kyber768Draft00),
+        "plaintext" => Err("plaintext is not valid for confidential send".to_string()),
+        _ => Err(format!("invalid crypto type: {value}")),
+    }
+}
+
 #[derive(Debug, Parser)]
 #[command(name = "tsp", version)]
 #[command(about = "Send and receive TSP messages", long_about = None)]
@@ -161,6 +174,12 @@ enum Commands {
             help = "Ask for confirmation before interacting with unknown end-points"
         )]
         ask: bool,
+        #[arg(
+            long,
+            value_parser = parse_crypto_type,
+            help = "Override outbound crypto: hpke-auth, hpke-essr, nacl-auth, nacl-essr, pq"
+        )]
+        crypto: Option<cesr::CryptoType>,
     },
     #[command(arg_required_else_help = true, about = "listen for messages")]
     Receive {
@@ -1030,6 +1049,7 @@ async fn run() -> Result<(), Error> {
             receiver_vid,
             non_confidential_data,
             ask,
+            crypto,
         } => {
             let non_confidential_data = non_confidential_data.as_deref().map(|s| s.as_bytes());
             let receiver_vid = vid_wallet.try_resolve_alias(&receiver_vid)?;
@@ -1042,10 +1062,23 @@ async fn run() -> Result<(), Error> {
                 .await
                 .expect("Could not read message from stdin");
 
-            match vid_wallet
-                .send(&sender_vid, &receiver_vid, non_confidential_data, &message)
-                .await
-            {
+            let send_result = if let Some(crypto_type) = crypto {
+                vid_wallet
+                    .send_with_crypto_type(
+                        &sender_vid,
+                        &receiver_vid,
+                        non_confidential_data,
+                        &message,
+                        crypto_type,
+                    )
+                    .await
+            } else {
+                vid_wallet
+                    .send(&sender_vid, &receiver_vid, non_confidential_data, &message)
+                    .await
+            };
+
+            match send_result {
                 Ok(()) => {}
                 Err(e) => {
                     tracing::error!(
@@ -1101,13 +1134,11 @@ async fn run() -> Result<(), Error> {
                                 cesr::CryptoType::HpkeEssr => "HPKE ESSR",
                                 cesr::CryptoType::NaclAuth => "NaCl Auth",
                                 cesr::CryptoType::NaclEssr => "NaCl ESSR",
-                                #[cfg(feature = "pq")]
                                 cesr::CryptoType::X25519Kyber768Draft00 => "X25519Kyber768Draft00",
                             };
                             let signature_type = match message_type.signature_type {
                                 cesr::SignatureType::NoSignature => "no signature",
                                 cesr::SignatureType::Ed25519 => "Ed25519 signature",
-                                #[cfg(feature = "pq")]
                                 cesr::SignatureType::MlDsa65 => "ML-DSA-65 signature",
                             };
                             info!(

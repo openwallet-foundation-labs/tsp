@@ -1,7 +1,7 @@
 use crate::{
     ExportVid, OwnedVid,
     cesr::EnvelopeType,
-    crypto::CryptoError,
+    crypto::{CryptoError, OutboundCryptoSelection, RelationshipDigestAlgorithm},
     definitions::{
         Digest, MessageType, Payload, PendingIncomingParallelRelationship,
         PendingNestedRelationship, PendingParallelRelationship, PrivateVid,
@@ -84,40 +84,51 @@ impl VidContext {
     }
 }
 
-fn nested_digest(bytes: &[u8]) -> Digest {
-    #[cfg(feature = "nacl")]
-    {
-        crate::crypto::blake2b256(bytes)
-    }
-
-    #[cfg(not(feature = "nacl"))]
-    {
-        crate::crypto::sha256(bytes)
-    }
+fn nested_digest(bytes: &[u8], algorithm: RelationshipDigestAlgorithm) -> Digest {
+    algorithm.hash(bytes)
 }
 
-fn relationship_digest_algorithm() -> crate::crypto::RelationshipDigestAlgorithm {
-    #[cfg(feature = "nacl")]
-    {
-        crate::crypto::RelationshipDigestAlgorithm::Blake2b256
-    }
-
-    #[cfg(not(feature = "nacl"))]
-    {
-        crate::crypto::RelationshipDigestAlgorithm::Sha2_256
-    }
+fn nested_digest_field<'a>(
+    digest: &'a Digest,
+    algorithm: RelationshipDigestAlgorithm,
+) -> crate::cesr::Digest<'a> {
+    algorithm.field(digest)
 }
 
-fn nested_digest_field<'a>(digest: &'a Digest) -> crate::cesr::Digest<'a> {
-    #[cfg(feature = "nacl")]
-    {
-        crate::cesr::Digest::Blake2b256(digest)
-    }
+fn selected_outbound_crypto(
+    sender: &dyn VerifiedVid,
+    receiver: &dyn VerifiedVid,
+    selection: Option<OutboundCryptoSelection>,
+) -> OutboundCryptoSelection {
+    selection.unwrap_or_else(|| crate::crypto::default_outbound_crypto_selection(sender, receiver))
+}
 
-    #[cfg(not(feature = "nacl"))]
-    {
-        crate::cesr::Digest::Sha2_256(digest)
-    }
+fn digest_algorithm_for_selection(
+    selection: OutboundCryptoSelection,
+) -> Result<RelationshipDigestAlgorithm, Error> {
+    Ok(RelationshipDigestAlgorithm::for_crypto_type(
+        selection.crypto_type,
+    )?)
+}
+
+fn seal_envelope(
+    sender: &dyn PrivateVid,
+    receiver: &dyn VerifiedVid,
+    nonconfidential_data: Option<&[u8]>,
+    payload: Payload<&[u8]>,
+    digest: Option<&mut Digest>,
+    request_nonce_override: Option<[u8; 32]>,
+    selection: Option<OutboundCryptoSelection>,
+) -> Result<Vec<u8>, Error> {
+    Ok(crate::crypto::seal_with_selection(
+        sender,
+        receiver,
+        nonconfidential_data,
+        payload,
+        digest,
+        request_nonce_override,
+        selected_outbound_crypto(sender, receiver, selection),
+    )?)
 }
 
 enum NestedRelationshipEvent {
@@ -660,6 +671,24 @@ impl SecureStore {
         result
     }
 
+    pub fn seal_message_with_crypto_type(
+        &self,
+        sender: &str,
+        receiver: &str,
+        nonconfidential_data: Option<&[u8]>,
+        message: &[u8],
+        crypto_type: crate::cesr::CryptoType,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.seal_message_payload_and_hash_with_selection(
+            sender,
+            receiver,
+            nonconfidential_data,
+            Payload::Content(message),
+            None,
+            Some(OutboundCryptoSelection { crypto_type }),
+        )
+    }
+
     // ANCHOR_END: seal_message-mbBook
 
     /// Seal a TSP message.
@@ -682,6 +711,25 @@ impl SecureStore {
         payload: Payload<&[u8]>,
         digest: Option<&mut Digest>,
     ) -> Result<(url::Url, Vec<u8>), Error> {
+        self.seal_message_payload_and_hash_with_selection(
+            sender,
+            receiver,
+            nonconfidential_data,
+            payload,
+            digest,
+            None,
+        )
+    }
+
+    pub(crate) fn seal_message_payload_and_hash_with_selection(
+        &self,
+        sender: &str,
+        receiver: &str,
+        nonconfidential_data: Option<&[u8]>,
+        payload: Payload<&[u8]>,
+        digest: Option<&mut Digest>,
+        selection: Option<OutboundCryptoSelection>,
+    ) -> Result<(url::Url, Vec<u8>), Error> {
         let sender = self.get_private_vid(sender)?;
         let receiver_context = self.get_vid(receiver)?;
 
@@ -696,12 +744,14 @@ impl SecureStore {
                         .unwrap_or(sender.identifier());
                     let inner_sender = self.get_private_vid(inner_sender)?;
 
-                    let tsp_message: Vec<u8> = crate::crypto::seal_and_hash(
+                    let tsp_message = seal_envelope(
                         &*inner_sender,
                         &*receiver_context.vid,
                         nonconfidential_data,
                         payload,
                         digest,
+                        None,
+                        selection,
                     )?;
 
                     let first_sender = self.get_private_vid(first_sender)?;
@@ -716,11 +766,13 @@ impl SecureStore {
                 .map(|x| x.as_ref())
                 .collect::<Vec<_>>();
 
-            return self.seal_message_payload(
+            return self.seal_message_payload_and_hash_with_selection(
                 sender.identifier(),
                 first_hop.vid.identifier(),
                 None,
                 Payload::RoutedMessage(hops, &inner_message),
+                None,
+                None,
             );
         }
 
@@ -742,40 +794,47 @@ impl SecureStore {
 
             let inner_sender = self.get_private_vid(inner_sender)?;
 
-            let inner_message = if let Payload::Content(_) = payload {
+            let content_payload = matches!(&payload, Payload::Content(_));
+            let inner_message = if content_payload {
                 crate::crypto::sign(
                     &*inner_sender,
                     Some(&*receiver_context.vid),
                     payload.as_bytes(),
                 )?
             } else {
-                crate::crypto::seal_and_hash(
+                seal_envelope(
                     &*inner_sender,
                     &*receiver_context.vid,
                     None,
                     payload,
                     digest,
+                    None,
+                    selection,
                 )?
             };
 
             let parent_sender = self.get_private_vid(parent_sender)?;
             let parent_receiver = self.get_verified_vid(parent_receiver)?;
 
-            return self.seal_message_payload(
+            return self.seal_message_payload_and_hash_with_selection(
                 parent_sender.identifier(),
                 parent_receiver.identifier(),
                 nonconfidential_data,
                 Payload::NestedMessage(&inner_message),
+                None,
+                if content_payload { selection } else { None },
             );
         }
 
         // send direct mode
-        let tsp_message = crate::crypto::seal_and_hash(
+        let tsp_message = seal_envelope(
             &*sender,
             &*receiver_context.vid,
             nonconfidential_data,
             payload,
             digest,
+            None,
+            selection,
         )?;
 
         Ok((receiver_context.vid.endpoint().clone(), tsp_message))
@@ -801,6 +860,7 @@ impl SecureStore {
     fn make_signed_nested_request_message(
         &self,
         sender: &dyn PrivateVid,
+        digest_algorithm: RelationshipDigestAlgorithm,
     ) -> Result<(Vec<u8>, Digest), Error> {
         let mut csprng = StdRng::from_entropy();
         let mut nonce_bytes = [0_u8; 32];
@@ -812,20 +872,20 @@ impl SecureStore {
         let placeholder_payload: crate::cesr::Payload<'_, &[u8], &[u8]> =
             crate::cesr::Payload::DirectRelationProposal {
                 nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
-                request_digest: nested_digest_field(&request_digest),
+                request_digest: nested_digest_field(&request_digest, digest_algorithm),
             };
 
         let mut encoded_payload =
             Vec::with_capacity(placeholder_payload.calculate_size(sender_identity));
         crate::cesr::encode_payload(&placeholder_payload, sender_identity, &mut encoded_payload)?;
 
-        request_digest = nested_digest(&encoded_payload);
+        request_digest = nested_digest(&encoded_payload, digest_algorithm);
 
         encoded_payload.clear();
         let payload: crate::cesr::Payload<'_, &[u8], &[u8]> =
             crate::cesr::Payload::DirectRelationProposal {
                 nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
-                request_digest: nested_digest_field(&request_digest),
+                request_digest: nested_digest_field(&request_digest, digest_algorithm),
             };
         crate::cesr::encode_payload(&payload, sender_identity, &mut encoded_payload)?;
 
@@ -839,27 +899,28 @@ impl SecureStore {
         sender: &dyn PrivateVid,
         receiver: &dyn VerifiedVid,
         thread_id: Digest,
+        digest_algorithm: RelationshipDigestAlgorithm,
     ) -> Result<(Vec<u8>, Digest), Error> {
         let sender_identity = Some(sender.identifier().as_bytes());
         let mut reply_thread_id = [0_u8; 32];
 
         let placeholder_payload: crate::cesr::Payload<'_, &[u8], &[u8]> =
             crate::cesr::Payload::DirectRelationAffirm {
-                request_digest: nested_digest_field(&thread_id),
-                reply_digest: nested_digest_field(&reply_thread_id),
+                request_digest: nested_digest_field(&thread_id, digest_algorithm),
+                reply_digest: nested_digest_field(&reply_thread_id, digest_algorithm),
             };
 
         let mut encoded_payload =
             Vec::with_capacity(placeholder_payload.calculate_size(sender_identity));
         crate::cesr::encode_payload(&placeholder_payload, sender_identity, &mut encoded_payload)?;
 
-        reply_thread_id = nested_digest(&encoded_payload);
+        reply_thread_id = nested_digest(&encoded_payload, digest_algorithm);
 
         encoded_payload.clear();
         let payload: crate::cesr::Payload<'_, &[u8], &[u8]> =
             crate::cesr::Payload::DirectRelationAffirm {
-                request_digest: nested_digest_field(&thread_id),
-                reply_digest: nested_digest_field(&reply_thread_id),
+                request_digest: nested_digest_field(&thread_id, digest_algorithm),
+                reply_digest: nested_digest_field(&reply_thread_id, digest_algorithm),
             };
         crate::cesr::encode_payload(&payload, sender_identity, &mut encoded_payload)?;
 
@@ -1320,6 +1381,31 @@ impl SecureStore {
         receiver: &str,
         route: Option<&[&str]>,
     ) -> Result<(Url, Vec<u8>), Error> {
+        self.make_relationship_request_with_selection(sender, receiver, route, None)
+    }
+
+    pub fn make_relationship_request_with_crypto_type(
+        &self,
+        sender: &str,
+        receiver: &str,
+        route: Option<&[&str]>,
+        crypto_type: crate::cesr::CryptoType,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.make_relationship_request_with_selection(
+            sender,
+            receiver,
+            route,
+            Some(OutboundCryptoSelection { crypto_type }),
+        )
+    }
+
+    fn make_relationship_request_with_selection(
+        &self,
+        sender: &str,
+        receiver: &str,
+        route: Option<&[&str]>,
+        selection: Option<OutboundCryptoSelection>,
+    ) -> Result<(Url, Vec<u8>), Error> {
         if route.is_some() {
             return Err(Error::Relationship(
                 "routed relationship-forming requires Reply_Path; not implemented".into(),
@@ -1329,7 +1415,7 @@ impl SecureStore {
         let sender = self.get_private_vid(sender)?;
         let receiver = self.get_verified_vid(receiver)?;
         let mut thread_id = Default::default();
-        let tsp_message = crate::crypto::seal_and_hash(
+        let tsp_message = seal_envelope(
             &*sender,
             &*receiver,
             None,
@@ -1338,6 +1424,8 @@ impl SecureStore {
                 form: RelationshipForm::Direct,
             },
             Some(&mut thread_id),
+            None,
+            selection,
         )?;
 
         self.set_relation_and_status_for_vid(
@@ -1353,8 +1441,8 @@ impl SecureStore {
         &self,
         sender_new_vid: &dyn PrivateVid,
         context: ParallelSignatureContext<'_>,
+        digest_algorithm: RelationshipDigestAlgorithm,
     ) -> Result<ParallelSignatureMaterial, Error> {
-        let digest_algorithm = relationship_digest_algorithm();
         let mut digest = [0_u8; 32];
 
         let (signed_data, request_nonce) = match context {
@@ -1416,16 +1504,19 @@ impl SecureStore {
             }
         }
 
+        let selection = selected_outbound_crypto(&*sender, &*receiver, None);
+        let digest_algorithm = digest_algorithm_for_selection(selection)?;
         let signature_material = self.build_parallel_signature_material(
             &*sender_new_vid,
             ParallelSignatureContext::Request {
                 sender_identity: sender.identifier(),
                 nonce: random_nonce_bytes(),
             },
+            digest_algorithm,
         )?;
         let mut thread_id = signature_material.digest;
 
-        let tsp_message = crate::crypto::seal_and_hash_with_relationship_nonce(
+        let tsp_message = seal_envelope(
             &*sender,
             &*receiver,
             None,
@@ -1438,6 +1529,7 @@ impl SecureStore {
             },
             Some(&mut thread_id),
             signature_material.request_nonce,
+            Some(selection),
         )?;
 
         self.add_pending_parallel_request(
@@ -1495,16 +1587,19 @@ impl SecureStore {
         let pending_incoming_request =
             self.find_pending_incoming_parallel_request(receiver_new_vid.identifier(), thread_id)?;
         let outer_sender = self.get_private_vid(&pending_incoming_request.local_outer_vid)?;
+        let selection = selected_outbound_crypto(&*outer_sender, &*receiver_new_vid, None);
+        let digest_algorithm = digest_algorithm_for_selection(selection)?;
         let signature_material = self.build_parallel_signature_material(
             &*sender_new_vid,
             ParallelSignatureContext::Accept {
                 sender_identity: outer_sender.identifier(),
                 thread_id,
             },
+            digest_algorithm,
         )?;
         let mut reply_thread_id = signature_material.digest;
 
-        let tsp_message = crate::crypto::seal_and_hash(
+        let tsp_message = seal_envelope(
             &*outer_sender,
             &*receiver_new_vid,
             None,
@@ -1517,6 +1612,8 @@ impl SecureStore {
                 },
             },
             Some(&mut reply_thread_id),
+            None,
+            Some(selection),
         )?;
 
         self.establish_bidirectional_relation(
@@ -1569,13 +1666,18 @@ impl SecureStore {
         let receiver = self.get_verified_vid(receiver)?;
 
         let nested_vid = self.make_propositioning_vid(sender.identifier())?;
-        let (inner_message, thread_id) = self.make_signed_nested_request_message(&nested_vid)?;
+        let selection = selected_outbound_crypto(&*sender, &*receiver, None);
+        let digest_algorithm = digest_algorithm_for_selection(selection)?;
+        let (inner_message, thread_id) =
+            self.make_signed_nested_request_message(&nested_vid, digest_algorithm)?;
 
-        let (endpoint, tsp_message) = self.seal_message_payload(
+        let (endpoint, tsp_message) = self.seal_message_payload_and_hash_with_selection(
             sender.identifier(),
             receiver.identifier(),
             None,
             Payload::NestedMessage(&inner_message),
+            None,
+            Some(selection),
         )?;
 
         self.add_pending_nested_request(receiver.identifier(), thread_id, nested_vid.identifier())?;
@@ -1601,14 +1703,24 @@ impl SecureStore {
                 "missing parent for {nested_receiver}"
             )))?;
 
-        let (inner_message, reply_thread_id) =
-            self.make_signed_nested_accept_message(&nested_vid, &*receiver_vid.vid, thread_id)?;
+        let parent_sender_vid = self.get_private_vid(parent_sender)?;
+        let parent_receiver_vid = self.get_verified_vid(parent_receiver)?;
+        let selection = selected_outbound_crypto(&*parent_sender_vid, &*parent_receiver_vid, None);
+        let digest_algorithm = digest_algorithm_for_selection(selection)?;
+        let (inner_message, reply_thread_id) = self.make_signed_nested_accept_message(
+            &nested_vid,
+            &*receiver_vid.vid,
+            thread_id,
+            digest_algorithm,
+        )?;
 
-        let (transport, tsp_message) = self.seal_message_payload(
+        let (transport, tsp_message) = self.seal_message_payload_and_hash_with_selection(
             parent_sender,
             parent_receiver,
             None,
             Payload::NestedMessage(&inner_message),
+            None,
+            Some(selection),
         )?;
 
         let relation_status = RelationshipStatus::bi(reply_thread_id, thread_id);
@@ -1967,7 +2079,6 @@ mod test {
     use rand::{RngCore, SeedableRng, rngs::StdRng};
     use wasm_bindgen_test::wasm_bindgen_test;
 
-    use crate::store::relationship_digest_algorithm;
     use crate::test_utils::*;
     use crate::{
         Error, Payload, PendingParallelRelationship, ReceivedRelationshipDelivery,
@@ -1977,6 +2088,16 @@ mod test {
 
     fn assert_url_matches(url: &url::Url, expected_receiver: &dyn VerifiedVid) {
         assert_eq!(url.as_str(), expected_receiver.endpoint().as_str());
+    }
+
+    fn relationship_digest_algorithm(
+        sender: &dyn VerifiedVid,
+        receiver: &dyn VerifiedVid,
+    ) -> crate::crypto::RelationshipDigestAlgorithm {
+        super::digest_algorithm_for_selection(super::selected_outbound_crypto(
+            sender, receiver, None,
+        ))
+        .unwrap()
     }
 
     fn establish_existing_relationship(
@@ -2590,20 +2711,20 @@ mod test {
             .add_verified_vid(alice_parallel.clone(), None)
             .unwrap();
 
+        let forged_receiver = c_store
+            .get_verified_vid(alice_parallel.identifier())
+            .unwrap();
         let mut reply_thread_id = [0_u8; 32];
         let signed_data = crate::crypto::build_parallel_accept_signed_data(
             &thread_id,
             Some(charlie.identifier().as_bytes()),
-            relationship_digest_algorithm(),
+            relationship_digest_algorithm(&charlie, &*forged_receiver),
             &mut reply_thread_id,
             charlie_parallel.identifier().as_bytes(),
         )
         .unwrap();
         let sig_new_vid = crate::crypto::sign_detached(&charlie_parallel, &signed_data).unwrap();
         let forged_sender = c_store.get_private_vid(charlie.identifier()).unwrap();
-        let forged_receiver = c_store
-            .get_verified_vid(alice_parallel.identifier())
-            .unwrap();
         let mut forged_accept = crate::crypto::seal_and_hash(
             &*forged_sender,
             &*forged_receiver,
@@ -2722,7 +2843,7 @@ mod test {
         let mut thread_id = [0_u8; 32];
         let signed_data = crate::crypto::build_parallel_request_signed_data(
             Some(alice.identifier().as_bytes()),
-            relationship_digest_algorithm(),
+            relationship_digest_algorithm(&alice, &bob),
             nonce_bytes,
             &mut thread_id,
             alice_parallel.identifier().as_bytes(),
@@ -2783,7 +2904,7 @@ mod test {
         let mut thread_id = [0_u8; 32];
         let signed_data = crate::crypto::build_parallel_request_signed_data(
             Some(alice.identifier().as_bytes()),
-            relationship_digest_algorithm(),
+            relationship_digest_algorithm(&alice, &bob),
             nonce_bytes,
             &mut thread_id,
             alice_parallel.identifier().as_bytes(),

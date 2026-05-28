@@ -81,7 +81,6 @@ impl From<VidEncryptionKeyType> for KeyType {
     fn from(value: VidEncryptionKeyType) -> Self {
         match value {
             VidEncryptionKeyType::X25519 => KeyType::OKP,
-            #[cfg(feature = "pq")]
             VidEncryptionKeyType::X25519Kyber768Draft00 => KeyType::X25519Kyber768Draft00,
         }
     }
@@ -91,7 +90,6 @@ impl From<VidSignatureKeyType> for KeyType {
     fn from(value: VidSignatureKeyType) -> Self {
         match value {
             VidSignatureKeyType::Ed25519 => KeyType::OKP,
-            #[cfg(feature = "pq")]
             VidSignatureKeyType::MlDsa65 => KeyType::APK,
         }
     }
@@ -110,7 +108,6 @@ impl From<VidEncryptionKeyType> for Curve {
     fn from(value: VidEncryptionKeyType) -> Self {
         match value {
             VidEncryptionKeyType::X25519 => Curve::X25519,
-            #[cfg(feature = "pq")]
             VidEncryptionKeyType::X25519Kyber768Draft00 => Curve::X25519,
         }
     }
@@ -120,7 +117,6 @@ impl From<VidSignatureKeyType> for Option<Curve> {
     fn from(value: VidSignatureKeyType) -> Self {
         match value {
             VidSignatureKeyType::Ed25519 => Some(Curve::Ed25519),
-            #[cfg(feature = "pq")]
             VidSignatureKeyType::MlDsa65 => None,
         }
     }
@@ -130,7 +126,6 @@ impl From<VidSignatureKeyType> for Option<Algorithm> {
     fn from(value: VidSignatureKeyType) -> Self {
         match value {
             VidSignatureKeyType::Ed25519 => None,
-            #[cfg(feature = "pq")]
             VidSignatureKeyType::MlDsa65 => Some(Algorithm::MlDsa65),
         }
     }
@@ -324,7 +319,6 @@ pub fn resolve_document(did_document: DidDocument, target_id: &str) -> Result<Vi
 
     let enc_key_type = match (enc_key_type, enc_curve, enc_alg) {
         (KeyType::OKP, Some(Curve::X25519), None) => VidEncryptionKeyType::X25519,
-        #[cfg(feature = "pq")]
         (KeyType::X25519Kyber768Draft00, Some(Curve::X25519), None) => {
             VidEncryptionKeyType::X25519Kyber768Draft00
         }
@@ -333,7 +327,6 @@ pub fn resolve_document(did_document: DidDocument, target_id: &str) -> Result<Vi
 
     let sig_key_type = match (sig_key_type, sig_curve, sig_alg) {
         (KeyType::OKP, Some(Curve::Ed25519), None) => VidSignatureKeyType::Ed25519,
-        #[cfg(feature = "pq")]
         (KeyType::APK, None, Some(Algorithm::MlDsa65)) => VidSignatureKeyType::MlDsa65,
         _ => return Err(VidError::ResolveVid("Unsupported key type or curve")),
     };

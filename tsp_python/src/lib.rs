@@ -437,7 +437,6 @@ pub enum CryptoType {
 pub enum SignatureType {
     NoSignature = 0,
     Ed25519 = 1,
-    #[cfg(feature = "pq")]
     MlDsa65 = 2,
 }
 
@@ -555,7 +554,6 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
                     tsp_sdk::cesr::CryptoType::HpkeEssr => Some(CryptoType::HpkeEssr),
                     tsp_sdk::cesr::CryptoType::NaclAuth => Some(CryptoType::NaclAuth),
                     tsp_sdk::cesr::CryptoType::NaclEssr => Some(CryptoType::NaclEssr),
-                    #[cfg(feature = "pq")]
                     tsp_sdk::cesr::CryptoType::X25519Kyber768Draft00 => {
                         Some(CryptoType::X25519Kyber768Draft00)
                     }
@@ -563,7 +561,6 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
                 this.signature_type = match message_type.signature_type {
                     tsp_sdk::cesr::SignatureType::NoSignature => Some(SignatureType::NoSignature),
                     tsp_sdk::cesr::SignatureType::Ed25519 => Some(SignatureType::Ed25519),
-                    #[cfg(feature = "pq")]
                     tsp_sdk::cesr::SignatureType::MlDsa65 => Some(SignatureType::MlDsa65),
                 };
             }

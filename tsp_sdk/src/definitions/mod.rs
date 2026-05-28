@@ -10,9 +10,6 @@ use zeroize::Zeroize;
 #[cfg(feature = "async")]
 use futures::Stream;
 
-#[cfg(feature = "pq")]
-use crate::vid::did::web::Algorithm;
-use crate::vid::did::web::{Curve, KeyType};
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
 
@@ -252,20 +249,58 @@ impl<Bytes: AsRef<[u8]>> fmt::Display for Payload<'_, Bytes> {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Deserialize, Serialize, Default)]
+#[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Default)]
 pub enum VidEncryptionKeyType {
     #[default]
     X25519,
-    #[cfg(feature = "pq")]
     X25519Kyber768Draft00,
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Deserialize, Serialize, Default)]
+#[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Default)]
 pub enum VidSignatureKeyType {
     #[default]
     Ed25519,
-    #[cfg(feature = "pq")]
     MlDsa65,
+}
+
+impl VidEncryptionKeyType {
+    fn jwk_key_type(self) -> &'static str {
+        match self {
+            VidEncryptionKeyType::X25519 => "OKP",
+            VidEncryptionKeyType::X25519Kyber768Draft00 => "X25519Kyber768Draft00",
+        }
+    }
+
+    fn jwk_curve(self) -> &'static str {
+        match self {
+            VidEncryptionKeyType::X25519 | VidEncryptionKeyType::X25519Kyber768Draft00 => "X25519",
+        }
+    }
+}
+
+impl VidSignatureKeyType {
+    fn jwk_key_type(self) -> &'static str {
+        match self {
+            VidSignatureKeyType::Ed25519 => "OKP",
+            VidSignatureKeyType::MlDsa65 => "APK",
+        }
+    }
+
+    fn jwk_curve(self) -> Option<&'static str> {
+        match self {
+            VidSignatureKeyType::Ed25519 => Some("Ed25519"),
+            VidSignatureKeyType::MlDsa65 => None,
+        }
+    }
+
+    fn jwk_algorithm(self) -> Option<&'static str> {
+        match self {
+            VidSignatureKeyType::Ed25519 => None,
+            VidSignatureKeyType::MlDsa65 => Some("ML-DSA-65"),
+        }
+    }
 }
 
 // ANCHOR: custom-vid-mbBook
@@ -290,8 +325,8 @@ pub trait VerifiedVid: Send + Sync {
 
     fn encryption_key_jwk(&self) -> serde_json::Value {
         serde_json::json!({
-            "kty": Into::<KeyType>::into(self.encryption_key_type()),
-            "crv": Into::<Curve>::into(self.encryption_key_type()),
+            "kty": self.encryption_key_type().jwk_key_type(),
+            "crv": self.encryption_key_type().jwk_curve(),
             "use": "enc",
             "x": Base64UrlUnpadded::encode_string(self.encryption_key().as_ref()),
         })
@@ -301,17 +336,16 @@ pub trait VerifiedVid: Send + Sync {
         match self.signature_key_type() {
             VidSignatureKeyType::Ed25519 => {
                 serde_json::json!({
-                    "kty": Into::<KeyType>::into(self.signature_key_type()),
-                    "crv": Into::<Option<Curve>>::into(self.signature_key_type()),
+                    "kty": self.signature_key_type().jwk_key_type(),
+                    "crv": self.signature_key_type().jwk_curve(),
                     "use": "sig",
                     "x": Base64UrlUnpadded::encode_string(self.verifying_key().as_ref()),
                 })
             }
-            #[cfg(feature = "pq")]
             VidSignatureKeyType::MlDsa65 => {
                 serde_json::json!({
-                    "kty": Into::<KeyType>::into(self.signature_key_type()),
-                    "alg": Into::<Option<Algorithm>>::into(self.signature_key_type()),
+                    "kty": self.signature_key_type().jwk_key_type(),
+                    "alg": self.signature_key_type().jwk_algorithm(),
                     "use": "sig",
                     "pub": Base64UrlUnpadded::encode_string(self.verifying_key().as_ref()),
                 })
@@ -329,8 +363,8 @@ pub trait PrivateVid: VerifiedVid + Send + Sync {
 
     fn private_encryption_key_jwk(&self) -> serde_json::Value {
         serde_json::json!({
-            "kty": Into::<KeyType>::into(self.encryption_key_type()),
-            "crv": Into::<Curve>::into(self.encryption_key_type()),
+            "kty": self.encryption_key_type().jwk_key_type(),
+            "crv": self.encryption_key_type().jwk_curve(),
             "use": "enc",
             "x": Base64UrlUnpadded::encode_string(self.encryption_key().as_ref()),
             "d": Base64UrlUnpadded::encode_string(self.decryption_key().as_ref()),

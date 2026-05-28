@@ -20,7 +20,7 @@ fuzzing = ["dep:arbitrary"]
 demo = []
 test-utils = ["dep:tempfile"]
 nacl = ["essr"]
-pq = ["dep:hpke_pq", "dep:ml-dsa", "essr"]
+pq = ["essr"]
 bench-callgrind = ["dep:gungraun"]
 bench-criterion = ["dep:criterion"]
 bench-network-timings = []
@@ -56,8 +56,8 @@ once_cell = { workspace = true }
 # crypto
 ed25519-dalek = { workspace = true }
 hpke = { workspace = true }
-hpke_pq = { workspace = true, optional = true }
-ml-dsa = { version = "0.0.4", features = ["rand_core"], optional = true }
+hpke_pq = { workspace = true }
+ml-dsa = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }
 sha2 = { workspace = true }
@@ -103,6 +103,9 @@ criterion = { version = "0.5.1", optional = true }
 # required for compiling to wasm32-unknown-unknown
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.3.3", features = ["wasm_js"] }
+getrandom_04 = { package = "getrandom", version = "0.4.2", features = [
+  "wasm_js",
+] }
 [dependencies.getrandom]
 version = "0.2"
 features = ["js"]

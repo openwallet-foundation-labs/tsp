@@ -718,13 +718,11 @@ fn open_message(message: &[u8], payload: Option<&[u8]>) -> Option<serde_json::Va
             cesr::CryptoType::HpkeEssr => "HPKE ESSR",
             cesr::CryptoType::NaclAuth => "NaCl Auth",
             cesr::CryptoType::NaclEssr => "NaCl ESSR",
-            #[cfg(feature = "pq")]
             cesr::CryptoType::X25519Kyber768Draft00 => "X25519 Kyber768 Draft 00",
         },
         "signatureType": match parts.signature_type {
             cesr::SignatureType::NoSignature => "No Signature",
             cesr::SignatureType::Ed25519 => "Ed25519",
-            #[cfg(feature = "pq")]
             cesr::SignatureType::MlDsa65 => "MlDsa65",
         }
     }))

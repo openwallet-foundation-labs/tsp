@@ -1,17 +1,10 @@
-#[cfg(not(feature = "nacl"))]
-use crate::definitions::VidEncryptionKeyType;
 use crate::definitions::{
     Digest, MessageType, NonConfidentialData, Payload, PrivateKeyData, PrivateSigningKeyData,
     PrivateVid, PublicKeyData, PublicVerificationKeyData, RelationshipForm, TSPMessage,
-    VerifiedVid,
+    VerifiedVid, VidEncryptionKeyType, VidSignatureKeyType,
 };
 use ed25519_dalek::Signer;
-#[cfg(not(feature = "pq"))]
-use hpke::kem;
-#[cfg(feature = "pq")]
-use hpke_pq::kem;
-#[cfg(feature = "pq")]
-use ml_dsa::{EncodedVerifyingKey, KeyGen, MlDsa65, signature::Verifier};
+use ml_dsa::{EncodedVerifyingKey, ExpandedSigningKey, ExpandedSigningKeyBytes, MlDsa65};
 use rand_core::OsRng;
 #[cfg(feature = "bench-network-timings")]
 use std::time::Instant;
@@ -37,7 +30,11 @@ pub(crate) struct ParallelSignatureInfo<'a> {
     pub signed_data: Vec<u8>,
 }
 
-// Which digest algorithm is active depends on the crypto backend feature set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct OutboundCryptoSelection {
+    pub crypto_type: CryptoType,
+}
+
 #[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub(crate) enum RelationshipDigestAlgorithm {
@@ -46,19 +43,103 @@ pub(crate) enum RelationshipDigestAlgorithm {
 }
 
 impl RelationshipDigestAlgorithm {
-    fn field<'a>(self, digest: &'a Digest) -> crate::cesr::Digest<'a> {
+    pub(crate) fn for_crypto_type(crypto_type: CryptoType) -> Result<Self, CryptoError> {
+        Ok(match crypto_type {
+            CryptoType::NaclAuth | CryptoType::NaclEssr => RelationshipDigestAlgorithm::Blake2b256,
+            CryptoType::HpkeAuth | CryptoType::HpkeEssr | CryptoType::X25519Kyber768Draft00 => {
+                RelationshipDigestAlgorithm::Sha2_256
+            }
+            CryptoType::Plaintext => return Err(CryptoError::InvalidCryptoSelection(crypto_type)),
+        })
+    }
+
+    pub(crate) fn field<'a>(self, digest: &'a Digest) -> crate::cesr::Digest<'a> {
         match self {
             RelationshipDigestAlgorithm::Sha2_256 => crate::cesr::Digest::Sha2_256(digest),
             RelationshipDigestAlgorithm::Blake2b256 => crate::cesr::Digest::Blake2b256(digest),
         }
     }
 
-    fn hash(self, bytes: &[u8]) -> Digest {
+    pub(crate) fn hash(self, bytes: &[u8]) -> Digest {
         match self {
             RelationshipDigestAlgorithm::Sha2_256 => sha256(bytes),
             RelationshipDigestAlgorithm::Blake2b256 => blake2b256(bytes),
         }
     }
+}
+
+pub(crate) fn default_outbound_crypto_selection(
+    sender: &dyn VerifiedVid,
+    receiver: &dyn VerifiedVid,
+) -> OutboundCryptoSelection {
+    let sender_key_type = sender.encryption_key_type();
+    let receiver_key_type = receiver.encryption_key_type();
+    let crypto_type = if matches!(
+        receiver_key_type,
+        VidEncryptionKeyType::X25519Kyber768Draft00
+    ) {
+        CryptoType::X25519Kyber768Draft00
+    } else if cfg!(feature = "nacl")
+        && matches!(sender_key_type, VidEncryptionKeyType::X25519)
+        && matches!(receiver_key_type, VidEncryptionKeyType::X25519)
+    {
+        if cfg!(feature = "essr") {
+            CryptoType::NaclEssr
+        } else {
+            CryptoType::NaclAuth
+        }
+    } else if cfg!(feature = "essr") || !matches!(sender_key_type, VidEncryptionKeyType::X25519) {
+        CryptoType::HpkeEssr
+    } else {
+        CryptoType::HpkeAuth
+    };
+
+    OutboundCryptoSelection { crypto_type }
+}
+
+pub(crate) fn signature_type(sender: &dyn VerifiedVid) -> SignatureType {
+    match sender.signature_key_type() {
+        VidSignatureKeyType::Ed25519 => SignatureType::Ed25519,
+        VidSignatureKeyType::MlDsa65 => SignatureType::MlDsa65,
+    }
+}
+
+pub(crate) fn append_signature(
+    sender: &dyn PrivateVid,
+    data: &mut Vec<u8>,
+) -> Result<(), CryptoError> {
+    match sender.signature_key_type() {
+        VidSignatureKeyType::Ed25519 => {
+            #[cfg(feature = "bench-network-timings")]
+            let signature_started = std::time::Instant::now();
+            let sign_key = ed25519_dalek::SigningKey::from_bytes(&TryInto::<[u8; 32]>::try_into(
+                sender.signing_key().as_slice(),
+            )?);
+            let signature = sign_key.sign(data).to_bytes();
+            crate::cesr::encode_signature(&signature, data, SignatureType::Ed25519);
+            #[cfg(feature = "bench-network-timings")]
+            crate::bench::record_signature(signature_started);
+        }
+        VidSignatureKeyType::MlDsa65 => {
+            #[cfg(feature = "bench-network-timings")]
+            let signature_started = std::time::Instant::now();
+            let sign_key = mldsa65_signing_key_from_bytes(sender.signing_key().as_slice())?;
+            let signature = ml_dsa::Signer::sign(&sign_key, data).encode();
+            crate::cesr::encode_signature(signature.as_slice(), data, SignatureType::MlDsa65);
+            #[cfg(feature = "bench-network-timings")]
+            crate::bench::record_signature(signature_started);
+        }
+    }
+
+    Ok(())
+}
+
+fn mldsa65_signing_key_from_bytes(
+    signing_key: &[u8],
+) -> Result<ExpandedSigningKey<MlDsa65>, CryptoError> {
+    let signing_key = ExpandedSigningKeyBytes::<MlDsa65>::try_from(signing_key)?;
+    #[allow(deprecated)]
+    Ok(ExpandedSigningKey::<MlDsa65>::from_expanded(&signing_key))
 }
 
 fn encode_hashed_payload(
@@ -277,13 +358,9 @@ pub(crate) fn sign_detached(sender: &dyn PrivateVid, data: &[u8]) -> Result<Vec<
             )?);
             sign_key.sign(data).to_bytes().to_vec()
         }
-        #[cfg(feature = "pq")]
         crate::definitions::VidSignatureKeyType::MlDsa65 => {
-            use ml_dsa::EncodedSigningKey;
-            let sign_key = ml_dsa::SigningKey::<MlDsa65>::decode(
-                &EncodedSigningKey::<MlDsa65>::try_from(sender.signing_key().as_slice())?,
-            );
-            sign_key.sign(data).encode().to_vec()
+            let sign_key = mldsa65_signing_key_from_bytes(sender.signing_key().as_slice())?;
+            ml_dsa::Signer::sign(&sign_key, data).encode().to_vec()
         }
     })
 }
@@ -296,47 +373,27 @@ pub(crate) fn verify_detached(
     match sender.signature_key_type() {
         crate::definitions::VidSignatureKeyType::Ed25519 => {
             let signature = ed25519_dalek::Signature::from_slice(signature)
-                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+                .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
             let verifying_key =
                 ed25519_dalek::VerifyingKey::try_from(sender.verifying_key().as_slice())
-                    .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+                    .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
             verifying_key
                 .verify_strict(signed_data, &signature)
-                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+                .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
         }
-        #[cfg(feature = "pq")]
         crate::definitions::VidSignatureKeyType::MlDsa65 => {
             let signature: ml_dsa::Signature<MlDsa65> = ml_dsa::Signature::try_from(signature)
-                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+                .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
             let verifying_key = ml_dsa::VerifyingKey::decode(
                 &EncodedVerifyingKey::<MlDsa65>::try_from(sender.verifying_key().as_slice())?,
             );
-            verifying_key
-                .verify(signed_data, &signature)
-                .map_err(|err| Verify(sender.identifier().to_string(), err))?;
+            ml_dsa::Verifier::verify(&verifying_key, signed_data, &signature)
+                .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
         }
     }
 
     Ok(())
 }
-
-#[cfg(not(feature = "pq"))]
-pub type Aead = hpke::aead::ChaCha20Poly1305;
-
-#[cfg(not(feature = "pq"))]
-pub type Kdf = hpke::kdf::HkdfSha256;
-
-#[cfg(not(feature = "pq"))]
-pub type Kem = kem::X25519HkdfSha256;
-
-#[cfg(feature = "pq")]
-pub type Aead = hpke_pq::aead::ChaCha20Poly1305;
-
-#[cfg(feature = "pq")]
-pub type Kdf = hpke_pq::kdf::HkdfSha256;
-
-#[cfg(feature = "pq")]
-pub type Kem = kem::X25519Kyber768Draft00;
 
 /// Encrypt, authenticate and sign and CESR encode a TSP message
 pub fn seal(
@@ -376,6 +433,42 @@ pub fn seal_and_hash(
     )
 }
 
+pub fn seal_with_crypto_type(
+    sender: &dyn PrivateVid,
+    receiver: &dyn VerifiedVid,
+    nonconfidential_data: Option<NonConfidentialData>,
+    payload: Payload<&[u8]>,
+    crypto_type: CryptoType,
+) -> Result<TSPMessage, CryptoError> {
+    seal_and_hash_with_crypto_type(
+        sender,
+        receiver,
+        nonconfidential_data,
+        payload,
+        None,
+        crypto_type,
+    )
+}
+
+pub fn seal_and_hash_with_crypto_type(
+    sender: &dyn PrivateVid,
+    receiver: &dyn VerifiedVid,
+    nonconfidential_data: Option<NonConfidentialData>,
+    payload: Payload<&[u8]>,
+    digest: Option<&mut Digest>,
+    crypto_type: CryptoType,
+) -> Result<TSPMessage, CryptoError> {
+    seal_with_selection(
+        sender,
+        receiver,
+        nonconfidential_data,
+        payload,
+        digest,
+        None,
+        OutboundCryptoSelection { crypto_type },
+    )
+}
+
 pub(crate) fn seal_and_hash_with_relationship_nonce(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
@@ -384,9 +477,48 @@ pub(crate) fn seal_and_hash_with_relationship_nonce(
     digest: Option<&mut Digest>,
     request_nonce_override: Option<[u8; 32]>,
 ) -> Result<TSPMessage, CryptoError> {
-    #[cfg(not(feature = "nacl"))]
-    let msg = match receiver.encryption_key_type() {
-        VidEncryptionKeyType::X25519 => tsp_hpke::seal::<Aead, Kdf, kem::X25519HkdfSha256>(
+    seal_with_selection(
+        sender,
+        receiver,
+        nonconfidential_data,
+        payload,
+        digest,
+        request_nonce_override,
+        default_outbound_crypto_selection(sender, receiver),
+    )
+}
+
+pub(crate) fn seal_with_selection(
+    sender: &dyn PrivateVid,
+    receiver: &dyn VerifiedVid,
+    nonconfidential_data: Option<NonConfidentialData>,
+    payload: Payload<&[u8]>,
+    digest: Option<&mut Digest>,
+    request_nonce_override: Option<[u8; 32]>,
+    selection: OutboundCryptoSelection,
+) -> Result<TSPMessage, CryptoError> {
+    ensure_selection_matches_key_types(sender, receiver, selection.crypto_type)?;
+
+    match selection.crypto_type {
+        CryptoType::NaclAuth | CryptoType::NaclEssr => tsp_nacl::seal(
+            sender,
+            receiver,
+            nonconfidential_data,
+            payload,
+            digest,
+            request_nonce_override,
+            selection.crypto_type,
+        ),
+        CryptoType::HpkeAuth | CryptoType::HpkeEssr => tsp_hpke::seal_x25519(
+            sender,
+            receiver,
+            nonconfidential_data,
+            payload,
+            digest,
+            request_nonce_override,
+            selection.crypto_type,
+        ),
+        CryptoType::X25519Kyber768Draft00 => tsp_hpke::seal_pq(
             sender,
             receiver,
             nonconfidential_data,
@@ -394,30 +526,45 @@ pub(crate) fn seal_and_hash_with_relationship_nonce(
             digest,
             request_nonce_override,
         ),
-        #[cfg(feature = "pq")]
-        VidEncryptionKeyType::X25519Kyber768Draft00 => {
-            tsp_hpke::seal::<Aead, Kdf, kem::X25519Kyber768Draft00>(
-                sender,
-                receiver,
-                nonconfidential_data,
-                payload,
-                digest,
-                request_nonce_override,
-            )
-        }
-    }?;
+        CryptoType::Plaintext => Err(CryptoError::InvalidCryptoSelection(selection.crypto_type)),
+    }
+}
 
-    #[cfg(feature = "nacl")]
-    let msg = tsp_nacl::seal(
-        sender,
-        receiver,
-        nonconfidential_data,
-        payload,
-        digest,
-        request_nonce_override,
-    )?;
+fn ensure_selection_matches_key_types(
+    sender: &dyn VerifiedVid,
+    receiver: &dyn VerifiedVid,
+    crypto_type: CryptoType,
+) -> Result<(), CryptoError> {
+    let expected_receiver = match crypto_type {
+        CryptoType::NaclAuth
+        | CryptoType::NaclEssr
+        | CryptoType::HpkeAuth
+        | CryptoType::HpkeEssr => VidEncryptionKeyType::X25519,
+        CryptoType::X25519Kyber768Draft00 => VidEncryptionKeyType::X25519Kyber768Draft00,
+        CryptoType::Plaintext => return Err(CryptoError::InvalidCryptoSelection(crypto_type)),
+    };
 
-    Ok(msg)
+    let receiver_key_type = receiver.encryption_key_type();
+    if receiver_key_type != expected_receiver {
+        return Err(CryptoError::IncompatibleCryptoSelection {
+            crypto_type,
+            key_type: receiver_key_type,
+        });
+    }
+
+    let sender_requires_x25519 = matches!(
+        crypto_type,
+        CryptoType::NaclAuth | CryptoType::NaclEssr | CryptoType::HpkeAuth
+    );
+    let sender_key_type = sender.encryption_key_type();
+    if sender_requires_x25519 && !matches!(sender_key_type, VidEncryptionKeyType::X25519) {
+        return Err(CryptoError::IncompatibleSenderCryptoSelection {
+            crypto_type,
+            key_type: sender_key_type,
+        });
+    }
+
+    Ok(())
 }
 
 pub type MessageContents<'a> = (
@@ -482,16 +629,11 @@ pub(crate) fn open_with_signature_info<'a>(
     }
 
     let result = match envelope.crypto_type {
-        #[cfg(feature = "pq")]
         CryptoType::X25519Kyber768Draft00 => {
-            tsp_hpke::open::<Aead, Kdf, kem::X25519Kyber768Draft00>(
-                receiver, sender, raw_header, envelope, ciphertext,
-            )
+            tsp_hpke::open_pq(receiver, sender, raw_header, envelope, ciphertext)
         }
         CryptoType::HpkeAuth | CryptoType::HpkeEssr => {
-            tsp_hpke::open::<Aead, Kdf, kem::X25519HkdfSha256>(
-                receiver, sender, raw_header, envelope, ciphertext,
-            )
+            tsp_hpke::open_x25519(receiver, sender, raw_header, envelope, ciphertext)
         }
         CryptoType::NaclAuth | CryptoType::NaclEssr => {
             tsp_nacl::open(receiver, sender, raw_header, envelope, ciphertext)
@@ -521,77 +663,101 @@ pub fn verify<'a>(
     nonconfidential::verify(sender, tsp_message)
 }
 
-#[cfg(all(not(feature = "nacl"), not(feature = "pq")))]
-/// Generate a new encryption / decryption key pair
-pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
-    use hpke::Serializable;
-
-    let (private, public) = <Kem as hpke::Kem>::gen_keypair(&mut OsRng);
-
-    (
-        private.to_bytes().to_vec().into(),
-        public.to_bytes().to_vec().into(),
-    )
+pub fn default_encryption_key_type() -> VidEncryptionKeyType {
+    if cfg!(feature = "pq") {
+        VidEncryptionKeyType::X25519Kyber768Draft00
+    } else {
+        VidEncryptionKeyType::X25519
+    }
 }
 
-#[cfg(feature = "pq")]
-/// Generate a new encryption / decryption key pair
-pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
-    use hpke_pq::Serializable;
-
-    let (private, public) = <Kem as hpke_pq::Kem>::gen_keypair(&mut OsRng);
-
-    let private = private.to_bytes();
-    let public = public.to_bytes();
-
-    (
-        private.as_slice().to_vec().into(),
-        public.as_slice().to_vec().into(),
-    )
+pub fn default_signature_key_type() -> VidSignatureKeyType {
+    if cfg!(feature = "pq") {
+        VidSignatureKeyType::MlDsa65
+    } else {
+        VidSignatureKeyType::Ed25519
+    }
 }
 
-#[cfg(all(feature = "nacl", not(feature = "pq")))]
-/// Generate a new encryption / decryption key pair
+/// Generate a new encryption / decryption key pair with the default key type.
 pub fn gen_encrypt_keypair() -> (PrivateKeyData, PublicKeyData) {
-    let private_key = crypto_box::SecretKey::generate(&mut OsRng);
-
-    (
-        private_key.to_bytes().to_vec().into(),
-        crypto_box::PublicKey::from(&private_key)
-            .to_bytes()
-            .to_vec()
-            .into(),
-    )
+    gen_encrypt_keypair_for(default_encryption_key_type())
 }
 
-/// Generate a new signing / verification key pair
-#[cfg(not(feature = "pq"))]
+/// Generate a new encryption / decryption key pair for an explicit key type.
+pub fn gen_encrypt_keypair_for(key_type: VidEncryptionKeyType) -> (PrivateKeyData, PublicKeyData) {
+    match key_type {
+        VidEncryptionKeyType::X25519 => {
+            let private_key = crypto_box::SecretKey::generate(&mut OsRng);
+
+            (
+                private_key.to_bytes().to_vec().into(),
+                crypto_box::PublicKey::from(&private_key)
+                    .to_bytes()
+                    .to_vec()
+                    .into(),
+            )
+        }
+        VidEncryptionKeyType::X25519Kyber768Draft00 => {
+            use hpke_pq::Serializable;
+
+            let (private, public) =
+                <hpke_pq::kem::X25519Kyber768Draft00 as hpke_pq::Kem>::gen_keypair(&mut OsRng);
+
+            let private = private.to_bytes();
+            let public = public.to_bytes();
+
+            (
+                private.as_slice().to_vec().into(),
+                public.as_slice().to_vec().into(),
+            )
+        }
+    }
+}
+
+/// Generate a new signing / verification key pair with the default key type.
 pub fn gen_sign_keypair() -> (PrivateSigningKeyData, PublicVerificationKeyData) {
-    let sigkey = ed25519_dalek::SigningKey::generate(&mut OsRng);
-
-    (
-        sigkey.to_bytes().to_vec().into(),
-        sigkey.verifying_key().to_bytes().to_vec().into(),
-    )
+    gen_sign_keypair_for(default_signature_key_type())
 }
 
-/// Generate a new signing / verification key pair
-#[cfg(feature = "pq")]
-pub fn gen_sign_keypair() -> (PrivateSigningKeyData, PublicVerificationKeyData) {
-    let sigkey = MlDsa65::key_gen(&mut OsRng);
+/// Generate a new signing / verification key pair for an explicit key type.
+pub fn gen_sign_keypair_for(
+    key_type: VidSignatureKeyType,
+) -> (PrivateSigningKeyData, PublicVerificationKeyData) {
+    match key_type {
+        VidSignatureKeyType::Ed25519 => {
+            let sigkey = ed25519_dalek::SigningKey::generate(&mut OsRng);
 
-    (
-        sigkey.signing_key().encode().to_vec().into(),
-        sigkey.verifying_key().encode().to_vec().into(),
-    )
+            (
+                sigkey.to_bytes().to_vec().into(),
+                sigkey.verifying_key().to_bytes().to_vec().into(),
+            )
+        }
+        VidSignatureKeyType::MlDsa65 => {
+            let sigkey = <ml_dsa::SigningKey<MlDsa65> as ml_dsa::Generate>::generate();
+            let verifying_key =
+                <ml_dsa::SigningKey<MlDsa65> as ml_dsa::Keypair>::verifying_key(&sigkey);
+            #[allow(deprecated)]
+            let signing_key = sigkey.expanded_key().to_expanded();
+
+            (
+                signing_key.to_vec().into(),
+                verifying_key.encode().to_vec().into(),
+            )
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{definitions::Payload, vid::OwnedVid};
+    use crate::{
+        cesr::CryptoType,
+        definitions::{Payload, VidEncryptionKeyType, VidSignatureKeyType},
+        vid::OwnedVid,
+    };
     use url::Url;
 
-    use super::{open, seal};
+    use super::{CryptoError, open, seal, seal_with_crypto_type};
 
     #[test]
     fn seal_open_message() {
@@ -617,5 +783,171 @@ mod tests {
 
         assert_eq!(received_nonconfidential_data.unwrap(), nonconfidential_data);
         assert_eq!(received_secret_message, Payload::Content(secret_message));
+    }
+
+    #[test]
+    fn explicit_crypto_selection_supports_multiple_backends() {
+        let alice = OwnedVid::bind_with_key_types(
+            "did:test:alice-explicit",
+            Url::parse("tcp://127.0.0.1:13381").unwrap(),
+            VidSignatureKeyType::Ed25519,
+            VidEncryptionKeyType::X25519,
+        );
+        let bob_x25519 = OwnedVid::bind_with_key_types(
+            "did:test:bob-x25519-explicit",
+            Url::parse("tcp://127.0.0.1:13382").unwrap(),
+            VidSignatureKeyType::Ed25519,
+            VidEncryptionKeyType::X25519,
+        );
+        let bob_pq = OwnedVid::bind_with_key_types(
+            "did:test:bob-pq-explicit",
+            Url::parse("tcp://127.0.0.1:13383").unwrap(),
+            VidSignatureKeyType::Ed25519,
+            VidEncryptionKeyType::X25519Kyber768Draft00,
+        );
+
+        for (receiver, crypto_type) in [
+            (&bob_x25519, CryptoType::HpkeAuth),
+            (&bob_x25519, CryptoType::NaclAuth),
+            (&bob_pq, CryptoType::X25519Kyber768Draft00),
+        ] {
+            let mut message = seal_with_crypto_type(
+                &alice,
+                receiver,
+                None,
+                Payload::Content(b"selected backend"),
+                crypto_type,
+            )
+            .unwrap();
+
+            let (_, payload, opened_crypto_type, _) = open(receiver, &alice, &mut message).unwrap();
+
+            assert_eq!(payload, Payload::Content(b"selected backend" as &[u8]));
+            assert_eq!(opened_crypto_type, crypto_type);
+        }
+    }
+
+    #[test]
+    fn default_selection_uses_pq_for_pq_receiver() {
+        let alice = OwnedVid::bind_with_key_types(
+            "did:test:alice-default-pq",
+            Url::parse("tcp://127.0.0.1:13386").unwrap(),
+            VidSignatureKeyType::Ed25519,
+            VidEncryptionKeyType::X25519,
+        );
+        let bob = OwnedVid::bind_with_key_types(
+            "did:test:bob-default-pq",
+            Url::parse("tcp://127.0.0.1:13387").unwrap(),
+            VidSignatureKeyType::Ed25519,
+            VidEncryptionKeyType::X25519Kyber768Draft00,
+        );
+
+        let mut message = seal(&alice, &bob, None, Payload::Content(b"default pq")).unwrap();
+        let (_, payload, opened_crypto_type, _) = open(&bob, &alice, &mut message).unwrap();
+
+        assert_eq!(payload, Payload::Content(b"default pq" as &[u8]));
+        assert_eq!(opened_crypto_type, CryptoType::X25519Kyber768Draft00);
+    }
+
+    #[test]
+    fn default_selection_avoids_nacl_for_pq_sender_to_x25519_receiver() {
+        let alice = OwnedVid::bind_with_key_types(
+            "did:test:alice-pq-to-x25519-default",
+            Url::parse("tcp://127.0.0.1:13388").unwrap(),
+            VidSignatureKeyType::Ed25519,
+            VidEncryptionKeyType::X25519Kyber768Draft00,
+        );
+        let bob = OwnedVid::bind_with_key_types(
+            "did:test:bob-x25519-from-pq-default",
+            Url::parse("tcp://127.0.0.1:13389").unwrap(),
+            VidSignatureKeyType::Ed25519,
+            VidEncryptionKeyType::X25519,
+        );
+
+        let mut message = seal(&alice, &bob, None, Payload::Content(b"default hpke essr")).unwrap();
+        let (_, payload, opened_crypto_type, _) = open(&bob, &alice, &mut message).unwrap();
+
+        assert_eq!(payload, Payload::Content(b"default hpke essr" as &[u8]));
+        assert_eq!(opened_crypto_type, CryptoType::HpkeEssr);
+    }
+
+    #[test]
+    fn explicit_crypto_selection_rejects_incompatible_receiver_key() {
+        let alice = OwnedVid::bind_with_key_types(
+            "did:test:alice-incompatible",
+            Url::parse("tcp://127.0.0.1:13384").unwrap(),
+            VidSignatureKeyType::Ed25519,
+            VidEncryptionKeyType::X25519,
+        );
+        let bob = OwnedVid::bind_with_key_types(
+            "did:test:bob-incompatible",
+            Url::parse("tcp://127.0.0.1:13385").unwrap(),
+            VidSignatureKeyType::Ed25519,
+            VidEncryptionKeyType::X25519,
+        );
+
+        let err = seal_with_crypto_type(
+            &alice,
+            &bob,
+            None,
+            Payload::Content(b"selected backend"),
+            CryptoType::X25519Kyber768Draft00,
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            CryptoError::IncompatibleCryptoSelection {
+                crypto_type: CryptoType::X25519Kyber768Draft00,
+                key_type: VidEncryptionKeyType::X25519,
+            }
+        ));
+
+        let err = seal_with_crypto_type(
+            &alice,
+            &bob,
+            None,
+            Payload::Content(b"selected backend"),
+            CryptoType::Plaintext,
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            CryptoError::InvalidCryptoSelection(CryptoType::Plaintext)
+        ));
+    }
+
+    #[test]
+    fn explicit_crypto_selection_rejects_incompatible_sender_key() {
+        let alice = OwnedVid::bind_with_key_types(
+            "did:test:alice-pq-incompatible",
+            Url::parse("tcp://127.0.0.1:13390").unwrap(),
+            VidSignatureKeyType::Ed25519,
+            VidEncryptionKeyType::X25519Kyber768Draft00,
+        );
+        let bob = OwnedVid::bind_with_key_types(
+            "did:test:bob-x25519-incompatible",
+            Url::parse("tcp://127.0.0.1:13391").unwrap(),
+            VidSignatureKeyType::Ed25519,
+            VidEncryptionKeyType::X25519,
+        );
+
+        let err = seal_with_crypto_type(
+            &alice,
+            &bob,
+            None,
+            Payload::Content(b"selected backend"),
+            CryptoType::NaclAuth,
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            CryptoError::IncompatibleSenderCryptoSelection {
+                crypto_type: CryptoType::NaclAuth,
+                key_type: VidEncryptionKeyType::X25519Kyber768Draft00,
+            }
+        ));
     }
 }

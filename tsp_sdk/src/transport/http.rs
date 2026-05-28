@@ -15,7 +15,6 @@ use super::TransportError;
 #[cfg(feature = "use_local_certificate")]
 use {
     rustls_pki_types::{CertificateDer, pem::PemObject},
-    std::sync::Arc,
     tokio_tungstenite::Connector,
     tracing::warn,
 };

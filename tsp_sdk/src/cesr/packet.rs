@@ -9,13 +9,11 @@ const TSP_NACL_CIPHERTEXT: u32 = cesr!("C");
 const TSP_NACLAUTH_CIPHERTEXT: u32 = cesr!("NCL");
 const TSP_HPKEBASE_CIPHERTEXT: u32 = cesr!("F");
 const TSP_HPKEAUTH_CIPHERTEXT: u32 = cesr!("G");
-#[cfg(feature = "pq")]
 const TSP_HPKEPQ_CIPHERTEXT: u32 = cesr!("PQC");
 const TSP_VID: u32 = cesr!("B");
 
 /// Constants that determine the specific CESR types for "fixed length data"
 const ED25519_SIGNATURE: u32 = cesr!("B");
-#[cfg(feature = "pq")]
 const ML_DSA_65_SIGNATURE: u32 = cesr!("QDM");
 #[allow(clippy::eq_op)]
 const TSP_NONCE: u32 = cesr!("A");
@@ -55,8 +53,6 @@ use super::{
     encode::{encode_count, encode_fixed_data},
     error::{DecodeError, EncodeError},
 };
-#[cfg(not(feature = "pq"))]
-use hpke::kem;
 use std::fmt::Debug;
 
 /// A type to enforce that a random nonce contains enough bits of security
@@ -149,7 +145,7 @@ impl<Bytes: AsRef<[u8]>, Vid: AsRef<[u8]>> Payload<'_, Bytes, Vid> {
 #[cfg(feature = "fuzzing")]
 pub mod fuzzing;
 
-#[derive(Debug, Clone, PartialEq, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 #[repr(u8)]
 pub enum CryptoType {
     Plaintext = 0,
@@ -157,7 +153,6 @@ pub enum CryptoType {
     HpkeEssr = 2,
     NaclAuth = 3,
     NaclEssr = 4,
-    #[cfg(feature = "pq")]
     X25519Kyber768Draft00 = 5,
 }
 
@@ -165,14 +160,13 @@ pub trait AsCryptoType {
     fn crypto_type() -> CryptoType;
 }
 
-#[cfg(feature = "pq")]
-impl AsCryptoType for kem::X25519Kyber768Draft00 {
+impl AsCryptoType for hpke_pq::kem::X25519Kyber768Draft00 {
     fn crypto_type() -> CryptoType {
         CryptoType::X25519Kyber768Draft00
     }
 }
 
-impl AsCryptoType for kem::X25519HkdfSha256 {
+impl AsCryptoType for hpke::kem::X25519HkdfSha256 {
     fn crypto_type() -> CryptoType {
         if cfg!(feature = "essr") {
             CryptoType::HpkeEssr
@@ -193,7 +187,6 @@ impl CryptoType {
 pub enum SignatureType {
     NoSignature = 0,
     Ed25519 = 1,
-    #[cfg(feature = "pq")]
     MlDsa65 = 2,
 }
 
@@ -229,7 +222,6 @@ fn encoded_signature_from_raw<'a>(
         return Ok(EncodedSignature::Ed25519(signature));
     }
 
-    #[cfg(feature = "pq")]
     if let Ok(signature) = <&[u8; 3309]>::try_from(signature) {
         return Ok(EncodedSignature::MlDsa65(signature));
     }
@@ -253,7 +245,6 @@ fn decoded_signature_from_stream(
     let signature_len = match EncodedSignature::decode(&mut immutable_stream)? {
         EncodedSignature::NoSignature => return Err(DecodeError::InvalidSignatureType),
         EncodedSignature::Ed25519(signature) => signature.len(),
-        #[cfg(feature = "pq")]
         EncodedSignature::MlDsa65(signature) => signature.len(),
     };
 
@@ -681,7 +672,6 @@ fn encode_envelope_fields<'a, Vid: AsRef<[u8]>>(
 enum EncodedSignature<'a> {
     NoSignature,
     Ed25519(&'a [u8; 64]),
-    #[cfg(feature = "pq")]
     MlDsa65(&'a [u8; 3309]),
 }
 
@@ -694,18 +684,9 @@ impl<'a> EncodedSignature<'a> {
                 encode_count(TSP_INDEX_SIG_GRP, signature.len().div_ceil(3), output);
                 encode_fixed_data(ED25519_SIGNATURE, signature.as_slice(), output);
             }
-            #[cfg(feature = "pq")]
             EncodedSignature::MlDsa65(signature) => {
-                encode_count(
-                    TSP_ATTACH_GRP,
-                    signature.len().next_multiple_of(3) / 3,
-                    output,
-                );
-                encode_count(
-                    TSP_INDEX_SIG_GRP,
-                    signature.len().next_multiple_of(3) / 3,
-                    output,
-                );
+                encode_count(TSP_ATTACH_GRP, signature.len().div_ceil(3), output);
+                encode_count(TSP_INDEX_SIG_GRP, signature.len().div_ceil(3), output);
                 encode_fixed_data(ML_DSA_65_SIGNATURE, signature.as_slice(), output);
             }
         }
@@ -723,20 +704,17 @@ impl<'a> EncodedSignature<'a> {
             }
             Ok(EncodedSignature::Ed25519(sig))
         } else {
-            #[cfg(feature = "pq")]
             if let Some(sig) = decode_fixed_data(ML_DSA_65_SIGNATURE, stream) {
-                if a_size != (sig.len() as u32).next_multiple_of(3) / 3 {
+                if a_size != (sig.len() as u32).div_ceil(3) {
                     return Err(DecodeError::InvalidSignatureType);
                 }
-                if i_size != (sig.len() as u32).next_multiple_of(3) / 3 {
+                if i_size != (sig.len() as u32).div_ceil(3) {
                     return Err(DecodeError::InvalidSignatureType);
                 }
                 Ok(EncodedSignature::MlDsa65(sig))
             } else {
-                return Err(DecodeError::InvalidSignatureType);
+                Err(DecodeError::InvalidSignatureType)
             }
-            #[cfg(not(feature = "pq"))]
-            return Err(DecodeError::InvalidSignatureType);
         }
     }
 }
@@ -752,7 +730,6 @@ pub fn encode_signature(
         SignatureType::Ed25519 => {
             EncodedSignature::Ed25519(signature.try_into().expect("signature has incorrect size"))
         }
-        #[cfg(feature = "pq")]
         SignatureType::MlDsa65 => {
             EncodedSignature::MlDsa65(signature.try_into().expect("signature has incorrect size"))
         }
@@ -767,7 +744,6 @@ impl CryptoType {
             CryptoType::HpkeEssr => TSP_HPKEBASE_CIPHERTEXT,
             CryptoType::HpkeAuth => TSP_HPKEAUTH_CIPHERTEXT,
             CryptoType::NaclAuth => TSP_NACLAUTH_CIPHERTEXT,
-            #[cfg(feature = "pq")]
             CryptoType::X25519Kyber768Draft00 => TSP_HPKEPQ_CIPHERTEXT,
             _ => return Err(DecodeError::InvalidCrypto),
         })
@@ -834,16 +810,9 @@ pub(super) fn detected_tsp_header_size_and_confidentiality(
         CryptoType::NaclEssr
     } else if decode_variable_data(TSP_NACLAUTH_CIPHERTEXT, &mut stream).is_some() {
         CryptoType::NaclAuth
+    } else if decode_variable_data(TSP_HPKEPQ_CIPHERTEXT, &mut stream).is_some() {
+        CryptoType::X25519Kyber768Draft00
     } else {
-        #[cfg(feature = "pq")]
-        if decode_variable_data(TSP_HPKEPQ_CIPHERTEXT, &mut stream).is_some() {
-            CryptoType::X25519Kyber768Draft00
-        } else if encrypted {
-            return Err(DecodeError::UnknownCrypto);
-        } else {
-            CryptoType::Plaintext
-        }
-        #[cfg(not(feature = "pq"))]
         if encrypted {
             return Err(DecodeError::UnknownCrypto);
         } else {
@@ -857,7 +826,6 @@ pub(super) fn detected_tsp_header_size_and_confidentiality(
 
     let signature_type = match EncodedSignature::decode(&mut stream) {
         Ok(EncodedSignature::Ed25519(_)) => SignatureType::Ed25519,
-        #[cfg(feature = "pq")]
         Ok(EncodedSignature::MlDsa65(_)) => SignatureType::MlDsa65,
         _ => SignatureType::NoSignature,
     };
@@ -893,8 +861,6 @@ pub fn decode_sender_receiver<'a, Vid: TryFrom<&'a [u8]>>(
     Ok((sender, receiver, crypto_type, signature_type))
 }
 
-#[cfg(feature = "pq")]
-use hpke_pq::kem;
 use std::ops::Range;
 
 #[derive(Debug)]
@@ -1006,7 +972,6 @@ pub fn decode_envelope<'a>(stream: &'a mut [u8]) -> Result<CipherView<'a>, Decod
         SignatureType::NoSignature => [].as_slice(),
         _ => match EncodedSignature::decode(&mut sigdata)? {
             EncodedSignature::Ed25519(sig) => sig.as_slice(),
-            #[cfg(feature = "pq")]
             EncodedSignature::MlDsa65(sig) => sig.as_slice(),
             _ => [].as_slice(),
         },
@@ -1142,7 +1107,6 @@ pub fn open_message_into_parts(data: &[u8]) -> Result<MessageParts<'_>, DecodeEr
     let signature = match EncodedSignature::decode(&mut &data[pos..])? {
         EncodedSignature::NoSignature => &[],
         EncodedSignature::Ed25519(sig) => sig.as_slice(),
-        #[cfg(feature = "pq")]
         EncodedSignature::MlDsa65(sig) => sig.as_slice(),
     };
 
@@ -1176,7 +1140,7 @@ pub struct Message<'a, Vid, Bytes: AsRef<[u8]>> {
 
 /// Convenience interface which illustrates encoding as a single operation
 #[cfg(all(feature = "demo", test))]
-pub fn encode_tsp_message<Vid: AsRef<[u8]>>(
+pub fn encode_tsp_message<Vid: AsRef<[u8]>, Sig: AsRef<[u8]>>(
     Message {
         ref sender,
         ref receiver,
@@ -1184,7 +1148,7 @@ pub fn encode_tsp_message<Vid: AsRef<[u8]>>(
         message,
     }: Message<Vid, impl AsRef<[u8]>>,
     encrypt: impl FnOnce(&Vid, Vec<u8>) -> Vec<u8>,
-    sign: impl FnOnce(&Vid, &[u8]) -> Signature,
+    sign: impl FnOnce(&Vid, &[u8]) -> Sig,
 ) -> Result<Vec<u8>, EncodeError> {
     let mut cesr = encode_ets_envelope_vec(Envelope {
         crypto_type: CryptoType::HpkeAuth,
@@ -1196,8 +1160,9 @@ pub fn encode_tsp_message<Vid: AsRef<[u8]>>(
 
     let ciphertext = &encrypt(receiver, encode_payload_vec(&message)?);
 
-    encode_ciphertext(ciphertext, &mut cesr)?;
-    encode_signature(&sign(sender, &cesr), &mut cesr, SignatureType::Ed25519);
+    encode_ciphertext(ciphertext, CryptoType::HpkeAuth, &mut cesr)?;
+    let signature = sign(sender, &cesr);
+    encode_signature(signature.as_ref(), &mut cesr, SignatureType::Ed25519);
 
     Ok(cesr)
 }
@@ -1480,7 +1445,7 @@ mod test {
         let tsp = decode_tsp_message(
             &mut data,
             |_: &&[u8], x| x.to_vec(),
-            |_, _, sig| sig == &[5u8; 64],
+            |_, _, sig| sig == [5u8; 64],
         )
         .unwrap();
 

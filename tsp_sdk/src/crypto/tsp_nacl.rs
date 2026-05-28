@@ -8,26 +8,14 @@ use super::{
     CryptoError, MessageContents, ParallelSignatureInfo, open_relationship_accept,
     open_relationship_request,
 };
-#[cfg(feature = "nacl")]
 use super::{
-    RelationshipDigestAlgorithm, build_relationship_accept_payload,
-    build_relationship_request_payload,
+    RelationshipDigestAlgorithm, append_signature, build_relationship_accept_payload,
+    build_relationship_request_payload, signature_type,
 };
-#[cfg(feature = "nacl")]
-use crate::{
-    cesr::SignatureType,
-    definitions::{NonConfidentialData, TSPMessage, VidSignatureKeyType},
-};
-#[cfg(feature = "nacl")]
+use crate::definitions::{NonConfidentialData, TSPMessage};
 use crypto_box::aead::{AeadCore, OsRng};
-#[cfg(feature = "nacl")]
-use ed25519_dalek::Signer;
-#[cfg(all(feature = "pq", feature = "nacl"))]
-use ml_dsa::{EncodedSigningKey, MlDsa65};
-#[cfg(feature = "nacl")]
 use rand::{RngCore, SeedableRng, rngs::StdRng};
 
-#[cfg(feature = "nacl")]
 pub(crate) fn seal(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
@@ -35,17 +23,19 @@ pub(crate) fn seal(
     secret_payload: Payload<&[u8]>,
     digest: Option<&mut super::Digest>,
     request_nonce_override: Option<[u8; 32]>,
+    crypto_type: CryptoType,
 ) -> Result<TSPMessage, CryptoError> {
+    if !matches!(crypto_type, CryptoType::NaclAuth | CryptoType::NaclEssr) {
+        return Err(CryptoError::InvalidCryptoSelection(crypto_type));
+    }
+
     let mut csprng = StdRng::from_entropy();
 
     let mut data = Vec::with_capacity(64);
     crate::cesr::encode_ets_envelope(
         crate::cesr::Envelope {
-            #[cfg(feature = "essr")]
-            crypto_type: CryptoType::NaclEssr,
-            #[cfg(not(feature = "essr"))]
-            crypto_type: CryptoType::NaclAuth,
-            signature_type: SignatureType::Ed25519,
+            crypto_type,
+            signature_type: signature_type(sender),
             sender: sender.identifier(),
             receiver: Some(receiver.identifier()),
             nonconfidential_data,
@@ -58,6 +48,7 @@ pub(crate) fn seal(
     let mut request_digest_storage = [0_u8; 32];
     let mut reply_digest_storage = [0_u8; 32];
     let mut payload_digest_override = None;
+    let digest_algorithm = RelationshipDigestAlgorithm::for_crypto_type(crypto_type)?;
 
     let secret_payload = match secret_payload {
         Payload::Content(data) => crate::cesr::Payload::GenericMessage(data),
@@ -74,7 +65,7 @@ pub(crate) fn seal(
             let (payload, payload_digest) = build_relationship_request_payload(
                 &form,
                 sender_in_payload,
-                RelationshipDigestAlgorithm::Blake2b256,
+                digest_algorithm,
                 nonce_bytes,
                 &mut request_digest_storage,
             )?;
@@ -90,14 +81,14 @@ pub(crate) fn seal(
                 thread_id,
                 &form,
                 sender_in_payload,
-                RelationshipDigestAlgorithm::Blake2b256,
+                digest_algorithm,
                 &mut reply_digest_storage,
             )?;
             payload_digest_override = Some(payload_digest);
             payload
         }
         Payload::CancelRelationship { ref thread_id } => crate::cesr::Payload::RelationshipCancel {
-            reply: crate::cesr::Digest::Blake2b256(thread_id),
+            reply: digest_algorithm.field(thread_id),
         },
         Payload::NestedMessage(data) => crate::cesr::Payload::NestedMessage(data),
         Payload::RoutedMessage(hops, data) => crate::cesr::Payload::RoutedMessage(hops, data),
@@ -110,8 +101,7 @@ pub(crate) fn seal(
 
     // hash the raw bytes of the plaintext before encryption
     if let Some(digest) = digest {
-        *digest =
-            payload_digest_override.unwrap_or_else(|| crate::crypto::blake2b256(&cesr_message));
+        *digest = payload_digest_override.unwrap_or_else(|| digest_algorithm.hash(&cesr_message));
     }
 
     let sender_secret_key = SecretKey::from_slice(sender.decryption_key())?;
@@ -129,42 +119,9 @@ pub(crate) fn seal(
     cesr_message.extend(nonce);
 
     // encode and append the ciphertext to the envelope data
-    crate::cesr::encode_ciphertext(
-        &cesr_message,
-        if cfg!(feature = "essr") {
-            CryptoType::NaclEssr
-        } else {
-            CryptoType::NaclAuth
-        },
-        &mut data,
-    )?;
+    crate::cesr::encode_ciphertext(&cesr_message, crypto_type, &mut data)?;
 
-    // create and append signature
-    match sender.signature_key_type() {
-        VidSignatureKeyType::Ed25519 => {
-            #[cfg(feature = "bench-network-timings")]
-            let signature_started = std::time::Instant::now();
-            let sign_key = ed25519_dalek::SigningKey::from_bytes(&TryInto::<[u8; 32]>::try_into(
-                sender.signing_key().as_slice(),
-            )?);
-            let signature = sign_key.sign(&data).to_bytes();
-            crate::cesr::encode_signature(&signature, &mut data, SignatureType::Ed25519);
-            #[cfg(feature = "bench-network-timings")]
-            crate::bench::record_signature(signature_started);
-        }
-        #[cfg(feature = "pq")]
-        VidSignatureKeyType::MlDsa65 => {
-            #[cfg(feature = "bench-network-timings")]
-            let signature_started = std::time::Instant::now();
-            let sign_key = ml_dsa::SigningKey::<MlDsa65>::decode(
-                &EncodedSigningKey::<MlDsa65>::try_from(sender.signing_key().as_slice())?,
-            );
-            let signature = sign_key.sign(&data).encode();
-            crate::cesr::encode_signature(signature.as_slice(), &mut data, SignatureType::MlDsa65);
-            #[cfg(feature = "bench-network-timings")]
-            crate::bench::record_signature(signature_started);
-        }
-    }
+    append_signature(sender, &mut data)?;
 
     Ok(data)
 }

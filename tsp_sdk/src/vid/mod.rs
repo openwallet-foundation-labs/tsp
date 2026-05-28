@@ -16,7 +16,6 @@ pub mod did;
 
 pub mod error;
 
-#[cfg(feature = "resolve")]
 pub mod resolve;
 
 #[cfg(feature = "resolve")]
@@ -66,10 +65,10 @@ pub enum ResolutionContext {
 pub struct Vid {
     id: String,
     transport: Url,
-    #[serde(default)]
+    #[cfg_attr(feature = "serialize", serde(default))]
     sig_key_type: VidSignatureKeyType,
     public_sigkey: PublicVerificationKeyData,
-    #[serde(default)]
+    #[cfg_attr(feature = "serialize", serde(default))]
     enc_key_type: VidEncryptionKeyType,
     public_enckey: PublicKeyData,
 }
@@ -169,22 +168,28 @@ impl AsRef<[u8]> for Vid {
 
 impl OwnedVid {
     pub fn bind(id: impl Into<String>, transport: url::Url) -> Self {
-        let (sigkey, public_sigkey) = crate::crypto::gen_sign_keypair();
-        let (enckey, public_enckey) = crate::crypto::gen_encrypt_keypair();
+        let sig_key_type = crate::crypto::default_signature_key_type();
+        let enc_key_type = crate::crypto::default_encryption_key_type();
+
+        Self::bind_with_key_types(id, transport, sig_key_type, enc_key_type)
+    }
+
+    pub fn bind_with_key_types(
+        id: impl Into<String>,
+        transport: url::Url,
+        sig_key_type: VidSignatureKeyType,
+        enc_key_type: VidEncryptionKeyType,
+    ) -> Self {
+        let (sigkey, public_sigkey) = crate::crypto::gen_sign_keypair_for(sig_key_type);
+        let (enckey, public_enckey) = crate::crypto::gen_encrypt_keypair_for(enc_key_type);
 
         Self {
             vid: Vid {
                 id: id.into(),
                 transport,
-                #[cfg(not(feature = "pq"))]
-                sig_key_type: VidSignatureKeyType::Ed25519,
-                #[cfg(feature = "pq")]
-                sig_key_type: VidSignatureKeyType::MlDsa65,
+                sig_key_type,
                 public_sigkey,
-                #[cfg(not(feature = "pq"))]
-                enc_key_type: VidEncryptionKeyType::X25519,
-                #[cfg(feature = "pq")]
-                enc_key_type: VidEncryptionKeyType::X25519Kyber768Draft00,
+                enc_key_type,
                 public_enckey,
             },
             sigkey,
@@ -193,20 +198,25 @@ impl OwnedVid {
     }
 
     pub fn new_did_peer(transport: Url) -> OwnedVid {
-        let (sigkey, public_sigkey) = crate::crypto::gen_sign_keypair();
-        let (enckey, public_enckey) = crate::crypto::gen_encrypt_keypair();
+        let sig_key_type = crate::crypto::default_signature_key_type();
+        let enc_key_type = crate::crypto::default_encryption_key_type();
+
+        Self::new_did_peer_with_key_types(transport, sig_key_type, enc_key_type)
+    }
+
+    pub fn new_did_peer_with_key_types(
+        transport: Url,
+        sig_key_type: VidSignatureKeyType,
+        enc_key_type: VidEncryptionKeyType,
+    ) -> OwnedVid {
+        let (sigkey, public_sigkey) = crate::crypto::gen_sign_keypair_for(sig_key_type);
+        let (enckey, public_enckey) = crate::crypto::gen_encrypt_keypair_for(enc_key_type);
 
         let mut vid = Vid {
             id: Default::default(),
             transport,
-            #[cfg(not(feature = "pq"))]
-            sig_key_type: VidSignatureKeyType::Ed25519,
-            #[cfg(feature = "pq")]
-            sig_key_type: VidSignatureKeyType::MlDsa65,
-            #[cfg(not(feature = "pq"))]
-            enc_key_type: VidEncryptionKeyType::X25519,
-            #[cfg(feature = "pq")]
-            enc_key_type: VidEncryptionKeyType::X25519Kyber768Draft00,
+            sig_key_type,
+            enc_key_type,
             public_sigkey,
             public_enckey,
         };
