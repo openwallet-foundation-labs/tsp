@@ -150,3 +150,14 @@ impl<'a> PartialEq<Payload<'a, &'a mut [u8], &'a [u8]>> for Wrapper {
         }
     }
 }
+
+#[cfg(feature = "fuzzing")]
+#[derive(Debug, arbitrary::Arbitrary)]
+pub struct FuzzInput {
+    pub sender_sign_key: [u8; 32],
+    pub sender_enc_key: [u8; 32],
+    pub receiver_sign_key: [u8; 32],
+    pub receiver_enc_key: [u8; 32],
+    pub nonconfidential_data: Option<Vec<u8>>,
+    pub payload: Vec<u8>,
+}

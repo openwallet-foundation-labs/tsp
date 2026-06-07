@@ -9,6 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+url = "2.5"
 
 [dependencies.tsp_sdk]
 path = "../tsp_sdk"
@@ -24,6 +25,13 @@ bench = false
 [[bin]]
 name = "payload_decode_garbage"
 path = "fuzz_targets/payload_decode_garbage.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "crypto_seal_open"
+path = "fuzz_targets/crypto_seal_open.rs"
 test = false
 doc = false
 bench = false
