@@ -757,7 +757,7 @@ mod tests {
     };
     use url::Url;
 
-    use super::{CryptoError, open, seal, seal_with_crypto_type};
+    use super::{CryptoError, open, seal, seal_with_crypto_type, sign};
 
     #[test]
     fn seal_open_message() {
@@ -991,5 +991,38 @@ mod tests {
         let result = open(&wrong_alice, &bob, &mut message);
 
         assert!(matches!(result, Err(CryptoError::CryptographicNacl(_))))
+    }
+
+    #[test]
+    fn open_missing_ciphertext() {
+        let alice = OwnedVid::bind(
+            "did:test:alice",
+            Url::parse("tcp://127.0.0.1:13371").unwrap(),
+        );
+        let bob = OwnedVid::bind("did:test:bob", Url::parse("tcp://127.0.0.1:13372").unwrap());
+
+        let mut message = sign(&alice, None, b"hello").unwrap();
+
+        let result = open(&bob, &alice, &mut message);
+
+        assert!(matches!(result, Err(CryptoError::MissingCiphertext)))
+    }
+
+    #[test]
+    fn open_tampered_signature() {
+        let alice = OwnedVid::bind(
+            "did:test:alice",
+            Url::parse("tcp://127.0.0.1:13371").unwrap(),
+        );
+        let bob = OwnedVid::bind("did:test:bob", Url::parse("tcp://127.0.0.1:13372").unwrap());
+
+        let mut message = seal(&bob, &alice, None, Payload::Content(b"secret")).unwrap();
+
+        let last = message.len() - 1;
+        message[last] ^= 0xFF;
+
+        let result = open(&alice, &bob, &mut message);
+
+        assert!(matches!(result, Err(CryptoError::Verify(_, _))))
     }
 }
