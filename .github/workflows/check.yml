@@ -2,7 +2,7 @@ name: Check
 
 on:
   pull_request:
-    branches: ["main"]
+    branches: ["main", "rev3"]
 
 jobs:
   clippy:
