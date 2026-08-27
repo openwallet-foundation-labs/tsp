@@ -186,7 +186,7 @@ async fn create_identity(
     let (did_doc, _, private_vid) = tsp_sdk::vid::create_did_web(
         &form.name,
         &state.domain,
-        &format!("{}/{}", &state.transport, form.name),
+        &format!("{}/{}", state.transport, form.name),
     );
 
     let key = private_vid.identifier();

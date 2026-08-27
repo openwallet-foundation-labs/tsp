@@ -2,7 +2,7 @@ name: Guardrail Bench (PR Run)
 
 on:
   pull_request:
-    branches: ["main"]
+    branches: ["main", "rev3"]
     types: [opened, reopened, synchronize]
 
 permissions:

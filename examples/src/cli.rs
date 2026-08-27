@@ -1573,7 +1573,7 @@ fn show_local(vids: &[ExportVid], aliases: &Aliases) -> Result<(), Error> {
             .find_map(|(a, id)| if id == &vid.id { Some(a.clone()) } else { None })
             .unwrap_or("None".to_string());
 
-        println!("{}", &vid.id);
+        println!("{}", vid.id);
         println!("\t Alias: {alias}");
         println!("\t Transport: {transport}");
         if vid.id.starts_with("did:web") {
@@ -1699,7 +1699,7 @@ fn show_relations(vids: &[ExportVid], vid: Option<String>, aliases: &Aliases) ->
             .find_map(|(a, id)| if id == &vid.id { Some(a.clone()) } else { None })
             .unwrap_or("None".to_string());
 
-        println!("{}", &vid.id);
+        println!("{}", vid.id);
         println!("\t Relation Status: {}", vid.relation_status);
         println!("\t Alias: {alias}");
         if vid.id.starts_with("did:web") {

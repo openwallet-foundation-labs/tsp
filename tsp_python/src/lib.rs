@@ -382,7 +382,7 @@ impl Store {
     }
 }
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ReceivedTspMessageVariant {
     GenericMessage,
@@ -406,14 +406,14 @@ impl From<&tsp_sdk::ReceivedTspMessage> for ReceivedTspMessageVariant {
     }
 }
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RelationshipForm {
     Direct = 0,
     Parallel = 1,
 }
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RelationshipDelivery {
     Direct = 0,
@@ -421,7 +421,7 @@ pub enum RelationshipDelivery {
     Routed = 2,
 }
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CryptoType {
     Plaintext = 0,
@@ -432,7 +432,7 @@ pub enum CryptoType {
     X25519Kyber768Draft00 = 5,
 }
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SignatureType {
     NoSignature = 0,
@@ -630,7 +630,7 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
     }
 }
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 struct OwnedVid(tsp_sdk::OwnedVid);
 
