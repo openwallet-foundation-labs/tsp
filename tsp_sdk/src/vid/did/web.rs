@@ -302,13 +302,12 @@ pub fn resolve_document(did_document: DidDocument, target_id: &str) -> Result<Vi
         ));
     };
 
-    let transport = match did_document.service.into_iter().next().and_then(|service| {
-        if service.service_type == "TSPTransport" {
-            Some(service)
-        } else {
-            None
-        }
-    }) {
+    let transport = match did_document
+        .service
+        .into_iter()
+        .next()
+        .filter(|service| service.service_type == "TSPTransport")
+    {
         Some(service) => service.service_endpoint,
         None => {
             return Err(VidError::ResolveVid(
@@ -354,13 +353,13 @@ pub fn vid_to_did_document(vid: &impl VerifiedVid) -> serde_json::Value {
             {
                 "id": format!("{id}#verification-key"),
                 "type": "JsonWebKey2020",
-                "controller":  format!("{id}"),
+                "controller":  id.to_string(),
                 "publicKeyJwk": vid.signature_key_jwk()
             },
             {
                 "id": format!("{id}#encryption-key"),
                 "type": "JsonWebKey2020",
-                "controller": format!("{id}"),
+                "controller": id.to_string(),
                 "publicKeyJwk": vid.encryption_key_jwk()
             },
         ],

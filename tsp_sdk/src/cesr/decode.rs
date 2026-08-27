@@ -62,18 +62,12 @@ pub fn decode_variable_data_index(
     let input = extract_triplet(stream.get(0..=2)?.try_into().unwrap());
     let selector = input >> 18;
 
-    let size;
-    let found_id;
-
-    match selector {
-        D4 | D5 | D6 => {
-            found_id = (input >> 12) & mask(6);
-            size = input & mask(12);
-        }
-        D7 | D8 | D9 => {
-            found_id = input & mask(18);
-            size = extract_triplet(stream.get(3..6)?.try_into().unwrap());
-        }
+    let (found_id, size) = match selector {
+        D4 | D5 | D6 => ((input >> 12) & mask(6), input & mask(12)),
+        D7 | D8 | D9 => (
+            input & mask(18),
+            extract_triplet(stream.get(3..6)?.try_into().unwrap()),
+        ),
         _ => return None,
     };
 
@@ -138,18 +132,18 @@ pub fn decode_indexed_data<'a, const N: usize>(
     let hdr_bytes = total_size - N;
 
     let input = extract_triplet(stream.get(0..=2)?.try_into().unwrap());
-    let word;
+
     let index;
 
-    match hdr_bytes {
+    let word = match hdr_bytes {
         1 => panic!("an indexed type can only have 0 or 2 lead bytes"),
         2 => {
             index = (input >> 12) & mask(6);
-            word = (bits(identifier, 6) << 18) | (bits(index, 6) << 12);
+            (bits(identifier, 6) << 18) | (bits(index, 6) << 12)
         }
         3 => {
             index = input & mask(12);
-            word = (D0 << 18) | (bits(identifier, 6) << 12) | bits(index, 12);
+            (D0 << 18) | (bits(identifier, 6) << 12) | bits(index, 12)
         }
         _ => unreachable!("unsigned integer arithmetic is broken"),
     };
