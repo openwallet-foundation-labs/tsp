@@ -148,14 +148,14 @@ fn encode_hashed_payload(
     algorithm: RelationshipDigestAlgorithm,
 ) -> Result<Digest, CryptoError> {
     let mut encoded = Vec::with_capacity(payload.calculate_size(sender_in_payload));
-    crate::cesr::encode_payload(payload, sender_in_payload, &mut encoded)?;
+    crate::cesr::encode_payload(payload, sender_in_payload, None, &mut encoded)?;
     Ok(algorithm.hash(&encoded))
 }
 
 pub(crate) fn build_parallel_request_signed_data(
     sender_in_payload: Option<&[u8]>,
     digest_algorithm: RelationshipDigestAlgorithm,
-    nonce_bytes: [u8; 32],
+    nonce_bytes: [u8; 16],
     request_digest: &mut Digest,
     new_vid: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
@@ -202,7 +202,7 @@ pub(crate) fn build_parallel_accept_signed_data(
 fn relationship_request_payload<'a>(
     form: &RelationshipForm<'a, &'a [u8]>,
     digest_algorithm: RelationshipDigestAlgorithm,
-    nonce_bytes: [u8; 32],
+    nonce_bytes: [u8; 16],
     request_digest: &'a Digest,
 ) -> CesrRelationshipPayload<'a> {
     match form {
@@ -249,7 +249,7 @@ pub(crate) fn build_relationship_request_payload<'a>(
     form: &RelationshipForm<'a, &'a [u8]>,
     sender_in_payload: Option<&[u8]>,
     digest_algorithm: RelationshipDigestAlgorithm,
-    nonce_bytes: [u8; 32],
+    nonce_bytes: [u8; 16],
     request_digest: &'a mut Digest,
 ) -> Result<(CesrRelationshipPayload<'a>, Digest), CryptoError> {
     match form {
@@ -475,7 +475,7 @@ pub(crate) fn seal_and_hash_with_relationship_nonce(
     nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
     digest: Option<&mut Digest>,
-    request_nonce_override: Option<[u8; 32]>,
+    request_nonce_override: Option<[u8; 16]>,
 ) -> Result<TSPMessage, CryptoError> {
     seal_with_selection(
         sender,
@@ -494,7 +494,7 @@ pub(crate) fn seal_with_selection(
     nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
     digest: Option<&mut Digest>,
-    request_nonce_override: Option<[u8; 32]>,
+    request_nonce_override: Option<[u8; 16]>,
     selection: OutboundCryptoSelection,
 ) -> Result<TSPMessage, CryptoError> {
     ensure_selection_matches_key_types(sender, receiver, selection.crypto_type)?;

@@ -117,7 +117,7 @@ fn seal_envelope(
     nonconfidential_data: Option<&[u8]>,
     payload: Payload<&[u8]>,
     digest: Option<&mut Digest>,
-    request_nonce_override: Option<[u8; 32]>,
+    request_nonce_override: Option<[u8; 16]>,
     selection: Option<OutboundCryptoSelection>,
 ) -> Result<Vec<u8>, Error> {
     Ok(crate::crypto::seal_with_selection(
@@ -208,13 +208,13 @@ impl DeferredVerifiedVid {
 struct ParallelSignatureMaterial {
     digest: Digest,
     sig_new_vid: Vec<u8>,
-    request_nonce: Option<[u8; 32]>,
+    request_nonce: Option<[u8; 16]>,
 }
 
 enum ParallelSignatureContext<'a> {
     Request {
         sender_identity: &'a str,
-        nonce: [u8; 32],
+        nonce: [u8; 16],
     },
     Accept {
         sender_identity: &'a str,
@@ -222,8 +222,8 @@ enum ParallelSignatureContext<'a> {
     },
 }
 
-fn random_nonce_bytes() -> [u8; 32] {
-    let mut nonce_bytes = [0_u8; 32];
+fn random_nonce_bytes() -> [u8; 16] {
+    let mut nonce_bytes = [0_u8; 16];
     StdRng::from_entropy().fill_bytes(&mut nonce_bytes);
     nonce_bytes
 }
@@ -863,7 +863,7 @@ impl SecureStore {
         digest_algorithm: RelationshipDigestAlgorithm,
     ) -> Result<(Vec<u8>, Digest), Error> {
         let mut csprng = StdRng::from_entropy();
-        let mut nonce_bytes = [0_u8; 32];
+        let mut nonce_bytes = [0_u8; 16];
         csprng.fill_bytes(&mut nonce_bytes);
 
         let sender_identity = Some(sender.identifier().as_bytes());
@@ -877,7 +877,12 @@ impl SecureStore {
 
         let mut encoded_payload =
             Vec::with_capacity(placeholder_payload.calculate_size(sender_identity));
-        crate::cesr::encode_payload(&placeholder_payload, sender_identity, &mut encoded_payload)?;
+        crate::cesr::encode_payload(
+            &placeholder_payload,
+            sender_identity,
+            None,
+            &mut encoded_payload,
+        )?;
 
         request_digest = nested_digest(&encoded_payload, digest_algorithm);
 
@@ -887,7 +892,7 @@ impl SecureStore {
                 nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
                 request_digest: nested_digest_field(&request_digest, digest_algorithm),
             };
-        crate::cesr::encode_payload(&payload, sender_identity, &mut encoded_payload)?;
+        crate::cesr::encode_payload(&payload, sender_identity, None, &mut encoded_payload)?;
 
         let message = crate::crypto::sign(sender, None, &encoded_payload)?;
 
@@ -912,7 +917,12 @@ impl SecureStore {
 
         let mut encoded_payload =
             Vec::with_capacity(placeholder_payload.calculate_size(sender_identity));
-        crate::cesr::encode_payload(&placeholder_payload, sender_identity, &mut encoded_payload)?;
+        crate::cesr::encode_payload(
+            &placeholder_payload,
+            sender_identity,
+            None,
+            &mut encoded_payload,
+        )?;
 
         reply_thread_id = nested_digest(&encoded_payload, digest_algorithm);
 
@@ -922,7 +932,7 @@ impl SecureStore {
                 request_digest: nested_digest_field(&thread_id, digest_algorithm),
                 reply_digest: nested_digest_field(&reply_thread_id, digest_algorithm),
             };
-        crate::cesr::encode_payload(&payload, sender_identity, &mut encoded_payload)?;
+        crate::cesr::encode_payload(&payload, sender_identity, None, &mut encoded_payload)?;
 
         let message = crate::crypto::sign(sender, Some(receiver), &encoded_payload)?;
 
@@ -2838,7 +2848,7 @@ mod test {
         a_store.add_verified_vid(bob.clone(), None).unwrap();
         b_store.add_verified_vid(alice.clone(), None).unwrap();
 
-        let mut nonce_bytes = [0_u8; 32];
+        let mut nonce_bytes = [0_u8; 16];
         StdRng::from_entropy().fill_bytes(&mut nonce_bytes);
         let mut thread_id = [0_u8; 32];
         let signed_data = crate::crypto::build_parallel_request_signed_data(
@@ -2899,7 +2909,7 @@ mod test {
         a_store.add_verified_vid(bob.clone(), None).unwrap();
         b_store.add_verified_vid(alice.clone(), None).unwrap();
 
-        let mut nonce_bytes = [0_u8; 32];
+        let mut nonce_bytes = [0_u8; 16];
         StdRng::from_entropy().fill_bytes(&mut nonce_bytes);
         let mut thread_id = [0_u8; 32];
         let signed_data = crate::crypto::build_parallel_request_signed_data(

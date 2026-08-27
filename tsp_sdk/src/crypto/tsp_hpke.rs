@@ -34,7 +34,7 @@ fn payload_for_seal<'a>(
     secret_payload: &'a Payload<'a, &'a [u8]>,
     sender_in_payload: Option<&'a [u8]>,
     digest_algorithm: RelationshipDigestAlgorithm,
-    request_nonce_override: Option<[u8; 32]>,
+    request_nonce_override: Option<[u8; 16]>,
     csprng: &mut StdRng,
     request_digest_storage: &'a mut super::Digest,
     reply_digest_storage: &'a mut super::Digest,
@@ -48,7 +48,7 @@ fn payload_for_seal<'a>(
             form,
         } => {
             let nonce_bytes = request_nonce_override.unwrap_or_else(|| {
-                let mut nonce_bytes = [0_u8; 32];
+                let mut nonce_bytes = [0_u8; 16];
                 csprng.fill_bytes(&mut nonce_bytes);
                 nonce_bytes
             });
@@ -79,6 +79,7 @@ fn payload_for_seal<'a>(
             payload
         }
         Payload::CancelRelationship { thread_id } => crate::cesr::Payload::RelationshipCancel {
+            nonce: crate::cesr::Nonce::generate(|dst| csprng.fill_bytes(dst)),
             reply: digest_algorithm.field(thread_id),
         },
         Payload::NestedMessage(data) => crate::cesr::Payload::NestedMessage(*data),
@@ -96,7 +97,7 @@ pub(crate) fn seal_x25519(
     nonconfidential_data: Option<NonConfidentialData>,
     secret_payload: Payload<&[u8]>,
     digest: Option<&mut super::Digest>,
-    request_nonce_override: Option<[u8; 32]>,
+    request_nonce_override: Option<[u8; 16]>,
     crypto_type: CryptoType,
 ) -> Result<TSPMessage, CryptoError> {
     if !matches!(crypto_type, CryptoType::HpkeAuth | CryptoType::HpkeEssr) {
@@ -106,7 +107,7 @@ pub(crate) fn seal_x25519(
     let mut csprng = StdRng::from_entropy();
     let mut data = Vec::with_capacity(64);
 
-    crate::cesr::encode_ets_envelope(
+    crate::cesr::encode_envelope(
         crate::cesr::Envelope {
             crypto_type,
             signature_type: signature_type(sender),
@@ -136,7 +137,7 @@ pub(crate) fn seal_x25519(
             + hpke::aead::AeadTag::<X25519Aead>::size()
             + <X25519Kem as hpke::Kem>::EncappedKey::size(),
     );
-    crate::cesr::encode_payload(&secret_payload, sender_in_payload, &mut cesr_message)?;
+    crate::cesr::encode_payload(&secret_payload, sender_in_payload, None, &mut cesr_message)?;
 
     let mode = if crypto_type == CryptoType::HpkeEssr {
         OpModeS::Base
@@ -167,6 +168,7 @@ pub(crate) fn seal_x25519(
     cesr_message.extend(tag.to_bytes());
     cesr_message.extend(encapped_key.to_bytes());
     crate::cesr::encode_ciphertext(&cesr_message, crypto_type, &mut data)?;
+    crate::cesr::finalize_envelope_frame(&mut data);
     append_signature(sender, &mut data)?;
 
     Ok(data)
@@ -178,13 +180,13 @@ pub(crate) fn seal_pq(
     nonconfidential_data: Option<NonConfidentialData>,
     secret_payload: Payload<&[u8]>,
     digest: Option<&mut super::Digest>,
-    request_nonce_override: Option<[u8; 32]>,
+    request_nonce_override: Option<[u8; 16]>,
 ) -> Result<TSPMessage, CryptoError> {
     let crypto_type = CryptoType::X25519Kyber768Draft00;
     let mut csprng = StdRng::from_entropy();
     let mut data = Vec::with_capacity(64);
 
-    crate::cesr::encode_ets_envelope(
+    crate::cesr::encode_envelope(
         crate::cesr::Envelope {
             crypto_type,
             signature_type: signature_type(sender),
@@ -214,7 +216,7 @@ pub(crate) fn seal_pq(
             + hpke_pq::aead::AeadTag::<PqAead>::size()
             + <PqKem as hpke_pq::Kem>::EncappedKey::size(),
     );
-    crate::cesr::encode_payload(&secret_payload, sender_in_payload, &mut cesr_message)?;
+    crate::cesr::encode_payload(&secret_payload, sender_in_payload, None, &mut cesr_message)?;
 
     let message_receiver =
         <PqKem as hpke_pq::Kem>::PublicKey::from_bytes(receiver.encryption_key().as_ref())?;
@@ -235,6 +237,7 @@ pub(crate) fn seal_pq(
     cesr_message.extend(tag.to_bytes());
     cesr_message.extend(encapped_key.to_bytes());
     crate::cesr::encode_ciphertext(&cesr_message, crypto_type, &mut data)?;
+    crate::cesr::finalize_envelope_frame(&mut data);
     append_signature(sender, &mut data)?;
 
     Ok(data)
@@ -406,6 +409,10 @@ fn open_payload<'a>(
                 )?,
             }),
         ),
+        crate::cesr::Payload::ControlMessage(_) | crate::cesr::Payload::Padding { .. } => {
+            // recognized on the wire, but not yet surfaced through the API
+            return Err(CryptoError::UnsupportedPayload);
+        }
         crate::cesr::Payload::RelationshipCancel { reply, .. } => (
             Payload::CancelRelationship {
                 thread_id: *reply.as_bytes(),

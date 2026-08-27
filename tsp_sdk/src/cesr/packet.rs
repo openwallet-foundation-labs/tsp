@@ -3,6 +3,11 @@ use super::consts::{cesr, cesr_data};
 /// The TSP version supported by this spec
 const TSP_VERSION: (u16, u8, u8) = (0, 0, 1);
 
+/// The CESR code table this implementation follows: genus `AAA`, version 2.00,
+/// identified by the genus/version code `-_AAACAA` (not emitted per message).
+#[allow(dead_code)]
+pub const TSP_CESR_GENUS: ([u8; 3], (u8, u8, u8)) = (cesr_data("AAA"), (2, 0, 0));
+
 /// Constants that determine the specific CESR types for "variable length data"
 const TSP_PLAINTEXT: u32 = cesr!("B");
 const TSP_NACL_CIPHERTEXT: u32 = cesr!("C");
@@ -13,31 +18,27 @@ const TSP_HPKEPQ_CIPHERTEXT: u32 = cesr!("PQC");
 const TSP_VID: u32 = cesr!("B");
 
 /// Constants that determine the specific CESR types for "fixed length data"
+/// The Ed25519 signature is an indexed primitive `B#` (index = position of the
+/// signing key in the VID's key list); ML-DSA-65 uses the fixed code `1AAQ`.
 const ED25519_SIGNATURE: u32 = cesr!("B");
-const ML_DSA_65_SIGNATURE: u32 = cesr!("QDM");
+const ML_DSA_65_SIGNATURE: u32 = cesr!("AAQ");
 #[allow(clippy::eq_op)]
 const TSP_NONCE: u32 = cesr!("A");
 const TSP_SHA256: u32 = cesr!("I");
-#[allow(dead_code)]
 const TSP_BLAKE2B256: u32 = cesr!("F");
 
 /// Constants that determine the specific CESR types for the framing codes
-const TSP_ETS_WRAPPER: u16 = cesr!("E");
-const TSP_S_WRAPPER: u16 = cesr!("S");
+const TSP_WRAPPER: u16 = cesr!("E");
 const TSP_HOP_LIST: u16 = cesr!("J");
 const TSP_PAYLOAD: u16 = cesr!("Z");
 const TSP_ATTACH_GRP: u16 = cesr!("C");
 const TSP_INDEX_SIG_GRP: u16 = cesr!("K");
-
-const TSP_TMP: u32 = cesr!("X");
+const TSP_GENERIC_STREAM: u16 = cesr!("A");
 
 /// Constants for payload field types
-// NOTE: this is for future extensibility
-#[allow(unused)]
 const XCTL: [u8; 3] = cesr_data("XCTL");
 const XSCS: [u8; 3] = cesr_data("XSCS");
 const XHOP: [u8; 3] = cesr_data("XHOP");
-#[allow(unused)]
 const XPAD: [u8; 3] = cesr_data("XPAD");
 const XRFI: [u8; 3] = cesr_data("XRFI");
 const XRFA: [u8; 3] = cesr_data("XRFA");
@@ -47,20 +48,19 @@ const YTSP: [u8; 3] = cesr_data("YTSP");
 use super::{
     decode::{
         decode_count, decode_count_mut, decode_fixed_data, decode_fixed_data_mut,
-        decode_variable_data, decode_variable_data_index, decode_variable_data_mut,
-        opt_decode_variable_data_mut,
+        decode_indexed_data, decode_variable_data, decode_variable_data_index,
+        decode_variable_data_mut,
     },
     encode::{encode_count, encode_fixed_data},
     error::{DecodeError, EncodeError},
 };
 use std::fmt::Debug;
 
-/// A type to enforce that a random nonce contains enough bits of security
-/// (128bits via a birthday attack -> 256bits needed)
+/// A 128-bit nonce, encoded on the wire with the CESR code `0A`.
 /// This explicitly does not implement Clone or Copy to make sure nonces are not reused
 #[derive(Debug)]
 #[cfg_attr(any(test, feature = "fuzzing"), derive(PartialEq, Eq, Clone))]
-pub struct Nonce([u8; 32]);
+pub struct Nonce(pub(crate) [u8; 16]);
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy)]
 pub enum Digest<'a> {
@@ -78,7 +78,7 @@ impl Digest<'_> {
 }
 
 impl Nonce {
-    pub fn generate(g: impl FnOnce(&mut [u8; 32])) -> Nonce {
+    pub fn generate(g: impl FnOnce(&mut [u8; 16])) -> Nonce {
         let mut bytes = Default::default();
         g(&mut bytes);
 
@@ -93,6 +93,10 @@ impl Nonce {
 pub enum Payload<'a, Bytes, Vid> {
     /// A TSP message which consists only of a message which will be protected using HPKE
     GenericMessage(Bytes),
+    /// An upper-layer control-plane message (`XCTL`); same shape as a generic message
+    ControlMessage(Bytes),
+    /// A padding message (`XPAD`), carrying no information; receivers discard it
+    Padding { nonce: Nonce },
     /// A payload that consists of a TSP Envelope+Message
     NestedMessage(Bytes),
     /// A routed payload; same as above but with routing information attached
@@ -121,8 +125,8 @@ pub enum Payload<'a, Bytes, Vid> {
         sig_new_vid: &'a Signature,
         new_vid: Vid,
     },
-    /// A TSP cancellation message
-    RelationshipCancel { reply: Digest<'a> },
+    /// A TSP cancellation message; the nonce guards against replay when the digest is absent
+    RelationshipCancel { nonce: Nonce, reply: Digest<'a> },
 }
 
 impl<Bytes: AsRef<[u8]>, Vid: AsRef<[u8]>> Payload<'_, Bytes, Vid> {
@@ -135,7 +139,7 @@ impl<Bytes: AsRef<[u8]>, Vid: AsRef<[u8]>> Payload<'_, Bytes, Vid> {
         }
 
         let mut count = Count(0);
-        let _ignore = encode_payload(self, sender_identity, &mut count);
+        let _ignore = encode_payload(self, sender_identity, None, &mut count);
 
         count.0
     }
@@ -242,11 +246,17 @@ fn decoded_signature_from_stream(
 ) -> Result<(&Signature, &mut [u8]), DecodeError> {
     let mut immutable_stream: &[u8] = stream;
     let original_len = immutable_stream.len();
-    let signature_len = match EncodedSignature::decode(&mut immutable_stream)? {
+    let (signature, rest) = EncodedSignature::decode_with_rest(&mut immutable_stream)?;
+    let signature_len = match signature {
         EncodedSignature::NoSignature => return Err(DecodeError::InvalidSignatureType),
         EncodedSignature::Ed25519(signature) => signature.len(),
         EncodedSignature::MlDsa65(signature) => signature.len(),
     };
+
+    // an embedded signature field holds exactly one signature
+    if rest != 0 {
+        return Err(DecodeError::InvalidSignatureType);
+    }
 
     let consumed = original_len - immutable_stream.len();
     let (prefix, remaining) = stream.split_at_mut(consumed);
@@ -255,6 +265,8 @@ fn decoded_signature_from_stream(
     Ok((signature, remaining))
 }
 
+/// The signable fields of a parallel (referral) relationship request:
+/// {XRFI, VID_sndr, Digest, Nonce, VID_new}, in the unified field order.
 pub(crate) fn encode_parallel_relation_proposal_challenge(
     sender_identity: Option<&[u8]>,
     nonce: &Nonce,
@@ -262,16 +274,16 @@ pub(crate) fn encode_parallel_relation_proposal_challenge(
     new_vid: &[u8],
 ) -> Result<Vec<u8>, EncodeError> {
     let mut temp = Vec::new();
-    if let Some(sender_identity) = sender_identity {
-        checked_encode_variable_data(TSP_VID, sender_identity, &mut temp)?;
-    }
     temp.extend(&XRFI);
+    checked_encode_variable_data(TSP_VID, sender_identity.unwrap_or(&[]), &mut temp)?;
     encode_digest(&request_digest, &mut temp);
     encode_fixed_data(TSP_NONCE, &nonce.0, &mut temp);
     checked_encode_variable_data(TSP_VID, new_vid, &mut temp)?;
     Ok(temp)
 }
 
+/// The signable fields of a parallel (referral) relationship accept:
+/// {XRFA, VID_sndr, Digest, Reply_Digest, VID_new}, in the unified field order.
 pub(crate) fn encode_parallel_relation_affirm_challenge(
     sender_identity: Option<&[u8]>,
     request_digest: Digest<'_>,
@@ -279,10 +291,8 @@ pub(crate) fn encode_parallel_relation_affirm_challenge(
     new_vid: &[u8],
 ) -> Result<Vec<u8>, EncodeError> {
     let mut temp = Vec::new();
-    if let Some(sender_identity) = sender_identity {
-        checked_encode_variable_data(TSP_VID, sender_identity, &mut temp)?;
-    }
     temp.extend(&XRFA);
+    checked_encode_variable_data(TSP_VID, sender_identity.unwrap_or(&[]), &mut temp)?;
     encode_digest(&request_digest, &mut temp);
     encode_digest(&reply_digest, &mut temp);
     checked_encode_variable_data(TSP_VID, new_vid, &mut temp)?;
@@ -306,74 +316,131 @@ fn checked_encode_variable_data(
     Ok(())
 }
 
-/// Safely decode variable data
-fn checked_decode_variable_data_mut(
-    identifier: u32,
-    stream: &mut [u8],
-) -> Option<(&mut [u8], &mut [u8])> {
-    let range = checked_decode_variable_data_index(identifier, stream, &mut 0)?;
-    let (prefix, stream) = stream.split_at_mut(range.end);
-    let slice = &mut prefix[range.start..];
-
-    Some((slice, stream))
-}
-
-/// Safely decode variable data
+/// Safely decode variable data, refusing fields beyond the receive-side size limit.
+/// The limit matches the send-side limit in [checked_encode_variable_data]; a receiver
+/// should not accept a field larger than anything a conformant sender can produce.
 fn checked_decode_variable_data_index(
     identifier: u32,
     stream: &[u8],
     pos: &mut usize,
 ) -> Option<std::ops::Range<usize>> {
-    decode_variable_data_index(identifier, stream, pos)
+    const DATA_LIMIT: usize = 3 * (1 << 24);
+
+    decode_variable_data_index(identifier, stream, pos).filter(|range| range.len() < DATA_LIMIT)
 }
 
-/// Encode a TSP Payload into CESR for encryption
+/// Encode the padding field that terminates every payload layout. The pad's
+/// content is caller-chosen and carries no information (the receiver discards
+/// it); when the caller supplies none, the empty pad `4BAA` is emitted.
+fn encode_padding(
+    padding: Option<&[u8]>,
+    output: &mut impl for<'a> Extend<&'a u8>,
+) -> Result<(), EncodeError> {
+    checked_encode_variable_data(TSP_PLAINTEXT, padding.unwrap_or(&[]), output)
+}
+
+/// Encode the sender VID payload field (a NULL VID `4BAA` when absent)
+fn encode_sender_identity(
+    sender_identity: Option<&[u8]>,
+    output: &mut impl for<'a> Extend<&'a u8>,
+) -> Result<(), EncodeError> {
+    checked_encode_variable_data(TSP_VID, sender_identity.unwrap_or(&[]), output)
+}
+
+/// Encode opaque upper-layer data as a `-A##` generic CESR stream holding a bare
+/// Bytes primitive, which is native CESR. The `-A##` stream frame is always
+/// present; its contents are the upper layer's. A caller that interleaves
+/// non-native serializations (JSON, CBOR, MsgPak) encloses each in a `-H##`
+/// group inside the stream; TSP carries the stream contents opaquely.
+fn encode_opaque_data(
+    data: &[u8],
+    output: &mut impl for<'a> Extend<&'a u8>,
+) -> Result<(), EncodeError> {
+    let mut primitive = Vec::with_capacity(data.len() + 8);
+    checked_encode_variable_data(TSP_PLAINTEXT, data, &mut primitive)?;
+
+    encode_count(TSP_GENERIC_STREAM, primitive.len() / 3, output);
+    output.extend(primitive.iter());
+    Ok(())
+}
+
+/// Encode a TSP Payload into CESR for encryption.
+///
+/// All layouts follow the unified field order of the spec (section 9.4):
+/// the payload type code first, then the sender VID field, the type-specific
+/// fields, and a (currently empty) padding field last.
 pub fn encode_payload(
     payload: &Payload<impl AsRef<[u8]>, impl AsRef<[u8]>>,
     sender_identity: Option<&[u8]>,
+    padding: Option<&[u8]>,
     output: &mut impl for<'a> Extend<&'a u8>,
 ) -> Result<(), EncodeError> {
     let mut temp = Vec::new(); // temporary buffer to count the size
 
-    if let Some(sender_identity) = sender_identity {
-        checked_encode_variable_data(TSP_VID, sender_identity, &mut temp)?;
-    }
-
     match payload {
         Payload::GenericMessage(data) => {
             temp.extend(&XSCS);
-            checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), &mut temp)?;
+            encode_sender_identity(sender_identity, &mut temp)?;
+            encode_padding(padding, &mut temp)?;
+            encode_opaque_data(data.as_ref(), &mut temp)?;
+        }
+        Payload::ControlMessage(data) => {
+            temp.extend(&XCTL);
+            encode_sender_identity(sender_identity, &mut temp)?;
+            encode_padding(padding, &mut temp)?;
+            encode_opaque_data(data.as_ref(), &mut temp)?;
+        }
+        Payload::Padding { nonce } => {
+            temp.extend(&XPAD);
+            encode_sender_identity(sender_identity, &mut temp)?;
+            encode_fixed_data(TSP_NONCE, &nonce.0, &mut temp);
+            encode_padding(padding, &mut temp)?;
         }
         Payload::NestedMessage(data) => {
+            if !data.as_ref().len().is_multiple_of(3) {
+                return Err(EncodeError::MisalignedNestedMessage);
+            }
             temp.extend(&XHOP);
+            encode_sender_identity(sender_identity, &mut temp)?;
             let no_hops: [&[u8]; 0] = [];
             encode_hops(&no_hops, &mut temp)?;
-            checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), &mut temp)?;
+            encode_padding(padding, &mut temp)?;
+            // the nested message is a complete TSP message; it is self-framing
+            temp.extend(data.as_ref());
         }
         Payload::RoutedMessage(hops, data) => {
+            if !data.as_ref().len().is_multiple_of(3) {
+                return Err(EncodeError::MisalignedNestedMessage);
+            }
             temp.extend(&XHOP);
+            encode_sender_identity(sender_identity, &mut temp)?;
             if hops.is_empty() {
                 return Err(EncodeError::MissingHops);
             }
             encode_hops(hops, &mut temp)?;
-            checked_encode_variable_data(TSP_PLAINTEXT, data.as_ref(), &mut temp)?;
+            encode_padding(padding, &mut temp)?;
+            temp.extend(data.as_ref());
         }
         Payload::DirectRelationProposal {
             nonce,
             request_digest,
         } => {
             temp.extend(&XRFI);
+            encode_sender_identity(sender_identity, &mut temp)?;
             encode_digest(request_digest, &mut temp);
             encode_fixed_data(TSP_NONCE, &nonce.0, &mut temp);
-            checked_encode_variable_data(TSP_VID, &[], &mut temp)?;
+            checked_encode_variable_data(TSP_VID, &[], &mut temp)?; // NULL new-VID field
+            encode_padding(padding, &mut temp)?;
         }
         Payload::DirectRelationAffirm {
             request_digest,
             reply_digest,
         } => {
             temp.extend(&XRFA);
+            encode_sender_identity(sender_identity, &mut temp)?;
             encode_digest(request_digest, &mut temp);
             encode_digest(reply_digest, &mut temp);
+            encode_padding(padding, &mut temp)?;
         }
         Payload::ParallelRelationProposal {
             nonce,
@@ -385,10 +452,12 @@ pub fn encode_payload(
                 return Err(EncodeError::InvalidVid);
             }
             temp.extend(&XRFI);
+            encode_sender_identity(sender_identity, &mut temp)?;
             encode_digest(request_digest, &mut temp);
             encode_fixed_data(TSP_NONCE, &nonce.0, &mut temp);
             checked_encode_variable_data(TSP_VID, new_vid.as_ref(), &mut temp)?;
             encode_embedded_signature(sig_new_vid, &mut temp)?;
+            encode_padding(padding, &mut temp)?;
         }
         Payload::ParallelRelationAffirm {
             request_digest,
@@ -400,14 +469,19 @@ pub fn encode_payload(
                 return Err(EncodeError::InvalidVid);
             }
             temp.extend(&XRFA);
+            encode_sender_identity(sender_identity, &mut temp)?;
             encode_digest(request_digest, &mut temp);
             encode_digest(reply_digest, &mut temp);
             checked_encode_variable_data(TSP_VID, new_vid.as_ref(), &mut temp)?;
             encode_embedded_signature(sig_new_vid, &mut temp)?;
+            encode_padding(padding, &mut temp)?;
         }
-        Payload::RelationshipCancel { reply } => {
+        Payload::RelationshipCancel { nonce, reply } => {
             temp.extend(&XRFD);
+            encode_sender_identity(sender_identity, &mut temp)?;
+            encode_fixed_data(TSP_NONCE, &nonce.0, &mut temp);
             encode_digest(reply, &mut temp);
+            encode_padding(padding, &mut temp)?;
         }
     }
 
@@ -417,30 +491,43 @@ pub fn encode_payload(
     Ok(())
 }
 
-/// Encode a hops list
+/// Encode a hops list; the count is the length in quadlets/triplets of the
+/// concatenated VID encodings, not the number of VIDs
 pub fn encode_hops(
     hops: &[impl AsRef<[u8]>],
     output: &mut impl for<'a> Extend<&'a u8>,
 ) -> Result<(), EncodeError> {
-    encode_count(TSP_HOP_LIST, hops.len() as u16, output);
+    let mut temp = Vec::new();
     for hop in hops {
-        checked_encode_variable_data(TSP_VID, hop.as_ref(), output)?;
+        checked_encode_variable_data(TSP_VID, hop.as_ref(), &mut temp)?;
     }
+
+    encode_count(TSP_HOP_LIST, temp.len() / 3, output);
+    output.extend(temp.iter());
 
     Ok(())
 }
 
-/// Decode a hops list
+/// Decode a hops list; the count delimits the byte length of the list
 fn decode_hops<'a, Vid: TryFrom<&'a [u8]>>(
     stream: &'a mut [u8],
 ) -> Result<(Vec<Vid>, &'a mut [u8]), DecodeError> {
-    let (hop_length, mut stream) =
+    let (hop_length, stream) =
         decode_count_mut(TSP_HOP_LIST, stream).ok_or(DecodeError::MissingHops)?;
 
-    let mut hop_list = Vec::with_capacity(hop_length as usize);
-    for _ in 0..hop_length {
+    let hop_bytes = (hop_length as usize)
+        .checked_mul(3)
+        .ok_or(DecodeError::UnexpectedData)?;
+    if hop_bytes > stream.len() {
+        return Err(DecodeError::UnexpectedData);
+    }
+    let (mut hop_stream, stream) = stream.split_at_mut(hop_bytes);
+
+    let mut hop_list = Vec::new();
+    while !hop_stream.is_empty() {
         let hop: &[u8];
-        (hop, stream) = decode_variable_data_mut(TSP_VID, stream).ok_or(DecodeError::VidError)?;
+        (hop, hop_stream) =
+            decode_variable_data_mut(TSP_VID, hop_stream).ok_or(DecodeError::VidError)?;
 
         hop_list.push(hop.try_into().map_err(|_| DecodeError::VidError)?);
     }
@@ -478,39 +565,98 @@ pub fn encode_digest(digest: &Digest, output: &mut impl for<'a> Extend<&'a u8>) 
     }
 }
 
+/// Decode the trailing padding field of a payload; its contents are discarded
+fn decode_padding(stream: &mut [u8]) -> Result<&mut [u8], DecodeError> {
+    let (_pad, stream) =
+        decode_variable_data_mut(TSP_PLAINTEXT, stream).ok_or(DecodeError::UnexpectedData)?;
+    Ok(stream)
+}
+
+/// Decode the sender VID payload field; a NULL VID (`4BAA`) means absent
+fn decode_sender_identity(stream: &mut [u8]) -> Result<(Option<&[u8]>, &mut [u8]), DecodeError> {
+    let (vid, stream) =
+        decode_variable_data_mut(TSP_VID, stream).ok_or(DecodeError::UnexpectedData)?;
+    let vid = if vid.is_empty() {
+        None
+    } else {
+        Some(vid as &[u8])
+    };
+    Ok((vid, stream))
+}
+
+/// Decode opaque upper-layer data (see [encode_opaque_data])
+fn decode_opaque_data(stream: &mut [u8]) -> Result<(&mut [u8], &mut [u8]), DecodeError> {
+    let (stream_quadlets, stream) =
+        decode_count_mut(TSP_GENERIC_STREAM, stream).ok_or(DecodeError::UnexpectedData)?;
+    let stream_bytes = (stream_quadlets as usize)
+        .checked_mul(3)
+        .ok_or(DecodeError::InvalidFrameCount)?;
+    if stream_bytes != stream.len() {
+        return Err(DecodeError::InvalidFrameCount);
+    }
+
+    let (data, rest) =
+        decode_variable_data_mut(TSP_PLAINTEXT, stream).ok_or(DecodeError::UnexpectedData)?;
+    if !rest.is_empty() {
+        return Err(DecodeError::UnexpectedData);
+    }
+    Ok((data, rest))
+}
+
 /// Decode a TSP Payload
-pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, DecodeError> {
-    //NOTE: we do not need the quadlet count
-    let _count;
-    (_count, stream) = decode_count_mut(TSP_PAYLOAD, stream).ok_or(DecodeError::UnexpectedData)?;
+pub fn decode_payload(stream: &mut [u8]) -> Result<DecodedPayload<'_>, DecodeError> {
+    let (count, stream) =
+        decode_count_mut(TSP_PAYLOAD, stream).ok_or(DecodeError::UnexpectedData)?;
 
-    let sender_identity;
-    (sender_identity, stream) = opt_decode_variable_data_mut(TSP_VID, stream);
+    // the count delimits the payload; validate it against the stream
+    let payload_bytes = (count as usize)
+        .checked_mul(3)
+        .ok_or(DecodeError::UnexpectedData)?;
+    if payload_bytes != stream.len() {
+        return Err(DecodeError::UnexpectedData);
+    }
 
-    let (msgtype, mut stream) = stream
+    let (msgtype, stream) = stream
         .split_at_mut_checked(3)
         .ok_or(DecodeError::UnexpectedData)?;
+
+    let (sender_identity, mut stream) = decode_sender_identity(stream)?;
 
     let payload = match *<&[u8; 3]>::try_from(msgtype as &[u8]).unwrap() {
         XSCS => {
             let msg;
-            (msg, stream) = checked_decode_variable_data_mut(TSP_PLAINTEXT, stream)
-                .ok_or(DecodeError::UnexpectedData)?;
+            stream = decode_padding(stream)?;
+            (msg, stream) = decode_opaque_data(stream)?;
 
             Payload::GenericMessage(msg)
         }
-        XHOP => {
-            let (hop_list, msg);
-            (hop_list, stream) = decode_hops(stream)?;
-            if hop_list.is_empty() {
-                (msg, stream) = checked_decode_variable_data_mut(TSP_PLAINTEXT, stream)
-                    .ok_or(DecodeError::UnexpectedData)?;
+        XCTL => {
+            let msg;
+            stream = decode_padding(stream)?;
+            (msg, stream) = decode_opaque_data(stream)?;
 
+            Payload::ControlMessage(msg)
+        }
+        XPAD => {
+            let nonce;
+            (nonce, stream) =
+                decode_fixed_data_mut(TSP_NONCE, stream).ok_or(DecodeError::UnexpectedData)?;
+            let nonce = Nonce(*nonce);
+            stream = decode_padding(stream)?;
+
+            Payload::Padding { nonce }
+        }
+        XHOP => {
+            let hop_list;
+            (hop_list, stream) = decode_hops(stream)?;
+            stream = decode_padding(stream)?;
+
+            // the rest of the payload is the nested message, which is self-framing
+            let msg = std::mem::take(&mut stream);
+
+            if hop_list.is_empty() {
                 Payload::NestedMessage(msg)
             } else {
-                (msg, stream) = checked_decode_variable_data_mut(TSP_PLAINTEXT, stream)
-                    .ok_or(DecodeError::UnexpectedData)?;
-
                 Payload::RoutedMessage(hop_list, msg)
             }
         }
@@ -527,6 +673,7 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
                 decode_variable_data_mut(TSP_VID, stream).ok_or(DecodeError::UnexpectedData)?;
 
             if new_vid.is_empty() {
+                stream = decode_padding(stream)?;
                 Payload::DirectRelationProposal {
                     nonce: Nonce(*nonce),
                     request_digest,
@@ -534,6 +681,7 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
             } else {
                 let sig_new_vid;
                 (sig_new_vid, stream) = decoded_signature_from_stream(stream)?;
+                stream = decode_padding(stream)?;
 
                 Payload::ParallelRelationProposal {
                     nonce: Nonce(*nonce),
@@ -550,18 +698,26 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
             let reply_digest;
             (reply_digest, stream) = decode_digest(stream)?;
 
+            // the next field is either the padding (direct form, ending the payload)
+            // or the new VID of the parallel (referral) form, followed by a signature
+            let vid_or_pad_mut;
+            (vid_or_pad_mut, stream) =
+                decode_variable_data_mut(TSP_VID, stream).ok_or(DecodeError::UnexpectedData)?;
+            let vid_or_pad: &[u8] = vid_or_pad_mut;
+
             if stream.is_empty() {
                 Payload::DirectRelationAffirm {
                     request_digest,
                     reply_digest,
                 }
             } else {
-                let new_vid: &[u8];
+                let new_vid = vid_or_pad;
+                if new_vid.is_empty() {
+                    return Err(DecodeError::UnexpectedData);
+                }
                 let sig_new_vid;
-
-                (new_vid, stream) =
-                    decode_variable_data_mut(TSP_VID, stream).ok_or(DecodeError::UnexpectedData)?;
                 (sig_new_vid, stream) = decoded_signature_from_stream(stream)?;
+                stream = decode_padding(stream)?;
 
                 Payload::ParallelRelationAffirm {
                     request_digest,
@@ -572,10 +728,16 @@ pub fn decode_payload(mut stream: &mut [u8]) -> Result<DecodedPayload<'_>, Decod
             }
         }
         XRFD => {
+            let nonce;
+            (nonce, stream) =
+                decode_fixed_data_mut(TSP_NONCE, stream).ok_or(DecodeError::UnexpectedData)?;
+            let nonce = Nonce(*nonce);
+
             let reply;
             (reply, stream) = decode_digest(stream)?;
+            stream = decode_padding(stream)?;
 
-            Payload::RelationshipCancel { reply }
+            Payload::RelationshipCancel { nonce, reply }
         }
         _ => return Err(DecodeError::UnexpectedMsgType),
     };
@@ -603,70 +765,59 @@ pub fn encode_version(output: &mut impl for<'b> Extend<&'b u8>) {
 fn decode_version(stream: &mut &[u8]) -> Result<(), DecodeError> {
     // See above: this is hopefully rare case of pseudo-CESR encoding
     let Some((hdr, new_stream)) = stream.split_at_checked(YTSP.len()) else {
-        return Err(DecodeError::VersionMismatch);
+        return Err(DecodeError::NotTsp);
     };
 
     if hdr != YTSP {
-        return Err(DecodeError::VersionMismatch);
+        return Err(DecodeError::NotTsp);
     }
 
     *stream = new_stream;
 
-    let _version = decode_count(TSP_VERSION.0, stream).ok_or(DecodeError::VersionMismatch)?;
-
-    // NOTE: can we simply ignore the minor and path parts of the version?
+    // the count identifier is the MAJOR version: a different MAJOR fails to decode,
+    // and per semver a message with a different MAJOR cannot be assumed processable.
+    // The count value carries MINOR and PATCH, which do not affect processability.
+    let _minor_patch = decode_count(TSP_VERSION.0, stream).ok_or(DecodeError::VersionMismatch)?;
 
     Ok(())
 }
 
-/// Encode a encrypted TSP message plus Envelope into CESR
-pub fn encode_ets_envelope<'a, Vid: AsRef<[u8]>>(
+/// Encode the envelope fields of a TSP message: the version, sender VID,
+/// receiver VID (the NULL VID `4BAA` when absent) and optional non-confidential data.
+///
+/// The `-E##` frame is prepended later by [finalize_envelope_frame], after the
+/// ciphertext (if any) has been appended, since its count covers both.
+pub fn encode_envelope<'a, Vid: AsRef<[u8]>>(
     envelope: Envelope<'a, Vid>,
-    output: &mut impl for<'b> Extend<&'b u8>,
-) -> Result<(), EncodeError> {
-    let mut temp = Vec::new(); // temporary buffer to count the size
-    encode_envelope_fields(envelope, &mut temp)?;
-
-    encode_count(TSP_ETS_WRAPPER, temp.len() / 3, output);
-    output.extend(temp.iter());
-    Ok(())
-}
-
-/// Encode a encrypted TSP message plus Envelope into CESR
-pub fn encode_s_envelope<'a, Vid: AsRef<[u8]>>(
-    envelope: Envelope<'a, Vid>,
-    output: &mut impl for<'b> Extend<&'b u8>,
-) -> Result<(), EncodeError> {
-    let mut temp = Vec::new(); // temporary buffer to count the size
-    encode_envelope_fields(envelope, &mut temp)?;
-
-    encode_count(TSP_S_WRAPPER, temp.len() / 3, output);
-    output.extend(temp.iter());
-    Ok(())
-}
-
-/// Encode the envelope fields; the only difference between ETS and S envelopes
-/// is whether there is ciphertext between the header and signature, and this function
-/// doesn't need to know that.
-fn encode_envelope_fields<'a, Vid: AsRef<[u8]>>(
-    envelope: Envelope<'a, Vid>,
-    output: &mut impl for<'b> Extend<&'b u8>,
+    output: &mut Vec<u8>,
 ) -> Result<(), EncodeError> {
     encode_version(output);
+
+    if envelope.sender.as_ref().is_empty() {
+        return Err(EncodeError::InvalidVid);
+    }
     checked_encode_variable_data(TSP_VID, envelope.sender.as_ref(), output)?;
 
-    if let Some(rec) = envelope.receiver {
-        checked_encode_variable_data(TSP_VID, rec.as_ref(), output)?;
-    }
-
-    // FIXME: without this parsing errors seem to occur -- maybe there is am ambiguity
-    encode_fixed_data(TSP_TMP, &[0u8, 0u8], output);
+    checked_encode_variable_data(
+        TSP_VID,
+        envelope.receiver.as_ref().map(AsRef::as_ref).unwrap_or(&[]),
+        output,
+    )?;
 
     if let Some(data) = envelope.nonconfidential_data {
         checked_encode_variable_data(TSP_PLAINTEXT, data, output)?;
     }
 
     Ok(())
+}
+
+/// Prepend the `-E##`/`-0E#####` frame to the signable content built so far
+/// (envelope fields plus ciphertext, if any). The count covers everything after
+/// the frame code up to, but excluding, the signature attachment.
+pub fn finalize_envelope_frame(data: &mut Vec<u8>) {
+    let mut frame = Vec::with_capacity(6);
+    encode_count(TSP_WRAPPER, data.len() / 3, &mut frame);
+    data.splice(0..0, frame);
 }
 
 enum EncodedSignature<'a> {
@@ -677,45 +828,73 @@ enum EncodedSignature<'a> {
 
 impl<'a> EncodedSignature<'a> {
     fn encode(&self, output: &mut impl for<'b> Extend<&'b u8>) {
+        // the group counts are lengths in quadlets/triplets: the indexed signature
+        // group covers the signature primitive(s); the attachment group additionally
+        // covers the indexed signature group's own code (one quadlet)
         match self {
             EncodedSignature::NoSignature => {}
             EncodedSignature::Ed25519(signature) => {
-                encode_count(TSP_ATTACH_GRP, signature.len().div_ceil(3), output);
-                encode_count(TSP_INDEX_SIG_GRP, signature.len().div_ceil(3), output);
-                encode_fixed_data(ED25519_SIGNATURE, signature.as_slice(), output);
+                let primitive_quadlets = (signature.len() + 2).div_ceil(3);
+                encode_count(TSP_ATTACH_GRP, primitive_quadlets + 1, output);
+                encode_count(TSP_INDEX_SIG_GRP, primitive_quadlets, output);
+                // this implementation signs with a single key, so the index is 0
+                super::encode::encode_indexed_data(
+                    ED25519_SIGNATURE,
+                    0,
+                    signature.as_slice(),
+                    output,
+                );
             }
             EncodedSignature::MlDsa65(signature) => {
-                encode_count(TSP_ATTACH_GRP, signature.len().div_ceil(3), output);
-                encode_count(TSP_INDEX_SIG_GRP, signature.len().div_ceil(3), output);
+                let primitive_quadlets = (signature.len() + 3).div_ceil(3);
+                encode_count(TSP_ATTACH_GRP, primitive_quadlets + 1, output);
+                encode_count(TSP_INDEX_SIG_GRP, primitive_quadlets, output);
                 encode_fixed_data(ML_DSA_65_SIGNATURE, signature.as_slice(), output);
             }
         }
     }
 
-    fn decode(stream: &mut &'a [u8]) -> Result<Self, DecodeError> {
+    /// Decode a signature attachment. Returns the first signature and the number of
+    /// bytes remaining in the attachment group after it (additional signatures are
+    /// tolerated but not verified by this implementation; key selection by signature
+    /// index is left to the VID type).
+    fn decode_with_rest(stream: &mut &'a [u8]) -> Result<(Self, usize), DecodeError> {
         let a_size = decode_count(TSP_ATTACH_GRP, stream).ok_or(DecodeError::UnexpectedData)?;
-        let i_size = decode_count(TSP_INDEX_SIG_GRP, stream).ok_or(DecodeError::UnexpectedData)?;
-        if let Some(sig) = decode_fixed_data(ED25519_SIGNATURE, stream) {
-            if a_size != (sig.len() as u32).div_ceil(3) {
-                return Err(DecodeError::InvalidSignatureType);
-            }
-            if i_size != (sig.len() as u32).div_ceil(3) {
-                return Err(DecodeError::InvalidSignatureType);
-            }
-            Ok(EncodedSignature::Ed25519(sig))
-        } else {
-            if let Some(sig) = decode_fixed_data(ML_DSA_65_SIGNATURE, stream) {
-                if a_size != (sig.len() as u32).div_ceil(3) {
-                    return Err(DecodeError::InvalidSignatureType);
-                }
-                if i_size != (sig.len() as u32).div_ceil(3) {
-                    return Err(DecodeError::InvalidSignatureType);
-                }
-                Ok(EncodedSignature::MlDsa65(sig))
-            } else {
-                Err(DecodeError::InvalidSignatureType)
-            }
+        let region_len = (a_size as usize)
+            .checked_mul(3)
+            .ok_or(DecodeError::InvalidFrameCount)?;
+        let (mut region, rest) = stream
+            .split_at_checked(region_len)
+            .ok_or(DecodeError::InvalidFrameCount)?;
+
+        let i_size = decode_count(TSP_INDEX_SIG_GRP, &mut region)
+            .ok_or(DecodeError::InvalidSignatureType)?;
+        // the indexed signature group covers the rest of the attachment group
+        if (i_size as usize).checked_mul(3) != Some(region.len()) {
+            return Err(DecodeError::InvalidFrameCount);
         }
+
+        let signature =
+            if let Some((index, sig)) = decode_indexed_data(ED25519_SIGNATURE, &mut region) {
+                // the index selects the signing key in the VID's key list; this
+                // implementation supports single-key VIDs, whose only valid index is 0
+                if index != 0 {
+                    return Err(DecodeError::InvalidSignatureType);
+                }
+                EncodedSignature::Ed25519(sig)
+            } else if let Some(sig) = decode_fixed_data(ML_DSA_65_SIGNATURE, &mut region) {
+                EncodedSignature::MlDsa65(sig)
+            } else {
+                return Err(DecodeError::InvalidSignatureType);
+            };
+
+        *stream = rest;
+        Ok((signature, region.len()))
+    }
+
+    fn decode(stream: &mut &'a [u8]) -> Result<Self, DecodeError> {
+        let (signature, _rest) = Self::decode_with_rest(stream)?;
+        Ok(signature)
     }
 }
 
@@ -759,8 +938,9 @@ pub fn encode_ciphertext(
     checked_encode_variable_data(crypto.cesr_code().unwrap(), ciphertext, output)
 }
 
-/// Checks whether the expected TSP header is present and returns its size and whether it
-/// is a "ETS" or "S" envelope
+/// Checks whether the expected TSP header is present; parses and validates the
+/// `-E##` frame (whose count covers the version, VIDs, non-confidential data and
+/// ciphertext) and determines the crypto type from the ciphertext code point.
 #[allow(clippy::type_complexity)]
 pub(super) fn detected_tsp_header_size_and_confidentiality(
     stream: &[u8],
@@ -776,28 +956,37 @@ pub(super) fn detected_tsp_header_size_and_confidentiality(
 > {
     let origin = stream;
     let mut stream = &origin[*pos..];
-    //NOTE: we don't need this quadlet count
-    let encrypted = if let Some(_quadlet_count) = decode_count(TSP_ETS_WRAPPER, &mut stream) {
-        true
-    } else if let Some(_quadlet_count) = decode_count(TSP_S_WRAPPER, &mut stream) {
-        false
-    } else {
-        return Err(DecodeError::VersionMismatch);
-    };
+
+    let frame_quadlets = decode_count(TSP_WRAPPER, &mut stream).ok_or(DecodeError::NotTsp)?;
+    let content_start = origin.len() - stream.len();
+    let content_len = (frame_quadlets as usize)
+        .checked_mul(3)
+        .ok_or(DecodeError::InvalidFrameCount)?;
+    let content_end = content_start
+        .checked_add(content_len)
+        .filter(|&end| end <= origin.len())
+        .ok_or(DecodeError::InvalidFrameCount)?;
 
     decode_version(&mut stream)?;
-    let mut mid_pos = *pos + origin.len() - stream.len();
+    let mut mid_pos = origin.len() - stream.len();
 
     let sender = decode_variable_data_index(TSP_VID, origin, &mut mid_pos)
         .ok_or(DecodeError::UnexpectedData)?;
+    if sender.is_empty() {
+        return Err(DecodeError::VidError);
+    }
 
-    let receiver = decode_variable_data_index(TSP_VID, origin, &mut mid_pos);
+    // the receiver VID field is always present; the NULL VID `4BAA` means absent
+    let receiver = decode_variable_data_index(TSP_VID, origin, &mut mid_pos)
+        .ok_or(DecodeError::UnexpectedData)?;
+    let receiver = if receiver.is_empty() {
+        None
+    } else {
+        Some(receiver)
+    };
 
+    *pos = mid_pos;
     let mut stream = &origin[mid_pos..];
-
-    if let Some([_crypto_type, _signature_type]) = decode_fixed_data(TSP_TMP, &mut stream) {}
-
-    *pos += origin.len() - stream.len();
 
     /* look ahead to determine the crypto and signature types */
     let _nonconf_data = decode_variable_data(TSP_PLAINTEXT, &mut stream);
@@ -813,21 +1002,21 @@ pub(super) fn detected_tsp_header_size_and_confidentiality(
     } else if decode_variable_data(TSP_HPKEPQ_CIPHERTEXT, &mut stream).is_some() {
         CryptoType::X25519Kyber768Draft00
     } else {
-        if encrypted {
-            return Err(DecodeError::UnknownCrypto);
-        } else {
-            CryptoType::Plaintext
-        }
+        CryptoType::Plaintext
     };
 
-    if encrypted != crypto_type.is_encrypted() {
-        return Err(DecodeError::InvalidCrypto);
+    // validate the frame count: the envelope fields and ciphertext must end
+    // exactly at the frame boundary (the signature attachment follows it)
+    if origin.len() - stream.len() != content_end {
+        return Err(DecodeError::InvalidFrameCount);
     }
 
-    let signature_type = match EncodedSignature::decode(&mut stream) {
-        Ok(EncodedSignature::Ed25519(_)) => SignatureType::Ed25519,
-        Ok(EncodedSignature::MlDsa65(_)) => SignatureType::MlDsa65,
-        _ => SignatureType::NoSignature,
+    // every TSP message carries a signature attachment; a message without a
+    // parseable one is rejected rather than treated as unsigned
+    let signature_type = match EncodedSignature::decode(&mut stream)? {
+        EncodedSignature::Ed25519(_) => SignatureType::Ed25519,
+        EncodedSignature::MlDsa65(_) => SignatureType::MlDsa65,
+        EncodedSignature::NoSignature => return Err(DecodeError::InvalidSignatureType),
     };
 
     Ok((sender, receiver, crypto_type, signature_type))
@@ -950,7 +1139,15 @@ pub fn decode_envelope<'a>(stream: &'a mut [u8]) -> Result<CipherView<'a>, Decod
 
     let nonconfidential_data = decode_variable_data_index(TSP_PLAINTEXT, stream, &mut pos);
 
-    let associated_data = 0..pos;
+    // the associated data binds the envelope fields: everything after the `-E##`
+    // frame code (which is excluded, matching the seal side where the frame is
+    // prepended only after encryption) up to the ciphertext
+    let frame_len = {
+        let mut s = &stream[..];
+        decode_count(TSP_WRAPPER, &mut s).ok_or(DecodeError::NotTsp)?;
+        stream.len() - s.len()
+    };
+    let associated_data = frame_len..pos;
 
     let ciphertext = if crypto_type.is_encrypted() {
         Some(
@@ -967,7 +1164,6 @@ pub fn decode_envelope<'a>(stream: &'a mut [u8]) -> Result<CipherView<'a>, Decod
     let mut sigdata: &[u8];
     (data, sigdata) = stream.split_at_mut(signed_data.end);
 
-    //FIXME: just decode it fully with EncodedSignature
     let signature = match signature_type {
         SignatureType::NoSignature => [].as_slice(),
         _ => match EncodedSignature::decode(&mut sigdata)? {
@@ -977,9 +1173,8 @@ pub fn decode_envelope<'a>(stream: &'a mut [u8]) -> Result<CipherView<'a>, Decod
         },
     };
 
-    if !sigdata.is_empty() {
-        return Err(DecodeError::TrailingGarbage);
-    }
+    // any data after the signature attachment is not part of this message
+    // (a transport may deliver several messages back-to-back) and is ignored
 
     Ok(CipherView {
         data,
@@ -1005,29 +1200,19 @@ pub fn encode_payload_vec(
     payload: &Payload<impl AsRef<[u8]>, impl AsRef<[u8]>>,
 ) -> Result<Vec<u8>, EncodeError> {
     let mut data = vec![];
-    encode_payload(payload, None, &mut data)?;
+    encode_payload(payload, None, None, &mut data)?;
 
     Ok(data)
 }
 
-/// Allocating variant of [encode_ets_envelope]
+/// Allocating variant of [encode_envelope]; the returned data still needs
+/// [finalize_envelope_frame] applied after any ciphertext is appended
 #[cfg(test)]
-pub fn encode_ets_envelope_vec<Vid: AsRef<[u8]>>(
+pub fn encode_envelope_vec<Vid: AsRef<[u8]>>(
     envelope: Envelope<Vid>,
 ) -> Result<Vec<u8>, EncodeError> {
     let mut data = vec![];
-    encode_ets_envelope(envelope, &mut data)?;
-
-    Ok(data)
-}
-
-/// Allocating variant of [encode_ets_envelope]
-#[cfg(test)]
-pub fn encode_s_envelope_vec<Vid: AsRef<[u8]>>(
-    envelope: Envelope<Vid>,
-) -> Result<Vec<u8>, EncodeError> {
-    let mut data = vec![];
-    encode_s_envelope(envelope, &mut data)?;
+    encode_envelope(envelope, &mut data)?;
 
     Ok(data)
 }
@@ -1078,8 +1263,14 @@ pub fn open_message_into_parts(data: &[u8]) -> Result<MessageParts<'_>, DecodeEr
     let (sender, receiver, crypto_type, signature_type) =
         detected_tsp_header_size_and_confidentiality(data, &mut pos)?;
 
+    // the message prefix: the `-E##`/`-0E#####` frame code plus the version
+    let frame_len = {
+        let mut stream = data;
+        decode_count(TSP_WRAPPER, &mut stream).ok_or(DecodeError::NotTsp)?;
+        data.len() - stream.len()
+    };
     let prefix = Part {
-        prefix: &data[..9],
+        prefix: &data[..frame_len + 6],
         data: &[],
     };
 
@@ -1150,7 +1341,7 @@ pub fn encode_tsp_message<Vid: AsRef<[u8]>, Sig: AsRef<[u8]>>(
     encrypt: impl FnOnce(&Vid, Vec<u8>) -> Vec<u8>,
     sign: impl FnOnce(&Vid, &[u8]) -> Sig,
 ) -> Result<Vec<u8>, EncodeError> {
-    let mut cesr = encode_ets_envelope_vec(Envelope {
+    let mut cesr = encode_envelope_vec(Envelope {
         crypto_type: CryptoType::HpkeAuth,
         signature_type: SignatureType::Ed25519,
         sender,
@@ -1161,6 +1352,7 @@ pub fn encode_tsp_message<Vid: AsRef<[u8]>, Sig: AsRef<[u8]>>(
     let ciphertext = &encrypt(receiver, encode_payload_vec(&message)?);
 
     encode_ciphertext(ciphertext, CryptoType::HpkeAuth, &mut cesr)?;
+    finalize_envelope_frame(&mut cesr);
     let signature = sign(sender, &cesr);
     encode_signature(signature.as_ref(), &mut cesr, SignatureType::Ed25519);
 
@@ -1237,7 +1429,7 @@ mod test {
         let mut cesr_payload =
             { encode_payload_vec(&Payload::<_, &[u8]>::GenericMessage(b"Hello TSP!")).unwrap() };
 
-        let mut outer = encode_ets_envelope_vec(Envelope {
+        let mut outer = encode_envelope_vec(Envelope {
             crypto_type: CryptoType::HpkeAuth,
             signature_type: SignatureType::Ed25519,
             sender: &b"Alister"[..],
@@ -1247,6 +1439,7 @@ mod test {
         .unwrap();
         let ciphertext = dummy_crypt(&mut cesr_payload);
         encode_ciphertext(ciphertext, CryptoType::HpkeAuth, &mut outer).unwrap();
+        finalize_envelope_frame(&mut outer);
 
         let signed_data = outer.clone();
         encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
@@ -1285,7 +1478,7 @@ mod test {
         let mut cesr_payload =
             { encode_payload_vec(&Payload::<_, &[u8]>::GenericMessage(b"Hello TSP!")).unwrap() };
 
-        let mut outer = encode_ets_envelope_vec(Envelope {
+        let mut outer = encode_envelope_vec(Envelope {
             crypto_type: CryptoType::HpkeAuth,
             signature_type: SignatureType::Ed25519,
             sender: &b"Alister"[..],
@@ -1295,6 +1488,7 @@ mod test {
         .unwrap();
         let ciphertext = dummy_crypt(&mut cesr_payload);
         encode_ciphertext(ciphertext, CryptoType::HpkeAuth, &mut outer).unwrap();
+        finalize_envelope_frame(&mut outer);
 
         let signed_data = outer.clone();
         encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
@@ -1327,7 +1521,7 @@ mod test {
     fn envelope_without_confidential_data() {
         let fixed_sig = [1; 64];
 
-        let mut outer = encode_s_envelope_vec(Envelope {
+        let mut outer = encode_envelope_vec(Envelope {
             crypto_type: CryptoType::Plaintext,
             signature_type: SignatureType::Ed25519,
             sender: &b"Alister"[..],
@@ -1335,6 +1529,7 @@ mod test {
             nonconfidential_data: Some(b"treasure"),
         })
         .unwrap();
+        finalize_envelope_frame(&mut outer);
 
         let signed_data = outer.clone();
         encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
@@ -1357,7 +1552,7 @@ mod test {
 
     #[test]
     #[wasm_bindgen_test]
-    fn s_envelope_with_confidential_data_failure() {
+    fn frame_count_must_cover_ciphertext() {
         fn dummy_crypt(data: &[u8]) -> &[u8] {
             data
         }
@@ -1366,7 +1561,7 @@ mod test {
         let cesr_payload =
             { encode_payload_vec(&Payload::<_, &[u8]>::GenericMessage(b"Hello TSP!")).unwrap() };
 
-        let mut outer = encode_s_envelope_vec(Envelope {
+        let mut outer = encode_envelope_vec(Envelope {
             crypto_type: CryptoType::Plaintext,
             signature_type: SignatureType::Ed25519,
             sender: &b"Alister"[..],
@@ -1374,11 +1569,17 @@ mod test {
             nonconfidential_data: Some(b"treasure"),
         })
         .unwrap();
-        let ciphertext = dummy_crypt(&cesr_payload); // this is wrong
+        // finalizing before the ciphertext is appended produces a frame count
+        // that does not cover the ciphertext, which the receiver must reject
+        finalize_envelope_frame(&mut outer);
+        let ciphertext = dummy_crypt(&cesr_payload);
         encode_ciphertext(ciphertext, CryptoType::HpkeAuth, &mut outer).unwrap();
         encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
 
-        assert!(decode_envelope(&mut outer).is_err());
+        assert!(matches!(
+            decode_envelope(&mut outer),
+            Err(DecodeError::InvalidFrameCount)
+        ));
     }
 
     #[test]
@@ -1387,7 +1588,7 @@ mod test {
         let fixed_sig = [1; 64];
 
         let mut outer = vec![];
-        encode_ets_envelope(
+        encode_envelope(
             Envelope {
                 crypto_type: CryptoType::HpkeAuth,
                 signature_type: SignatureType::Ed25519,
@@ -1398,6 +1599,7 @@ mod test {
             &mut outer,
         )
         .unwrap();
+        // no envelope frame, and signature and ciphertext in the wrong order
         encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
         encode_ciphertext(&[], CryptoType::HpkeAuth, &mut outer).unwrap();
 
@@ -1406,10 +1608,10 @@ mod test {
 
     #[test]
     #[wasm_bindgen_test]
-    fn trailing_data() {
+    fn trailing_data_is_ignored() {
         let fixed_sig = [1; 64];
 
-        let mut outer = encode_ets_envelope_vec(Envelope {
+        let mut outer = encode_envelope_vec(Envelope {
             crypto_type: CryptoType::HpkeAuth,
             signature_type: SignatureType::Ed25519,
             sender: &b"Alister"[..],
@@ -1418,10 +1620,14 @@ mod test {
         })
         .unwrap();
         encode_ciphertext(&[], CryptoType::HpkeAuth, &mut outer).unwrap();
+        finalize_envelope_frame(&mut outer);
         encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
+
+        // a transport may deliver several messages back-to-back: data after the
+        // signature attachment is not part of this message and must not be an error
         outer.push(b'-');
 
-        assert!(decode_envelope(&mut outer).is_err());
+        assert!(decode_envelope(&mut outer).is_ok());
     }
 
     #[cfg(all(feature = "demo", test))]
@@ -1467,7 +1673,17 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_nested_msg() {
-        test_turn_around(Payload::NestedMessage(&mut b"Hello TSP!".to_owned()));
+        // a nested message is itself CESR data, so always a multiple of 3 bytes
+        test_turn_around(Payload::NestedMessage(&mut b"Hello TSP!!!".to_owned()));
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_nested_msg_must_be_aligned() {
+        assert!(matches!(
+            encode_payload_vec(&Payload::<_, &[u8]>::NestedMessage(b"Hello TSP!")),
+            Err(EncodeError::MisalignedNestedMessage)
+        ));
     }
 
     #[test]
@@ -1475,15 +1691,65 @@ mod test {
     fn test_routed_msg() {
         test_turn_around(Payload::RoutedMessage(
             vec![b"foo", b"bar"],
-            &mut b"Hello TSP!".to_owned(),
+            &mut b"Hello TSP!!!".to_owned(),
         ));
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_large_payloads_use_long_form_counts() {
+        // large payloads push the -Z##, -A## and -H## counts and the Bytes
+        // primitive into their long forms; the counts must be computed over
+        // the actual encodings, not assume short-form code sizes
+        for len in [0usize, 3, 4095 * 3, 16 * 1024, 64 * 1024] {
+            let data = vec![0x42u8; len];
+            test_turn_around(Payload::GenericMessage(&mut data.clone()));
+        }
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_caller_supplied_padding() {
+        // the pad's content is caller-chosen and discarded by the receiver
+        let payload = Payload::<_, &[u8]>::GenericMessage(b"Hello TSP!");
+        let mut encoded = vec![];
+        encode_payload(
+            &payload,
+            Some(b"did:test:alice"),
+            Some(&[0xEE; 21]),
+            &mut encoded,
+        )
+        .unwrap();
+
+        let decoded = decode_payload(&mut encoded).unwrap();
+        assert_eq!(decoded.sender_identity, Some(&b"did:test:alice"[..]));
+        let Payload::GenericMessage(data) = decoded.payload else {
+            panic!("expected GenericMessage");
+        };
+        assert_eq!(&data[..], b"Hello TSP!");
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_control_msg() {
+        test_turn_around(Payload::ControlMessage(
+            &mut b"upper layer control".to_owned(),
+        ));
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_padding_msg() {
+        test_turn_around(Payload::Padding {
+            nonce: Nonce([11; 16]),
+        });
     }
 
     #[test]
     #[wasm_bindgen_test]
     fn test_par_refer_rel() {
         test_turn_around(Payload::ParallelRelationProposal {
-            nonce: Nonce([7; 32]),
+            nonce: Nonce([7; 16]),
             request_digest: Digest::Sha2_256(&Default::default()),
             sig_new_vid: &[5; 64],
             new_vid: b"Charlie",
@@ -1509,7 +1775,7 @@ mod test {
 
         let mut cesr_payload = encode_payload_vec(&payload).unwrap();
 
-        let mut outer = encode_ets_envelope_vec(Envelope {
+        let mut outer = encode_envelope_vec(Envelope {
             crypto_type: CryptoType::HpkeAuth,
             signature_type: SignatureType::Ed25519,
             sender: &b"Alister"[..],
@@ -1519,6 +1785,7 @@ mod test {
         .unwrap();
         let ciphertext = dummy_crypt(&mut cesr_payload);
         encode_ciphertext(ciphertext, CryptoType::HpkeAuth, &mut outer).unwrap();
+        finalize_envelope_frame(&mut outer);
 
         let signed_data = outer.clone();
         encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
@@ -1548,40 +1815,149 @@ mod test {
     #[wasm_bindgen_test]
     fn test_relation_forming() {
         let temp = (1u8..33).collect::<Vec<u8>>();
-        let nonce: &[u8; 32] = temp.as_slice().try_into().unwrap();
+        let digest: &[u8; 32] = temp.as_slice().try_into().unwrap();
+        let nonce = [7u8; 16];
         test_turn_around(Payload::DirectRelationProposal {
-            nonce: Nonce(*nonce),
-            request_digest: Digest::Sha2_256(nonce),
+            nonce: Nonce(nonce),
+            request_digest: Digest::Sha2_256(digest),
         });
         test_turn_around(Payload::DirectRelationAffirm {
-            request_digest: Digest::Sha2_256(nonce),
-            reply_digest: Digest::Sha2_256(nonce),
+            request_digest: Digest::Sha2_256(digest),
+            reply_digest: Digest::Sha2_256(digest),
         });
         test_turn_around(Payload::DirectRelationAffirm {
-            request_digest: Digest::Blake2b256(nonce),
-            reply_digest: Digest::Blake2b256(nonce),
+            request_digest: Digest::Blake2b256(digest),
+            reply_digest: Digest::Blake2b256(digest),
         });
         test_turn_around(Payload::RelationshipCancel {
-            reply: Digest::Sha2_256(nonce),
+            nonce: Nonce(nonce),
+            reply: Digest::Sha2_256(digest),
         });
         test_turn_around(Payload::RelationshipCancel {
-            reply: Digest::Blake2b256(nonce),
+            nonce: Nonce(nonce),
+            reply: Digest::Blake2b256(digest),
         });
     }
 
-    #[ignore]
     #[test]
     #[wasm_bindgen_test]
     fn test_message_to_parts() {
-        use base64ct::{Base64UrlUnpadded, Encoding};
+        let fixed_sig = [1; 64];
 
-        let message = Base64UrlUnpadded::decode_vec("-EABYTSP-AABXAAAXAEB6VAEZGlkOnRlc3Q6Ym9i8VIDAAAFAGRpZDp0ZXN0OmFsaWNl6BAEAABleHRyYSBkYXRh4CAXScvzIiBCgfOu9jHtGwd1qN-KlMB7uhFbE9YOSyTmnp9yziA1LVPdQmST27yjuDRTlxeRo7H7gfuaGFY4iyf2EsfiqvEg0BBNDbKoW0DDczGxj7rNWKH_suyj18HCUxMZ6-mDymZdNhHZIS8zIstC9Kxv5Q-GxmI-1v4SNbeCemuCMBzMPogK").unwrap();
+        // 3-byte-aligned field contents, so the part lengths are exact
+        // (unaligned contents include their lead bytes in the reported parts)
+        let mut message = encode_envelope_vec(Envelope {
+            crypto_type: CryptoType::HpkeEssr,
+            signature_type: SignatureType::Ed25519,
+            sender: &b"did:test:bob"[..],
+            receiver: Some(&b"did:test:alice3"[..]),
+            nonconfidential_data: Some(b"extradata"),
+        })
+        .unwrap();
+        encode_ciphertext(&[0xAA; 69], CryptoType::HpkeEssr, &mut message).unwrap();
+        finalize_envelope_frame(&mut message);
+        encode_signature(&fixed_sig, &mut message, SignatureType::Ed25519);
+
         let parts = open_message_into_parts(&message).unwrap();
 
-        assert_eq!(parts.prefix.prefix.len(), 15);
-        assert_eq!(parts.sender.data.len(), 10);
-        assert_eq!(parts.receiver.unwrap().data.len(), 14);
+        // the message prefix is the `-E##` frame code (3) plus the version (6)
+        assert_eq!(parts.prefix.prefix.len(), 9);
+        assert_eq!(parts.sender.data.len(), b"did:test:bob".len());
+        assert_eq!(parts.receiver.unwrap().data.len(), b"did:test:alice3".len());
+        assert_eq!(parts.nonconfidential_data.unwrap().data.len(), 9);
         assert_eq!(parts.ciphertext.unwrap().data.len(), 69);
+        assert_eq!(parts.signature.data.len(), 64);
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_absent_receiver_is_null_vid() {
+        let fixed_sig = [1; 64];
+
+        let mut outer = encode_envelope_vec(Envelope {
+            crypto_type: CryptoType::Plaintext,
+            signature_type: SignatureType::Ed25519,
+            sender: &b"Alister"[..],
+            receiver: None::<&[u8]>,
+            nonconfidential_data: Some(b"treasure"),
+        })
+        .unwrap();
+        finalize_envelope_frame(&mut outer);
+        encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
+
+        let view = decode_envelope(&mut outer).unwrap();
+        let DecodedEnvelope { envelope: env, .. } = view.into_opened::<&[u8]>().unwrap();
+        assert_eq!(env.sender, &b"Alister"[..]);
+        assert_eq!(env.receiver, None);
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_hop_list_counts_bytes() {
+        let mut hops = Vec::new();
+        encode_hops(&[b"alpha".as_slice(), b"bravo-charlie"], &mut hops).unwrap();
+
+        // each VID is encoded as a B-primitive; the count is the byte length
+        // of the concatenated encodings in quadlets/triplets, not the VID count
+        let mut expected = Vec::new();
+        checked_encode_variable_data(TSP_VID, b"alpha", &mut expected).unwrap();
+        checked_encode_variable_data(TSP_VID, b"bravo-charlie", &mut expected).unwrap();
+
+        let mut stream = &hops[..];
+        let count = decode_count(TSP_HOP_LIST, &mut stream).unwrap();
+        assert_eq!(count as usize, expected.len() / 3);
+        assert_eq!(stream, expected);
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_not_tsp_vs_version_mismatch() {
+        // arbitrary non-TSP data is NotTsp
+        let mut garbage = *b"this is not a TSP message....";
+        assert!(matches!(
+            decode_envelope(&mut garbage),
+            Err(DecodeError::NotTsp)
+        ));
+
+        // a valid message with a different MAJOR version is VersionMismatch
+        let fixed_sig = [1; 64];
+        let mut outer = encode_envelope_vec(Envelope {
+            crypto_type: CryptoType::Plaintext,
+            signature_type: SignatureType::Ed25519,
+            sender: &b"Alister"[..],
+            receiver: Some(&b"Bobbi"[..]),
+            nonconfidential_data: Some(b"treasure"),
+        })
+        .unwrap();
+        finalize_envelope_frame(&mut outer);
+        encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
+
+        // the version triplet follows the frame code (3 bytes) and the `YTSP`
+        // marker (3 bytes): [dash:6][major:6][minor+patch:12]; overwriting the
+        // second byte changes the MAJOR version without touching the dash selector
+        outer[7] = 0xFF; // a MAJOR version far in the future
+        assert!(matches!(
+            decode_envelope(&mut outer),
+            Err(DecodeError::VersionMismatch)
+        ));
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_signature_attachment_structure() {
+        let mut out = Vec::new();
+        encode_signature(&[1; 64], &mut out, SignatureType::Ed25519);
+
+        let mut stream = &out[..];
+        // -C## attachment group: the indexed signature group code plus its contents
+        assert_eq!(decode_count(TSP_ATTACH_GRP, &mut stream), Some(23));
+        // -K## indexed signature group: one indexed Ed25519 signature (22 quadlets)
+        assert_eq!(decode_count(TSP_INDEX_SIG_GRP, &mut stream), Some(22));
+        // the signature primitive uses the indexed code `B#` with index 0 ("BA")
+        let (index, sig) = decode_indexed_data::<64>(ED25519_SIGNATURE, &mut stream).unwrap();
+        assert_eq!(index, 0);
+        assert_eq!(sig, &[1; 64]);
+        assert!(stream.is_empty());
     }
 
     #[test]
@@ -1594,7 +1970,7 @@ mod test {
         let mut cesr_payload =
             { encode_payload_vec(&Payload::<_, &[u8]>::GenericMessage(b"Hello TSP!")).unwrap() };
 
-        let mut outer = encode_ets_envelope_vec(Envelope {
+        let mut outer = encode_envelope_vec(Envelope {
             crypto_type: CryptoType::HpkeAuth,
             signature_type: SignatureType::Ed25519,
             sender: &b"Alister"[..],
@@ -1604,6 +1980,7 @@ mod test {
         .unwrap();
         let ciphertext = dummy_crypt(&mut cesr_payload);
         encode_ciphertext(ciphertext, CryptoType::HpkeAuth, &mut outer).unwrap();
+        finalize_envelope_frame(&mut outer);
 
         let signed_data = outer.clone();
         encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
