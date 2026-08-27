@@ -1,0 +1,26 @@
+name: Fresh Dependencies
+
+# Cargo.lock is committed, so regular CI builds are reproducible. This
+# scheduled job preserves the early-warning signal a floating resolution
+# used to give: it re-resolves all dependencies to the newest compatible
+# versions and runs the tests and advisory checks against them.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  fresh-deps:
+    runs-on: ubuntu-latest
+    env:
+      RUST_BACKTRACE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo update
+      - run: cargo test --workspace
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: --workspace
