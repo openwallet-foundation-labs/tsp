@@ -301,7 +301,7 @@ export default function useStore() {
     // timestamp sign
     const signResponse = await fetch('https://demo.teaspoon.world/sign-timestamp', {
       method: 'POST',
-      body: sealed,
+      body: sealed as BodyInit,
     });
 
     if (signResponse.status !== 200) {
