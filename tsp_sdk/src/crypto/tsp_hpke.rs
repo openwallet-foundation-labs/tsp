@@ -3,8 +3,8 @@ use crate::{
     definitions::{NonConfidentialData, Payload, PrivateVid, TSPMessage, VerifiedVid},
 };
 use hpke::{
-    Deserializable, OpModeR, OpModeS, Serializable, single_shot_open_in_place_detached,
-    single_shot_seal_in_place_detached,
+    Deserializable, OpModeR, OpModeS, Serializable, inout::InOutBuf,
+    single_shot_open_inout_detached, single_shot_seal_inout_detached,
 };
 use hpke_pq::{
     Deserializable as PqDeserializable, OpModeR as PqOpModeR, OpModeS as PqOpModeS,
@@ -156,15 +156,13 @@ pub(crate) fn seal_x25519(
         *digest = payload_digest_override.unwrap_or_else(|| digest_algorithm.hash(&cesr_message));
     }
 
-    let (encapped_key, tag) =
-        single_shot_seal_in_place_detached::<X25519Aead, X25519Kdf, X25519Kem, StdRng>(
-            &mode,
-            &message_receiver,
-            &data,
-            &mut cesr_message,
-            &[],
-            &mut csprng,
-        )?;
+    let (encapped_key, tag) = single_shot_seal_inout_detached::<X25519Aead, X25519Kdf, X25519Kem>(
+        &mode,
+        &message_receiver,
+        &data,
+        InOutBuf::from(cesr_message.as_mut_slice()),
+        &[],
+    )?;
 
     cesr_message.extend(tag.to_bytes());
     cesr_message.extend(encapped_key.to_bytes());
@@ -270,12 +268,12 @@ pub(crate) fn open_x25519<'a>(
         OpModeR::Auth(sender_encryption_key)
     };
 
-    single_shot_open_in_place_detached::<X25519Aead, X25519Kdf, X25519Kem>(
+    single_shot_open_inout_detached::<X25519Aead, X25519Kdf, X25519Kem>(
         &mode,
         &receiver_decryption_key,
         &encapped_key,
         raw_header,
-        ciphertext,
+        InOutBuf::from(&mut *ciphertext),
         &[],
         &tag,
     )?;
