@@ -319,7 +319,7 @@ async fn main() {
                 tokio::time::sleep(Duration::from_secs(60)).await;
                 let mut buffers = state.buffers.write().await;
                 let mut expired_count = 0;
-                for (_, buf) in buffers.iter_mut() {
+                for buf in buffers.values_mut() {
                     let before = buf.messages.len();
                     buf.expire(state.buffer_ttl);
                     expired_count += before - buf.messages.len();

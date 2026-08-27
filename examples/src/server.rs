@@ -662,7 +662,7 @@ fn render_vid_error_page(did: &str, error: &str) -> String {
 
 /// Create a new identity (private VID)
 async fn create_identity(State(state): State<Arc<AppState>>) -> Response {
-    Redirect::temporary(format!("{}/create-identity", &state.did_server).as_str()).into_response()
+    Redirect::temporary(format!("{}/create-identity", state.did_server).as_str()).into_response()
 }
 
 #[derive(Deserialize, Debug)]
@@ -743,6 +743,9 @@ struct Metadata {
     timestamp: u64,
 }
 
+// axum handlers conventionally use Result<_, Response>; the Response error type is
+// larger than clippy's result_large_err threshold but is what axum expects here
+#[allow(clippy::result_large_err)]
 async fn sign_timestamp(
     State(state): State<Arc<AppState>>,
     body: Bytes,
