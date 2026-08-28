@@ -525,7 +525,11 @@ async fn new_message(
             if let Err(e) =
                 handle_relationship_request(sender.clone(), form, delivery, thread_id).await
             {
-                state.log_error(e.to_string()).await;
+                state
+                    .log_error(format!(
+                        "error delivering relationship accept to {sender}: {e}"
+                    ))
+                    .await;
                 return (StatusCode::BAD_REQUEST, "error accepting relationship").into_response();
             }
 
