@@ -58,7 +58,7 @@ class AliceBob(unittest.TestCase):
 
         match received:
             case tsp.GenericMessage(
-                sender, receiver, _, received_message, crypto_type, signature_type
+                sender, receiver, received_message, crypto_type, signature_type
             ):
                 self.assertEqual(sender, self.alice.identifier())
                 self.assertEqual(receiver, self.bob.identifier())
@@ -417,7 +417,7 @@ class AliceBob(unittest.TestCase):
 
         match received:
             case tsp.GenericMessage(
-                sender, receiver, _, received_message, crypto_type, signature_type
+                sender, receiver, received_message, crypto_type, signature_type
             ):
                 self.assertEqual(sender, nested_a.identifier())
                 self.assertEqual(receiver, nested_b.identifier())
