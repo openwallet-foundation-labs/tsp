@@ -28,7 +28,6 @@ pub struct PrivateSigningKeyData(Vec<u8>);
 pub struct PublicVerificationKeyData(Vec<u8>);
 
 pub type VidData<'a> = &'a [u8];
-pub type NonConfidentialData<'a> = &'a [u8];
 pub type TSPMessage = Vec<u8>;
 
 #[cfg(feature = "async")]
@@ -120,7 +119,6 @@ pub enum ReceivedTspMessage<Data: AsRef<[u8]> = BytesMut> {
     GenericMessage {
         sender: String,
         receiver: Option<String>,
-        nonconfidential_data: Option<Data>,
         message: Data,
         message_type: MessageType,
     },
@@ -254,7 +252,7 @@ impl<Bytes: AsRef<[u8]>> fmt::Display for Payload<'_, Bytes> {
 pub enum VidEncryptionKeyType {
     #[default]
     X25519,
-    X25519Kyber768Draft00,
+    X25519MlKem768,
 }
 
 #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
@@ -269,13 +267,13 @@ impl VidEncryptionKeyType {
     fn jwk_key_type(self) -> &'static str {
         match self {
             VidEncryptionKeyType::X25519 => "OKP",
-            VidEncryptionKeyType::X25519Kyber768Draft00 => "X25519Kyber768Draft00",
+            VidEncryptionKeyType::X25519MlKem768 => "X25519MlKem768",
         }
     }
 
     fn jwk_curve(self) -> &'static str {
         match self {
-            VidEncryptionKeyType::X25519 | VidEncryptionKeyType::X25519Kyber768Draft00 => "X25519",
+            VidEncryptionKeyType::X25519 | VidEncryptionKeyType::X25519MlKem768 => "X25519",
         }
     }
 }

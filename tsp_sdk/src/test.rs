@@ -35,7 +35,6 @@ async fn test_direct_mode() {
         .send(
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
-            Some(b"extra non-confidential data"),
             b"hello world",
         )
         .await
@@ -100,7 +99,6 @@ async fn test_large_messages() {
             .send(
                 "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
                 "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
-                None,
                 sent_message.as_bytes(),
             )
             .await
@@ -258,7 +256,6 @@ async fn test_nested_mode() {
         .send(
             nested_alice_vid.identifier(),
             nested_bob_vid.identifier(),
-            Some(b"extra non-confidential data"),
             b"hello nested world",
         )
         .await
@@ -356,7 +353,6 @@ async fn test_routed_mode() {
         .send(
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
-            None,
             b"hello self (via bob)",
         )
         .await
@@ -537,7 +533,7 @@ async fn attack_failures() {
 
     for i in 0.. {
         let mut faulty_message =
-            crate::crypto::seal(&alice, &bob, None, super::Payload::Content(payload)).unwrap();
+            crate::crypto::seal(&alice, &bob, super::Payload::Content(payload)).unwrap();
 
         if i >= faulty_message.len() {
             break;
@@ -676,7 +672,6 @@ async fn test_unverified_receiver_in_direct_mode() {
         .send(
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
-            Some(b"extra non-confidential data"),
             b"hello world",
         )
         .await
@@ -786,7 +781,7 @@ async fn test_persisted_store_roundtrip_reopens_dirty_wallet() {
         .unwrap();
 
     let (_endpoint, sealed_message) = reopened_store
-        .seal_message(&local_vid, &receiver_vid, None, b"persisted-wallet-message")
+        .seal_message(&local_vid, &receiver_vid, b"persisted-wallet-message")
         .unwrap();
     assert!(!sealed_message.is_empty());
 }
@@ -962,7 +957,6 @@ async fn test_routed_delivery_after_reopen_uses_persisted_route_metadata() {
         .send(
             &topology.sender_vid,
             &topology.receiver_vid,
-            None,
             b"dirty-routed-message",
         )
         .await
@@ -1023,7 +1017,6 @@ async fn test_routed_failure_path_after_reopen_keeps_snapshot_stable() {
         .send(
             &topology.sender_vid,
             &topology.receiver_vid,
-            None,
             b"dirty-routed-message",
         )
         .await
@@ -1086,7 +1079,6 @@ async fn test_high_entropy_dirty_store_multi_reopen_consistency() {
         .seal_message(
             &seed.local_vid,
             &seed.bidirectional_remote_vid,
-            None,
             b"high-entropy-persisted-message",
         )
         .unwrap();

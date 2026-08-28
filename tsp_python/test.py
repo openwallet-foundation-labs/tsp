@@ -58,7 +58,7 @@ class AliceBob(unittest.TestCase):
 
         match received:
             case tsp.GenericMessage(
-                sender, receiver, _, received_message, crypto_type, signature_type
+                sender, receiver, received_message, crypto_type, signature_type
             ):
                 self.assertEqual(sender, self.alice.identifier())
                 self.assertEqual(receiver, self.bob.identifier())
@@ -326,14 +326,12 @@ class AliceBob(unittest.TestCase):
             case tsp.GenericMessage(
                 sender,
                 receiver,
-                nonconfidential_data,
                 message,
                 crypto_type,
                 signature_type,
             ):
                 self.assertEqual(sender, sneaky_a.identifier())
                 self.assertEqual(receiver, sneaky_d.identifier())
-                self.assertEqual(nonconfidential_data, None)
                 self.assertEqual(message, hello_world)
                 self.assertNotEqual(crypto_type, tsp.CryptoType.Plaintext)
                 self.assertNotEqual(signature_type, tsp.SignatureType.NoSignature)
@@ -419,7 +417,7 @@ class AliceBob(unittest.TestCase):
 
         match received:
             case tsp.GenericMessage(
-                sender, receiver, _, received_message, crypto_type, signature_type
+                sender, receiver, received_message, crypto_type, signature_type
             ):
                 self.assertEqual(sender, nested_a.identifier())
                 self.assertEqual(receiver, nested_b.identifier())

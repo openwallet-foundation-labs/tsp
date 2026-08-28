@@ -9,8 +9,6 @@ pub enum CryptoError {
     #[error("failed to decode message {0}")]
     Decode(#[from] crate::cesr::error::DecodeError),
     #[error("encryption or decryption failed: {0}")]
-    CryptographicHpkePq(#[from] hpke_pq::HpkeError),
-    #[error("encryption or decryption failed: {0}")]
     CryptographicHpke(#[from] hpke::HpkeError),
     #[error("encryption or decryption failed")]
     CryptographicNacl(#[from] crypto_box::aead::Error),
@@ -28,6 +26,8 @@ pub enum CryptoError {
     UnexpectedSender,
     #[error("no sender identity found in encrypted message")]
     MissingSender,
+    #[error("embedded digest does not match the message contents")]
+    DigestMismatch,
     #[error("invalid outbound crypto selection {0:?}")]
     InvalidCryptoSelection(CryptoType),
     #[error(

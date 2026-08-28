@@ -12,7 +12,6 @@ use axum::{
 };
 use base64ct::{Base64UrlUnpadded, Encoding};
 use clap::Parser;
-use core::time;
 use futures::{sink::SinkExt, stream::StreamExt};
 use serde::Deserialize;
 use serde_json::json;
@@ -709,16 +708,13 @@ fn open_message(message: &[u8], payload: Option<&[u8]>) -> Option<serde_json::Va
         "prefix": format_part("Prefix", &parts.prefix, None),
         "sender": format_part("Sender", &parts.sender, None),
         "receiver": parts.receiver.map(|v| format_part("Receiver", &v, None)),
-        "nonconfidentialData": parts.nonconfidential_data.map(|v| format_part("Non-confidential data", &v, None)),
+        "nonconfidentialData": Option::<serde_json::Value>::None,
         "ciphertext": parts.ciphertext.map(|v| format_part("Ciphertext", &v, payload)),
         "signature": format_part("Signature", &parts.signature, None),
         "cryptoType": match parts.crypto_type {
             cesr::CryptoType::Plaintext => "Plain text",
-            cesr::CryptoType::HpkeAuth => "HPKE Auth",
-            cesr::CryptoType::HpkeEssr => "HPKE ESSR",
-            cesr::CryptoType::NaclAuth => "NaCl Auth",
-            cesr::CryptoType::NaclEssr => "NaCl ESSR",
-            cesr::CryptoType::X25519Kyber768Draft00 => "X25519 Kyber768 Draft 00",
+            cesr::CryptoType::HpkeBase => "HPKE-Base",
+            cesr::CryptoType::SealedBox => "Sealed Box",
         },
         "signatureType": match parts.signature_type {
             cesr::SignatureType::NoSignature => "No Signature",
@@ -732,15 +728,8 @@ fn open_message(message: &[u8], payload: Option<&[u8]>) -> Option<serde_json::Va
 #[derive(Deserialize, Debug)]
 struct SendMessageForm {
     message: String,
-    nonconfidential_data: Option<String>,
     sender: OwnedVid,
     receiver: Vid,
-}
-
-#[derive(Deserialize, Debug)]
-struct Metadata {
-    name: String,
-    timestamp: u64,
 }
 
 // axum handlers conventionally use Result<_, Response>; the Response error type is
@@ -755,10 +744,6 @@ async fn sign_timestamp(
     let header = cesr::probe(&mut header_bytes)
         .map_err(|_| (StatusCode::BAD_REQUEST, "Error probing message").into_response())?;
 
-    let metadata = header
-        .get_nonconfidential_data()
-        .ok_or((StatusCode::BAD_REQUEST, "No nonconfidential data").into_response())?;
-
     let receiver = header
         .get_receiver()
         .ok_or((StatusCode::BAD_REQUEST, "No receiver set").into_response())?;
@@ -766,29 +751,13 @@ async fn sign_timestamp(
     let receiver = from_utf8(receiver)
         .map_err(|_| (StatusCode::BAD_REQUEST, "Receiver vid is not valid utf8").into_response())?;
 
-    let metadata: Metadata = serde_json::from_slice(metadata)
-        .map_err(|_| (StatusCode::BAD_REQUEST, "Error parsing json").into_response())?;
-
-    tracing::info!(
-        "received timestamp sign request from {}: {}",
-        metadata.name,
-        metadata.timestamp
-    );
-
     let start = SystemTime::now();
     let since_the_epoch = start
         .duration_since(UNIX_EPOCH)
         .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid timestamp").into_response())?
         .as_secs();
-    let delta = metadata.timestamp.max(since_the_epoch) - metadata.timestamp.min(since_the_epoch);
 
-    if delta > time::Duration::from_secs(60).as_secs() {
-        tracing::error!("timestamp delta to large: {delta} seconds");
-
-        return Err((StatusCode::BAD_REQUEST, "Invalid timestamp").into_response());
-    }
-
-    tracing::info!("timestamp delta ok: {delta} seconds");
+    tracing::info!("received timestamp sign request at {since_the_epoch}");
 
     let (verified_vid, metadata) = tsp_sdk::vid::verify_vid(receiver)
         .await
@@ -798,6 +767,14 @@ async fn sign_timestamp(
         .add_verified_vid(verified_vid, metadata)
         .map_err(|_| (StatusCode::BAD_REQUEST, "Error adding verified vid").into_response())?;
 
+    // the attestation binds the received message to the time of signing;
+    // it is sealed to the message's receiver by the timestamp server
+    let attestation = serde_json::to_vec(&json!({
+        "timestamp": since_the_epoch,
+        "message": Base64UrlUnpadded::encode_string(&bytes),
+    }))
+    .expect("serializing attestation cannot fail");
+
     let (_url, response_bytes) = state
         .timestamp_server
         .seal_message(
@@ -806,8 +783,7 @@ async fn sign_timestamp(
                 state.domain.replace(":", "%3A")
             ),
             receiver,
-            Some(&bytes),
-            &[],
+            &attestation,
         )
         .map_err(|_| {
             (StatusCode::INTERNAL_SERVER_ERROR, "Error signing message").into_response()
@@ -862,13 +838,6 @@ async fn send_message(
     let result = tsp_sdk::crypto::seal(
         &form.sender,
         &form.receiver,
-        form.nonconfidential_data.as_deref().and_then(|d| {
-            if d.is_empty() {
-                None
-            } else {
-                Some(d.as_bytes())
-            }
-        }),
         Payload::Content(form.message.as_bytes()),
     );
 
@@ -951,7 +920,7 @@ async fn websocket(stream: WebSocket, state: Arc<AppState>) {
 
             // if the sender is verified, decrypt the message
             let result = if let Some(sender_vid) = incoming_senders_read.get(&sender_id) {
-                let Ok((_, payload, _, _)) =
+                let Ok((payload, _, _)) =
                     tsp_sdk::crypto::open(receiver_vid, sender_vid, &mut encrypted_message)
                 else {
                     continue;

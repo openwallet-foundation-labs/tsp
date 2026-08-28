@@ -8,10 +8,8 @@ const {
 
 const CryptoType = {
     Plaintext: 0,
-    HpkeAuth: 1,
-    HpkeEssr: 2,
-    NaclAuth: 3,
-    NaclEssr: 4,
+    HpkeBase: 1,
+    SealedBox: 2,
 };
 
 const SignatureType = {
@@ -40,7 +38,7 @@ class Store {
         return this.inner.set_route_for_vid(...args);
     }
 
-    seal_message(sender, receiver, nonconfidential_data, message) {
+    seal_message(sender, receiver, message) {
         let byteArray;
         
         if (typeof message === 'string') {
@@ -52,7 +50,7 @@ class Store {
             throw new TypeError("Message must be a string or a Uint8Array");
         }
 
-        return this.inner.seal_message(sender, receiver, nonconfidential_data, byteArray);
+        return this.inner.seal_message(sender, receiver, byteArray);
     }
 
     make_relationship_request(...args) {
@@ -100,7 +98,6 @@ class ReceivedTspMessage {
                 return new GenericMessage(
                     msg.sender,
                     msg.receiver,
-                    msg.nonconfidential_data,
                     new Uint8Array(msg.message),
                     msg.crypto_type,
                     msg.signature_type
@@ -154,11 +151,10 @@ class ReceivedTspMessage {
 }
 
 class GenericMessage extends ReceivedTspMessage {
-    constructor(sender, receiver, nonconfidential_data, message, crypto_type, signature_type) {
+    constructor(sender, receiver, message, crypto_type, signature_type) {
         super();
         this.sender = sender;
         this.receiver = receiver;
-        this.nonconfidential_data = nonconfidential_data;
         this.message = message;
         this.crypto_type = crypto_type;
         this.signature_type = signature_type;

@@ -177,6 +177,5 @@ pub struct FuzzInput {
     pub sender_enc_key: [u8; 32],
     pub receiver_sign_key: [u8; 32],
     pub receiver_enc_key: [u8; 32],
-    pub nonconfidential_data: Option<Vec<u8>>,
     pub payload: Vec<u8>,
 }

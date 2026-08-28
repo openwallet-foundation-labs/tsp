@@ -37,7 +37,6 @@ use url::Url;
 ///     let result = db.send(
 ///         "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
 ///         "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
-///         Some(b"extra non-confidential data"),
 ///         b"hello world",
 ///     ).await;
 /// }
@@ -234,11 +233,9 @@ impl AsyncSecureStore {
         &self,
         sender: &str,
         receiver: &str,
-        nonconfidential_data: Option<&[u8]>,
         message: &[u8],
     ) -> Result<(Url, Vec<u8>), Error> {
-        self.inner
-            .seal_message(sender, receiver, nonconfidential_data, message)
+        self.inner.seal_message(sender, receiver, message)
     }
 
     /// Send a TSP message given earlier resolved VIDs
@@ -248,7 +245,6 @@ impl AsyncSecureStore {
     ///
     /// * `sender`               - A sender VID
     /// * `receiver`             - A receiver VID
-    /// * `nonconfidential_data` - Optional extra non-confidential data
     /// * `payload`              - The raw message payload as byte slice
     ///
     /// # Example
@@ -267,16 +263,10 @@ impl AsyncSecureStore {
     ///     let sender = "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob";
     ///     let receiver = "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice";
     ///
-    ///     let result = db.send(sender, receiver, None, b"hello world").await;
+    ///     let result = db.send(sender, receiver, b"hello world").await;
     /// }
     /// ```
-    pub async fn send(
-        &self,
-        sender: &str,
-        receiver: &str,
-        nonconfidential_data: Option<&[u8]>,
-        message: &[u8],
-    ) -> Result<(), Error> {
+    pub async fn send(&self, sender: &str, receiver: &str, message: &[u8]) -> Result<(), Error> {
         match self.inner.relation_status_for_vid_pair(sender, receiver) {
             Ok(relation) => {
                 if matches!(relation, RelationshipStatus::Unrelated) {
@@ -291,9 +281,7 @@ impl AsyncSecureStore {
             Err(e) => return Err(e),
         };
 
-        let (endpoint, message) =
-            self.inner
-                .seal_message(sender, receiver, nonconfidential_data, message)?;
+        let (endpoint, message) = self.inner.seal_message(sender, receiver, message)?;
 
         tracing::info!("sending message to {endpoint}");
 
@@ -306,7 +294,6 @@ impl AsyncSecureStore {
         &self,
         sender: &str,
         receiver: &str,
-        nonconfidential_data: Option<&[u8]>,
         message: &[u8],
         crypto_type: CryptoType,
     ) -> Result<(), Error> {
@@ -329,13 +316,9 @@ impl AsyncSecureStore {
             Err(e) => return Err(e),
         };
 
-        let (endpoint, message) = self.inner.seal_message_with_crypto_type(
-            sender,
-            receiver,
-            nonconfidential_data,
-            message,
-            crypto_type,
-        )?;
+        let (endpoint, message) =
+            self.inner
+                .seal_message_with_crypto_type(sender, receiver, message, crypto_type)?;
 
         tracing::info!("sending message to {endpoint}");
 

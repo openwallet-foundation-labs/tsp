@@ -82,17 +82,11 @@ impl Store {
         &self,
         sender: String,
         receiver: String,
-        nonconfidential_data: Option<Vec<u8>>,
         message: Vec<u8>,
     ) -> Result<SealedMessage, Error> {
         let (url, sealed) = self
             .0
-            .seal_message(
-                &sender,
-                &receiver,
-                nonconfidential_data.as_deref(),
-                &message,
-            )
+            .seal_message(&sender, &receiver, &message)
             .map_err(Error)?;
 
         Ok(SealedMessage {
@@ -382,40 +376,24 @@ pub fn message_parts(message: &[u8]) -> Result<String, Error> {
         "prefix": format_part("Prefix", &parts.prefix, None),
         "sender": format_part("Sender", &parts.sender, None),
         "receiver": parts.receiver.map(|v| format_part("Receiver", &v, None)),
-        "nonconfidentialData": parts.nonconfidential_data.map(|v| format_part("Non-confidential data", &v, None)),
         "ciphertext": parts.ciphertext.map(|v| format_part("Ciphertext", &v, None)),
         "signature": format_part("Signature", &parts.signature, None),
-    })).unwrap())
+    }))
+    .unwrap())
 }
 
 #[wasm_bindgen]
 pub fn probe_message(mut message: Vec<u8>) -> Result<String, Error> {
     tsp_sdk::cesr::probe(&mut message)
         .map(|e: EnvelopeType| match e {
-            EnvelopeType::EncryptedMessage {
-                sender,
-                receiver,
-                nonconfidential_data,
-            } => serde_json::to_string(&json!({
+            EnvelopeType::EncryptedMessage { sender, receiver } => serde_json::to_string(&json!({
                 "sender": String::from_utf8_lossy(sender).to_string(),
                 "receiver": String::from_utf8_lossy(receiver).to_string(),
-                "nonconfidential_data": String::from_utf8_lossy(
-                    nonconfidential_data.unwrap_or_default(),
-                )
-                .to_string(),
             }))
             .unwrap(),
-            EnvelopeType::SignedMessage {
-                sender,
-                receiver,
-                nonconfidential_data,
-            } => serde_json::to_string(&json!({
+            EnvelopeType::SignedMessage { sender, receiver } => serde_json::to_string(&json!({
                 "sender": String::from_utf8_lossy(sender).to_string(),
                 "receiver": String::from_utf8_lossy(receiver.unwrap_or_default()).to_string(),
-                "nonconfidential_data": String::from_utf8_lossy(
-                    nonconfidential_data.unwrap_or_default(),
-                )
-                .to_string(),
             }))
             .unwrap(),
         })
@@ -470,11 +448,8 @@ pub enum RelationshipDelivery {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum CryptoType {
     Plaintext = 0,
-    HpkeAuth = 1,
-    HpkeEssr = 2,
-    NaclAuth = 3,
-    NaclEssr = 4,
-    X25519Kyber768Draft00 = 5,
+    HpkeBase = 1,
+    SealedBox = 2,
 }
 
 #[wasm_bindgen]
@@ -492,7 +467,6 @@ pub struct FlatReceivedTspMessage {
     pub variant: ReceivedTspMessageVariant,
     sender: Option<String>,
     receiver: Option<String>,
-    nonconfidential_data: Option<Option<Vec<u8>>>,
     message: Option<Vec<u8>>,
     pub crypto_type: Option<CryptoType>,
     pub signature_type: Option<SignatureType>,
@@ -519,14 +493,6 @@ impl FlatReceivedTspMessage {
     #[wasm_bindgen(getter)]
     pub fn receiver(&self) -> Option<String> {
         self.receiver.clone()
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn nonconfidential_data(&self) -> JsValue {
-        match &self.nonconfidential_data {
-            Some(Some(data)) => serde_wasm_bindgen::to_value(data).unwrap(),
-            _ => JsValue::NULL,
-        }
     }
 
     #[wasm_bindgen(getter)]
@@ -641,7 +607,6 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             variant,
             sender: None,
             receiver: None,
-            nonconfidential_data: None,
             message: None,
             crypto_type: None,
             signature_type: None,
@@ -669,23 +634,16 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             tsp_sdk::ReceivedTspMessage::GenericMessage {
                 sender,
                 receiver,
-                nonconfidential_data,
                 message,
                 message_type,
             } => {
                 this.sender = Some(sender);
                 this.receiver = receiver;
-                this.nonconfidential_data = Some(nonconfidential_data.map(Into::into));
                 this.message = Some(message.into());
                 this.crypto_type = match message_type.crypto_type {
                     tsp_sdk::cesr::CryptoType::Plaintext => Some(CryptoType::Plaintext),
-                    tsp_sdk::cesr::CryptoType::HpkeAuth => Some(CryptoType::HpkeAuth),
-                    tsp_sdk::cesr::CryptoType::HpkeEssr => Some(CryptoType::HpkeEssr),
-                    tsp_sdk::cesr::CryptoType::NaclAuth => Some(CryptoType::NaclAuth),
-                    tsp_sdk::cesr::CryptoType::NaclEssr => Some(CryptoType::NaclEssr),
-                    tsp_sdk::cesr::CryptoType::X25519Kyber768Draft00 => {
-                        Some(CryptoType::X25519Kyber768Draft00)
-                    }
+                    tsp_sdk::cesr::CryptoType::HpkeBase => Some(CryptoType::HpkeBase),
+                    tsp_sdk::cesr::CryptoType::SealedBox => Some(CryptoType::SealedBox),
                 };
                 this.signature_type = match message_type.signature_type {
                     tsp_sdk::cesr::SignatureType::NoSignature => Some(SignatureType::NoSignature),

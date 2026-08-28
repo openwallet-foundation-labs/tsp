@@ -18,15 +18,10 @@ fuzz_target!(|data: cesr::fuzzing::FuzzInput| {
         data.receiver_sign_key,
         data.receiver_enc_key,
     );
-    let result = crypto::seal(
-        &sender,
-        &receiver,
-        data.nonconfidential_data.as_deref(),
-        Payload::Content(&data.payload),
-    );
+    let result = crypto::seal(&sender, &receiver, Payload::Content(&data.payload));
 
     if let Ok(mut message) = result {
-        let (_, opened_payload, _, _) = crypto::open(&receiver, &sender, &mut message)
+        let (opened_payload, _, _) = crypto::open(&receiver, &sender, &mut message)
             .expect("open failed after seal succeeded");
 
         assert_eq!(opened_payload, Payload::Content(data.payload.as_slice()));

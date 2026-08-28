@@ -51,7 +51,7 @@ pub fn setup_store(_benchmark_id: &'static str, payload_len: usize) -> StoreCase
 pub fn store_seal_open(case: &StoreCase) -> usize {
     let (_endpoint, mut sealed) = case
         .store
-        .seal_message(&case.sender, &case.receiver, None, case.payload.as_slice())
+        .seal_message(&case.sender, &case.receiver, case.payload.as_slice())
         .unwrap();
 
     let opened = case.store.open_message(sealed.as_mut_slice()).unwrap();
@@ -79,12 +79,11 @@ pub fn crypto_seal_open(case: &CryptoCase) -> usize {
     let mut sealed = tsp_sdk::crypto::seal(
         black_box(&case.alice),
         black_box(&case.bob),
-        None,
         Payload::Content(case.payload.as_slice()),
     )
     .unwrap();
 
-    let (_ncd, opened, _crypto_type, _sig_type) = tsp_sdk::crypto::open(
+    let (opened, _crypto_type, _sig_type) = tsp_sdk::crypto::open(
         black_box(&case.bob),
         black_box(&case.alice),
         sealed.as_mut_slice(),
@@ -113,7 +112,7 @@ pub fn setup_cesr_fixture(_benchmark_id: &'static str, payload_len: usize) -> Ve
     let bob = fixture_owned_vid("bob");
     let payload = seeded_bytes(0x434553525F504C44u64 ^ payload_len as u64, payload_len);
 
-    tsp_sdk::crypto::seal(&alice, &bob, None, Payload::Content(payload.as_slice())).unwrap()
+    tsp_sdk::crypto::seal(&alice, &bob, Payload::Content(payload.as_slice())).unwrap()
 }
 
 pub fn cesr_decode_envelope(message: &mut [u8]) -> usize {

@@ -114,7 +114,6 @@ fn digest_algorithm_for_selection(
 fn seal_envelope(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<&[u8]>,
     payload: Payload<&[u8]>,
     digest: Option<&mut Digest>,
     request_nonce_override: Option<[u8; 16]>,
@@ -123,7 +122,6 @@ fn seal_envelope(
     Ok(crate::crypto::seal_with_selection(
         sender,
         receiver,
-        nonconfidential_data,
         payload,
         digest,
         request_nonce_override,
@@ -214,10 +212,12 @@ struct ParallelSignatureMaterial {
 enum ParallelSignatureContext<'a> {
     Request {
         sender_identity: &'a str,
+        receiver_identity: &'a str,
         nonce: [u8; 16],
     },
     Accept {
         sender_identity: &'a str,
+        receiver_identity: &'a str,
         thread_id: Digest,
     },
 }
@@ -650,7 +650,6 @@ impl SecureStore {
         &self,
         sender: &str,
         receiver: &str,
-        nonconfidential_data: Option<&[u8]>,
         message: &[u8],
     ) -> Result<(Url, Vec<u8>), Error> {
         #[cfg(feature = "bench-network-timings")]
@@ -658,12 +657,7 @@ impl SecureStore {
         #[cfg(feature = "bench-network-timings")]
         let started = std::time::Instant::now();
 
-        let result = self.seal_message_payload(
-            sender,
-            receiver,
-            nonconfidential_data,
-            Payload::Content(message),
-        );
+        let result = self.seal_message_payload(sender, receiver, Payload::Content(message));
 
         #[cfg(feature = "bench-network-timings")]
         crate::bench::record_seal_core(started, signature_before);
@@ -675,14 +669,12 @@ impl SecureStore {
         &self,
         sender: &str,
         receiver: &str,
-        nonconfidential_data: Option<&[u8]>,
         message: &[u8],
         crypto_type: crate::cesr::CryptoType,
     ) -> Result<(Url, Vec<u8>), Error> {
         self.seal_message_payload_and_hash_with_selection(
             sender,
             receiver,
-            nonconfidential_data,
             Payload::Content(message),
             None,
             Some(OutboundCryptoSelection { crypto_type }),
@@ -696,10 +688,9 @@ impl SecureStore {
         &self,
         sender: &str,
         receiver: &str,
-        nonconfidential_data: Option<&[u8]>,
         payload: Payload<&[u8]>,
     ) -> Result<(url::Url, Vec<u8>), Error> {
-        self.seal_message_payload_and_hash(sender, receiver, nonconfidential_data, payload, None)
+        self.seal_message_payload_and_hash(sender, receiver, payload, None)
     }
 
     /// Seal a TSP message and return the digest of the payload
@@ -707,25 +698,16 @@ impl SecureStore {
         &self,
         sender: &str,
         receiver: &str,
-        nonconfidential_data: Option<&[u8]>,
         payload: Payload<&[u8]>,
         digest: Option<&mut Digest>,
     ) -> Result<(url::Url, Vec<u8>), Error> {
-        self.seal_message_payload_and_hash_with_selection(
-            sender,
-            receiver,
-            nonconfidential_data,
-            payload,
-            digest,
-            None,
-        )
+        self.seal_message_payload_and_hash_with_selection(sender, receiver, payload, digest, None)
     }
 
     pub(crate) fn seal_message_payload_and_hash_with_selection(
         &self,
         sender: &str,
         receiver: &str,
-        nonconfidential_data: Option<&[u8]>,
         payload: Payload<&[u8]>,
         digest: Option<&mut Digest>,
         selection: Option<OutboundCryptoSelection>,
@@ -747,7 +729,6 @@ impl SecureStore {
                     let tsp_message = seal_envelope(
                         &*inner_sender,
                         &*receiver_context.vid,
-                        nonconfidential_data,
                         payload,
                         digest,
                         None,
@@ -769,7 +750,6 @@ impl SecureStore {
             return self.seal_message_payload_and_hash_with_selection(
                 sender.identifier(),
                 first_hop.vid.identifier(),
-                None,
                 Payload::RoutedMessage(hops, &inner_message),
                 None,
                 None,
@@ -805,7 +785,6 @@ impl SecureStore {
                 seal_envelope(
                     &*inner_sender,
                     &*receiver_context.vid,
-                    None,
                     payload,
                     digest,
                     None,
@@ -819,7 +798,6 @@ impl SecureStore {
             return self.seal_message_payload_and_hash_with_selection(
                 parent_sender.identifier(),
                 parent_receiver.identifier(),
-                nonconfidential_data,
                 Payload::NestedMessage(&inner_message),
                 None,
                 if content_payload { selection } else { None },
@@ -830,7 +808,6 @@ impl SecureStore {
         let tsp_message = seal_envelope(
             &*sender,
             &*receiver_context.vid,
-            nonconfidential_data,
             payload,
             digest,
             None,
@@ -1069,7 +1046,6 @@ impl SecureStore {
             self.seal_message_payload(
                 sender_private.identifier(),
                 recipient.identifier(),
-                None,
                 Payload::NestedMessage(opaque_payload),
             )
         } else {
@@ -1086,7 +1062,6 @@ impl SecureStore {
             self.seal_message_payload(
                 sender.identifier(),
                 next_hop_context.vid.identifier(),
-                None,
                 Payload::RoutedMessage(route, opaque_payload),
             )
         }
@@ -1129,14 +1104,12 @@ impl SecureStore {
                     unverified_source_error(&sender)
                 })?;
 
-                let (
-                    (nonconfidential_data, payload, crypto_type, signature_type),
-                    parallel_signature_info,
-                ) = crate::crypto::open_with_signature_info(
-                    &*receiver_pid,
-                    sender_vid.as_verified(),
-                    message,
-                )?;
+                let ((payload, crypto_type, signature_type), parallel_signature_info) =
+                    crate::crypto::open_with_signature_info(
+                        &*receiver_pid,
+                        sender_vid.as_verified(),
+                        message,
+                    )?;
 
                 let parallel_sender_vid = parallel_signature_info
                     .map(|parallel_signature_info| {
@@ -1149,7 +1122,6 @@ impl SecureStore {
                     Payload::Content(message) => Ok(ReceivedTspMessage::GenericMessage {
                         sender,
                         receiver: Some(intended_receiver),
-                        nonconfidential_data,
                         message,
                         message_type: MessageType {
                             crypto_type,
@@ -1376,7 +1348,6 @@ impl SecureStore {
                 Ok(ReceivedTspMessage::GenericMessage {
                     sender,
                     receiver: intended_receiver,
-                    nonconfidential_data: None,
                     message,
                     message_type,
                 })
@@ -1428,7 +1399,6 @@ impl SecureStore {
         let tsp_message = seal_envelope(
             &*sender,
             &*receiver,
-            None,
             Payload::RequestRelationship {
                 thread_id: Default::default(),
                 form: RelationshipForm::Direct,
@@ -1458,30 +1428,52 @@ impl SecureStore {
         let (signed_data, request_nonce) = match context {
             ParallelSignatureContext::Request {
                 sender_identity,
+                receiver_identity,
                 nonce,
-            } => (
-                crate::crypto::build_parallel_request_signed_data(
-                    Some(sender_identity.as_bytes()),
-                    digest_algorithm,
-                    nonce,
-                    &mut digest,
-                    sender_new_vid.identifier().as_bytes(),
-                )?,
-                Some(nonce),
-            ),
+            } => {
+                let mut envelope_prefix = Vec::with_capacity(64);
+                crate::cesr::encode_envelope_prefix(
+                    sender_identity.as_bytes(),
+                    Some(receiver_identity.as_bytes()),
+                    &mut envelope_prefix,
+                )
+                .map_err(crate::crypto::CryptoError::from)?;
+                (
+                    crate::crypto::build_parallel_request_signed_data(
+                        Some(sender_identity.as_bytes()),
+                        digest_algorithm,
+                        nonce,
+                        &envelope_prefix,
+                        &mut digest,
+                        sender_new_vid.identifier().as_bytes(),
+                    )?,
+                    Some(nonce),
+                )
+            }
             ParallelSignatureContext::Accept {
                 sender_identity,
+                receiver_identity,
                 thread_id,
-            } => (
-                crate::crypto::build_parallel_accept_signed_data(
-                    &thread_id,
-                    Some(sender_identity.as_bytes()),
-                    digest_algorithm,
-                    &mut digest,
-                    sender_new_vid.identifier().as_bytes(),
-                )?,
-                None,
-            ),
+            } => {
+                let mut envelope_prefix = Vec::with_capacity(64);
+                crate::cesr::encode_envelope_prefix(
+                    sender_identity.as_bytes(),
+                    Some(receiver_identity.as_bytes()),
+                    &mut envelope_prefix,
+                )
+                .map_err(crate::crypto::CryptoError::from)?;
+                (
+                    crate::crypto::build_parallel_accept_signed_data(
+                        &thread_id,
+                        Some(sender_identity.as_bytes()),
+                        digest_algorithm,
+                        &envelope_prefix,
+                        &mut digest,
+                        sender_new_vid.identifier().as_bytes(),
+                    )?,
+                    None,
+                )
+            }
         };
 
         let sig_new_vid = crate::crypto::sign_detached(sender_new_vid, &signed_data)?;
@@ -1520,6 +1512,7 @@ impl SecureStore {
             &*sender_new_vid,
             ParallelSignatureContext::Request {
                 sender_identity: sender.identifier(),
+                receiver_identity: receiver.identifier(),
                 nonce: random_nonce_bytes(),
             },
             digest_algorithm,
@@ -1529,7 +1522,6 @@ impl SecureStore {
         let tsp_message = seal_envelope(
             &*sender,
             &*receiver,
-            None,
             Payload::RequestRelationship {
                 thread_id: Default::default(),
                 form: RelationshipForm::Parallel {
@@ -1571,7 +1563,6 @@ impl SecureStore {
         let (transport, tsp_message) = self.seal_message_payload_and_hash(
             sender,
             receiver,
-            None,
             Payload::AcceptRelationship {
                 thread_id,
                 reply_thread_id: Default::default(),
@@ -1603,6 +1594,7 @@ impl SecureStore {
             &*sender_new_vid,
             ParallelSignatureContext::Accept {
                 sender_identity: outer_sender.identifier(),
+                receiver_identity: receiver_new_vid.identifier(),
                 thread_id,
             },
             digest_algorithm,
@@ -1612,7 +1604,6 @@ impl SecureStore {
         let tsp_message = seal_envelope(
             &*outer_sender,
             &*receiver_new_vid,
-            None,
             Payload::AcceptRelationship {
                 thread_id,
                 reply_thread_id: Default::default(),
@@ -1656,12 +1647,8 @@ impl SecureStore {
             }
         };
 
-        let (transport, message) = self.seal_message_payload(
-            sender,
-            receiver,
-            None,
-            Payload::CancelRelationship { thread_id },
-        )?;
+        let (transport, message) =
+            self.seal_message_payload(sender, receiver, Payload::CancelRelationship { thread_id })?;
 
         Ok((transport, message))
     }
@@ -1684,7 +1671,6 @@ impl SecureStore {
         let (endpoint, tsp_message) = self.seal_message_payload_and_hash_with_selection(
             sender.identifier(),
             receiver.identifier(),
-            None,
             Payload::NestedMessage(&inner_message),
             None,
             Some(selection),
@@ -1727,7 +1713,6 @@ impl SecureStore {
         let (transport, tsp_message) = self.seal_message_payload_and_hash_with_selection(
             parent_sender,
             parent_receiver,
-            None,
             Payload::NestedMessage(&inner_message),
             None,
             Some(selection),
@@ -2100,6 +2085,20 @@ mod test {
         assert_eq!(url.as_str(), expected_receiver.endpoint().as_str());
     }
 
+    fn test_envelope_prefix(
+        sender: &(impl VerifiedVid + ?Sized),
+        receiver: &(impl VerifiedVid + ?Sized),
+    ) -> Vec<u8> {
+        let mut prefix = Vec::with_capacity(64);
+        crate::cesr::encode_envelope_prefix(
+            sender.identifier().as_bytes(),
+            Some(receiver.identifier().as_bytes()),
+            &mut prefix,
+        )
+        .unwrap();
+        prefix
+    }
+
     fn relationship_digest_algorithm(
         sender: &dyn VerifiedVid,
         receiver: &dyn VerifiedVid,
@@ -2198,7 +2197,7 @@ mod test {
         let message = b"hello world";
 
         let (url, mut sealed) = store
-            .seal_message(alice.identifier(), bob.identifier(), None, message)
+            .seal_message(alice.identifier(), bob.identifier(), message)
             .unwrap();
 
         assert_url_matches(&url, &bob);
@@ -2432,7 +2431,13 @@ mod test {
             alice_parallel.identifier()
         );
         assert!(received_request_digest.iter().any(|byte| *byte != 0));
-        assert_eq!(sig_new_vid.len(), 64);
+        assert_eq!(
+            sig_new_vid.len(),
+            match alice_parallel.signature_key_type() {
+                crate::definitions::VidSignatureKeyType::Ed25519 => 64,
+                crate::definitions::VidSignatureKeyType::MlDsa65 => 3309,
+            }
+        );
     }
 
     #[test]
@@ -2519,7 +2524,13 @@ mod test {
         );
         assert_eq!(request_digest, thread_id);
         assert!(received_reply_digest.iter().any(|byte| *byte != 0));
-        assert_eq!(sig_new_vid.len(), 64);
+        assert_eq!(
+            sig_new_vid.len(),
+            match alice_parallel.signature_key_type() {
+                crate::definitions::VidSignatureKeyType::Ed25519 => 64,
+                crate::definitions::VidSignatureKeyType::MlDsa65 => 3309,
+            }
+        );
 
         let RelationshipStatus::Bidirectional {
             thread_id: receiver_thread_id,
@@ -2729,6 +2740,7 @@ mod test {
             &thread_id,
             Some(charlie.identifier().as_bytes()),
             relationship_digest_algorithm(&charlie, &*forged_receiver),
+            &test_envelope_prefix(&charlie, &*forged_receiver),
             &mut reply_thread_id,
             charlie_parallel.identifier().as_bytes(),
         )
@@ -2738,7 +2750,6 @@ mod test {
         let mut forged_accept = crate::crypto::seal_and_hash(
             &*forged_sender,
             &*forged_receiver,
-            None,
             Payload::AcceptRelationship {
                 thread_id,
                 reply_thread_id: Default::default(),
@@ -2855,6 +2866,7 @@ mod test {
             Some(alice.identifier().as_bytes()),
             relationship_digest_algorithm(&alice, &bob),
             nonce_bytes,
+            &test_envelope_prefix(&alice, &bob),
             &mut thread_id,
             alice_parallel.identifier().as_bytes(),
         )
@@ -2868,7 +2880,6 @@ mod test {
         let mut sealed = crate::crypto::seal_and_hash_with_relationship_nonce(
             &*sender_vid,
             &*receiver_vid,
-            None,
             Payload::RequestRelationship {
                 thread_id: Default::default(),
                 form: RelationshipForm::Parallel {
@@ -2916,6 +2927,7 @@ mod test {
             Some(alice.identifier().as_bytes()),
             relationship_digest_algorithm(&alice, &bob),
             nonce_bytes,
+            &test_envelope_prefix(&alice, &bob),
             &mut thread_id,
             alice_parallel.identifier().as_bytes(),
         )
@@ -2928,7 +2940,6 @@ mod test {
         let mut sealed = crate::crypto::seal_and_hash_with_relationship_nonce(
             &*sender_vid,
             &*receiver_vid,
-            None,
             Payload::RequestRelationship {
                 thread_id: Default::default(),
                 form: RelationshipForm::Parallel {
@@ -2972,7 +2983,7 @@ mod test {
             .unwrap();
 
         let (_url, mut sealed) = sender_store
-            .seal_message(sender.identifier(), receiver.identifier(), None, b"hello")
+            .seal_message(sender.identifier(), receiver.identifier(), b"hello")
             .unwrap();
         let last = sealed
             .last_mut()
@@ -3223,12 +3234,7 @@ mod test {
         let hello_world = b"hello world";
 
         let (_url, mut sealed) = a_store
-            .seal_message(
-                sneaky_a.identifier(),
-                sneaky_d.identifier(),
-                None,
-                hello_world,
-            )
+            .seal_message(sneaky_a.identifier(), sneaky_d.identifier(), hello_world)
             .unwrap();
 
         let received = b_store.open_message(&mut sealed).unwrap();
@@ -3282,7 +3288,6 @@ mod test {
         let ReceivedTspMessage::GenericMessage {
             sender,
             receiver,
-            nonconfidential_data,
             message,
             message_type,
         } = received
@@ -3292,7 +3297,6 @@ mod test {
 
         assert_eq!(sender, sneaky_a.identifier());
         assert_eq!(receiver.unwrap(), sneaky_d.identifier());
-        assert!(nonconfidential_data.is_none());
         assert_eq!(message, hello_world);
         assert_ne!(message_type.crypto_type, crate::cesr::CryptoType::Plaintext);
         assert_ne!(
@@ -3350,12 +3354,7 @@ mod test {
         let hello_world = b"hello world";
 
         let (_url, mut sealed) = a_store
-            .seal_message(
-                nested_a.identifier(),
-                nested_b.identifier(),
-                None,
-                hello_world,
-            )
+            .seal_message(nested_a.identifier(), nested_b.identifier(), hello_world)
             .unwrap();
 
         let received = b_store.open_message(&mut sealed).unwrap();
@@ -3363,7 +3362,6 @@ mod test {
         let ReceivedTspMessage::GenericMessage {
             sender,
             receiver,
-            nonconfidential_data,
             message,
             message_type,
         } = received
@@ -3373,7 +3371,6 @@ mod test {
 
         assert_eq!(sender, nested_a.identifier());
         assert_eq!(receiver.unwrap(), nested_b.identifier());
-        assert!(nonconfidential_data.is_none());
         assert_eq!(message, hello_world);
         assert_ne!(message_type.crypto_type, crate::cesr::CryptoType::Plaintext);
         assert_ne!(
@@ -3498,12 +3495,7 @@ mod test {
         let hello_world = b"hello world";
 
         let (_url, mut sealed) = a_store
-            .seal_message(
-                nested_a.identifier(),
-                nested_b.identifier(),
-                None,
-                hello_world,
-            )
+            .seal_message(nested_a.identifier(), nested_b.identifier(), hello_world)
             .unwrap();
 
         let received = b_store.open_message(&mut sealed).unwrap();
@@ -3511,7 +3503,6 @@ mod test {
         let ReceivedTspMessage::GenericMessage {
             sender,
             receiver,
-            nonconfidential_data,
             message,
             message_type,
         } = received
@@ -3521,7 +3512,6 @@ mod test {
 
         assert_eq!(sender, nested_a.identifier());
         assert_eq!(receiver.unwrap(), nested_b.identifier());
-        assert!(nonconfidential_data.is_none());
         assert_eq!(message, hello_world);
         assert_ne!(message_type.crypto_type, crate::cesr::CryptoType::Plaintext);
         assert_ne!(

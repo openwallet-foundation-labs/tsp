@@ -56,7 +56,7 @@ describe('tsp node tests', function() {
 
         let message = "hello world";
 
-        let { url, sealed } = store.seal_message(alice_identifier, bob_identifier, null, message);
+        let { url, sealed } = store.seal_message(alice_identifier, bob_identifier, message);
 
         assert.strictEqual(url, "tcp://127.0.0.1:1337");
 
@@ -271,7 +271,7 @@ describe('tsp node tests', function() {
         let hello_world = "hello world";
 
         // Seal the message from a_store
-        let { url, sealed } = a_store.seal_message(sneaky_a.identifier(), sneaky_d.identifier(), null, Buffer.from(hello_world));
+        let { url, sealed } = a_store.seal_message(sneaky_a.identifier(), sneaky_d.identifier(), Buffer.from(hello_world));
 
         // Open the sealed message in b_store
         let received = b_store.open_message(sealed);
@@ -300,7 +300,7 @@ describe('tsp node tests', function() {
 
                 // Check the final received message in d_store
                 if (received instanceof GenericMessage) {
-                    const { sender, nonconfidential_data: _, message: messageBytes, crypto_type, signature_type } = received;
+                    const { sender, message: messageBytes, crypto_type, signature_type } = received;
                     assert.strictEqual(sender, sneaky_a.identifier());
                     message = String.fromCharCode.apply(null, messageBytes);
                     assert.strictEqual(message, hello_world, "Received message does not match");
@@ -367,7 +367,6 @@ describe('tsp node tests', function() {
                         ({ url: _, sealed: sealed_hello_world } = a_store.seal_message(
                             nested_vid_1,
                             nested_vid_2,
-                            null,
                             hello_world,
                         ));
 
@@ -375,11 +374,10 @@ describe('tsp node tests', function() {
 
                         // Pattern match for GenericMessage in received message
                         if (received_3 instanceof GenericMessage) {
-                            let { sender, nonconfidential_data, message: messageBytes, crypto_type, signature_type } = received_3;
+                            let { sender, message: messageBytes, crypto_type, signature_type } = received_3;
 
                             // Assertions for GenericMessage
                             assert.strictEqual(sender, nested_vid_1);
-                            assert.strictEqual(nonconfidential_data, null);
                             message = String.fromCharCode.apply(null, messageBytes);
                             assert.strictEqual(message, hello_world, "Received message does not match");
                             assert.notStrictEqual(crypto_type, CryptoType.Plaintext, "Crypto type should not be Plaintext");

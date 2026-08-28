@@ -147,7 +147,7 @@ fn bench_send_receive_direct(c: &mut Criterion, backend: &'static str, payload_l
                 for _ in 0..iters {
                     sample_attempts += 1;
                     let (_endpoint, message) = alice
-                        .seal_message(&alice_id, &bob_id, None, payload.as_slice())
+                        .seal_message(&alice_id, &bob_id, payload.as_slice())
                         .unwrap();
 
                     if let Err(error) =

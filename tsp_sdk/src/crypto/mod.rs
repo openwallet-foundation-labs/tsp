@@ -1,7 +1,7 @@
 use crate::definitions::{
-    Digest, MessageType, NonConfidentialData, Payload, PrivateKeyData, PrivateSigningKeyData,
-    PrivateVid, PublicKeyData, PublicVerificationKeyData, RelationshipForm, TSPMessage,
-    VerifiedVid, VidEncryptionKeyType, VidSignatureKeyType,
+    Digest, MessageType, Payload, PrivateKeyData, PrivateSigningKeyData, PrivateVid, PublicKeyData,
+    PublicVerificationKeyData, RelationshipForm, TSPMessage, VerifiedVid, VidEncryptionKeyType,
+    VidSignatureKeyType,
 };
 use ed25519_dalek::Signer;
 use ml_dsa::{EncodedVerifyingKey, ExpandedSigningKey, ExpandedSigningKeyBytes, MlDsa65};
@@ -45,12 +45,17 @@ pub(crate) enum RelationshipDigestAlgorithm {
 impl RelationshipDigestAlgorithm {
     pub(crate) fn for_crypto_type(crypto_type: CryptoType) -> Result<Self, CryptoError> {
         Ok(match crypto_type {
-            CryptoType::NaclAuth | CryptoType::NaclEssr => RelationshipDigestAlgorithm::Blake2b256,
-            CryptoType::HpkeAuth | CryptoType::HpkeEssr | CryptoType::X25519Kyber768Draft00 => {
-                RelationshipDigestAlgorithm::Sha2_256
-            }
+            CryptoType::SealedBox => RelationshipDigestAlgorithm::Blake2b256,
+            CryptoType::HpkeBase => RelationshipDigestAlgorithm::Sha2_256,
             CryptoType::Plaintext => return Err(CryptoError::InvalidCryptoSelection(crypto_type)),
         })
+    }
+
+    pub(crate) fn for_field(field: &crate::cesr::Digest) -> Self {
+        match field {
+            crate::cesr::Digest::Sha2_256(_) => RelationshipDigestAlgorithm::Sha2_256,
+            crate::cesr::Digest::Blake2b256(_) => RelationshipDigestAlgorithm::Blake2b256,
+        }
     }
 
     pub(crate) fn field<'a>(self, digest: &'a Digest) -> crate::cesr::Digest<'a> {
@@ -72,26 +77,14 @@ pub(crate) fn default_outbound_crypto_selection(
     sender: &dyn VerifiedVid,
     receiver: &dyn VerifiedVid,
 ) -> OutboundCryptoSelection {
-    let sender_key_type = sender.encryption_key_type();
     let receiver_key_type = receiver.encryption_key_type();
-    let crypto_type = if matches!(
-        receiver_key_type,
-        VidEncryptionKeyType::X25519Kyber768Draft00
-    ) {
-        CryptoType::X25519Kyber768Draft00
-    } else if cfg!(feature = "nacl")
-        && matches!(sender_key_type, VidEncryptionKeyType::X25519)
-        && matches!(receiver_key_type, VidEncryptionKeyType::X25519)
-    {
-        if cfg!(feature = "essr") {
-            CryptoType::NaclEssr
-        } else {
-            CryptoType::NaclAuth
-        }
-    } else if cfg!(feature = "essr") || !matches!(sender_key_type, VidEncryptionKeyType::X25519) {
-        CryptoType::HpkeEssr
+    let _ = sender;
+    let crypto_type = if matches!(receiver_key_type, VidEncryptionKeyType::X25519MlKem768) {
+        CryptoType::HpkeBase
+    } else if cfg!(feature = "nacl") {
+        CryptoType::SealedBox
     } else {
-        CryptoType::HpkeAuth
+        CryptoType::HpkeBase
     };
 
     OutboundCryptoSelection { crypto_type }
@@ -142,61 +135,79 @@ fn mldsa65_signing_key_from_bytes(
     Ok(ExpandedSigningKey::<MlDsa65>::from_expanded(&signing_key))
 }
 
-fn encode_hashed_payload(
+/// Compute the self-referencing TSP digest (spec 7.2.1) of a relationship
+/// payload: the hash over the envelope prefix and the payload fields, with the
+/// digest's own slot filled with the 0x23 dummy and the padding field excluded
+fn compute_relationship_digest(
     payload: &CesrRelationshipPayload<'_>,
     sender_in_payload: Option<&[u8]>,
+    envelope_prefix: &[u8],
     algorithm: RelationshipDigestAlgorithm,
 ) -> Result<Digest, CryptoError> {
-    let mut encoded = Vec::with_capacity(payload.calculate_size(sender_in_payload));
-    crate::cesr::encode_payload(payload, sender_in_payload, None, &mut encoded)?;
-    Ok(algorithm.hash(&encoded))
+    let mut input = Vec::with_capacity(envelope_prefix.len() + 256);
+    crate::cesr::encode_digest_input(payload, sender_in_payload, envelope_prefix, &mut input)?;
+    Ok(algorithm.hash(&input))
 }
 
 pub(crate) fn build_parallel_request_signed_data(
     sender_in_payload: Option<&[u8]>,
     digest_algorithm: RelationshipDigestAlgorithm,
     nonce_bytes: [u8; 16],
+    envelope_prefix: &[u8],
     request_digest: &mut Digest,
     new_vid: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
+    // the digest is derived first (its own slot dummied, the new-VID signature
+    // not yet present); the signature is then made over the final digest
+    let payload = crate::cesr::Payload::<&[u8], &[u8]>::ParallelRelationProposal {
+        nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+        request_digest: digest_algorithm.field(&*request_digest),
+        sig_new_vid: &[0; 64],
+        new_vid,
+    };
+    *request_digest = compute_relationship_digest(
+        &payload,
+        sender_in_payload,
+        envelope_prefix,
+        digest_algorithm,
+    )?;
+
     let nonce = crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes);
-    let mut signed_data = crate::cesr::encode_parallel_relation_proposal_challenge(
+    Ok(crate::cesr::encode_parallel_relation_proposal_challenge(
         sender_in_payload,
         &nonce,
         digest_algorithm.field(request_digest),
         new_vid,
-    )?;
-    *request_digest = digest_algorithm.hash(&signed_data);
-    signed_data = crate::cesr::encode_parallel_relation_proposal_challenge(
-        sender_in_payload,
-        &nonce,
-        digest_algorithm.field(request_digest),
-        new_vid,
-    )?;
-    Ok(signed_data)
+    )?)
 }
 
 pub(crate) fn build_parallel_accept_signed_data(
     thread_id: &Digest,
     sender_in_payload: Option<&[u8]>,
     digest_algorithm: RelationshipDigestAlgorithm,
+    envelope_prefix: &[u8],
     reply_digest: &mut Digest,
     new_vid: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
-    let mut signed_data = crate::cesr::encode_parallel_relation_affirm_challenge(
+    let payload = crate::cesr::Payload::<&[u8], &[u8]>::ParallelRelationAffirm {
+        request_digest: digest_algorithm.field(thread_id),
+        reply_digest: digest_algorithm.field(&*reply_digest),
+        sig_new_vid: &[0; 64],
+        new_vid,
+    };
+    *reply_digest = compute_relationship_digest(
+        &payload,
+        sender_in_payload,
+        envelope_prefix,
+        digest_algorithm,
+    )?;
+
+    Ok(crate::cesr::encode_parallel_relation_affirm_challenge(
         sender_in_payload,
         digest_algorithm.field(thread_id),
         digest_algorithm.field(reply_digest),
         new_vid,
-    )?;
-    *reply_digest = digest_algorithm.hash(&signed_data);
-    signed_data = crate::cesr::encode_parallel_relation_affirm_challenge(
-        sender_in_payload,
-        digest_algorithm.field(thread_id),
-        digest_algorithm.field(reply_digest),
-        new_vid,
-    )?;
-    Ok(signed_data)
+    )?)
 }
 
 fn relationship_request_payload<'a>(
@@ -250,42 +261,24 @@ pub(crate) fn build_relationship_request_payload<'a>(
     sender_in_payload: Option<&[u8]>,
     digest_algorithm: RelationshipDigestAlgorithm,
     nonce_bytes: [u8; 16],
+    envelope_prefix: &[u8],
     request_digest: &'a mut Digest,
 ) -> Result<(CesrRelationshipPayload<'a>, Digest), CryptoError> {
-    match form {
-        RelationshipForm::Direct => {
-            let placeholder_payload =
-                relationship_request_payload(form, digest_algorithm, nonce_bytes, &*request_digest);
-            *request_digest =
-                encode_hashed_payload(&placeholder_payload, sender_in_payload, digest_algorithm)?;
+    let placeholder =
+        relationship_request_payload(form, digest_algorithm, nonce_bytes, &*request_digest);
+    *request_digest = compute_relationship_digest(
+        &placeholder,
+        sender_in_payload,
+        envelope_prefix,
+        digest_algorithm,
+    )?;
 
-            let digest = *request_digest;
+    let digest = *request_digest;
 
-            Ok((
-                relationship_request_payload(form, digest_algorithm, nonce_bytes, &*request_digest),
-                digest,
-            ))
-        }
-        RelationshipForm::Parallel {
-            new_vid,
-            sig_new_vid: _,
-        } => {
-            build_parallel_request_signed_data(
-                sender_in_payload,
-                digest_algorithm,
-                nonce_bytes,
-                request_digest,
-                new_vid,
-            )?;
-
-            let digest = *request_digest;
-
-            Ok((
-                relationship_request_payload(form, digest_algorithm, nonce_bytes, &*request_digest),
-                digest,
-            ))
-        }
-    }
+    Ok((
+        relationship_request_payload(form, digest_algorithm, nonce_bytes, &*request_digest),
+        digest,
+    ))
 }
 
 pub(crate) fn build_relationship_accept_payload<'a>(
@@ -293,42 +286,52 @@ pub(crate) fn build_relationship_accept_payload<'a>(
     form: &RelationshipForm<'a, &'a [u8]>,
     sender_in_payload: Option<&[u8]>,
     digest_algorithm: RelationshipDigestAlgorithm,
+    envelope_prefix: &[u8],
     reply_digest: &'a mut Digest,
 ) -> Result<(CesrRelationshipPayload<'a>, Digest), CryptoError> {
-    match form {
-        RelationshipForm::Direct => {
-            let placeholder_payload =
-                relationship_accept_payload(thread_id, form, digest_algorithm, &*reply_digest);
-            *reply_digest =
-                encode_hashed_payload(&placeholder_payload, sender_in_payload, digest_algorithm)?;
+    let placeholder =
+        relationship_accept_payload(thread_id, form, digest_algorithm, &*reply_digest);
+    *reply_digest = compute_relationship_digest(
+        &placeholder,
+        sender_in_payload,
+        envelope_prefix,
+        digest_algorithm,
+    )?;
 
-            let digest = *reply_digest;
+    let digest = *reply_digest;
 
-            Ok((
-                relationship_accept_payload(thread_id, form, digest_algorithm, &*reply_digest),
-                digest,
-            ))
-        }
-        RelationshipForm::Parallel {
-            new_vid,
-            sig_new_vid: _,
-        } => {
-            build_parallel_accept_signed_data(
-                thread_id,
-                sender_in_payload,
-                digest_algorithm,
-                reply_digest,
-                new_vid,
-            )?;
+    Ok((
+        relationship_accept_payload(thread_id, form, digest_algorithm, &*reply_digest),
+        digest,
+    ))
+}
 
-            let digest = *reply_digest;
+/// Verify the embedded self-referencing digest (spec 7.2.1) of a received
+/// relationship-forming payload: recompute it from the envelope prefix and the
+/// decoded payload fields (with the digest's own slot dummied) using the hash
+/// identified by the embedded digest's code, and compare
+pub(crate) fn verify_relationship_digest(
+    payload: &crate::cesr::Payload<'_, impl AsRef<[u8]>, impl AsRef<[u8]>>,
+    sender_identity: Option<&[u8]>,
+    envelope_prefix: &[u8],
+) -> Result<(), CryptoError> {
+    let embedded = match payload {
+        crate::cesr::Payload::DirectRelationProposal { request_digest, .. }
+        | crate::cesr::Payload::ParallelRelationProposal { request_digest, .. } => request_digest,
+        crate::cesr::Payload::DirectRelationAffirm { reply_digest, .. }
+        | crate::cesr::Payload::ParallelRelationAffirm { reply_digest, .. } => reply_digest,
+        _ => return Ok(()),
+    };
 
-            Ok((
-                relationship_accept_payload(thread_id, form, digest_algorithm, &*reply_digest),
-                digest,
-            ))
-        }
+    let algorithm = RelationshipDigestAlgorithm::for_field(embedded);
+    let mut input = Vec::with_capacity(envelope_prefix.len() + 256);
+    crate::cesr::encode_digest_input(payload, sender_identity, envelope_prefix, &mut input)?;
+
+    if algorithm.hash(&input) != *embedded.as_bytes() {
+        return Err(CryptoError::DigestMismatch);
     }
+
+    Ok(())
 }
 
 pub(crate) fn open_relationship_request<'a>(
@@ -399,7 +402,6 @@ pub(crate) fn verify_detached(
 pub fn seal(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
 ) -> Result<TSPMessage, CryptoError> {
     #[cfg(feature = "bench-network-timings")]
@@ -407,7 +409,7 @@ pub fn seal(
     #[cfg(feature = "bench-network-timings")]
     let started = Instant::now();
 
-    let result = seal_and_hash(sender, receiver, nonconfidential_data, payload, None);
+    let result = seal_and_hash(sender, receiver, payload, None);
 
     #[cfg(feature = "bench-network-timings")]
     crate::bench::record_seal_core(started, signature_before);
@@ -419,41 +421,24 @@ pub fn seal(
 pub fn seal_and_hash(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
     digest: Option<&mut Digest>,
 ) -> Result<TSPMessage, CryptoError> {
-    seal_and_hash_with_relationship_nonce(
-        sender,
-        receiver,
-        nonconfidential_data,
-        payload,
-        digest,
-        None,
-    )
+    seal_and_hash_with_relationship_nonce(sender, receiver, payload, digest, None)
 }
 
 pub fn seal_with_crypto_type(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
     crypto_type: CryptoType,
 ) -> Result<TSPMessage, CryptoError> {
-    seal_and_hash_with_crypto_type(
-        sender,
-        receiver,
-        nonconfidential_data,
-        payload,
-        None,
-        crypto_type,
-    )
+    seal_and_hash_with_crypto_type(sender, receiver, payload, None, crypto_type)
 }
 
 pub fn seal_and_hash_with_crypto_type(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
     digest: Option<&mut Digest>,
     crypto_type: CryptoType,
@@ -461,7 +446,6 @@ pub fn seal_and_hash_with_crypto_type(
     seal_with_selection(
         sender,
         receiver,
-        nonconfidential_data,
         payload,
         digest,
         None,
@@ -472,7 +456,6 @@ pub fn seal_and_hash_with_crypto_type(
 pub(crate) fn seal_and_hash_with_relationship_nonce(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
     digest: Option<&mut Digest>,
     request_nonce_override: Option<[u8; 16]>,
@@ -480,7 +463,6 @@ pub(crate) fn seal_and_hash_with_relationship_nonce(
     seal_with_selection(
         sender,
         receiver,
-        nonconfidential_data,
         payload,
         digest,
         request_nonce_override,
@@ -491,7 +473,6 @@ pub(crate) fn seal_and_hash_with_relationship_nonce(
 pub(crate) fn seal_with_selection(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
     digest: Option<&mut Digest>,
     request_nonce_override: Option<[u8; 16]>,
@@ -500,32 +481,12 @@ pub(crate) fn seal_with_selection(
     ensure_selection_matches_key_types(sender, receiver, selection.crypto_type)?;
 
     match selection.crypto_type {
-        CryptoType::NaclAuth | CryptoType::NaclEssr => tsp_nacl::seal(
-            sender,
-            receiver,
-            nonconfidential_data,
-            payload,
-            digest,
-            request_nonce_override,
-            selection.crypto_type,
-        ),
-        CryptoType::HpkeAuth | CryptoType::HpkeEssr => tsp_hpke::seal_x25519(
-            sender,
-            receiver,
-            nonconfidential_data,
-            payload,
-            digest,
-            request_nonce_override,
-            selection.crypto_type,
-        ),
-        CryptoType::X25519Kyber768Draft00 => tsp_hpke::seal_pq(
-            sender,
-            receiver,
-            nonconfidential_data,
-            payload,
-            digest,
-            request_nonce_override,
-        ),
+        CryptoType::SealedBox => {
+            tsp_nacl::seal(sender, receiver, payload, digest, request_nonce_override)
+        }
+        CryptoType::HpkeBase => {
+            tsp_hpke::seal(sender, receiver, payload, digest, request_nonce_override)
+        }
         CryptoType::Plaintext => Err(CryptoError::InvalidCryptoSelection(selection.crypto_type)),
     }
 }
@@ -535,40 +496,28 @@ fn ensure_selection_matches_key_types(
     receiver: &dyn VerifiedVid,
     crypto_type: CryptoType,
 ) -> Result<(), CryptoError> {
-    let expected_receiver = match crypto_type {
-        CryptoType::NaclAuth
-        | CryptoType::NaclEssr
-        | CryptoType::HpkeAuth
-        | CryptoType::HpkeEssr => VidEncryptionKeyType::X25519,
-        CryptoType::X25519Kyber768Draft00 => VidEncryptionKeyType::X25519Kyber768Draft00,
-        CryptoType::Plaintext => return Err(CryptoError::InvalidCryptoSelection(crypto_type)),
-    };
-
+    let _ = sender;
     let receiver_key_type = receiver.encryption_key_type();
-    if receiver_key_type != expected_receiver {
-        return Err(CryptoError::IncompatibleCryptoSelection {
-            crypto_type,
-            key_type: receiver_key_type,
-        });
-    }
-
-    let sender_requires_x25519 = matches!(
-        crypto_type,
-        CryptoType::NaclAuth | CryptoType::NaclEssr | CryptoType::HpkeAuth
-    );
-    let sender_key_type = sender.encryption_key_type();
-    if sender_requires_x25519 && !matches!(sender_key_type, VidEncryptionKeyType::X25519) {
-        return Err(CryptoError::IncompatibleSenderCryptoSelection {
-            crypto_type,
-            key_type: sender_key_type,
-        });
+    match crypto_type {
+        // the sealed box requires an X25519 recipient key; HPKE-Base accepts
+        // any supported KEM key type. Neither uses the sender's encryption
+        // keys: HPKE-Base and the anonymous sealed box need no sender KEM key.
+        CryptoType::SealedBox => {
+            if receiver_key_type != VidEncryptionKeyType::X25519 {
+                return Err(CryptoError::IncompatibleCryptoSelection {
+                    crypto_type,
+                    key_type: receiver_key_type,
+                });
+            }
+        }
+        CryptoType::HpkeBase => {}
+        CryptoType::Plaintext => return Err(CryptoError::InvalidCryptoSelection(crypto_type)),
     }
 
     Ok(())
 }
 
 pub type MessageContents<'a> = (
-    Option<NonConfidentialData<'a>>,
     Payload<'a, &'a [u8], &'a mut [u8]>,
     crate::cesr::CryptoType,
     crate::cesr::SignatureType,
@@ -615,7 +564,7 @@ pub(crate) fn open_with_signature_info<'a>(
     let crate::cesr::DecodedEnvelope {
         raw_header,
         envelope,
-        ciphertext: Some(ciphertext),
+        payload_position: Some(ciphertext),
     } = view
         .into_opened::<&[u8]>()
         .map_err(|_| crate::cesr::error::DecodeError::VidError)?
@@ -629,15 +578,8 @@ pub(crate) fn open_with_signature_info<'a>(
     }
 
     let result = match envelope.crypto_type {
-        CryptoType::X25519Kyber768Draft00 => {
-            tsp_hpke::open_pq(receiver, sender, raw_header, envelope, ciphertext)
-        }
-        CryptoType::HpkeAuth | CryptoType::HpkeEssr => {
-            tsp_hpke::open_x25519(receiver, sender, raw_header, envelope, ciphertext)
-        }
-        CryptoType::NaclAuth | CryptoType::NaclEssr => {
-            tsp_nacl::open(receiver, sender, raw_header, envelope, ciphertext)
-        }
+        CryptoType::HpkeBase => tsp_hpke::open(receiver, sender, raw_header, envelope, ciphertext),
+        CryptoType::SealedBox => tsp_nacl::open(receiver, sender, raw_header, envelope, ciphertext),
         CryptoType::Plaintext => Err(CryptoError::MissingCiphertext),
     };
     #[cfg(feature = "bench-network-timings")]
@@ -665,7 +607,7 @@ pub fn verify<'a>(
 
 pub fn default_encryption_key_type() -> VidEncryptionKeyType {
     if cfg!(feature = "pq") {
-        VidEncryptionKeyType::X25519Kyber768Draft00
+        VidEncryptionKeyType::X25519MlKem768
     } else {
         VidEncryptionKeyType::X25519
     }
@@ -698,11 +640,10 @@ pub fn gen_encrypt_keypair_for(key_type: VidEncryptionKeyType) -> (PrivateKeyDat
                     .into(),
             )
         }
-        VidEncryptionKeyType::X25519Kyber768Draft00 => {
-            use hpke_pq::Serializable;
+        VidEncryptionKeyType::X25519MlKem768 => {
+            use hpke::Serializable;
 
-            let (private, public) =
-                <hpke_pq::kem::X25519Kyber768Draft00 as hpke_pq::Kem>::gen_keypair(&mut OsRng);
+            let (private, public) = <hpke::kem::XWing as hpke::Kem>::gen_keypair();
 
             let private = private.to_bytes();
             let public = public.to_bytes();
@@ -760,6 +701,45 @@ mod tests {
     use super::{CryptoError, open, seal, seal_with_crypto_type, sign};
 
     #[test]
+    fn relationship_digest_tampering_is_detected() {
+        // a request payload whose embedded digest is the correct SAID verifies;
+        // any other value in the digest slot is rejected
+        let sender = b"did:test:alice".as_slice();
+        let receiver = b"did:test:bob".as_slice();
+        let mut envelope_prefix = Vec::new();
+        crate::cesr::encode_envelope_prefix(sender, Some(receiver), &mut envelope_prefix).unwrap();
+
+        let algorithm = super::RelationshipDigestAlgorithm::Sha2_256;
+        let nonce_bytes = [7_u8; 16];
+        let mut digest = [0_u8; 32];
+        let payload = crate::cesr::Payload::<&[u8], &[u8]>::DirectRelationProposal {
+            nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+            request_digest: algorithm.field(&digest),
+        };
+        let mut input = Vec::new();
+        crate::cesr::encode_digest_input(&payload, Some(sender), &envelope_prefix, &mut input)
+            .unwrap();
+        digest = algorithm.hash(&input);
+
+        let good = crate::cesr::Payload::<&[u8], &[u8]>::DirectRelationProposal {
+            nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+            request_digest: algorithm.field(&digest),
+        };
+        super::verify_relationship_digest(&good, Some(sender), &envelope_prefix).unwrap();
+
+        let mut tampered_digest = digest;
+        tampered_digest[0] ^= 0x01;
+        let tampered = crate::cesr::Payload::<&[u8], &[u8]>::DirectRelationProposal {
+            nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+            request_digest: algorithm.field(&tampered_digest),
+        };
+        assert!(matches!(
+            super::verify_relationship_digest(&tampered, Some(sender), &envelope_prefix),
+            Err(CryptoError::DigestMismatch)
+        ));
+    }
+
+    #[test]
     fn seal_open_message() {
         let alice = OwnedVid::bind(
             "did:test:alice",
@@ -768,20 +748,11 @@ mod tests {
         let bob = OwnedVid::bind("did:test:bob", Url::parse("tcp://127.0.0.1:13372").unwrap());
 
         let secret_message: &[u8] = b"hello world";
-        let nonconfidential_data = b"extra header data";
 
-        let mut message = seal(
-            &bob,
-            &alice,
-            Some(nonconfidential_data),
-            Payload::Content(secret_message),
-        )
-        .unwrap();
+        let mut message = seal(&bob, &alice, Payload::Content(secret_message)).unwrap();
 
-        let (received_nonconfidential_data, received_secret_message, _, _) =
-            open(&alice, &bob, &mut message).unwrap();
+        let (received_secret_message, _, _) = open(&alice, &bob, &mut message).unwrap();
 
-        assert_eq!(received_nonconfidential_data.unwrap(), nonconfidential_data);
         assert_eq!(received_secret_message, Payload::Content(secret_message));
     }
 
@@ -803,24 +774,23 @@ mod tests {
             "did:test:bob-pq-explicit",
             Url::parse("tcp://127.0.0.1:13383").unwrap(),
             VidSignatureKeyType::Ed25519,
-            VidEncryptionKeyType::X25519Kyber768Draft00,
+            VidEncryptionKeyType::X25519MlKem768,
         );
 
         for (receiver, crypto_type) in [
-            (&bob_x25519, CryptoType::HpkeAuth),
-            (&bob_x25519, CryptoType::NaclAuth),
-            (&bob_pq, CryptoType::X25519Kyber768Draft00),
+            (&bob_x25519, CryptoType::HpkeBase),
+            (&bob_x25519, CryptoType::SealedBox),
+            (&bob_pq, CryptoType::HpkeBase),
         ] {
             let mut message = seal_with_crypto_type(
                 &alice,
                 receiver,
-                None,
                 Payload::Content(b"selected backend"),
                 crypto_type,
             )
             .unwrap();
 
-            let (_, payload, opened_crypto_type, _) = open(receiver, &alice, &mut message).unwrap();
+            let (payload, opened_crypto_type, _) = open(receiver, &alice, &mut message).unwrap();
 
             assert_eq!(payload, Payload::Content(b"selected backend" as &[u8]));
             assert_eq!(opened_crypto_type, crypto_type);
@@ -839,23 +809,23 @@ mod tests {
             "did:test:bob-default-pq",
             Url::parse("tcp://127.0.0.1:13387").unwrap(),
             VidSignatureKeyType::Ed25519,
-            VidEncryptionKeyType::X25519Kyber768Draft00,
+            VidEncryptionKeyType::X25519MlKem768,
         );
 
-        let mut message = seal(&alice, &bob, None, Payload::Content(b"default pq")).unwrap();
-        let (_, payload, opened_crypto_type, _) = open(&bob, &alice, &mut message).unwrap();
+        let mut message = seal(&alice, &bob, Payload::Content(b"default pq")).unwrap();
+        let (payload, opened_crypto_type, _) = open(&bob, &alice, &mut message).unwrap();
 
         assert_eq!(payload, Payload::Content(b"default pq" as &[u8]));
-        assert_eq!(opened_crypto_type, CryptoType::X25519Kyber768Draft00);
+        assert_eq!(opened_crypto_type, CryptoType::HpkeBase);
     }
 
     #[test]
-    fn default_selection_avoids_nacl_for_pq_sender_to_x25519_receiver() {
+    fn default_selection_for_pq_sender_to_x25519_receiver() {
         let alice = OwnedVid::bind_with_key_types(
             "did:test:alice-pq-to-x25519-default",
             Url::parse("tcp://127.0.0.1:13388").unwrap(),
             VidSignatureKeyType::Ed25519,
-            VidEncryptionKeyType::X25519Kyber768Draft00,
+            VidEncryptionKeyType::X25519MlKem768,
         );
         let bob = OwnedVid::bind_with_key_types(
             "did:test:bob-x25519-from-pq-default",
@@ -864,11 +834,19 @@ mod tests {
             VidEncryptionKeyType::X25519,
         );
 
-        let mut message = seal(&alice, &bob, None, Payload::Content(b"default hpke essr")).unwrap();
-        let (_, payload, opened_crypto_type, _) = open(&bob, &alice, &mut message).unwrap();
+        // the anonymous sealed box does not use the sender's encryption keys,
+        // so a PQ-keyed sender can seal to an X25519 receiver with either suite;
+        // the default follows the feature configuration
+        let mut message = seal(&alice, &bob, Payload::Content(b"default suite")).unwrap();
+        let (payload, opened_crypto_type, _) = open(&bob, &alice, &mut message).unwrap();
 
-        assert_eq!(payload, Payload::Content(b"default hpke essr" as &[u8]));
-        assert_eq!(opened_crypto_type, CryptoType::HpkeEssr);
+        assert_eq!(payload, Payload::Content(b"default suite" as &[u8]));
+        let expected = if cfg!(feature = "nacl") {
+            CryptoType::SealedBox
+        } else {
+            CryptoType::HpkeBase
+        };
+        assert_eq!(opened_crypto_type, expected);
     }
 
     #[test]
@@ -889,24 +867,6 @@ mod tests {
         let err = seal_with_crypto_type(
             &alice,
             &bob,
-            None,
-            Payload::Content(b"selected backend"),
-            CryptoType::X25519Kyber768Draft00,
-        )
-        .unwrap_err();
-
-        assert!(matches!(
-            err,
-            CryptoError::IncompatibleCryptoSelection {
-                crypto_type: CryptoType::X25519Kyber768Draft00,
-                key_type: VidEncryptionKeyType::X25519,
-            }
-        ));
-
-        let err = seal_with_crypto_type(
-            &alice,
-            &bob,
-            None,
             Payload::Content(b"selected backend"),
             CryptoType::Plaintext,
         )
@@ -919,34 +879,33 @@ mod tests {
     }
 
     #[test]
-    fn explicit_crypto_selection_rejects_incompatible_sender_key() {
+    fn sealed_box_rejects_pq_receiver_key() {
         let alice = OwnedVid::bind_with_key_types(
-            "did:test:alice-pq-incompatible",
+            "did:test:alice-sealedbox",
             Url::parse("tcp://127.0.0.1:13390").unwrap(),
             VidSignatureKeyType::Ed25519,
-            VidEncryptionKeyType::X25519Kyber768Draft00,
+            VidEncryptionKeyType::X25519,
         );
         let bob = OwnedVid::bind_with_key_types(
-            "did:test:bob-x25519-incompatible",
+            "did:test:bob-pq-sealedbox",
             Url::parse("tcp://127.0.0.1:13391").unwrap(),
             VidSignatureKeyType::Ed25519,
-            VidEncryptionKeyType::X25519,
+            VidEncryptionKeyType::X25519MlKem768,
         );
 
         let err = seal_with_crypto_type(
             &alice,
             &bob,
-            None,
             Payload::Content(b"selected backend"),
-            CryptoType::NaclAuth,
+            CryptoType::SealedBox,
         )
         .unwrap_err();
 
         assert!(matches!(
             err,
-            CryptoError::IncompatibleSenderCryptoSelection {
-                crypto_type: CryptoType::NaclAuth,
-                key_type: VidEncryptionKeyType::X25519Kyber768Draft00,
+            CryptoError::IncompatibleCryptoSelection {
+                crypto_type: CryptoType::SealedBox,
+                key_type: VidEncryptionKeyType::X25519MlKem768,
             }
         ));
     }
@@ -963,7 +922,7 @@ mod tests {
             Url::parse("tcp://127.0.0.1:13373").unwrap(),
         );
 
-        let mut message = seal(&bob, &alice, None, Payload::Content(b"secret")).unwrap();
+        let mut message = seal(&bob, &alice, Payload::Content(b"secret")).unwrap();
 
         let result = open(&carol, &bob, &mut message);
 
@@ -979,7 +938,7 @@ mod tests {
         );
         let bob = OwnedVid::bind("did:test:bob", Url::parse("tcp://127.0.0.1:13372").unwrap());
 
-        let mut message = seal(&bob, &alice, None, Payload::Content(b"secret")).unwrap();
+        let mut message = seal(&bob, &alice, Payload::Content(b"secret")).unwrap();
 
         let wrong_alice = OwnedVid::from_bytes(
             "did:test:alice",
@@ -1001,7 +960,7 @@ mod tests {
         );
         let bob = OwnedVid::bind("did:test:bob", Url::parse("tcp://127.0.0.1:13372").unwrap());
 
-        let mut message = sign(&alice, None, b"hello").unwrap();
+        let mut message = sign(&alice, Some(&bob), b"hello").unwrap();
 
         let result = open(&bob, &alice, &mut message);
 
@@ -1016,7 +975,7 @@ mod tests {
         );
         let bob = OwnedVid::bind("did:test:bob", Url::parse("tcp://127.0.0.1:13372").unwrap());
 
-        let mut message = seal(&bob, &alice, None, Payload::Content(b"secret")).unwrap();
+        let mut message = seal(&bob, &alice, Payload::Content(b"secret")).unwrap();
 
         let last = message.len() - 1;
         message[last] ^= 0xFF;
