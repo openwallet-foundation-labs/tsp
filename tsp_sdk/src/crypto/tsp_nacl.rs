@@ -246,3 +246,33 @@ pub(crate) fn open<'a>(
         parallel_signature_info,
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use crypto_box::SecretKey;
+
+    fn hex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    /// Interoperability check against libsodium: this sealed box was produced
+    /// by libsodium's crypto_box_seal (via PyNaCl 1.6.1) for the X25519 secret
+    /// key below; unsealing it verifies the ephemeral-key layout and the
+    /// BLAKE2b-derived nonce match libsodium's construction (spec 8.3)
+    #[test]
+    fn libsodium_sealed_box_interop() {
+        let secret_key = SecretKey::from_slice(&hex(
+            "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
+        ))
+        .unwrap();
+        let sealed = hex(
+            "0ab37c2bc1d0be4a9cf418c7bfb4471f0b0989074596b914d507ff8ce16f9546046abf7f210b312b91886842faff87ab6f3437a0865d87147b65ebbb748750b4421abcb8fd2db45dc4e17420",
+        );
+
+        let plaintext = secret_key.unseal(&sealed).unwrap();
+        assert_eq!(plaintext, b"TSP sealed box interop check");
+    }
+}
