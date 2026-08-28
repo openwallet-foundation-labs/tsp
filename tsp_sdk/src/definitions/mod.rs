@@ -159,6 +159,22 @@ pub enum ReceivedTspMessage<Data: AsRef<[u8]> = BytesMut> {
 }
 
 impl<Data: AsRef<[u8]>> ReceivedTspMessage<Data> {
+    /// The VID that sent this message, where the message names one. A pending
+    /// message names a VID that could not be resolved, so it has no sender.
+    pub fn sender(&self) -> Option<&str> {
+        match self {
+            ReceivedTspMessage::GenericMessage { sender, .. }
+            | ReceivedTspMessage::RequestRelationship { sender, .. }
+            | ReceivedTspMessage::AcceptRelationship { sender, .. }
+            | ReceivedTspMessage::CancelRelationship { sender, .. }
+            | ReceivedTspMessage::ForwardRequest { sender, .. } => Some(sender),
+            #[cfg(feature = "async")]
+            ReceivedTspMessage::PendingMessage { .. } => None,
+        }
+    }
+}
+
+impl<Data: AsRef<[u8]>> ReceivedTspMessage<Data> {
     pub fn pending_message_parts(&self) -> Option<(&str, &[u8])> {
         #[cfg(feature = "async")]
         {

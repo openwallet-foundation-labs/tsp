@@ -612,6 +612,15 @@ impl SecureStore {
     }
 
     /// Check whether the [VerifiedVid] identified by `vid` exists in the wallet
+    /// Whether any relationship exists in which this VID takes part
+    pub fn has_relationship_with(&self, vid: &str) -> Result<bool, Error> {
+        let vid = self.try_resolve_alias(vid)?;
+
+        Ok(self.vids.read()?.get(&vid).is_some_and(|context| {
+            !matches!(context.relation_status, RelationshipStatus::Unrelated)
+        }))
+    }
+
     pub fn has_verified_vid(&self, vid: &str) -> Result<bool, Error> {
         match self.get_verified_vid(vid) {
             Ok(_) => Ok(true),

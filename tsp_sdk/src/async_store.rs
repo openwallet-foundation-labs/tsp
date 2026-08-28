@@ -1,4 +1,6 @@
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
 
 use crate::{
     ExportVid, OwnedVid, PrivateVid, RelationshipStatus,
@@ -41,15 +43,128 @@ use url::Url;
 ///     ).await;
 /// }
 /// ```
+/// Local policy for when a peer's VID is re-resolved to obtain its current key
+/// state (spec 7.4.2). It applies to VID types whose key state the endpoint
+/// resolves for itself; where the VID implementation tracks key state
+/// continuously, resolution returns current state and these bounds do no harm.
+///
+/// The thresholds are a local choice: endpoints need not agree on them, and
+/// they are not communicated.
+#[derive(Clone, Copy, Debug)]
+pub struct KeyStatePolicy {
+    /// Re-resolve a peer's VID before acting on a message that arrives after a
+    /// silence longer than this. A peer that has been silent may have rotated
+    /// its keys without the endpoint having had any occasion to observe it, and
+    /// this bounds how long such a change may remain unobserved. `None`
+    /// disables the check.
+    pub re_verification_threshold: Option<Duration>,
+    /// The shortest interval between two resolutions of the same peer's VID.
+    /// Re-resolution can be provoked by messages that have not been
+    /// authenticated, so the rate at which any one peer is resolved is bounded.
+    pub resolution_rate_limit: Duration,
+}
+
+impl Default for KeyStatePolicy {
+    fn default() -> Self {
+        Self {
+            re_verification_threshold: Some(Duration::from_secs(24 * 60 * 60)),
+            resolution_rate_limit: Duration::from_secs(60),
+        }
+    }
+}
+
+/// When each peer was last heard from and last resolved, which is what the
+/// thresholds in [KeyStatePolicy] are measured against.
+#[derive(Default)]
+struct KeyStateTracker {
+    last_seen: HashMap<String, Instant>,
+    last_resolved: HashMap<String, Instant>,
+}
+
 #[derive(Default, Clone)]
 pub struct AsyncSecureStore {
     inner: SecureStore,
+    key_state_policy: Arc<RwLock<KeyStatePolicy>>,
+    key_state: Arc<RwLock<KeyStateTracker>>,
 }
 
 impl AsyncSecureStore {
     /// Create a new and empty store
     pub fn new() -> Self {
         Default::default()
+    }
+
+    /// Set the policy for re-resolving peers' key state; see [KeyStatePolicy]
+    pub fn set_key_state_policy(&self, policy: KeyStatePolicy) -> Result<(), Error> {
+        *self.key_state_policy.write()? = policy;
+
+        Ok(())
+    }
+
+    /// The current key-state policy; see [KeyStatePolicy]
+    pub fn key_state_policy(&self) -> Result<KeyStatePolicy, Error> {
+        Ok(*self.key_state_policy.read()?)
+    }
+
+    /// Whether this peer may be resolved now, per the policy's rate limit. When
+    /// it may, the attempt is recorded, so a caller that asks must resolve.
+    fn claim_resolution_slot(&self, vid: &str) -> Result<bool, Error> {
+        let rate_limit = self.key_state_policy()?.resolution_rate_limit;
+        let mut key_state = self.key_state.write()?;
+
+        if let Some(last) = key_state.last_resolved.get(vid)
+            && last.elapsed() < rate_limit
+        {
+            return Ok(false);
+        }
+        key_state
+            .last_resolved
+            .insert(vid.to_string(), Instant::now());
+
+        Ok(true)
+    }
+
+    /// Whether this peer has been silent for longer than the re-verification
+    /// threshold, so its key state should be refreshed before we act on it.
+    fn silent_beyond_threshold(&self, vid: &str) -> Result<bool, Error> {
+        let Some(threshold) = self.key_state_policy()?.re_verification_threshold else {
+            return Ok(false);
+        };
+
+        Ok(match self.key_state.read()?.last_seen.get(vid) {
+            Some(last_seen) => last_seen.elapsed() > threshold,
+            // the rule is about acting after an observed silence; with no
+            // record of this peer there is no silence to measure, and
+            // resolving every peer on startup would make the cost of a restart
+            // grow with the size of the wallet. Verifying a VID records it, so
+            // this is the case of a wallet loaded from storage.
+            None => false,
+        })
+    }
+
+    fn record_seen(&self, vid: &str) -> Result<(), Error> {
+        self.key_state
+            .write()?
+            .last_seen
+            .insert(vid.to_string(), Instant::now());
+
+        Ok(())
+    }
+
+    /// Re-resolve a peer's VID to refresh its key state, subject to the rate
+    /// limit. Returns whether a resolution actually happened.
+    async fn refresh_key_state(&self, vid: &str) -> Result<bool, Error> {
+        if !self.claim_resolution_slot(vid)? {
+            debug!("not re-resolving {vid}: rate limited");
+            return Ok(false);
+        }
+
+        let options = VerifyVidOptions {
+            resolution_context: self.get_resolution_context(vid)?,
+        };
+        self.verify_vid_with_options(vid, None, options).await?;
+
+        Ok(true)
     }
 
     /// Export the wallet to serializable default types
@@ -169,6 +284,14 @@ impl AsyncSecureStore {
 
         let verified_vid_id = verified_vid.identifier().to_string();
         self.inner.add_verified_vid(verified_vid, metadata)?;
+
+        // resolving is how key state is confirmed: this peer's state is fresh
+        // as of now, for both of the policy's thresholds
+        self.record_seen(&verified_vid_id)?;
+        self.key_state
+            .write()?
+            .last_resolved
+            .insert(verified_vid_id.clone(), Instant::now());
 
         if let Some(context) = resolution_context {
             self.register_resolution_context(verified_vid_id.clone(), context)?;
@@ -711,32 +834,58 @@ impl AsyncSecureStore {
                         tracing::trace!("CESR-encoded message: {}", colored);
                     }
 
-                    match db_inner.open_message(&mut message) {
+                    // a peer that has been silent longer than the
+                    // re-verification threshold may have rotated its keys
+                    // unobserved; refresh its key state before acting on this
+                    // message (spec 7.4.2)
+                    if let Ok((sender, _)) = crate::cesr::get_sender_receiver(&message)
+                        && let Ok(sender) = std::str::from_utf8(sender)
+                        && db_inner.has_verified_vid(sender)?
+                        && self_inner.silent_beyond_threshold(sender)?
+                    {
+                        debug!("re-resolving {sender} after silence");
+                        if let Err(e) = self_inner.refresh_key_state(sender).await {
+                            // acting on a message whose key state could not be
+                            // confirmed is exactly what the rule forbids
+                            debug!("could not confirm the key state of {sender}: {e}");
+                            return Err(e);
+                        }
+                    }
+
+                    let opened = match db_inner.open_message(&mut message) {
+                        // first contact: the sender is not in the wallet yet,
+                        // so it has to be resolved before the message can be
+                        // opened at all
                         Err(Error::UnverifiedSource(unknown_vid, _)) => {
                             debug!("Verifying VID: {}", unknown_vid);
-                            let options = VerifyVidOptions {
-                                resolution_context: self_inner
-                                    .get_resolution_context(&unknown_vid)?,
-                            };
-                            self_inner
-                                .verify_vid_with_options(&unknown_vid, None, options)
-                                .await?;
+                            if !self_inner.refresh_key_state(&unknown_vid).await? {
+                                return Err(Error::UnverifiedVid(unknown_vid));
+                            }
                             db_inner.open_message(&mut message)
                         }
-                        Err(Error::Crypto(CryptoError::Verify(vid, _))) => {
-                            debug!("Re-verifying VID: {}", vid);
-                            let options = VerifyVidOptions {
-                                resolution_context: self_inner.get_resolution_context(&vid)?,
-                            };
-                            self_inner
-                                .verify_vid_with_options(&vid, None, options)
-                                .await?;
-                            db_inner.open_message(&mut message)
+                        // a signature that does not verify may be the result of
+                        // a rotation we have not observed: within an
+                        // established relationship, re-resolve and retry once
+                        // before discarding (spec 3.7, 7.4.2)
+                        Err(Error::Crypto(CryptoError::Verify(vid, reason))) => {
+                            if db_inner.has_relationship_with(&vid)? {
+                                debug!("Re-verifying VID: {}", vid);
+                                self_inner.refresh_key_state(&vid).await?;
+                                db_inner.open_message(&mut message)
+                            } else {
+                                Err(Error::Crypto(CryptoError::Verify(vid, reason)))
+                            }
                         }
                         maybe_message => maybe_message,
+                    };
+
+                    if let Ok(message) = &opened
+                        && let Some(sender) = message.sender()
+                    {
+                        self_inner.record_seen(sender)?;
                     }
-                    .map(|msg| msg.into_owned())
-                    .map_err(|e| {
+
+                    opened.map(|msg| msg.into_owned()).map_err(|e| {
                         tracing::debug!("Message processing error (non-fatal): {}", e);
                         e
                     })
@@ -880,6 +1029,55 @@ fn verification_resolution_context(
 mod tests {
     use super::*;
     use crate::vid::did::scid::{ScidLocator, ScidMethod, ScidResolutionContext, ScidSourceMethod};
+
+    #[test]
+    fn resolution_is_rate_limited_per_peer() {
+        let store = AsyncSecureStore::new();
+        store
+            .set_key_state_policy(KeyStatePolicy {
+                re_verification_threshold: None,
+                resolution_rate_limit: Duration::from_millis(80),
+            })
+            .unwrap();
+
+        assert!(store.claim_resolution_slot("did:test:alice").unwrap());
+        // a second attempt within the interval is refused ...
+        assert!(!store.claim_resolution_slot("did:test:alice").unwrap());
+        // ... but the limit is per peer
+        assert!(store.claim_resolution_slot("did:test:bob").unwrap());
+
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(store.claim_resolution_slot("did:test:alice").unwrap());
+    }
+
+    #[test]
+    fn silence_beyond_the_threshold_is_detected() {
+        let store = AsyncSecureStore::new();
+        store
+            .set_key_state_policy(KeyStatePolicy {
+                re_verification_threshold: Some(Duration::from_millis(80)),
+                resolution_rate_limit: Duration::from_secs(60),
+            })
+            .unwrap();
+
+        // a peer we have no record of has no observed silence to measure
+        assert!(!store.silent_beyond_threshold("did:test:alice").unwrap());
+
+        store.record_seen("did:test:alice").unwrap();
+        assert!(!store.silent_beyond_threshold("did:test:alice").unwrap());
+
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(store.silent_beyond_threshold("did:test:alice").unwrap());
+
+        // the check is disabled when no threshold is set
+        store
+            .set_key_state_policy(KeyStatePolicy {
+                re_verification_threshold: None,
+                resolution_rate_limit: Duration::from_secs(60),
+            })
+            .unwrap();
+        assert!(!store.silent_beyond_threshold("did:test:alice").unwrap());
+    }
 
     #[test]
     fn verification_context_prefers_explicit_options() {
