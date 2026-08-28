@@ -64,7 +64,6 @@ pub struct PendingIncomingParallelRelationship {
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub enum RelationshipStatus {
-    _Controlled,
     Bidirectional {
         thread_id: Digest,
         remote_thread_id: Digest,
@@ -92,7 +91,6 @@ impl RelationshipStatus {
 impl Display for RelationshipStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RelationshipStatus::_Controlled => write!(f, "Controlled"),
             RelationshipStatus::Bidirectional { .. } => write!(f, "Bidirectional"),
             RelationshipStatus::Unidirectional { .. } => write!(f, "Unidirectional"),
             RelationshipStatus::ReverseUnidirectional { .. } => write!(f, "ReverseUnidirectional"),

@@ -64,10 +64,12 @@ fn fixture_owned_vid_with_transport(which: &str, transport: &Url) -> OwnedVid {
     serde_json::from_str(&value.to_string()).expect("fixture must deserialize as OwnedVid")
 }
 
-fn relationship_bi_default() -> RelationshipStatus {
+fn relationship_bi_bench() -> RelationshipStatus {
+    // distinct non-zero thread ids: the all-zero digest is the NULL digest of
+    // a TSP_RFD, not a thread id a relationship would hold
     RelationshipStatus::Bidirectional {
-        thread_id: [0u8; 32],
-        remote_thread_id: [0u8; 32],
+        thread_id: [0x11u8; 32],
+        remote_thread_id: [0x22u8; 32],
         outstanding_nested_requests: vec![],
     }
 }
@@ -113,9 +115,9 @@ fn bench_send_receive_direct(c: &mut Criterion, backend: &'static str, payload_l
                 .unwrap();
 
                 alice
-                    .set_relation_and_status_for_vid(&bob_id, relationship_bi_default(), &alice_id)
+                    .set_relation_and_status_for_vid(&bob_id, relationship_bi_bench(), &alice_id)
                     .unwrap();
-                bob.set_relation_and_status_for_vid(&alice_id, relationship_bi_default(), &bob_id)
+                bob.set_relation_and_status_for_vid(&alice_id, relationship_bi_bench(), &bob_id)
                     .unwrap();
 
                 let payload = bench_utils::seeded_bytes(

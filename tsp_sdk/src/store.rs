@@ -1255,8 +1255,7 @@ impl SecureStore {
                         if let ReceivedRelationshipForm::Parallel { new_vid, .. } = &form {
                             match self.relation_status_for_vid_pair(&intended_receiver, &sender)? {
                                 RelationshipStatus::Bidirectional { .. } => {}
-                                RelationshipStatus::_Controlled
-                                | RelationshipStatus::Unidirectional { .. }
+                                RelationshipStatus::Unidirectional { .. }
                                 | RelationshipStatus::ReverseUnidirectional { .. }
                                 | RelationshipStatus::Unrelated => {
                                     return Err(requires_existing_parallel_relationship_error());
@@ -1520,8 +1519,7 @@ impl SecureStore {
 
         match self.relation_status_for_vid_pair(sender.identifier(), receiver.identifier())? {
             RelationshipStatus::Bidirectional { .. } => {}
-            RelationshipStatus::_Controlled
-            | RelationshipStatus::Unidirectional { .. }
+            RelationshipStatus::Unidirectional { .. }
             | RelationshipStatus::ReverseUnidirectional { .. }
             | RelationshipStatus::Unrelated => {
                 return Err(requires_existing_parallel_relationship_error());
@@ -1664,7 +1662,7 @@ impl SecureStore {
             RelationshipStatus::Bidirectional { thread_id, .. } => thread_id,
             RelationshipStatus::Unidirectional { thread_id } => thread_id,
             RelationshipStatus::ReverseUnidirectional { thread_id } => thread_id,
-            RelationshipStatus::_Controlled | RelationshipStatus::Unrelated => {
+            RelationshipStatus::Unrelated => {
                 return Err(Error::Relationship("no relationship to cancel".into()));
             }
         };
@@ -1875,8 +1873,7 @@ impl SecureStore {
             // a repeated or renewed invite in an existing relationship: the
             // status already permits this direction, so leave it untouched
             RelationshipStatus::ReverseUnidirectional { .. }
-            | RelationshipStatus::Bidirectional { .. }
-            | RelationshipStatus::_Controlled => Ok(()),
+            | RelationshipStatus::Bidirectional { .. } => Ok(()),
         }
     }
 
@@ -1923,7 +1920,7 @@ impl SecureStore {
 
                 false
             }
-            RelationshipStatus::Unrelated | RelationshipStatus::_Controlled => return ignore(),
+            RelationshipStatus::Unrelated => return ignore(),
         };
 
         if let Some(context) = self.vids.write()?.get_mut(remote_vid) {

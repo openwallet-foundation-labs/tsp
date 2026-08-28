@@ -719,7 +719,7 @@ async fn test_prepopulated_store_import_preserves_dirty_state() {
                 found_reverse_unidirectional += 1;
             }
             RelationshipStatus::Bidirectional { .. } => found_bidirectional += 1,
-            RelationshipStatus::_Controlled | RelationshipStatus::Unrelated => {}
+            RelationshipStatus::Unrelated => {}
         }
     }
 
