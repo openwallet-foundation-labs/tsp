@@ -386,22 +386,32 @@ async fn new_message(
 ) -> Response {
     let mut message: BytesMut = body.into();
 
+    // A message that fails verification or validation is discarded without a
+    // distinguishing response: answering would tell whoever sent it what the
+    // node knows and which of its checks failed (spec 3.7). The reason is
+    // logged locally instead.
+    fn discard(reason: &str) -> Response {
+        tracing::debug!("discarded an incoming message: {reason}");
+
+        StatusCode::OK.into_response()
+    }
+
     let Ok((sender, Some(receiver))) = cesr::get_sender_receiver(&message) else {
         tracing::error!(
             "{} encountered invalid message, receiver missing",
             state.domain,
         );
 
-        return (StatusCode::BAD_REQUEST, "invalid message, receiver missing").into_response();
+        return discard("invalid message, receiver missing");
     };
 
     let Ok(sender) = std::str::from_utf8(sender) else {
-        return (StatusCode::BAD_REQUEST, "invalid sender").into_response();
+        return discard("invalid sender");
     };
     let sender = sender.to_string();
 
     let Ok(receiver) = std::str::from_utf8(receiver) else {
-        return (StatusCode::BAD_REQUEST, "invalid receiver").into_response();
+        return discard("invalid receiver");
     };
     let receiver = receiver.to_string();
 
@@ -446,7 +456,7 @@ async fn new_message(
     tracing::debug!("verifying VID {sender} for {receiver}");
     if let Err(e) = state.verify_vid(&sender).await {
         tracing::error!("error verifying VID {sender}: {e}");
-        return (StatusCode::BAD_REQUEST, "error verifying VID").into_response();
+        return discard("error verifying VID");
     }
 
     let handle_relationship_request =
@@ -530,7 +540,7 @@ async fn new_message(
                         "error delivering relationship accept to {sender}: {e}"
                     ))
                     .await;
-                return (StatusCode::BAD_REQUEST, "error accepting relationship").into_response();
+                return discard("error accepting relationship");
             }
 
             state.log(if let Some(nested_vid) = nested_vid {
@@ -565,8 +575,7 @@ async fn new_message(
                 tracing::debug!("verifying VID next hop {next_hop}");
                 if let Err(e) = state.verify_vid(&next_hop).await {
                     tracing::error!("error verifying VID {next_hop}: {e}");
-                    return (StatusCode::BAD_REQUEST, "error verifying next hop VID")
-                        .into_response();
+                    return discard("error verifying next hop VID");
                 }
 
                 let store = state.db.read().await;
@@ -580,7 +589,7 @@ async fn new_message(
                 {
                     let err = format!("error forming relation with VID {next_hop}: {err}");
                     state.log_error(err).await;
-                    return (StatusCode::BAD_REQUEST, "error forwarding message").into_response();
+                    return discard("error forwarding message");
                 }
                 tracing::trace!("Releasing lock guard on AsyncStore");
                 drop(store);
@@ -594,7 +603,7 @@ async fn new_message(
                 Ok(res) => res,
                 Err(e) => {
                     state.log_error(e.to_string()).await;
-                    return (StatusCode::BAD_REQUEST, "error forwarding message").into_response();
+                    return discard("error forwarding message");
                 }
             };
 
@@ -606,8 +615,7 @@ async fn new_message(
 
                 if let Err(e) = transport::send_message(&transport, &message).await {
                     state.log_error(e.to_string()).await;
-                    return (StatusCode::BAD_REQUEST, "error sending forwarded message")
-                        .into_response();
+                    return discard("error sending forwarded message");
                 }
 
                 state

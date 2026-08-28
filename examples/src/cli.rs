@@ -1099,7 +1099,15 @@ async fn run() -> Result<(), Error> {
                 trace!("Received message: {message:?}");
                 let message = match message {
                     Ok(m) => m,
-                    Err(_) => break,
+                    // one message was discarded; the next one may be fine
+                    Err(e) if !e.ends_stream() => {
+                        debug!("discarded an incoming message: {e}");
+                        continue;
+                    }
+                    Err(e) => {
+                        info!("stopped listening: {e}");
+                        break;
+                    }
                 };
                 let handle_message = |message: ReceivedTspMessage| {
                     match message {

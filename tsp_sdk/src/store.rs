@@ -621,6 +621,17 @@ impl SecureStore {
         }))
     }
 
+    /// Whether a route is configured for this VID
+    pub fn has_route_for_vid(&self, vid: &str) -> Result<bool, Error> {
+        let vid = self.try_resolve_alias(vid)?;
+
+        Ok(self
+            .vids
+            .read()?
+            .get(&vid)
+            .is_some_and(|context| context.get_route().is_some()))
+    }
+
     pub fn has_verified_vid(&self, vid: &str) -> Result<bool, Error> {
         match self.get_verified_vid(vid) {
             Ok(_) => Ok(true),
