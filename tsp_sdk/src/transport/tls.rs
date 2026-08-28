@@ -113,18 +113,23 @@ async fn get_or_create_connection(url: &Url) -> Result<(), TransportError> {
     let key = url.to_string();
     let mut cache = TLS_CONNECTIONS.lock().await;
 
+    if let Some(framed) = cache.get(&key) {
+        let (tcp_stream, _) = framed.get_ref().get_ref();
+        if super::tcp::peer_closed(tcp_stream) {
+            cache.remove(&key);
+        }
+    }
+
     if let std::collections::hash_map::Entry::Vacant(entry) = cache.entry(key) {
         let addresses = url
             .socket_addrs(|| None)
             .map_err(|_| TransportError::InvalidTransportAddress(url.to_string()))?;
 
-        let Some(address) = addresses.first().cloned() else {
-            return Err(TransportError::InvalidTransportAddress(url.to_string()));
-        };
+        let tcp_stream = super::tcp::connect_any(&addresses, url).await?;
 
-        let tcp_stream = tokio::net::TcpStream::connect(address)
-            .await
-            .map_err(|e| TransportError::Connection(address.to_string(), e))?;
+        let address = tcp_stream
+            .peer_addr()
+            .map_err(|e| TransportError::Connection(url.to_string(), e))?;
 
         let domain = url
             .domain()
@@ -284,5 +289,54 @@ mod tests {
             let received = incoming_stream.next().await.unwrap().unwrap();
             assert_eq!(expected.as_slice(), received.iter().as_slice());
         }
+    }
+
+    fn test_acceptor() -> TlsAcceptor {
+        let (cert, key) = load_certificate().unwrap();
+        let config = rustls::ServerConfig::builder_with_provider(CRYPTO_PROVIDER.clone())
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(cert, key)
+            .unwrap();
+        TlsAcceptor::from(Arc::new(config))
+    }
+
+    async fn accept_and_read_one(listener: TcpListener, acceptor: TlsAcceptor) -> Vec<u8> {
+        let (stream, _) = listener.accept().await.unwrap();
+        let stream = acceptor.accept(stream).await.unwrap();
+        let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
+        framed.next().await.unwrap().unwrap().to_vec()
+    }
+
+    /// Regression test: a cached connection whose peer exited must not
+    /// swallow the next message (see the TCP variant for details).
+    #[tokio::test]
+    async fn test_tls_reconnect_after_peer_close() {
+        let allocator = TestPortAllocator::new();
+        let port = allocator.allocate();
+        let url = Url::parse(&format!("tls://localhost:{port}")).unwrap();
+
+        // First peer: accept one connection, read one message, then exit
+        let listener = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
+        let first_peer = tokio::spawn(accept_and_read_one(listener, test_acceptor()));
+
+        send_message(b"first message", &url).await.unwrap();
+        assert_eq!(first_peer.await.unwrap(), b"first message");
+
+        // Give the close from the exited peer time to reach the cached connection
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // Second peer on the same port; the send must reach it promptly
+        let listener = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
+        let second_peer = tokio::spawn(accept_and_read_one(listener, test_acceptor()));
+
+        send_message(b"second message", &url).await.unwrap();
+
+        let received = tokio::time::timeout(std::time::Duration::from_secs(1), second_peer)
+            .await
+            .expect("message was lost on the stale cached connection")
+            .unwrap();
+        assert_eq!(received, b"second message");
     }
 }

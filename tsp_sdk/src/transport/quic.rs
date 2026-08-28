@@ -54,10 +54,6 @@ async fn get_or_create_connection(url: &Url) -> Result<quinn::Connection, Transp
         .socket_addrs(|| None)
         .map_err(|_| TransportError::InvalidTransportAddress(url.to_string()))?;
 
-    let Some(address) = addresses.first().cloned() else {
-        return Err(TransportError::InvalidTransportAddress(url.to_string()));
-    };
-
     let domain = url
         .domain()
         .ok_or(TransportError::InvalidTransportAddress(format!(
@@ -65,25 +61,47 @@ async fn get_or_create_connection(url: &Url) -> Result<quinn::Connection, Transp
         )))?
         .to_owned();
 
-    // passing 0 as port number opens a random port
-    let listen_address: SocketAddr = if address.is_ipv6() {
-        (Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1), 0).into()
-    } else {
-        (Ipv4Addr::new(127, 0, 0, 1), 0).into()
-    };
+    // A host like `localhost` can resolve to both IPv6 and IPv4 addresses in
+    // nondeterministic order, while the server may listen on only one of them;
+    // try each address in turn.
+    let mut last_error = None;
+    for address in addresses.iter().cloned() {
+        // passing 0 as port number opens a random port
+        let listen_address: SocketAddr = if address.is_ipv6() {
+            (Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1), 0).into()
+        } else {
+            (Ipv4Addr::new(127, 0, 0, 1), 0).into()
+        };
 
-    let mut endpoint = Endpoint::client(listen_address).map_err(|_| TransportError::ListenPort)?;
-    endpoint.set_default_client_config(QUIC_CONFIG.clone());
+        let mut endpoint = match Endpoint::client(listen_address) {
+            Ok(endpoint) => endpoint,
+            Err(_) => {
+                last_error = Some(TransportError::ListenPort);
+                continue;
+            }
+        };
+        endpoint.set_default_client_config(QUIC_CONFIG.clone());
 
-    let connection = endpoint
-        .connect(address, &domain)
-        .map_err(|e| TransportError::QuicConnection(address.to_string(), e))?
-        .await
-        .map_err(|e| TransportError::Connection(address.to_string(), e.into()))?;
+        let connecting = match endpoint.connect(address, &domain) {
+            Ok(connecting) => connecting,
+            Err(e) => {
+                last_error = Some(TransportError::QuicConnection(address.to_string(), e));
+                continue;
+            }
+        };
 
-    cache.insert(key, (endpoint, connection.clone()));
+        match connecting.await {
+            Ok(connection) => {
+                cache.insert(key, (endpoint, connection.clone()));
+                return Ok(connection);
+            }
+            Err(e) => {
+                last_error = Some(TransportError::Connection(address.to_string(), e.into()));
+            }
+        }
+    }
 
-    Ok(connection)
+    Err(last_error.unwrap_or_else(|| TransportError::InvalidTransportAddress(url.to_string())))
 }
 
 /// Evict a cached connection so the next send will reconnect.
