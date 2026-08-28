@@ -1070,21 +1070,20 @@ impl SecureStore {
         opaque_payload: &[u8],
     ) -> Result<(Url, Vec<u8>), Error> {
         if route.is_empty() {
-            // we are the final delivery point, we should be the 'next_hop'
-            let sender = self.get_vid(next_hop)?;
+            // We are the destination's intermediary. The exit entry of a hop
+            // list is the destination's own VID at this intermediary (spec
+            // 5.3.3), so deliver over the relationship this intermediary holds
+            // with it; if there is none, the specification calls it an error.
+            let destination = self.get_vid(next_hop)?;
 
-            let Some(sender_private) = &sender.private else {
-                return Err(Error::MissingPrivateVid(next_hop.to_string()));
+            let Some(local_vid) = destination.get_relation_vid() else {
+                return Err(Error::MissingDropOff(next_hop.to_string()));
             };
-
-            let recipient = match sender.get_relation_vid() {
-                Some(destination) => self.get_verified_vid(destination)?,
-                None => return Err(Error::MissingDropOff(sender.vid.identifier().to_string())),
-            };
+            let sender_private = self.get_private_vid(local_vid)?;
 
             self.seal_message_payload(
                 sender_private.identifier(),
-                recipient.identifier(),
+                destination.vid.identifier(),
                 Payload::NestedMessage(opaque_payload),
             )
         } else {
@@ -3597,7 +3596,7 @@ mod test {
         a_store
             .set_route_for_vid(
                 sneaky_d.identifier(),
-                &[b.identifier(), c.identifier(), mailbox_c.identifier()],
+                &[b.identifier(), c.identifier(), nette_d.identifier()],
             )
             .unwrap();
 
@@ -3613,11 +3612,11 @@ mod test {
 
         c_store
             .set_relation_and_status_for_vid(
-                mailbox_c.identifier(),
+                nette_d.identifier(),
                 RelationshipStatus::Unidirectional {
                     thread_id: Default::default(),
                 },
-                nette_d.identifier(),
+                mailbox_c.identifier(),
             )
             .unwrap();
 

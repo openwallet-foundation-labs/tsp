@@ -581,10 +581,11 @@ pub fn create_routed_dirty_topology() -> RoutedDirtyTopology {
             sender_vid.identifier(),
         )
         .unwrap();
+    // the exit entry is the receiver's own VID at the intermediary (spec 5.3.3)
     sender
         .set_route_for_vid(
             receiver_vid.identifier(),
-            &[intermediary_vid.identifier(), intermediary_vid.identifier()],
+            &[intermediary_vid.identifier(), receiver_vid.identifier()],
         )
         .unwrap();
 
