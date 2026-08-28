@@ -326,14 +326,12 @@ class AliceBob(unittest.TestCase):
             case tsp.GenericMessage(
                 sender,
                 receiver,
-                nonconfidential_data,
                 message,
                 crypto_type,
                 signature_type,
             ):
                 self.assertEqual(sender, sneaky_a.identifier())
                 self.assertEqual(receiver, sneaky_d.identifier())
-                self.assertEqual(nonconfidential_data, None)
                 self.assertEqual(message, hello_world)
                 self.assertNotEqual(crypto_type, tsp.CryptoType.Plaintext)
                 self.assertNotEqual(signature_type, tsp.SignatureType.NoSignature)

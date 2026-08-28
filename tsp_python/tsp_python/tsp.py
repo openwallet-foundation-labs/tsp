@@ -95,7 +95,6 @@ class SecureStore:
             sender: str,
             receiver: str,
             message: bytes,
-            nonconfidential_data: bytes | None = None,
     ) -> tuple[str, bytes]:
         """
         Seal a TSP message.
@@ -104,9 +103,7 @@ class SecureStore:
         of the sender and receiver, specified by their VIDs.
         """
         with Wallet(self):
-            return self.inner.seal_message(
-                sender, receiver, message, nonconfidential_data
-            )
+            return self.inner.seal_message(sender, receiver, message)
 
     def open_message(self, message: bytes):
         """Decode an encrypted `message`"""
@@ -121,7 +118,6 @@ class SecureStore:
             sender: str,
             receiver: str,
             message: bytes,
-            nonconfidential_data: bytes | None = None,
     ):
         """
         Send a TSP message given earlier resolved VIDs
@@ -129,7 +125,7 @@ class SecureStore:
         Encodes, encrypts, signs, and sends a TSP message
         """
         with Wallet(self):
-            self.inner.send(sender, receiver, message, nonconfidential_data)
+            self.inner.send(sender, receiver, message)
 
     def receive(self, vid: str):
         """Receive a single TSP messages for the private VID identified by `vid`, using the appropriate transport mechanism for it."""
@@ -210,7 +206,6 @@ class ReceivedTspMessage:
                 return GenericMessage(
                     msg.sender,
                     msg.receiver,
-                    msg.nonconfidential_data,
                     bytes(msg.message),
                     msg.crypto_type,
                     msg.signature_type,
@@ -262,7 +257,6 @@ class ReceivedTspMessage:
 class GenericMessage(ReceivedTspMessage):
     sender: str
     receiver: str | None
-    nonconfidential_data: bytes | None
     message: bytes
     crypto_type: str
     signature_type: str

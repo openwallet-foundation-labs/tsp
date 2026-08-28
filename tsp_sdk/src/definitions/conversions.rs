@@ -21,13 +21,11 @@ impl<T: AsRef<[u8]>> ReceivedTspMessage<T> {
             GenericMessage {
                 sender,
                 receiver,
-                nonconfidential_data,
                 message,
                 message_type,
             } => GenericMessage {
                 sender,
                 receiver,
-                nonconfidential_data: nonconfidential_data.map(&f),
                 message: f(message),
                 message_type,
             },

@@ -1,6 +1,6 @@
 use crate::{
     cesr::{CryptoType, DecodedPayload, Envelope},
-    definitions::{NonConfidentialData, Payload, PrivateVid, TSPMessage, VerifiedVid},
+    definitions::{Payload, PrivateVid, TSPMessage, VerifiedVid},
 };
 use hpke::{
     Deserializable, OpModeR, OpModeS, Serializable, inout::InOutBuf,
@@ -94,7 +94,6 @@ fn payload_for_seal<'a>(
 pub(crate) fn seal_x25519(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<NonConfidentialData>,
     secret_payload: Payload<&[u8]>,
     digest: Option<&mut super::Digest>,
     request_nonce_override: Option<[u8; 16]>,
@@ -113,7 +112,6 @@ pub(crate) fn seal_x25519(
             signature_type: signature_type(sender),
             sender: sender.identifier(),
             receiver: Some(receiver.identifier()),
-            nonconfidential_data,
         },
         &mut data,
     )?;
@@ -177,7 +175,6 @@ pub(crate) fn seal_x25519(
 pub(crate) fn seal_pq(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<NonConfidentialData>,
     secret_payload: Payload<&[u8]>,
     digest: Option<&mut super::Digest>,
     request_nonce_override: Option<[u8; 16]>,
@@ -192,7 +189,6 @@ pub(crate) fn seal_pq(
             signature_type: signature_type(sender),
             sender: sender.identifier(),
             receiver: Some(receiver.identifier()),
-            nonconfidential_data,
         },
         &mut data,
     )?;
@@ -247,7 +243,7 @@ pub(crate) fn open_x25519<'a>(
     receiver: &dyn PrivateVid,
     sender: &dyn VerifiedVid,
     raw_header: &'a [u8],
-    envelope: Envelope<'a, &[u8]>,
+    envelope: Envelope<&[u8]>,
     ciphertext: &'a mut [u8],
 ) -> Result<(MessageContents<'a>, Option<ParallelSignatureInfo<'a>>), CryptoError> {
     let (ciphertext, footer) = ciphertext.split_at_mut(
@@ -288,7 +284,7 @@ pub(crate) fn open_pq<'a>(
     receiver: &dyn PrivateVid,
     sender: &dyn VerifiedVid,
     raw_header: &'a [u8],
-    envelope: Envelope<'a, &[u8]>,
+    envelope: Envelope<&[u8]>,
     ciphertext: &'a mut [u8],
 ) -> Result<(MessageContents<'a>, Option<ParallelSignatureInfo<'a>>), CryptoError> {
     let (ciphertext, footer) = ciphertext.split_at_mut(
@@ -319,7 +315,7 @@ pub(crate) fn open_pq<'a>(
 
 fn open_payload<'a>(
     sender: &dyn VerifiedVid,
-    envelope: Envelope<'a, &[u8]>,
+    envelope: Envelope<&[u8]>,
     ciphertext: &'a mut [u8],
 ) -> Result<(MessageContents<'a>, Option<ParallelSignatureInfo<'a>>), CryptoError> {
     #[allow(unused_variables)]
@@ -427,7 +423,6 @@ fn open_payload<'a>(
 
     Ok((
         (
-            envelope.nonconfidential_data,
             secret_payload,
             envelope.crypto_type,
             envelope.signature_type,

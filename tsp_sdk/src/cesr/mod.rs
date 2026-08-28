@@ -64,12 +64,10 @@ pub enum EnvelopeType<'a> {
     EncryptedMessage {
         sender: &'a [u8],
         receiver: &'a [u8],
-        nonconfidential_data: Option<&'a [u8]>,
     },
     SignedMessage {
         sender: &'a [u8],
         receiver: Option<&'a [u8]>,
-        nonconfidential_data: Option<&'a [u8]>,
     },
 }
 
@@ -78,19 +76,6 @@ impl EnvelopeType<'_> {
         match self {
             EnvelopeType::EncryptedMessage { receiver, .. } => Some(*receiver),
             EnvelopeType::SignedMessage { receiver, .. } => *receiver,
-        }
-    }
-
-    pub fn get_nonconfidential_data(&self) -> Option<&[u8]> {
-        match self {
-            EnvelopeType::EncryptedMessage {
-                nonconfidential_data,
-                ..
-            } => *nonconfidential_data,
-            EnvelopeType::SignedMessage {
-                nonconfidential_data,
-                ..
-            } => *nonconfidential_data,
         }
     }
 }
@@ -109,13 +94,11 @@ pub fn probe(stream: &mut [u8]) -> Result<EnvelopeType<'_>, error::DecodeError> 
         EnvelopeType::EncryptedMessage {
             sender: envelope.sender,
             receiver: envelope.receiver.expect("Infallible"),
-            nonconfidential_data: envelope.nonconfidential_data,
         }
     } else {
         EnvelopeType::SignedMessage {
             sender: envelope.sender,
             receiver: envelope.receiver,
-            nonconfidential_data: envelope.nonconfidential_data,
         }
     })
 }
@@ -127,7 +110,6 @@ pub fn color_format(message: &[u8]) -> Result<String, DecodeError> {
         (Some(parts.prefix), 31),
         (Some(parts.sender), 35),
         (parts.receiver, 34),
-        (parts.nonconfidential_data, 32),
         (parts.ciphertext, 33),
         (Some(parts.signature), 36),
     ];

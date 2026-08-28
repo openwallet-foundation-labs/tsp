@@ -167,8 +167,6 @@ enum Commands {
         sender_vid: String,
         #[arg(short, long, required = true)]
         receiver_vid: String,
-        #[arg(short, long)]
-        non_confidential_data: Option<String>,
         #[arg(
             long,
             help = "Ask for confirmation before interacting with unknown end-points"
@@ -1047,11 +1045,9 @@ async fn run() -> Result<(), Error> {
         Commands::Send {
             sender_vid,
             receiver_vid,
-            non_confidential_data,
             ask,
             crypto,
         } => {
-            let non_confidential_data = non_confidential_data.as_deref().map(|s| s.as_bytes());
             let receiver_vid = vid_wallet.try_resolve_alias(&receiver_vid)?;
 
             ensure_vid_verified(&vid_wallet, &receiver_vid, &args.wallet, ask).await?;
@@ -1064,18 +1060,10 @@ async fn run() -> Result<(), Error> {
 
             let send_result = if let Some(crypto_type) = crypto {
                 vid_wallet
-                    .send_with_crypto_type(
-                        &sender_vid,
-                        &receiver_vid,
-                        non_confidential_data,
-                        &message,
-                        crypto_type,
-                    )
+                    .send_with_crypto_type(&sender_vid, &receiver_vid, &message, crypto_type)
                     .await
             } else {
-                vid_wallet
-                    .send(&sender_vid, &receiver_vid, non_confidential_data, &message)
-                    .await
+                vid_wallet.send(&sender_vid, &receiver_vid, &message).await
             };
 
             match send_result {
@@ -1120,7 +1108,6 @@ async fn run() -> Result<(), Error> {
                         ReceivedTspMessage::GenericMessage {
                             sender,
                             receiver: _,
-                            nonconfidential_data: _,
                             message,
                             message_type,
                         } => {

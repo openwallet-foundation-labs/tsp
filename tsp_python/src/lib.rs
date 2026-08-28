@@ -180,42 +180,22 @@ impl Store {
             .map_err(py_exception)
     }
 
-    #[pyo3(signature = (sender, receiver, message, nonconfidential_data = None))]
     fn seal_message(
         &self,
         sender: String,
         receiver: String,
         message: Vec<u8>,
-        nonconfidential_data: Option<Vec<u8>>,
     ) -> PyResult<(String, Vec<u8>)> {
         let (url, bytes) = self
             .inner
-            .seal_message(
-                &sender,
-                &receiver,
-                nonconfidential_data.as_deref(),
-                &message,
-            )
+            .seal_message(&sender, &receiver, &message)
             .map_err(py_exception)?;
 
         Ok((url.to_string(), bytes))
     }
 
-    #[pyo3(signature = (sender, receiver, message, nonconfidential_data = None))]
-    fn send(
-        &self,
-        sender: String,
-        receiver: String,
-        message: Vec<u8>,
-        nonconfidential_data: Option<Vec<u8>>,
-    ) -> PyResult<()> {
-        wait_for(self.inner.send(
-            &sender,
-            &receiver,
-            nonconfidential_data.as_deref(),
-            &message,
-        ))?
-        .map_err(py_exception)
+    fn send(&self, sender: String, receiver: String, message: Vec<u8>) -> PyResult<()> {
+        wait_for(self.inner.send(&sender, &receiver, &message))?.map_err(py_exception)
     }
 
     fn receive(&mut self, vid: String) -> PyResult<Option<FlatReceivedTspMessage>> {
@@ -450,7 +430,6 @@ struct FlatReceivedTspMessage {
     #[pyo3(get, set)]
     receiver: Option<String>,
     #[pyo3(get, set)]
-    nonconfidential_data: Option<Option<Vec<u8>>>,
     #[pyo3(get, set)]
     message: Option<Vec<u8>>,
     #[pyo3(get, set)]
@@ -519,7 +498,6 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             variant,
             sender: None,
             receiver: None,
-            nonconfidential_data: None,
             message: None,
             crypto_type: None,
             signature_type: None,
@@ -540,13 +518,11 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             tsp_sdk::ReceivedTspMessage::GenericMessage {
                 sender,
                 receiver,
-                nonconfidential_data,
                 message,
                 message_type,
             } => {
                 this.sender = Some(sender);
                 this.receiver = receiver;
-                this.nonconfidential_data = Some(nonconfidential_data.map(Into::into));
                 this.message = Some(message.into());
                 this.crypto_type = match message_type.crypto_type {
                     tsp_sdk::cesr::CryptoType::Plaintext => Some(CryptoType::Plaintext),

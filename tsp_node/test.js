@@ -300,7 +300,7 @@ describe('tsp node tests', function() {
 
                 // Check the final received message in d_store
                 if (received instanceof GenericMessage) {
-                    const { sender, nonconfidential_data: _, message: messageBytes, crypto_type, signature_type } = received;
+                    const { sender, message: messageBytes, crypto_type, signature_type } = received;
                     assert.strictEqual(sender, sneaky_a.identifier());
                     message = String.fromCharCode.apply(null, messageBytes);
                     assert.strictEqual(message, hello_world, "Received message does not match");
@@ -375,11 +375,10 @@ describe('tsp node tests', function() {
 
                         // Pattern match for GenericMessage in received message
                         if (received_3 instanceof GenericMessage) {
-                            let { sender, nonconfidential_data, message: messageBytes, crypto_type, signature_type } = received_3;
+                            let { sender, message: messageBytes, crypto_type, signature_type } = received_3;
 
                             // Assertions for GenericMessage
                             assert.strictEqual(sender, nested_vid_1);
-                            assert.strictEqual(nonconfidential_data, null);
                             message = String.fromCharCode.apply(null, messageBytes);
                             assert.strictEqual(message, hello_world, "Received message does not match");
                             assert.notStrictEqual(crypto_type, CryptoType.Plaintext, "Crypto type should not be Plaintext");

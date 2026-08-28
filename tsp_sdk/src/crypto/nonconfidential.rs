@@ -1,12 +1,11 @@
 use super::{CryptoError, append_signature, signature_type};
-use crate::crypto::CryptoError::Verify;
 use crate::{
-    cesr::{CryptoType, DecodedEnvelope, Envelope, SignatureType},
+    cesr::{CryptoType, DecodedEnvelope, DecodedPayload, Envelope},
     definitions::{MessageType, PrivateVid, TSPMessage, VerifiedVid},
 };
-use ml_dsa::{EncodedVerifyingKey, MlDsa65};
 
-/// Construct and sign a non-confidential TSP message
+/// Construct and sign a non-confidential TSP message; the payload is carried
+/// as a cleartext -Z## payload in the payload position
 pub fn sign(
     sender: &dyn PrivateVid,
     receiver: Option<&dyn VerifiedVid>,
@@ -15,13 +14,19 @@ pub fn sign(
     let mut data = Vec::with_capacity(64);
 
     crate::cesr::encode_envelope(
-        crate::cesr::Envelope {
+        Envelope {
             crypto_type: CryptoType::Plaintext,
             signature_type: signature_type(sender),
             sender: sender.identifier(),
             receiver: receiver.map(|r| r.identifier()),
-            nonconfidential_data: Some(payload),
         },
+        &mut data,
+    )?;
+
+    crate::cesr::encode_payload(
+        &crate::cesr::Payload::<_, &[u8]>::GenericMessage(payload),
+        None,
+        None,
         &mut data,
     )?;
     crate::cesr::finalize_envelope_frame(&mut data);
@@ -36,49 +41,17 @@ pub fn verify<'a>(
     sender: &dyn VerifiedVid,
     tsp_message: &'a mut [u8],
 ) -> Result<(&'a [u8], MessageType), CryptoError> {
-    #[cfg(feature = "bench-network-timings")]
-    let open_core_started = std::time::Instant::now();
     let view = crate::cesr::decode_envelope(tsp_message)?;
-    #[cfg(feature = "bench-network-timings")]
-    crate::bench::record_open_core(open_core_started);
 
     // verify outer signature
     let verification_challenge = view.as_challenge();
-    #[cfg(feature = "bench-network-timings")]
-    let verify_started = std::time::Instant::now();
-    match view.signature_type() {
-        SignatureType::NoSignature => {}
-        SignatureType::Ed25519 => {
-            let signature = ed25519_dalek::Signature::from_slice(verification_challenge.signature)
-                .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
-            let verifying_key =
-                ed25519_dalek::VerifyingKey::try_from(sender.verifying_key().as_slice())
-                    .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
-            verifying_key
-                .verify_strict(verification_challenge.signed_data, &signature)
-                .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
-        }
-        SignatureType::MlDsa65 => {
-            let signature: ml_dsa::Signature<MlDsa65> =
-                ml_dsa::Signature::try_from(verification_challenge.signature)
-                    .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
-            let verifying_key = ml_dsa::VerifyingKey::decode(
-                &EncodedVerifyingKey::<MlDsa65>::try_from(sender.verifying_key().as_slice())?,
-            );
-            ml_dsa::Verifier::verify(
-                &verifying_key,
-                verification_challenge.signed_data,
-                &signature,
-            )
-            .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
-        }
-    }
-    #[cfg(feature = "bench-network-timings")]
-    crate::bench::record_verify(verify_started);
+    super::verify_detached(
+        sender,
+        verification_challenge.signed_data,
+        verification_challenge.signature,
+    )?;
 
-    // decode envelope
-    #[cfg(feature = "bench-network-timings")]
-    let open_core_started = std::time::Instant::now();
+    // decode envelope; a non-confidential message has a cleartext payload
     let DecodedEnvelope {
         raw_header: _,
         envelope:
@@ -87,9 +60,8 @@ pub fn verify<'a>(
                 signature_type,
                 sender: _,
                 receiver: _,
-                nonconfidential_data: Some(nonconfidential_data),
             },
-        ciphertext: None,
+        payload_position: Some(payload),
     } = view
         .into_opened::<&[u8]>()
         .map_err(|_| crate::cesr::error::DecodeError::VidError)?
@@ -97,11 +69,20 @@ pub fn verify<'a>(
         return Err(CryptoError::MissingCiphertext);
     };
 
-    #[cfg(feature = "bench-network-timings")]
-    crate::bench::record_open_core(open_core_started);
+    if crypto_type != CryptoType::Plaintext {
+        return Err(CryptoError::MissingCiphertext);
+    }
+
+    let DecodedPayload {
+        payload: decoded, ..
+    } = crate::cesr::decode_payload(payload)?;
+    let crate::cesr::Payload::GenericMessage(message) = decoded else {
+        // other payload types in signed-only messages are not yet surfaced
+        return Err(CryptoError::UnsupportedPayload);
+    };
 
     Ok((
-        nonconfidential_data,
+        message,
         MessageType {
             crypto_type,
             signature_type,

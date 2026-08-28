@@ -28,7 +28,6 @@ pub struct PrivateSigningKeyData(Vec<u8>);
 pub struct PublicVerificationKeyData(Vec<u8>);
 
 pub type VidData<'a> = &'a [u8];
-pub type NonConfidentialData<'a> = &'a [u8];
 pub type TSPMessage = Vec<u8>;
 
 #[cfg(feature = "async")]
@@ -120,7 +119,6 @@ pub enum ReceivedTspMessage<Data: AsRef<[u8]> = BytesMut> {
     GenericMessage {
         sender: String,
         receiver: Option<String>,
-        nonconfidential_data: Option<Data>,
         message: Data,
         message_type: MessageType,
     },

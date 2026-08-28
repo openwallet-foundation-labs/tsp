@@ -12,14 +12,13 @@ use super::{
     RelationshipDigestAlgorithm, append_signature, build_relationship_accept_payload,
     build_relationship_request_payload, signature_type,
 };
-use crate::definitions::{NonConfidentialData, TSPMessage};
+use crate::definitions::TSPMessage;
 use crypto_box::aead::{AeadCore, OsRng};
 use rand::{RngCore, SeedableRng, rngs::StdRng};
 
 pub(crate) fn seal(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<NonConfidentialData>,
     secret_payload: Payload<&[u8]>,
     digest: Option<&mut super::Digest>,
     request_nonce_override: Option<[u8; 16]>,
@@ -38,7 +37,6 @@ pub(crate) fn seal(
             signature_type: signature_type(sender),
             sender: sender.identifier(),
             receiver: Some(receiver.identifier()),
-            nonconfidential_data,
         },
         &mut data,
     )?;
@@ -132,7 +130,7 @@ pub(crate) fn open<'a>(
     receiver: &dyn PrivateVid,
     sender: &dyn VerifiedVid,
     _raw_header: &'a [u8],
-    envelope: Envelope<'a, &[u8]>,
+    envelope: Envelope<&[u8]>,
     ciphertext: &'a mut [u8],
 ) -> Result<(MessageContents<'a>, Option<ParallelSignatureInfo<'a>>), CryptoError> {
     let (ciphertext, footer) = ciphertext.split_at_mut(ciphertext.len() - 16 - 24);
@@ -249,7 +247,6 @@ pub(crate) fn open<'a>(
 
     Ok((
         (
-            envelope.nonconfidential_data,
             secret_payload,
             envelope.crypto_type,
             envelope.signature_type,

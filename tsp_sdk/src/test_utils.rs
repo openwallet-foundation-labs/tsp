@@ -949,7 +949,6 @@ mod tests {
             .seal_message(
                 &topology.sender_vid,
                 &topology.receiver_vid,
-                None,
                 b"direct-open-flow",
             )
             .unwrap();

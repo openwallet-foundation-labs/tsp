@@ -1,7 +1,7 @@
 use crate::definitions::{
-    Digest, MessageType, NonConfidentialData, Payload, PrivateKeyData, PrivateSigningKeyData,
-    PrivateVid, PublicKeyData, PublicVerificationKeyData, RelationshipForm, TSPMessage,
-    VerifiedVid, VidEncryptionKeyType, VidSignatureKeyType,
+    Digest, MessageType, Payload, PrivateKeyData, PrivateSigningKeyData, PrivateVid, PublicKeyData,
+    PublicVerificationKeyData, RelationshipForm, TSPMessage, VerifiedVid, VidEncryptionKeyType,
+    VidSignatureKeyType,
 };
 use ed25519_dalek::Signer;
 use ml_dsa::{EncodedVerifyingKey, ExpandedSigningKey, ExpandedSigningKeyBytes, MlDsa65};
@@ -399,7 +399,6 @@ pub(crate) fn verify_detached(
 pub fn seal(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
 ) -> Result<TSPMessage, CryptoError> {
     #[cfg(feature = "bench-network-timings")]
@@ -407,7 +406,7 @@ pub fn seal(
     #[cfg(feature = "bench-network-timings")]
     let started = Instant::now();
 
-    let result = seal_and_hash(sender, receiver, nonconfidential_data, payload, None);
+    let result = seal_and_hash(sender, receiver, payload, None);
 
     #[cfg(feature = "bench-network-timings")]
     crate::bench::record_seal_core(started, signature_before);
@@ -419,41 +418,24 @@ pub fn seal(
 pub fn seal_and_hash(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
     digest: Option<&mut Digest>,
 ) -> Result<TSPMessage, CryptoError> {
-    seal_and_hash_with_relationship_nonce(
-        sender,
-        receiver,
-        nonconfidential_data,
-        payload,
-        digest,
-        None,
-    )
+    seal_and_hash_with_relationship_nonce(sender, receiver, payload, digest, None)
 }
 
 pub fn seal_with_crypto_type(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
     crypto_type: CryptoType,
 ) -> Result<TSPMessage, CryptoError> {
-    seal_and_hash_with_crypto_type(
-        sender,
-        receiver,
-        nonconfidential_data,
-        payload,
-        None,
-        crypto_type,
-    )
+    seal_and_hash_with_crypto_type(sender, receiver, payload, None, crypto_type)
 }
 
 pub fn seal_and_hash_with_crypto_type(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
     digest: Option<&mut Digest>,
     crypto_type: CryptoType,
@@ -461,7 +443,6 @@ pub fn seal_and_hash_with_crypto_type(
     seal_with_selection(
         sender,
         receiver,
-        nonconfidential_data,
         payload,
         digest,
         None,
@@ -472,7 +453,6 @@ pub fn seal_and_hash_with_crypto_type(
 pub(crate) fn seal_and_hash_with_relationship_nonce(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
     digest: Option<&mut Digest>,
     request_nonce_override: Option<[u8; 16]>,
@@ -480,7 +460,6 @@ pub(crate) fn seal_and_hash_with_relationship_nonce(
     seal_with_selection(
         sender,
         receiver,
-        nonconfidential_data,
         payload,
         digest,
         request_nonce_override,
@@ -491,7 +470,6 @@ pub(crate) fn seal_and_hash_with_relationship_nonce(
 pub(crate) fn seal_with_selection(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
     digest: Option<&mut Digest>,
     request_nonce_override: Option<[u8; 16]>,
@@ -503,7 +481,6 @@ pub(crate) fn seal_with_selection(
         CryptoType::NaclAuth | CryptoType::NaclEssr => tsp_nacl::seal(
             sender,
             receiver,
-            nonconfidential_data,
             payload,
             digest,
             request_nonce_override,
@@ -512,20 +489,14 @@ pub(crate) fn seal_with_selection(
         CryptoType::HpkeAuth | CryptoType::HpkeEssr => tsp_hpke::seal_x25519(
             sender,
             receiver,
-            nonconfidential_data,
             payload,
             digest,
             request_nonce_override,
             selection.crypto_type,
         ),
-        CryptoType::X25519Kyber768Draft00 => tsp_hpke::seal_pq(
-            sender,
-            receiver,
-            nonconfidential_data,
-            payload,
-            digest,
-            request_nonce_override,
-        ),
+        CryptoType::X25519Kyber768Draft00 => {
+            tsp_hpke::seal_pq(sender, receiver, payload, digest, request_nonce_override)
+        }
         CryptoType::Plaintext => Err(CryptoError::InvalidCryptoSelection(selection.crypto_type)),
     }
 }
@@ -568,7 +539,6 @@ fn ensure_selection_matches_key_types(
 }
 
 pub type MessageContents<'a> = (
-    Option<NonConfidentialData<'a>>,
     Payload<'a, &'a [u8], &'a mut [u8]>,
     crate::cesr::CryptoType,
     crate::cesr::SignatureType,
@@ -615,7 +585,7 @@ pub(crate) fn open_with_signature_info<'a>(
     let crate::cesr::DecodedEnvelope {
         raw_header,
         envelope,
-        ciphertext: Some(ciphertext),
+        payload_position: Some(ciphertext),
     } = view
         .into_opened::<&[u8]>()
         .map_err(|_| crate::cesr::error::DecodeError::VidError)?
@@ -768,20 +738,11 @@ mod tests {
         let bob = OwnedVid::bind("did:test:bob", Url::parse("tcp://127.0.0.1:13372").unwrap());
 
         let secret_message: &[u8] = b"hello world";
-        let nonconfidential_data = b"extra header data";
 
-        let mut message = seal(
-            &bob,
-            &alice,
-            Some(nonconfidential_data),
-            Payload::Content(secret_message),
-        )
-        .unwrap();
+        let mut message = seal(&bob, &alice, Payload::Content(secret_message)).unwrap();
 
-        let (received_nonconfidential_data, received_secret_message, _, _) =
-            open(&alice, &bob, &mut message).unwrap();
+        let (received_secret_message, _, _) = open(&alice, &bob, &mut message).unwrap();
 
-        assert_eq!(received_nonconfidential_data.unwrap(), nonconfidential_data);
         assert_eq!(received_secret_message, Payload::Content(secret_message));
     }
 
@@ -814,13 +775,12 @@ mod tests {
             let mut message = seal_with_crypto_type(
                 &alice,
                 receiver,
-                None,
                 Payload::Content(b"selected backend"),
                 crypto_type,
             )
             .unwrap();
 
-            let (_, payload, opened_crypto_type, _) = open(receiver, &alice, &mut message).unwrap();
+            let (payload, opened_crypto_type, _) = open(receiver, &alice, &mut message).unwrap();
 
             assert_eq!(payload, Payload::Content(b"selected backend" as &[u8]));
             assert_eq!(opened_crypto_type, crypto_type);
@@ -842,8 +802,8 @@ mod tests {
             VidEncryptionKeyType::X25519Kyber768Draft00,
         );
 
-        let mut message = seal(&alice, &bob, None, Payload::Content(b"default pq")).unwrap();
-        let (_, payload, opened_crypto_type, _) = open(&bob, &alice, &mut message).unwrap();
+        let mut message = seal(&alice, &bob, Payload::Content(b"default pq")).unwrap();
+        let (payload, opened_crypto_type, _) = open(&bob, &alice, &mut message).unwrap();
 
         assert_eq!(payload, Payload::Content(b"default pq" as &[u8]));
         assert_eq!(opened_crypto_type, CryptoType::X25519Kyber768Draft00);
@@ -864,8 +824,8 @@ mod tests {
             VidEncryptionKeyType::X25519,
         );
 
-        let mut message = seal(&alice, &bob, None, Payload::Content(b"default hpke essr")).unwrap();
-        let (_, payload, opened_crypto_type, _) = open(&bob, &alice, &mut message).unwrap();
+        let mut message = seal(&alice, &bob, Payload::Content(b"default hpke essr")).unwrap();
+        let (payload, opened_crypto_type, _) = open(&bob, &alice, &mut message).unwrap();
 
         assert_eq!(payload, Payload::Content(b"default hpke essr" as &[u8]));
         assert_eq!(opened_crypto_type, CryptoType::HpkeEssr);
@@ -889,7 +849,6 @@ mod tests {
         let err = seal_with_crypto_type(
             &alice,
             &bob,
-            None,
             Payload::Content(b"selected backend"),
             CryptoType::X25519Kyber768Draft00,
         )
@@ -906,7 +865,6 @@ mod tests {
         let err = seal_with_crypto_type(
             &alice,
             &bob,
-            None,
             Payload::Content(b"selected backend"),
             CryptoType::Plaintext,
         )
@@ -936,7 +894,6 @@ mod tests {
         let err = seal_with_crypto_type(
             &alice,
             &bob,
-            None,
             Payload::Content(b"selected backend"),
             CryptoType::NaclAuth,
         )
@@ -963,7 +920,7 @@ mod tests {
             Url::parse("tcp://127.0.0.1:13373").unwrap(),
         );
 
-        let mut message = seal(&bob, &alice, None, Payload::Content(b"secret")).unwrap();
+        let mut message = seal(&bob, &alice, Payload::Content(b"secret")).unwrap();
 
         let result = open(&carol, &bob, &mut message);
 
@@ -979,7 +936,7 @@ mod tests {
         );
         let bob = OwnedVid::bind("did:test:bob", Url::parse("tcp://127.0.0.1:13372").unwrap());
 
-        let mut message = seal(&bob, &alice, None, Payload::Content(b"secret")).unwrap();
+        let mut message = seal(&bob, &alice, Payload::Content(b"secret")).unwrap();
 
         let wrong_alice = OwnedVid::from_bytes(
             "did:test:alice",
@@ -1001,7 +958,7 @@ mod tests {
         );
         let bob = OwnedVid::bind("did:test:bob", Url::parse("tcp://127.0.0.1:13372").unwrap());
 
-        let mut message = sign(&alice, None, b"hello").unwrap();
+        let mut message = sign(&alice, Some(&bob), b"hello").unwrap();
 
         let result = open(&bob, &alice, &mut message);
 
@@ -1016,7 +973,7 @@ mod tests {
         );
         let bob = OwnedVid::bind("did:test:bob", Url::parse("tcp://127.0.0.1:13372").unwrap());
 
-        let mut message = seal(&bob, &alice, None, Payload::Content(b"secret")).unwrap();
+        let mut message = seal(&bob, &alice, Payload::Content(b"secret")).unwrap();
 
         let last = message.len() - 1;
         message[last] ^= 0xFF;
