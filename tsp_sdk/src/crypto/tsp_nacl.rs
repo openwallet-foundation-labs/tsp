@@ -22,7 +22,7 @@ pub(crate) fn seal(
     nonconfidential_data: Option<NonConfidentialData>,
     secret_payload: Payload<&[u8]>,
     digest: Option<&mut super::Digest>,
-    request_nonce_override: Option<[u8; 32]>,
+    request_nonce_override: Option<[u8; 16]>,
     crypto_type: CryptoType,
 ) -> Result<TSPMessage, CryptoError> {
     if !matches!(crypto_type, CryptoType::NaclAuth | CryptoType::NaclEssr) {
@@ -32,7 +32,7 @@ pub(crate) fn seal(
     let mut csprng = StdRng::from_entropy();
 
     let mut data = Vec::with_capacity(64);
-    crate::cesr::encode_ets_envelope(
+    crate::cesr::encode_envelope(
         crate::cesr::Envelope {
             crypto_type,
             signature_type: signature_type(sender),
@@ -57,7 +57,7 @@ pub(crate) fn seal(
             form,
         } => {
             let nonce_bytes = request_nonce_override.unwrap_or_else(|| {
-                let mut nonce_bytes = [0_u8; 32];
+                let mut nonce_bytes = [0_u8; 16];
                 csprng.fill_bytes(&mut nonce_bytes);
                 nonce_bytes
             });
@@ -88,6 +88,7 @@ pub(crate) fn seal(
             payload
         }
         Payload::CancelRelationship { ref thread_id } => crate::cesr::Payload::RelationshipCancel {
+            nonce: crate::cesr::Nonce::generate(|dst| csprng.fill_bytes(dst)),
             reply: digest_algorithm.field(thread_id),
         },
         Payload::NestedMessage(data) => crate::cesr::Payload::NestedMessage(data),
@@ -97,7 +98,7 @@ pub(crate) fn seal(
     // prepare CESR-encoded ciphertext
     let mut cesr_message = Vec::new();
 
-    crate::cesr::encode_payload(&secret_payload, sender_in_payload, &mut cesr_message)?;
+    crate::cesr::encode_payload(&secret_payload, sender_in_payload, None, &mut cesr_message)?;
 
     // hash the raw bytes of the plaintext before encryption
     if let Some(digest) = digest {
@@ -120,6 +121,7 @@ pub(crate) fn seal(
 
     // encode and append the ciphertext to the envelope data
     crate::cesr::encode_ciphertext(&cesr_message, crypto_type, &mut data)?;
+    crate::cesr::finalize_envelope_frame(&mut data);
 
     append_signature(sender, &mut data)?;
 
@@ -229,6 +231,10 @@ pub(crate) fn open<'a>(
                 )?,
             }),
         ),
+        crate::cesr::Payload::ControlMessage(_) | crate::cesr::Payload::Padding { .. } => {
+            // recognized on the wire, but not yet surfaced through the API
+            return Err(CryptoError::UnsupportedPayload);
+        }
         crate::cesr::Payload::RelationshipCancel { reply, .. } => (
             Payload::CancelRelationship {
                 thread_id: *reply.as_bytes(),

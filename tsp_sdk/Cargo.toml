@@ -15,7 +15,6 @@ publish = true
 cesr-t = []
 default = ["async", "nacl"]
 essr = []
-strict = []
 fuzzing = ["dep:arbitrary"]
 demo = []
 test-utils = ["dep:tempfile"]

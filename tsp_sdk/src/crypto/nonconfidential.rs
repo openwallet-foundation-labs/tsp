@@ -14,7 +14,7 @@ pub fn sign(
 ) -> Result<TSPMessage, CryptoError> {
     let mut data = Vec::with_capacity(64);
 
-    crate::cesr::encode_s_envelope(
+    crate::cesr::encode_envelope(
         crate::cesr::Envelope {
             crypto_type: CryptoType::Plaintext,
             signature_type: signature_type(sender),
@@ -24,6 +24,7 @@ pub fn sign(
         },
         &mut data,
     )?;
+    crate::cesr::finalize_envelope_frame(&mut data);
 
     append_signature(sender, &mut data)?;
 

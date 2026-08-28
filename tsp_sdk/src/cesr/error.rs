@@ -9,6 +9,8 @@ pub enum EncodeError {
     InvalidVid,
     #[error("invalid signature type")]
     InvalidSignatureType,
+    #[error("a nested message must be CESR data (a multiple of 3 bytes long)")]
+    MisalignedNestedMessage,
 }
 
 /// An error type to indicate something went wrong with decoding
@@ -24,8 +26,12 @@ pub enum DecodeError {
     SignatureError,
     #[error("VID error while decoding")]
     VidError,
-    #[error("CESR version mismatch")]
+    #[error("not a TSP message")]
+    NotTsp,
+    #[error("unsupported TSP version")]
     VersionMismatch,
+    #[error("frame count does not match the framed content")]
+    InvalidFrameCount,
     #[error("invalid crypto type")]
     InvalidCryptoType,
     #[error("invalid signature type")]

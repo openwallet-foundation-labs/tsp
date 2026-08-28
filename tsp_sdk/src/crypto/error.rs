@@ -22,6 +22,8 @@ pub enum CryptoError {
     UnexpectedRecipient,
     #[error("no ciphertext found in encrypted message")]
     MissingCiphertext,
+    #[error("payload type is not supported by this implementation")]
+    UnsupportedPayload,
     #[error("invalid sender identity found in encrypted message")]
     UnexpectedSender,
     #[error("no sender identity found in encrypted message")]

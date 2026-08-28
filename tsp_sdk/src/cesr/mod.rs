@@ -31,17 +31,12 @@ const fn extract_triplet(quadlet: &[u8; 3]) -> u32 {
     u32::from_be_bytes([0, quadlet[0], quadlet[1], quadlet[2]])
 }
 
-/// Checks if the header bytes in a CESR encoding line up;
-/// In strict mode, this has to be an exact match, i.e. padding bits have to be 0
+/// Checks if the header bytes in a CESR encoding line up.
+/// This is an exact match: TSP digests and signatures are computed over exact
+/// encoded bytes, so a primitive with non-zero padding bits must be rejected
+/// rather than normalized (canonical encoding, spec section 3.7).
 fn header_match(input: &[u8], target: &[u8]) -> bool {
-    if cfg!(feature = "strict") {
-        input == target
-    } else {
-        let mask = !mask(2 * (input.len() as u8 % 3)) as u8;
-
-        input[..input.len() - 1] == target[..target.len() - 1]
-            && input[input.len() - 1] & mask == target[target.len() - 1]
-    }
+    input == target
 }
 
 /// Constants for CESR selectors
@@ -175,10 +170,9 @@ mod test {
         assert!(header_match(&[1, 2, 3], &[1, 2, 3]));
         assert!(header_match(&[0xFF, 0xF0], &[0xFF, 0xF0]));
         assert!(header_match(&[0xFC], &[0xFC]));
-        #[cfg(not(feature = "strict"))]
-        assert!(header_match(&[0xFF, 0xF3], &[0xFF, 0xF0]));
-        #[cfg(not(feature = "strict"))]
-        assert!(header_match(&[0xFF], &[0xFC]));
+        // non-canonical padding bits must be rejected
+        assert!(!header_match(&[0xFF, 0xF3], &[0xFF, 0xF0]));
+        assert!(!header_match(&[0xFF], &[0xFC]));
     }
 
     #[test]
@@ -392,7 +386,6 @@ mod test {
     //    ACDD7NDX93ZGTkZBBuSeSGsAQ7u0hngpNTZTK_Um7rUZGnLRNJvo5oOnnC1J2iBQHuxoq8PyjdT3BHS2LiPrs2Cg
     #[test]
     fn demo_example() {
-        #[cfg(feature = "strict")]
         let base64_data = "\
 -FAB\
 EPT2_p83_gRSuAYvGhqV3S0JzYEF2dIa-OCPLbIhBO7Y\
@@ -403,18 +396,6 @@ EAmQtlcszNoEIDfqD-Zih3N6o5B3humRKvBBln2juTEM\
 AAB267UlFg1jHee4Dauht77SzGl8WUC_0oimYG5If3SdIOSzWM8Qs9SFajAilQcozXJVnbkY5stG_K4NbKdNB4AQ\
 ABBgeqntZW3Gu4HL0h3odYz6LaZ_SMfmITL-Btoq_7OZFe3L16jmOe49Ur108wH7mnBaq2E_0U0N0c5vgrJtDpAQ\
 ACDD7NDX93ZGTkZBBuSeSGsAQ7u0hngpNTZTK_Um7rUZGnLRNJvo5oOnnC1J2iBQHuxoq8PyjdT3BHS2LiPrs2Cg\
-";
-        #[cfg(not(feature = "strict"))]
-        let base64_data = "\
--FAB\
-E_T2_p83_gRSuAYvGhqV3S0JzYEF2dIa-OCPLbIhBO7Y\
--EAB\
-0AAAAAAAAAAAAAAAAAAAAAAB\
-EwmQtlcszNoEIDfqD-Zih3N6o5B3humRKvBBln2juTEM\
--AAD\
-AA5267UlFg1jHee4Dauht77SzGl8WUC_0oimYG5If3SdIOSzWM8Qs9SFajAilQcozXJVnbkY5stG_K4NbKdNB4AQ\
-ABBgeqntZW3Gu4HL0h3odYz6LaZ_SMfmITL-Btoq_7OZFe3L16jmOe49Ur108wH7mnBaq2E_0U0N0c5vgrJtDpAQ\
-ACTD7NDX93ZGTkZBBuSeSGsAQ7u0hngpNTZTK_Um7rUZGnLRNJvo5oOnnC1J2iBQHuxoq8PyjdT3BHS2LiPrs2Cg\
 ";
 
         let data = Base64UrlUnpadded::decode_vec(base64_data).unwrap();

@@ -19,6 +19,8 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
         #[derive(arbitrary::Arbitrary)]
         enum Variants {
             GenericMessage,
+            ControlMessage,
+            Padding,
             NestedMessage,
             RoutedMessage,
             DirectRelationProposal,
@@ -32,6 +34,8 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
         fn check_exhaustive(payload: Payload<Vec<u8>, Vec<u8>>) -> Variants {
             match payload {
                 Payload::GenericMessage(_) => Variants::GenericMessage,
+                Payload::ControlMessage(_) => Variants::ControlMessage,
+                Payload::Padding { .. } => Variants::Padding,
                 Payload::NestedMessage(_) => Variants::NestedMessage,
                 Payload::RoutedMessage(_, _) => Variants::RoutedMessage,
                 Payload::DirectRelationProposal { .. } => Variants::DirectRelationProposal,
@@ -53,6 +57,10 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
         use arbitrary::Arbitrary;
         let payload = match variant {
             Variants::GenericMessage => Payload::GenericMessage(Arbitrary::arbitrary(u)?),
+            Variants::ControlMessage => Payload::ControlMessage(Arbitrary::arbitrary(u)?),
+            Variants::Padding => Payload::Padding {
+                nonce: Nonce(Arbitrary::arbitrary(u)?),
+            },
             Variants::NestedMessage => Payload::NestedMessage(Arbitrary::arbitrary(u)?),
             Variants::RoutedMessage => {
                 Payload::RoutedMessage(Arbitrary::arbitrary(u)?, Arbitrary::arbitrary(u)?)
@@ -78,6 +86,7 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
                 sig_new_vid: &[24; 64],
             },
             Variants::RelationshipCancel => Payload::RelationshipCancel {
+                nonce: Nonce(Arbitrary::arbitrary(u)?),
                 reply: digest(&DIGEST),
             },
         };
@@ -90,6 +99,10 @@ impl<'a> PartialEq<Payload<'a, &'a mut [u8], &'a [u8]>> for Wrapper {
     fn eq(&self, other: &Payload<'a, &'a mut [u8], &'a [u8]>) -> bool {
         match (&self.0, other) {
             (Payload::GenericMessage(l0), Payload::GenericMessage(r0)) => l0 == r0,
+            (Payload::ControlMessage(l0), Payload::ControlMessage(r0)) => l0 == r0,
+            (Payload::Padding { nonce: l_nonce }, Payload::Padding { nonce: r_nonce }) => {
+                l_nonce.0 == r_nonce.0
+            }
             (Payload::NestedMessage(l0), Payload::NestedMessage(r0)) => l0 == r0,
             (Payload::RoutedMessage(l0, l1), Payload::RoutedMessage(r0, r1)) => {
                 l0 == r0 && l1 == r1
@@ -143,9 +156,15 @@ impl<'a> PartialEq<Payload<'a, &'a mut [u8], &'a [u8]>> for Wrapper {
                 },
             ) => l_request == r_request && l_reply == r_reply && l_vid == r_vid,
             (
-                Payload::RelationshipCancel { reply: l_reply },
-                Payload::RelationshipCancel { reply: r_reply },
-            ) => l_reply == r_reply,
+                Payload::RelationshipCancel {
+                    nonce: l_nonce,
+                    reply: l_reply,
+                },
+                Payload::RelationshipCancel {
+                    nonce: r_nonce,
+                    reply: r_reply,
+                },
+            ) => l_nonce.0 == r_nonce.0 && l_reply == r_reply,
             _ => false,
         }
     }
