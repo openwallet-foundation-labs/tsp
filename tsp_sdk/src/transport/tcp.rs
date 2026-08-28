@@ -36,14 +36,22 @@ pub(super) async fn connect_any(
 }
 
 /// Check whether the peer has closed (or otherwise poisoned) a cached
-/// connection. A healthy idle connection returns `WouldBlock`; EOF, an error,
-/// or unexpected inbound data all mean the connection must not be reused.
+/// connection, without consuming any inbound bytes (MSG_PEEK): a healthy idle
+/// connection is not readable, and inbound data — which a TLS session
+/// legitimately receives, e.g. session tickets — does not poison anything.
 /// This check must happen before sending: a write shortly after the peer
 /// closed can be accepted by the kernel and reported as success even though
 /// the message is lost, which would bypass the send retry path.
-pub(super) fn peer_closed(stream: &TcpStream) -> bool {
+pub(super) async fn peer_closed(stream: &TcpStream) -> bool {
     let mut buf = [0u8; 1];
-    !matches!(stream.try_read(&mut buf), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock)
+    match tokio::time::timeout(std::time::Duration::ZERO, stream.peek(&mut buf)).await {
+        // not readable: healthy idle connection
+        Err(_elapsed) => false,
+        // EOF or socket error: the peer is gone
+        Ok(Ok(0)) | Ok(Err(_)) => true,
+        // inbound data with the connection still open
+        Ok(Ok(_)) => false,
+    }
 }
 
 /// Get an existing cached connection or create a new one.
@@ -57,7 +65,7 @@ async fn get_or_create_connection(
     let mut cache = TCP_CONNECTIONS.lock().await;
 
     if let Some(framed) = cache.get(&key)
-        && peer_closed(framed.get_ref())
+        && peer_closed(framed.get_ref()).await
     {
         cache.remove(&key);
     }
