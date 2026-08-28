@@ -11,6 +11,8 @@ pub enum EncodeError {
     InvalidSignatureType,
     #[error("a nested message must be CESR data (a multiple of 3 bytes long)")]
     MisalignedNestedMessage,
+    #[error("this payload type does not carry a self-referencing digest")]
+    NoDigestSlot,
 }
 
 /// An error type to indicate something went wrong with decoding

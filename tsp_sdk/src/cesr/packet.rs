@@ -769,18 +769,85 @@ pub fn encode_envelope<Vid: AsRef<[u8]>>(
     envelope: Envelope<Vid>,
     output: &mut Vec<u8>,
 ) -> Result<(), EncodeError> {
+    encode_envelope_prefix(
+        envelope.sender.as_ref(),
+        envelope.receiver.as_ref().map(AsRef::as_ref),
+        output,
+    )
+}
+
+/// Encode the envelope prefix: the version, sender VID and receiver VID
+/// (the NULL VID `4BAA` when absent). These bytes are the HPKE associated
+/// data and the leading input of the TSP digest (spec 7.2.1, 8.2.2).
+pub fn encode_envelope_prefix(
+    sender: &[u8],
+    receiver: Option<&[u8]>,
+    output: &mut impl for<'a> Extend<&'a u8>,
+) -> Result<(), EncodeError> {
     encode_version(output);
 
-    if envelope.sender.as_ref().is_empty() {
+    if sender.is_empty() {
         return Err(EncodeError::InvalidVid);
     }
-    checked_encode_variable_data(TSP_VID, envelope.sender.as_ref(), output)?;
+    checked_encode_variable_data(TSP_VID, sender, output)?;
 
-    checked_encode_variable_data(
-        TSP_VID,
-        envelope.receiver.as_ref().map(AsRef::as_ref).unwrap_or(&[]),
-        output,
-    )?;
+    checked_encode_variable_data(TSP_VID, receiver.unwrap_or(&[]), output)?;
+
+    Ok(())
+}
+
+/// The dummy filling the digest's own slot during SAID derivation (spec 7.2.1):
+/// 0x23 over the full encoded length of the digest primitive (code + 32 bytes)
+const DIGEST_DUMMY: [u8; 33] = [0x23; 33];
+
+/// Encode the input of the self-referencing TSP digest (spec 7.2.1) for a
+/// relationship-forming payload: the envelope prefix (version and VIDs)
+/// followed by the payload fields, with the digest's own slot (the Digest of
+/// an invite, the Reply_Digest of an accept) filled with the 0x23 dummy.
+/// The -E## and -Z## framing tags, the padding field, and the new-VID
+/// signature field (which is produced after the digest) are excluded.
+pub fn encode_digest_input(
+    payload: &Payload<impl AsRef<[u8]>, impl AsRef<[u8]>>,
+    sender_identity: Option<&[u8]>,
+    envelope_prefix: &[u8],
+    output: &mut Vec<u8>,
+) -> Result<(), EncodeError> {
+    output.extend(envelope_prefix);
+
+    match payload {
+        Payload::DirectRelationProposal { nonce, .. } => {
+            output.extend(&XRFI);
+            encode_sender_identity(sender_identity, output)?;
+            output.extend(&DIGEST_DUMMY);
+            encode_fixed_data(TSP_NONCE, &nonce.0, output);
+            checked_encode_variable_data(TSP_VID, &[], output)?;
+        }
+        Payload::ParallelRelationProposal { nonce, new_vid, .. } => {
+            output.extend(&XRFI);
+            encode_sender_identity(sender_identity, output)?;
+            output.extend(&DIGEST_DUMMY);
+            encode_fixed_data(TSP_NONCE, &nonce.0, output);
+            checked_encode_variable_data(TSP_VID, new_vid.as_ref(), output)?;
+        }
+        Payload::DirectRelationAffirm { request_digest, .. } => {
+            output.extend(&XRFA);
+            encode_sender_identity(sender_identity, output)?;
+            encode_digest(request_digest, output);
+            output.extend(&DIGEST_DUMMY);
+        }
+        Payload::ParallelRelationAffirm {
+            request_digest,
+            new_vid,
+            ..
+        } => {
+            output.extend(&XRFA);
+            encode_sender_identity(sender_identity, output)?;
+            encode_digest(request_digest, output);
+            output.extend(&DIGEST_DUMMY);
+            checked_encode_variable_data(TSP_VID, new_vid.as_ref(), output)?;
+        }
+        _ => return Err(EncodeError::NoDigestSlot),
+    }
 
     Ok(())
 }

@@ -27,10 +27,12 @@ const HPKE_INFO: &[u8] = b"YTSP-";
 type SealPayload<'a> = crate::cesr::Payload<'a, &'a [u8], &'a [u8]>;
 type PreparedPayload<'a> = (SealPayload<'a>, Option<super::Digest>);
 
+#[allow(clippy::too_many_arguments)]
 fn payload_for_seal<'a>(
     secret_payload: &'a Payload<'a, &'a [u8]>,
     sender_in_payload: Option<&'a [u8]>,
     digest_algorithm: RelationshipDigestAlgorithm,
+    envelope_prefix: &[u8],
     request_nonce_override: Option<[u8; 16]>,
     csprng: &mut StdRng,
     request_digest_storage: &'a mut super::Digest,
@@ -55,6 +57,7 @@ fn payload_for_seal<'a>(
                 sender_in_payload,
                 digest_algorithm,
                 nonce_bytes,
+                envelope_prefix,
                 request_digest_storage,
             )?;
             payload_digest_override = Some(payload_digest);
@@ -70,6 +73,7 @@ fn payload_for_seal<'a>(
                 form,
                 sender_in_payload,
                 digest_algorithm,
+                envelope_prefix,
                 reply_digest_storage,
             )?;
             payload_digest_override = Some(payload_digest);
@@ -146,6 +150,7 @@ fn seal_with_kem<Kem: KemTrait>(
         &secret_payload,
         sender_in_payload,
         digest_algorithm,
+        &data,
         request_nonce_override,
         &mut csprng,
         &mut request_digest_storage,
@@ -233,11 +238,12 @@ fn open_with_kem<'a, Kem: KemTrait>(
         &tag,
     )?;
 
-    open_payload(sender, envelope, ciphertext)
+    open_payload(sender, raw_header, envelope, ciphertext)
 }
 
 fn open_payload<'a>(
     sender: &dyn VerifiedVid,
+    raw_header: &[u8],
     envelope: Envelope<&[u8]>,
     ciphertext: &'a mut [u8],
 ) -> Result<(MessageContents<'a>, Option<ParallelSignatureInfo<'a>>), CryptoError> {
@@ -246,6 +252,9 @@ fn open_payload<'a>(
         payload,
         sender_identity,
     } = crate::cesr::decode_payload(ciphertext)?;
+
+    // verify the embedded self-referencing digest of relationship payloads
+    super::verify_relationship_digest(&payload, sender_identity, raw_header)?;
 
     // In HPKE-Base the sender-VID confidential field is optional (the aad binds
     // the sender identity); when present it MUST match the envelope (spec 8.2.2)

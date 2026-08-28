@@ -51,6 +51,13 @@ impl RelationshipDigestAlgorithm {
         })
     }
 
+    pub(crate) fn for_field(field: &crate::cesr::Digest) -> Self {
+        match field {
+            crate::cesr::Digest::Sha2_256(_) => RelationshipDigestAlgorithm::Sha2_256,
+            crate::cesr::Digest::Blake2b256(_) => RelationshipDigestAlgorithm::Blake2b256,
+        }
+    }
+
     pub(crate) fn field<'a>(self, digest: &'a Digest) -> crate::cesr::Digest<'a> {
         match self {
             RelationshipDigestAlgorithm::Sha2_256 => crate::cesr::Digest::Sha2_256(digest),
@@ -128,61 +135,79 @@ fn mldsa65_signing_key_from_bytes(
     Ok(ExpandedSigningKey::<MlDsa65>::from_expanded(&signing_key))
 }
 
-fn encode_hashed_payload(
+/// Compute the self-referencing TSP digest (spec 7.2.1) of a relationship
+/// payload: the hash over the envelope prefix and the payload fields, with the
+/// digest's own slot filled with the 0x23 dummy and the padding field excluded
+fn compute_relationship_digest(
     payload: &CesrRelationshipPayload<'_>,
     sender_in_payload: Option<&[u8]>,
+    envelope_prefix: &[u8],
     algorithm: RelationshipDigestAlgorithm,
 ) -> Result<Digest, CryptoError> {
-    let mut encoded = Vec::with_capacity(payload.calculate_size(sender_in_payload));
-    crate::cesr::encode_payload(payload, sender_in_payload, None, &mut encoded)?;
-    Ok(algorithm.hash(&encoded))
+    let mut input = Vec::with_capacity(envelope_prefix.len() + 256);
+    crate::cesr::encode_digest_input(payload, sender_in_payload, envelope_prefix, &mut input)?;
+    Ok(algorithm.hash(&input))
 }
 
 pub(crate) fn build_parallel_request_signed_data(
     sender_in_payload: Option<&[u8]>,
     digest_algorithm: RelationshipDigestAlgorithm,
     nonce_bytes: [u8; 16],
+    envelope_prefix: &[u8],
     request_digest: &mut Digest,
     new_vid: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
+    // the digest is derived first (its own slot dummied, the new-VID signature
+    // not yet present); the signature is then made over the final digest
+    let payload = crate::cesr::Payload::<&[u8], &[u8]>::ParallelRelationProposal {
+        nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+        request_digest: digest_algorithm.field(&*request_digest),
+        sig_new_vid: &[0; 64],
+        new_vid,
+    };
+    *request_digest = compute_relationship_digest(
+        &payload,
+        sender_in_payload,
+        envelope_prefix,
+        digest_algorithm,
+    )?;
+
     let nonce = crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes);
-    let mut signed_data = crate::cesr::encode_parallel_relation_proposal_challenge(
+    Ok(crate::cesr::encode_parallel_relation_proposal_challenge(
         sender_in_payload,
         &nonce,
         digest_algorithm.field(request_digest),
         new_vid,
-    )?;
-    *request_digest = digest_algorithm.hash(&signed_data);
-    signed_data = crate::cesr::encode_parallel_relation_proposal_challenge(
-        sender_in_payload,
-        &nonce,
-        digest_algorithm.field(request_digest),
-        new_vid,
-    )?;
-    Ok(signed_data)
+    )?)
 }
 
 pub(crate) fn build_parallel_accept_signed_data(
     thread_id: &Digest,
     sender_in_payload: Option<&[u8]>,
     digest_algorithm: RelationshipDigestAlgorithm,
+    envelope_prefix: &[u8],
     reply_digest: &mut Digest,
     new_vid: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
-    let mut signed_data = crate::cesr::encode_parallel_relation_affirm_challenge(
+    let payload = crate::cesr::Payload::<&[u8], &[u8]>::ParallelRelationAffirm {
+        request_digest: digest_algorithm.field(thread_id),
+        reply_digest: digest_algorithm.field(&*reply_digest),
+        sig_new_vid: &[0; 64],
+        new_vid,
+    };
+    *reply_digest = compute_relationship_digest(
+        &payload,
+        sender_in_payload,
+        envelope_prefix,
+        digest_algorithm,
+    )?;
+
+    Ok(crate::cesr::encode_parallel_relation_affirm_challenge(
         sender_in_payload,
         digest_algorithm.field(thread_id),
         digest_algorithm.field(reply_digest),
         new_vid,
-    )?;
-    *reply_digest = digest_algorithm.hash(&signed_data);
-    signed_data = crate::cesr::encode_parallel_relation_affirm_challenge(
-        sender_in_payload,
-        digest_algorithm.field(thread_id),
-        digest_algorithm.field(reply_digest),
-        new_vid,
-    )?;
-    Ok(signed_data)
+    )?)
 }
 
 fn relationship_request_payload<'a>(
@@ -236,42 +261,24 @@ pub(crate) fn build_relationship_request_payload<'a>(
     sender_in_payload: Option<&[u8]>,
     digest_algorithm: RelationshipDigestAlgorithm,
     nonce_bytes: [u8; 16],
+    envelope_prefix: &[u8],
     request_digest: &'a mut Digest,
 ) -> Result<(CesrRelationshipPayload<'a>, Digest), CryptoError> {
-    match form {
-        RelationshipForm::Direct => {
-            let placeholder_payload =
-                relationship_request_payload(form, digest_algorithm, nonce_bytes, &*request_digest);
-            *request_digest =
-                encode_hashed_payload(&placeholder_payload, sender_in_payload, digest_algorithm)?;
+    let placeholder =
+        relationship_request_payload(form, digest_algorithm, nonce_bytes, &*request_digest);
+    *request_digest = compute_relationship_digest(
+        &placeholder,
+        sender_in_payload,
+        envelope_prefix,
+        digest_algorithm,
+    )?;
 
-            let digest = *request_digest;
+    let digest = *request_digest;
 
-            Ok((
-                relationship_request_payload(form, digest_algorithm, nonce_bytes, &*request_digest),
-                digest,
-            ))
-        }
-        RelationshipForm::Parallel {
-            new_vid,
-            sig_new_vid: _,
-        } => {
-            build_parallel_request_signed_data(
-                sender_in_payload,
-                digest_algorithm,
-                nonce_bytes,
-                request_digest,
-                new_vid,
-            )?;
-
-            let digest = *request_digest;
-
-            Ok((
-                relationship_request_payload(form, digest_algorithm, nonce_bytes, &*request_digest),
-                digest,
-            ))
-        }
-    }
+    Ok((
+        relationship_request_payload(form, digest_algorithm, nonce_bytes, &*request_digest),
+        digest,
+    ))
 }
 
 pub(crate) fn build_relationship_accept_payload<'a>(
@@ -279,42 +286,52 @@ pub(crate) fn build_relationship_accept_payload<'a>(
     form: &RelationshipForm<'a, &'a [u8]>,
     sender_in_payload: Option<&[u8]>,
     digest_algorithm: RelationshipDigestAlgorithm,
+    envelope_prefix: &[u8],
     reply_digest: &'a mut Digest,
 ) -> Result<(CesrRelationshipPayload<'a>, Digest), CryptoError> {
-    match form {
-        RelationshipForm::Direct => {
-            let placeholder_payload =
-                relationship_accept_payload(thread_id, form, digest_algorithm, &*reply_digest);
-            *reply_digest =
-                encode_hashed_payload(&placeholder_payload, sender_in_payload, digest_algorithm)?;
+    let placeholder =
+        relationship_accept_payload(thread_id, form, digest_algorithm, &*reply_digest);
+    *reply_digest = compute_relationship_digest(
+        &placeholder,
+        sender_in_payload,
+        envelope_prefix,
+        digest_algorithm,
+    )?;
 
-            let digest = *reply_digest;
+    let digest = *reply_digest;
 
-            Ok((
-                relationship_accept_payload(thread_id, form, digest_algorithm, &*reply_digest),
-                digest,
-            ))
-        }
-        RelationshipForm::Parallel {
-            new_vid,
-            sig_new_vid: _,
-        } => {
-            build_parallel_accept_signed_data(
-                thread_id,
-                sender_in_payload,
-                digest_algorithm,
-                reply_digest,
-                new_vid,
-            )?;
+    Ok((
+        relationship_accept_payload(thread_id, form, digest_algorithm, &*reply_digest),
+        digest,
+    ))
+}
 
-            let digest = *reply_digest;
+/// Verify the embedded self-referencing digest (spec 7.2.1) of a received
+/// relationship-forming payload: recompute it from the envelope prefix and the
+/// decoded payload fields (with the digest's own slot dummied) using the hash
+/// identified by the embedded digest's code, and compare
+pub(crate) fn verify_relationship_digest(
+    payload: &crate::cesr::Payload<'_, impl AsRef<[u8]>, impl AsRef<[u8]>>,
+    sender_identity: Option<&[u8]>,
+    envelope_prefix: &[u8],
+) -> Result<(), CryptoError> {
+    let embedded = match payload {
+        crate::cesr::Payload::DirectRelationProposal { request_digest, .. }
+        | crate::cesr::Payload::ParallelRelationProposal { request_digest, .. } => request_digest,
+        crate::cesr::Payload::DirectRelationAffirm { reply_digest, .. }
+        | crate::cesr::Payload::ParallelRelationAffirm { reply_digest, .. } => reply_digest,
+        _ => return Ok(()),
+    };
 
-            Ok((
-                relationship_accept_payload(thread_id, form, digest_algorithm, &*reply_digest),
-                digest,
-            ))
-        }
+    let algorithm = RelationshipDigestAlgorithm::for_field(embedded);
+    let mut input = Vec::with_capacity(envelope_prefix.len() + 256);
+    crate::cesr::encode_digest_input(payload, sender_identity, envelope_prefix, &mut input)?;
+
+    if algorithm.hash(&input) != *embedded.as_bytes() {
+        return Err(CryptoError::DigestMismatch);
     }
+
+    Ok(())
 }
 
 pub(crate) fn open_relationship_request<'a>(
@@ -682,6 +699,45 @@ mod tests {
     use url::Url;
 
     use super::{CryptoError, open, seal, seal_with_crypto_type, sign};
+
+    #[test]
+    fn relationship_digest_tampering_is_detected() {
+        // a request payload whose embedded digest is the correct SAID verifies;
+        // any other value in the digest slot is rejected
+        let sender = b"did:test:alice".as_slice();
+        let receiver = b"did:test:bob".as_slice();
+        let mut envelope_prefix = Vec::new();
+        crate::cesr::encode_envelope_prefix(sender, Some(receiver), &mut envelope_prefix).unwrap();
+
+        let algorithm = super::RelationshipDigestAlgorithm::Sha2_256;
+        let nonce_bytes = [7_u8; 16];
+        let mut digest = [0_u8; 32];
+        let payload = crate::cesr::Payload::<&[u8], &[u8]>::DirectRelationProposal {
+            nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+            request_digest: algorithm.field(&digest),
+        };
+        let mut input = Vec::new();
+        crate::cesr::encode_digest_input(&payload, Some(sender), &envelope_prefix, &mut input)
+            .unwrap();
+        digest = algorithm.hash(&input);
+
+        let good = crate::cesr::Payload::<&[u8], &[u8]>::DirectRelationProposal {
+            nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+            request_digest: algorithm.field(&digest),
+        };
+        super::verify_relationship_digest(&good, Some(sender), &envelope_prefix).unwrap();
+
+        let mut tampered_digest = digest;
+        tampered_digest[0] ^= 0x01;
+        let tampered = crate::cesr::Payload::<&[u8], &[u8]>::DirectRelationProposal {
+            nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+            request_digest: algorithm.field(&tampered_digest),
+        };
+        assert!(matches!(
+            super::verify_relationship_digest(&tampered, Some(sender), &envelope_prefix),
+            Err(CryptoError::DigestMismatch)
+        ));
+    }
 
     #[test]
     fn seal_open_message() {

@@ -212,10 +212,12 @@ struct ParallelSignatureMaterial {
 enum ParallelSignatureContext<'a> {
     Request {
         sender_identity: &'a str,
+        receiver_identity: &'a str,
         nonce: [u8; 16],
     },
     Accept {
         sender_identity: &'a str,
+        receiver_identity: &'a str,
         thread_id: Digest,
     },
 }
@@ -1426,30 +1428,52 @@ impl SecureStore {
         let (signed_data, request_nonce) = match context {
             ParallelSignatureContext::Request {
                 sender_identity,
+                receiver_identity,
                 nonce,
-            } => (
-                crate::crypto::build_parallel_request_signed_data(
-                    Some(sender_identity.as_bytes()),
-                    digest_algorithm,
-                    nonce,
-                    &mut digest,
-                    sender_new_vid.identifier().as_bytes(),
-                )?,
-                Some(nonce),
-            ),
+            } => {
+                let mut envelope_prefix = Vec::with_capacity(64);
+                crate::cesr::encode_envelope_prefix(
+                    sender_identity.as_bytes(),
+                    Some(receiver_identity.as_bytes()),
+                    &mut envelope_prefix,
+                )
+                .map_err(crate::crypto::CryptoError::from)?;
+                (
+                    crate::crypto::build_parallel_request_signed_data(
+                        Some(sender_identity.as_bytes()),
+                        digest_algorithm,
+                        nonce,
+                        &envelope_prefix,
+                        &mut digest,
+                        sender_new_vid.identifier().as_bytes(),
+                    )?,
+                    Some(nonce),
+                )
+            }
             ParallelSignatureContext::Accept {
                 sender_identity,
+                receiver_identity,
                 thread_id,
-            } => (
-                crate::crypto::build_parallel_accept_signed_data(
-                    &thread_id,
-                    Some(sender_identity.as_bytes()),
-                    digest_algorithm,
-                    &mut digest,
-                    sender_new_vid.identifier().as_bytes(),
-                )?,
-                None,
-            ),
+            } => {
+                let mut envelope_prefix = Vec::with_capacity(64);
+                crate::cesr::encode_envelope_prefix(
+                    sender_identity.as_bytes(),
+                    Some(receiver_identity.as_bytes()),
+                    &mut envelope_prefix,
+                )
+                .map_err(crate::crypto::CryptoError::from)?;
+                (
+                    crate::crypto::build_parallel_accept_signed_data(
+                        &thread_id,
+                        Some(sender_identity.as_bytes()),
+                        digest_algorithm,
+                        &envelope_prefix,
+                        &mut digest,
+                        sender_new_vid.identifier().as_bytes(),
+                    )?,
+                    None,
+                )
+            }
         };
 
         let sig_new_vid = crate::crypto::sign_detached(sender_new_vid, &signed_data)?;
@@ -1488,6 +1512,7 @@ impl SecureStore {
             &*sender_new_vid,
             ParallelSignatureContext::Request {
                 sender_identity: sender.identifier(),
+                receiver_identity: receiver.identifier(),
                 nonce: random_nonce_bytes(),
             },
             digest_algorithm,
@@ -1569,6 +1594,7 @@ impl SecureStore {
             &*sender_new_vid,
             ParallelSignatureContext::Accept {
                 sender_identity: outer_sender.identifier(),
+                receiver_identity: receiver_new_vid.identifier(),
                 thread_id,
             },
             digest_algorithm,
@@ -2059,6 +2085,20 @@ mod test {
         assert_eq!(url.as_str(), expected_receiver.endpoint().as_str());
     }
 
+    fn test_envelope_prefix(
+        sender: &(impl VerifiedVid + ?Sized),
+        receiver: &(impl VerifiedVid + ?Sized),
+    ) -> Vec<u8> {
+        let mut prefix = Vec::with_capacity(64);
+        crate::cesr::encode_envelope_prefix(
+            sender.identifier().as_bytes(),
+            Some(receiver.identifier().as_bytes()),
+            &mut prefix,
+        )
+        .unwrap();
+        prefix
+    }
+
     fn relationship_digest_algorithm(
         sender: &dyn VerifiedVid,
         receiver: &dyn VerifiedVid,
@@ -2391,7 +2431,13 @@ mod test {
             alice_parallel.identifier()
         );
         assert!(received_request_digest.iter().any(|byte| *byte != 0));
-        assert_eq!(sig_new_vid.len(), 64);
+        assert_eq!(
+            sig_new_vid.len(),
+            match alice_parallel.signature_key_type() {
+                crate::definitions::VidSignatureKeyType::Ed25519 => 64,
+                crate::definitions::VidSignatureKeyType::MlDsa65 => 3309,
+            }
+        );
     }
 
     #[test]
@@ -2478,7 +2524,13 @@ mod test {
         );
         assert_eq!(request_digest, thread_id);
         assert!(received_reply_digest.iter().any(|byte| *byte != 0));
-        assert_eq!(sig_new_vid.len(), 64);
+        assert_eq!(
+            sig_new_vid.len(),
+            match alice_parallel.signature_key_type() {
+                crate::definitions::VidSignatureKeyType::Ed25519 => 64,
+                crate::definitions::VidSignatureKeyType::MlDsa65 => 3309,
+            }
+        );
 
         let RelationshipStatus::Bidirectional {
             thread_id: receiver_thread_id,
@@ -2688,6 +2740,7 @@ mod test {
             &thread_id,
             Some(charlie.identifier().as_bytes()),
             relationship_digest_algorithm(&charlie, &*forged_receiver),
+            &test_envelope_prefix(&charlie, &*forged_receiver),
             &mut reply_thread_id,
             charlie_parallel.identifier().as_bytes(),
         )
@@ -2813,6 +2866,7 @@ mod test {
             Some(alice.identifier().as_bytes()),
             relationship_digest_algorithm(&alice, &bob),
             nonce_bytes,
+            &test_envelope_prefix(&alice, &bob),
             &mut thread_id,
             alice_parallel.identifier().as_bytes(),
         )
@@ -2873,6 +2927,7 @@ mod test {
             Some(alice.identifier().as_bytes()),
             relationship_digest_algorithm(&alice, &bob),
             nonce_bytes,
+            &test_envelope_prefix(&alice, &bob),
             &mut thread_id,
             alice_parallel.identifier().as_bytes(),
         )

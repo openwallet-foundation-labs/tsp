@@ -26,6 +26,8 @@ pub enum CryptoError {
     UnexpectedSender,
     #[error("no sender identity found in encrypted message")]
     MissingSender,
+    #[error("embedded digest does not match the message contents")]
+    DigestMismatch,
     #[error("invalid outbound crypto selection {0:?}")]
     InvalidCryptoSelection(CryptoType),
     #[error(

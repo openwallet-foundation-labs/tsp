@@ -61,6 +61,7 @@ pub(crate) fn seal(
                 sender_in_payload,
                 digest_algorithm,
                 nonce_bytes,
+                &data,
                 &mut request_digest_storage,
             )?;
             payload_digest_override = Some(payload_digest);
@@ -76,6 +77,7 @@ pub(crate) fn seal(
                 &form,
                 sender_in_payload,
                 digest_algorithm,
+                &data,
                 &mut reply_digest_storage,
             )?;
             payload_digest_override = Some(payload_digest);
@@ -118,7 +120,7 @@ pub(crate) fn seal(
 pub(crate) fn open<'a>(
     receiver: &dyn PrivateVid,
     sender: &dyn VerifiedVid,
-    _raw_header: &'a [u8],
+    raw_header: &'a [u8],
     envelope: Envelope<&[u8]>,
     ciphertext: &'a mut [u8],
 ) -> Result<(MessageContents<'a>, Option<ParallelSignatureInfo<'a>>), CryptoError> {
@@ -134,6 +136,9 @@ pub(crate) fn open<'a>(
         payload,
         sender_identity,
     } = crate::cesr::decode_payload(ciphertext)?;
+
+    // verify the embedded self-referencing digest of relationship payloads
+    super::verify_relationship_digest(&payload, sender_identity, raw_header)?;
 
     // the sealed box is anonymous: the ESSR sender-VID confidential field is
     // required and MUST match the envelope (spec 8.3.2)
