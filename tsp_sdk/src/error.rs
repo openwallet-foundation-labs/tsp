@@ -43,6 +43,8 @@ pub enum Error {
     InvalidNextHop(String),
     #[error("Error: no relation established for {0}")]
     MissingDropOff(String),
+    #[error("Error: no relationship from {0} to {1}; the message is dropped")]
+    UnestablishedRelationship(String, String),
     #[error("Internal error")]
     Internal,
 }

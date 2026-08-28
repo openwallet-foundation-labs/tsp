@@ -445,6 +445,8 @@ struct FlatReceivedTspMessage {
     #[pyo3(get, set)]
     reply_thread_id: Option<[u8; 32]>,
     #[pyo3(get, set)]
+    reply_expected: Option<bool>,
+    #[pyo3(get, set)]
     next_hop: Option<String>,
     #[pyo3(get, set)]
     payload: Option<Vec<u8>>,
@@ -508,6 +510,7 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             opaque_payload: None,
             unknown_vid: None,
             new_vid: None,
+            reply_expected: None,
         };
 
         match value {
@@ -567,9 +570,14 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
                 this.reply_thread_id = Some(reply_thread_id);
                 this.new_vid = new_vid;
             }
-            tsp_sdk::ReceivedTspMessage::CancelRelationship { sender, receiver } => {
+            tsp_sdk::ReceivedTspMessage::CancelRelationship {
+                sender,
+                receiver,
+                reply_expected,
+            } => {
                 this.sender = Some(sender);
                 this.receiver = Some(receiver);
+                this.reply_expected = Some(reply_expected);
             }
             tsp_sdk::ReceivedTspMessage::ForwardRequest {
                 sender,

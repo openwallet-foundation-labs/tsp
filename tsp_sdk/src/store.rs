@@ -243,6 +243,22 @@ pub struct WalletMethodState {
     pub resolution_contexts: ResolutionContexts,
 }
 
+/// Whether application messages from a VID with no established relationship
+/// are accepted (spec 7.2.2).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RelationshipPolicy {
+    /// Drop an application message whose sender has no relationship with the
+    /// receiving VID. A relationship must first be formed with `TSP_RFI`.
+    /// This is the behavior the specification requires of an endpoint.
+    #[default]
+    Gated,
+    /// Accept application messages from any verified sender. Intended for
+    /// nodes that are not endpoints in the specification's sense — an
+    /// intermediary accepting drop-off traffic, or a relay under upper-layer
+    /// admission control — and for tests.
+    Ungated,
+}
+
 /// Holds private and verified VIDs
 ///
 /// A Store contains verified VIDs, our relationship status to them,
@@ -255,6 +271,7 @@ pub struct SecureStore {
     pub(crate) vids: Arc<RwLock<HashMap<String, VidContext>>>,
     pub(crate) aliases: Arc<RwLock<Aliases>>,
     pub(crate) method_state: Arc<RwLock<WalletMethodState>>,
+    pub(crate) relationship_policy: Arc<RwLock<RelationshipPolicy>>,
 }
 
 /// This wallet is used to store and resolve VIDs
@@ -262,6 +279,19 @@ impl SecureStore {
     /// Create a new, empty VID wallet
     pub fn new() -> Self {
         Default::default()
+    }
+
+    /// Set whether application messages from senders without an established
+    /// relationship are accepted; see [RelationshipPolicy]
+    pub fn set_relationship_policy(&self, policy: RelationshipPolicy) -> Result<(), Error> {
+        *self.relationship_policy.write()? = policy;
+
+        Ok(())
+    }
+
+    /// The current relationship policy; see [RelationshipPolicy]
+    pub fn relationship_policy(&self) -> Result<RelationshipPolicy, Error> {
+        Ok(*self.relationship_policy.read()?)
     }
 
     /// Export the wallet to serializable default types
@@ -1119,15 +1149,21 @@ impl SecureStore {
                 sender_vid.persist(self)?;
 
                 match payload {
-                    Payload::Content(message) => Ok(ReceivedTspMessage::GenericMessage {
-                        sender,
-                        receiver: Some(intended_receiver),
-                        message,
-                        message_type: MessageType {
-                            crypto_type,
-                            signature_type,
-                        },
-                    }),
+                    Payload::Content(message) => {
+                        // an application message is only accepted within an
+                        // established relationship (spec 7.2.2)
+                        self.check_relationship_gate(&intended_receiver, &sender)?;
+
+                        Ok(ReceivedTspMessage::GenericMessage {
+                            sender,
+                            receiver: Some(intended_receiver),
+                            message,
+                            message_type: MessageType {
+                                crypto_type,
+                                signature_type,
+                            },
+                        })
+                    }
                     Payload::NestedMessage(inner) => {
                         if let Some(received_message) =
                             self.try_open_nested_relationship_message(&sender, inner)?
@@ -1208,6 +1244,14 @@ impl SecureStore {
                     Payload::RequestRelationship { thread_id, form } => {
                         let form = received_relationship_form(form)?;
 
+                        if matches!(form, ReceivedRelationshipForm::Direct) {
+                            self.record_incoming_relationship_request(
+                                &intended_receiver,
+                                &sender,
+                                thread_id,
+                            )?;
+                        }
+
                         if let ReceivedRelationshipForm::Parallel { new_vid, .. } = &form {
                             match self.relation_status_for_vid_pair(&intended_receiver, &sender)? {
                                 RelationshipStatus::Bidirectional { .. } => {}
@@ -1287,35 +1331,13 @@ impl SecureStore {
                         })
                     }
                     Payload::CancelRelationship { thread_id } => {
-                        if let Some(context) = self.vids.write()?.get_mut(&sender) {
-                            match context.relation_status {
-                                RelationshipStatus::Bidirectional {
-                                    remote_thread_id: digest,
-                                    ..
-                                }
-                                | RelationshipStatus::Unidirectional { thread_id: digest }
-                                | RelationshipStatus::ReverseUnidirectional { thread_id: digest } =>
-                                {
-                                    if thread_id != digest {
-                                        return Err(Error::Relationship(
-                                            "invalid attempt to end the relationship, wrong thread_id".into(),
-                                        ));
-                                    }
-                                    context.relation_status = RelationshipStatus::Unrelated;
-                                    context.relation_vid = None;
-                                }
-                                RelationshipStatus::_Controlled => {
-                                    return Err(Error::Relationship(
-                                        "you cannot cancel a relationship with yourself".into(),
-                                    ));
-                                }
-                                RelationshipStatus::Unrelated => {}
-                            }
-                        }
+                        let reply_expected =
+                            self.cancel_relationship(&intended_receiver, &sender, thread_id)?;
 
                         Ok(ReceivedTspMessage::CancelRelationship {
                             sender,
                             receiver: intended_receiver,
+                            reply_expected,
                         })
                     }
                 }
@@ -1795,6 +1817,123 @@ impl SecureStore {
         )
     }
 
+    /// Refuse an application message from a sender with which the receiving VID
+    /// has no relationship (spec 7.2.2: a relationship must be formed with a
+    /// `TSP_RFI` first, and an application message that arrives outside one
+    /// SHOULD be dropped). Callers treat the error as a silent discard.
+    fn check_relationship_gate(&self, local_vid: &str, remote_vid: &str) -> Result<(), Error> {
+        if self.relationship_policy()? == RelationshipPolicy::Ungated {
+            return Ok(());
+        }
+
+        match self.relation_status_for_vid_pair(local_vid, remote_vid)? {
+            RelationshipStatus::Unrelated => Err(Error::UnestablishedRelationship(
+                remote_vid.to_string(),
+                local_vid.to_string(),
+            )),
+            _ => Ok(()),
+        }
+    }
+
+    /// Record the relationship an incoming `TSP_RFI` establishes, and resolve
+    /// the race in which both endpoints sent one for the same VID pair.
+    ///
+    /// The receiving endpoint records `<VID_local, VID_remote>` so that
+    /// application messages in this direction are accepted (spec 3.5). When an
+    /// invite of our own is still outstanding for the same pair, both endpoints
+    /// keep the invite whose digest is lexicographically lower and discard the
+    /// other (spec 7.2.3); if ours wins, the incoming invite is dropped.
+    fn record_incoming_relationship_request(
+        &self,
+        local_vid: &str,
+        remote_vid: &str,
+        thread_id: Digest,
+    ) -> Result<(), Error> {
+        match self.relation_status_for_vid_pair(local_vid, remote_vid)? {
+            RelationshipStatus::Unrelated => self.set_relation_and_status_for_vid(
+                remote_vid,
+                RelationshipStatus::ReverseUnidirectional { thread_id },
+                local_vid,
+            ),
+            // our own invite is still outstanding: the lower digest wins
+            RelationshipStatus::Unidirectional {
+                thread_id: our_thread_id,
+            } => {
+                if thread_id < our_thread_id {
+                    self.set_relation_and_status_for_vid(
+                        remote_vid,
+                        RelationshipStatus::ReverseUnidirectional { thread_id },
+                        local_vid,
+                    )
+                } else {
+                    Err(Error::Relationship(format!(
+                        "concurrent relationship request from {remote_vid} discarded: \
+                         our own outstanding request has the lower digest"
+                    )))
+                }
+            }
+            // a repeated or renewed invite in an existing relationship: the
+            // status already permits this direction, so leave it untouched
+            RelationshipStatus::ReverseUnidirectional { .. }
+            | RelationshipStatus::Bidirectional { .. }
+            | RelationshipStatus::_Controlled => Ok(()),
+        }
+    }
+
+    /// Apply an incoming `TSP_RFD` (spec 7.3). A bidirectional relationship is
+    /// removed and a reply is expected; a one-way relationship is removed with
+    /// no reply; a relationship that does not exist or is not recognized is
+    /// ignored, which the caller sees as a discard. Returns whether a reply is
+    /// expected.
+    ///
+    /// The digest identifies the relationship being cancelled, but MAY be NULL
+    /// when the canceling endpoint never received one, in which case the VID
+    /// pair identifies it on its own.
+    fn cancel_relationship(
+        &self,
+        local_vid: &str,
+        remote_vid: &str,
+        thread_id: Digest,
+    ) -> Result<bool, Error> {
+        let ignore = || {
+            Err(Error::Relationship(format!(
+                "unrecognized relationship cancellation from {remote_vid}; ignored"
+            )))
+        };
+        let recognized = |expected: Digest| thread_id == Digest::default() || thread_id == expected;
+
+        let reply_expected = match self.relation_status_for_vid_pair(local_vid, remote_vid)? {
+            RelationshipStatus::Bidirectional {
+                thread_id: local,
+                remote_thread_id: remote,
+                ..
+            } => {
+                // either direction's digest identifies the relationship
+                if !recognized(local) && !recognized(remote) {
+                    return ignore();
+                }
+
+                true
+            }
+            RelationshipStatus::Unidirectional { thread_id: digest }
+            | RelationshipStatus::ReverseUnidirectional { thread_id: digest } => {
+                if !recognized(digest) {
+                    return ignore();
+                }
+
+                false
+            }
+            RelationshipStatus::Unrelated | RelationshipStatus::_Controlled => return ignore(),
+        };
+
+        if let Some(context) = self.vids.write()?.get_mut(remote_vid) {
+            context.relation_status = RelationshipStatus::Unrelated;
+            context.relation_vid = None;
+        }
+
+        Ok(reply_expected)
+    }
+
     fn upgrade_relation(
         &self,
         my_vid: &str,
@@ -2078,7 +2217,7 @@ mod test {
     use crate::{
         Error, Payload, PendingParallelRelationship, ReceivedRelationshipDelivery,
         ReceivedRelationshipForm, ReceivedTspMessage, RelationshipForm, RelationshipStatus,
-        SecureStore, VerifiedVid, crypto::CryptoError,
+        SecureStore, VerifiedVid, crypto::CryptoError, store::RelationshipPolicy,
     };
 
     fn assert_url_matches(url: &url::Url, expected_receiver: &dyn VerifiedVid) {
@@ -2187,12 +2326,245 @@ mod test {
 
     #[test]
     #[wasm_bindgen_test]
+    fn test_application_message_without_relationship_is_dropped() {
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+
+        let (_url, mut sealed) = a_store
+            .seal_message(alice.identifier(), bob.identifier(), b"hello world")
+            .unwrap();
+        // open_message decrypts in place, so the second attempt needs its own copy
+        let (_url, mut sealed_again) = a_store
+            .seal_message(alice.identifier(), bob.identifier(), b"hello world")
+            .unwrap();
+
+        // bob has verified alice, but no relationship was ever formed
+        let Err(Error::UnestablishedRelationship(sender, receiver)) =
+            b_store.open_message(&mut sealed)
+        else {
+            panic!("an application message without a relationship must be dropped");
+        };
+        assert_eq!(sender, alice.identifier());
+        assert_eq!(receiver, bob.identifier());
+
+        // the same message is accepted once the receiver opts out of gating
+        b_store
+            .set_relationship_policy(RelationshipPolicy::Ungated)
+            .unwrap();
+        let received = b_store.open_message(&mut sealed_again).unwrap();
+        assert!(matches!(
+            received,
+            ReceivedTspMessage::GenericMessage { .. }
+        ));
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_relationship_request_admits_following_application_message() {
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+
+        let (_url, mut request) = a_store
+            .make_relationship_request(alice.identifier(), bob.identifier(), None)
+            .unwrap();
+        let (_url, mut sealed) = a_store
+            .seal_message(alice.identifier(), bob.identifier(), b"hello world")
+            .unwrap();
+
+        // receiving the invite records <bob, alice>, so the message that
+        // follows is inside an established relationship
+        assert!(matches!(
+            b_store.open_message(&mut request).unwrap(),
+            ReceivedTspMessage::RequestRelationship { .. }
+        ));
+        assert!(matches!(
+            b_store
+                .relation_status_for_vid_pair(bob.identifier(), alice.identifier())
+                .unwrap(),
+            RelationshipStatus::ReverseUnidirectional { .. }
+        ));
+        assert!(matches!(
+            b_store.open_message(&mut sealed).unwrap(),
+            ReceivedTspMessage::GenericMessage { .. }
+        ));
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_concurrent_relationship_requests_keep_the_lower_digest() {
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+
+        // both endpoints invite each other for the same VID pair
+        let (_url, mut a_request) = a_store
+            .make_relationship_request(alice.identifier(), bob.identifier(), None)
+            .unwrap();
+        let (_url, mut b_request) = b_store
+            .make_relationship_request(bob.identifier(), alice.identifier(), None)
+            .unwrap();
+
+        let RelationshipStatus::Unidirectional {
+            thread_id: a_digest,
+        } = a_store
+            .relation_status_for_vid_pair(alice.identifier(), bob.identifier())
+            .unwrap()
+        else {
+            panic!("alice should have an outstanding request");
+        };
+        let RelationshipStatus::Unidirectional {
+            thread_id: b_digest,
+        } = b_store
+            .relation_status_for_vid_pair(bob.identifier(), alice.identifier())
+            .unwrap()
+        else {
+            panic!("bob should have an outstanding request");
+        };
+        assert_ne!(a_digest, b_digest);
+
+        let a_result = a_store.open_message(&mut b_request);
+        let b_result = b_store.open_message(&mut a_request);
+
+        // exactly one invite survives on both sides: the one with the lower digest
+        if a_digest < b_digest {
+            assert!(a_result.is_err(), "alice keeps her own lower-digest invite");
+            assert!(b_result.is_ok(), "bob adopts alice's lower-digest invite");
+            assert!(matches!(
+                b_store
+                    .relation_status_for_vid_pair(bob.identifier(), alice.identifier())
+                    .unwrap(),
+                RelationshipStatus::ReverseUnidirectional { thread_id } if thread_id == a_digest
+            ));
+        } else {
+            assert!(b_result.is_err(), "bob keeps his own lower-digest invite");
+            assert!(a_result.is_ok(), "alice adopts bob's lower-digest invite");
+            assert!(matches!(
+                a_store
+                    .relation_status_for_vid_pair(alice.identifier(), bob.identifier())
+                    .unwrap(),
+                RelationshipStatus::ReverseUnidirectional { thread_id } if thread_id == b_digest
+            ));
+        }
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_cancel_relationship_follows_the_relationship_direction() {
+        // bidirectional: the relationship is removed and a reply is expected
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+        establish_existing_relationship(&a_store, &alice, &b_store, &bob);
+
+        let (_url, mut cancel) = a_store
+            .make_relationship_cancel(alice.identifier(), bob.identifier())
+            .unwrap();
+        let ReceivedTspMessage::CancelRelationship { reply_expected, .. } =
+            b_store.open_message(&mut cancel).unwrap()
+        else {
+            panic!("unexpected message type");
+        };
+        assert!(
+            reply_expected,
+            "a bidirectional cancellation is echoed back"
+        );
+        assert!(matches!(
+            b_store
+                .relation_status_for_vid_pair(bob.identifier(), alice.identifier())
+                .unwrap(),
+            RelationshipStatus::Unrelated
+        ));
+
+        // one-way: the relationship is removed, but no reply is expected
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+
+        let (_url, mut request) = a_store
+            .make_relationship_request(alice.identifier(), bob.identifier(), None)
+            .unwrap();
+        b_store.open_message(&mut request).unwrap();
+        let (_url, mut cancel) = a_store
+            .make_relationship_cancel(alice.identifier(), bob.identifier())
+            .unwrap();
+        let ReceivedTspMessage::CancelRelationship { reply_expected, .. } =
+            b_store.open_message(&mut cancel).unwrap()
+        else {
+            panic!("unexpected message type");
+        };
+        assert!(!reply_expected, "a one-way cancellation is not echoed back");
+        assert!(matches!(
+            b_store
+                .relation_status_for_vid_pair(bob.identifier(), alice.identifier())
+                .unwrap(),
+            RelationshipStatus::Unrelated
+        ));
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_cancel_of_unknown_relationship_is_ignored() {
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+
+        // alice believes there is a relationship; bob has none
+        a_store
+            .set_relation_and_status_for_vid(
+                bob.identifier(),
+                RelationshipStatus::Unidirectional { thread_id: [9; 32] },
+                alice.identifier(),
+            )
+            .unwrap();
+
+        let (_url, mut cancel) = a_store
+            .make_relationship_cancel(alice.identifier(), bob.identifier())
+            .unwrap();
+
+        assert!(
+            b_store.open_message(&mut cancel).is_err(),
+            "a cancellation for a relationship bob does not have is ignored"
+        );
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
     fn test_open_seal() {
         let store = create_test_store();
         let (alice, bob) = create_test_vid_pair();
 
         store.add_private_vid(alice.clone(), None).unwrap();
         store.add_private_vid(bob.clone(), None).unwrap();
+        establish_existing_relationship(&store, &alice, &store, &bob);
 
         let message = b"hello world";
 
@@ -3183,6 +3555,18 @@ mod test {
 
         d_store.add_verified_vid(sneaky_a.clone(), None).unwrap();
         d_store.add_verified_vid(mailbox_c.clone(), None).unwrap();
+
+        // the destination endpoint has an endpoint-to-endpoint relationship
+        // with the source; without it the arriving message is gated (spec 7.2.2)
+        d_store
+            .set_relation_and_status_for_vid(
+                sneaky_a.identifier(),
+                RelationshipStatus::ReverseUnidirectional {
+                    thread_id: Default::default(),
+                },
+                sneaky_d.identifier(),
+            )
+            .unwrap();
 
         a_store
             .set_relation_and_status_for_vid(

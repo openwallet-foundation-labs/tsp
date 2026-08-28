@@ -476,6 +476,7 @@ pub struct FlatReceivedTspMessage {
     nested_vid: Option<String>,
     thread_id: Option<Vec<u8>>,
     reply_thread_id: Option<Vec<u8>>,
+    pub reply_expected: Option<bool>,
     next_hop: Option<String>,
     payload: Option<Vec<u8>>,
     opaque_payload: Option<Vec<u8>>,
@@ -621,6 +622,7 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             opaque_payload: None,
             unknown_vid: None,
             new_vid: None,
+            reply_expected: None,
         };
 
         if let Some((unknown_vid, payload)) = value.pending_message_parts() {
@@ -687,9 +689,14 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
                 this.reply_thread_id = Some(reply_thread_id.to_vec());
                 this.new_vid = new_vid;
             }
-            tsp_sdk::ReceivedTspMessage::CancelRelationship { sender, receiver } => {
+            tsp_sdk::ReceivedTspMessage::CancelRelationship {
+                sender,
+                receiver,
+                reply_expected,
+            } => {
                 this.sender = Some(sender);
                 this.receiver = Some(receiver);
+                this.reply_expected = Some(reply_expected);
             }
             tsp_sdk::ReceivedTspMessage::ForwardRequest {
                 sender,

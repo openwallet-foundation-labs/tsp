@@ -87,7 +87,15 @@ impl<T: AsRef<[u8]>> ReceivedTspMessage<T> {
                     ReceivedRelationshipDelivery::Routed => ReceivedRelationshipDelivery::Routed,
                 },
             },
-            CancelRelationship { sender, receiver } => CancelRelationship { sender, receiver },
+            CancelRelationship {
+                sender,
+                receiver,
+                reply_expected,
+            } => CancelRelationship {
+                sender,
+                receiver,
+                reply_expected,
+            },
             ForwardRequest {
                 sender,
                 receiver,
