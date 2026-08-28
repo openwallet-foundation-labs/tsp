@@ -8,10 +8,8 @@ const {
 
 const CryptoType = {
     Plaintext: 0,
-    HpkeAuth: 1,
-    HpkeEssr: 2,
-    NaclAuth: 3,
-    NaclEssr: 4,
+    HpkeBase: 1,
+    SealedBox: 2,
 };
 
 const SignatureType = {

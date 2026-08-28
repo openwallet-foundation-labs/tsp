@@ -45,9 +45,9 @@ pub fn encode_did_peer(vid: &Vid) -> String {
             // key bytes length
             v.push(0x20);
         }
-        VidEncryptionKeyType::X25519Kyber768Draft00 => {
+        VidEncryptionKeyType::X25519MlKem768 => {
             #[cfg(feature = "async")]
-            trace!("serializing X25519Kyber768Draft00 encryption key");
+            trace!("serializing X25519MlKem768 encryption key");
             // private use area (0x300000) => encoded as unsigned varint, see: https://github.com/multiformats/unsigned-varint
             v.extend_from_slice(&0x8080c001u32.to_be_bytes());
             // key bytes length (1216 bytes) => encoded as unsigned varint, see: https://github.com/multiformats/unsigned-varint
@@ -123,9 +123,9 @@ pub fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
                         rest @ ..,
                     ] => {
                         #[cfg(feature = "async")]
-                        trace!("found X25519Kyber768Draft00 encryption key");
+                        trace!("found X25519MlKem768 encryption key");
                         public_enckey = rest[..1216].to_vec().into();
-                        enc_key_type = Some(VidEncryptionKeyType::X25519Kyber768Draft00)
+                        enc_key_type = Some(VidEncryptionKeyType::X25519MlKem768)
                     }
                     _ => {
                         return Err(VidError::ResolveVid(

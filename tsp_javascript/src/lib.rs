@@ -448,11 +448,8 @@ pub enum RelationshipDelivery {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum CryptoType {
     Plaintext = 0,
-    HpkeAuth = 1,
-    HpkeEssr = 2,
-    NaclAuth = 3,
-    NaclEssr = 4,
-    X25519Kyber768Draft00 = 5,
+    HpkeBase = 1,
+    SealedBox = 2,
 }
 
 #[wasm_bindgen]
@@ -470,7 +467,6 @@ pub struct FlatReceivedTspMessage {
     pub variant: ReceivedTspMessageVariant,
     sender: Option<String>,
     receiver: Option<String>,
-    nonconfidential_data: Option<Option<Vec<u8>>>,
     message: Option<Vec<u8>>,
     pub crypto_type: Option<CryptoType>,
     pub signature_type: Option<SignatureType>,
@@ -497,14 +493,6 @@ impl FlatReceivedTspMessage {
     #[wasm_bindgen(getter)]
     pub fn receiver(&self) -> Option<String> {
         self.receiver.clone()
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn nonconfidential_data(&self) -> JsValue {
-        match &self.nonconfidential_data {
-            Some(Some(data)) => serde_wasm_bindgen::to_value(data).unwrap(),
-            _ => JsValue::NULL,
-        }
     }
 
     #[wasm_bindgen(getter)]
@@ -619,7 +607,6 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             variant,
             sender: None,
             receiver: None,
-            nonconfidential_data: None,
             message: None,
             crypto_type: None,
             signature_type: None,
@@ -655,13 +642,8 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
                 this.message = Some(message.into());
                 this.crypto_type = match message_type.crypto_type {
                     tsp_sdk::cesr::CryptoType::Plaintext => Some(CryptoType::Plaintext),
-                    tsp_sdk::cesr::CryptoType::HpkeAuth => Some(CryptoType::HpkeAuth),
-                    tsp_sdk::cesr::CryptoType::HpkeEssr => Some(CryptoType::HpkeEssr),
-                    tsp_sdk::cesr::CryptoType::NaclAuth => Some(CryptoType::NaclAuth),
-                    tsp_sdk::cesr::CryptoType::NaclEssr => Some(CryptoType::NaclEssr),
-                    tsp_sdk::cesr::CryptoType::X25519Kyber768Draft00 => {
-                        Some(CryptoType::X25519Kyber768Draft00)
-                    }
+                    tsp_sdk::cesr::CryptoType::HpkeBase => Some(CryptoType::HpkeBase),
+                    tsp_sdk::cesr::CryptoType::SealedBox => Some(CryptoType::SealedBox),
                 };
                 this.signature_type = match message_type.signature_type {
                     tsp_sdk::cesr::SignatureType::NoSignature => Some(SignatureType::NoSignature),

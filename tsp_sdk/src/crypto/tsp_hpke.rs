@@ -1,16 +1,10 @@
 use crate::{
     cesr::{CryptoType, DecodedPayload, Envelope},
-    definitions::{Payload, PrivateVid, TSPMessage, VerifiedVid},
+    definitions::{Payload, PrivateVid, TSPMessage, VerifiedVid, VidEncryptionKeyType},
 };
 use hpke::{
-    Deserializable, OpModeR, OpModeS, Serializable, inout::InOutBuf,
-    single_shot_open_inout_detached, single_shot_seal_inout_detached,
-};
-use hpke_pq::{
-    Deserializable as PqDeserializable, OpModeR as PqOpModeR, OpModeS as PqOpModeS,
-    Serializable as PqSerializable,
-    single_shot_open_in_place_detached as pq_single_shot_open_in_place_detached,
-    single_shot_seal_in_place_detached as pq_single_shot_seal_in_place_detached,
+    Deserializable, Kem as KemTrait, OpModeR, OpModeS, Serializable, aead::AeadTag,
+    inout::InOutBuf, single_shot_open_inout_detached, single_shot_seal_inout_detached,
 };
 use rand::{RngCore, SeedableRng, rngs::StdRng};
 
@@ -20,13 +14,16 @@ use super::{
     open_relationship_accept, open_relationship_request, signature_type,
 };
 
-type X25519Aead = hpke::aead::ChaCha20Poly1305;
-type X25519Kdf = hpke::kdf::HkdfSha256;
+type Aead = hpke::aead::ChaCha20Poly1305;
+type Kdf = hpke::kdf::HkdfSha256;
 type X25519Kem = hpke::kem::X25519HkdfSha256;
+/// The PQ/T hybrid KEM X25519MLKEM768 (HPKE KEM id 0x647a); there is no separate
+/// post-quantum ciphertext code or mode -- only the KEM differs (spec 8.2.3)
+type PqKem = hpke::kem::XWing;
 
-type PqAead = hpke_pq::aead::ChaCha20Poly1305;
-type PqKdf = hpke_pq::kdf::HkdfSha256;
-type PqKem = hpke_pq::kem::X25519Kyber768Draft00;
+/// The HPKE `info` input: the TSP protocol CESR code (spec 8.2.2, 9.1)
+const HPKE_INFO: &[u8] = b"YTSP-";
+
 type SealPayload<'a> = crate::cesr::Payload<'a, &'a [u8], &'a [u8]>;
 type PreparedPayload<'a> = (SealPayload<'a>, Option<super::Digest>);
 
@@ -91,21 +88,46 @@ fn payload_for_seal<'a>(
     Ok((payload, payload_digest_override))
 }
 
-pub(crate) fn seal_x25519(
+/// Seal a message with HPKE-Base (spec 8.2.2). The KEM is selected by the
+/// recipient VID's encryption key type; everything else is identical.
+pub(crate) fn seal(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
     secret_payload: Payload<&[u8]>,
     digest: Option<&mut super::Digest>,
     request_nonce_override: Option<[u8; 16]>,
-    crypto_type: CryptoType,
 ) -> Result<TSPMessage, CryptoError> {
-    if !matches!(crypto_type, CryptoType::HpkeAuth | CryptoType::HpkeEssr) {
-        return Err(CryptoError::InvalidCryptoSelection(crypto_type));
+    match receiver.encryption_key_type() {
+        VidEncryptionKeyType::X25519 => seal_with_kem::<X25519Kem>(
+            sender,
+            receiver,
+            secret_payload,
+            digest,
+            request_nonce_override,
+        ),
+        VidEncryptionKeyType::X25519MlKem768 => seal_with_kem::<PqKem>(
+            sender,
+            receiver,
+            secret_payload,
+            digest,
+            request_nonce_override,
+        ),
     }
+}
 
+fn seal_with_kem<Kem: KemTrait>(
+    sender: &dyn PrivateVid,
+    receiver: &dyn VerifiedVid,
+    secret_payload: Payload<&[u8]>,
+    digest: Option<&mut super::Digest>,
+    request_nonce_override: Option<[u8; 16]>,
+) -> Result<TSPMessage, CryptoError> {
+    let crypto_type = CryptoType::HpkeBase;
     let mut csprng = StdRng::from_entropy();
     let mut data = Vec::with_capacity(64);
 
+    // the envelope fields (version, sender VID, receiver VID); these are
+    // exactly the aad of the spec: aad = CONCAT(TSP_Version, VID_sndr, VID_rcvr)
     crate::cesr::encode_envelope(
         crate::cesr::Envelope {
             crypto_type,
@@ -130,183 +152,84 @@ pub(crate) fn seal_x25519(
         &mut reply_digest_storage,
     )?;
 
-    let mut cesr_message = Vec::with_capacity(
-        secret_payload.calculate_size(sender_in_payload)
-            + hpke::aead::AeadTag::<X25519Aead>::size()
-            + <X25519Kem as hpke::Kem>::EncappedKey::size(),
-    );
+    let mut cesr_message = Vec::with_capacity(secret_payload.calculate_size(sender_in_payload));
     crate::cesr::encode_payload(&secret_payload, sender_in_payload, None, &mut cesr_message)?;
-
-    let mode = if crypto_type == CryptoType::HpkeEssr {
-        OpModeS::Base
-    } else {
-        let sender_decryption_key =
-            <X25519Kem as hpke::Kem>::PrivateKey::from_bytes(sender.decryption_key().as_ref())?;
-        let sender_encryption_key =
-            <X25519Kem as hpke::Kem>::PublicKey::from_bytes(sender.encryption_key().as_ref())?;
-
-        OpModeS::Auth((sender_decryption_key, sender_encryption_key))
-    };
-
-    let message_receiver =
-        <X25519Kem as hpke::Kem>::PublicKey::from_bytes(receiver.encryption_key().as_ref())?;
 
     if let Some(digest) = digest {
         *digest = payload_digest_override.unwrap_or_else(|| digest_algorithm.hash(&cesr_message));
     }
 
-    let (encapped_key, tag) = single_shot_seal_inout_detached::<X25519Aead, X25519Kdf, X25519Kem>(
-        &mode,
+    let message_receiver = Kem::PublicKey::from_bytes(receiver.encryption_key().as_ref())?;
+
+    let (encapped_key, tag) = single_shot_seal_inout_detached::<Aead, Kdf, Kem>(
+        &OpModeS::Base,
         &message_receiver,
-        &data,
+        HPKE_INFO,
         InOutBuf::from(cesr_message.as_mut_slice()),
-        &[],
-    )?;
-
-    cesr_message.extend(tag.to_bytes());
-    cesr_message.extend(encapped_key.to_bytes());
-    crate::cesr::encode_ciphertext(&cesr_message, crypto_type, &mut data)?;
-    crate::cesr::finalize_envelope_frame(&mut data);
-    append_signature(sender, &mut data)?;
-
-    Ok(data)
-}
-
-pub(crate) fn seal_pq(
-    sender: &dyn PrivateVid,
-    receiver: &dyn VerifiedVid,
-    secret_payload: Payload<&[u8]>,
-    digest: Option<&mut super::Digest>,
-    request_nonce_override: Option<[u8; 16]>,
-) -> Result<TSPMessage, CryptoError> {
-    let crypto_type = CryptoType::X25519Kyber768Draft00;
-    let mut csprng = StdRng::from_entropy();
-    let mut data = Vec::with_capacity(64);
-
-    crate::cesr::encode_envelope(
-        crate::cesr::Envelope {
-            crypto_type,
-            signature_type: signature_type(sender),
-            sender: sender.identifier(),
-            receiver: Some(receiver.identifier()),
-        },
-        &mut data,
-    )?;
-
-    let sender_in_payload = Some(sender.identifier().as_bytes());
-    let mut request_digest_storage = [0_u8; 32];
-    let mut reply_digest_storage = [0_u8; 32];
-    let digest_algorithm = RelationshipDigestAlgorithm::for_crypto_type(crypto_type)?;
-    let (secret_payload, payload_digest_override) = payload_for_seal(
-        &secret_payload,
-        sender_in_payload,
-        digest_algorithm,
-        request_nonce_override,
-        &mut csprng,
-        &mut request_digest_storage,
-        &mut reply_digest_storage,
-    )?;
-
-    let mut cesr_message = Vec::with_capacity(
-        secret_payload.calculate_size(sender_in_payload)
-            + hpke_pq::aead::AeadTag::<PqAead>::size()
-            + <PqKem as hpke_pq::Kem>::EncappedKey::size(),
-    );
-    crate::cesr::encode_payload(&secret_payload, sender_in_payload, None, &mut cesr_message)?;
-
-    let message_receiver =
-        <PqKem as hpke_pq::Kem>::PublicKey::from_bytes(receiver.encryption_key().as_ref())?;
-
-    if let Some(digest) = digest {
-        *digest = payload_digest_override.unwrap_or_else(|| digest_algorithm.hash(&cesr_message));
-    }
-
-    let (encapped_key, tag) = pq_single_shot_seal_in_place_detached::<PqAead, PqKdf, PqKem, StdRng>(
-        &PqOpModeS::Base,
-        &message_receiver,
         &data,
-        &mut cesr_message,
-        &[],
-        &mut csprng,
     )?;
 
-    cesr_message.extend(tag.to_bytes());
-    cesr_message.extend(encapped_key.to_bytes());
-    crate::cesr::encode_ciphertext(&cesr_message, crypto_type, &mut data)?;
+    // the wire ciphertext is CONCAT(enc, ct), with the AEAD tag inside ct (spec 9.2.8)
+    let encapped_key = encapped_key.to_bytes();
+    let mut ciphertext =
+        Vec::with_capacity(encapped_key.len() + cesr_message.len() + AeadTag::<Aead>::size());
+    ciphertext.extend(encapped_key.as_slice());
+    ciphertext.extend(&cesr_message);
+    ciphertext.extend(tag.to_bytes());
+
+    crate::cesr::encode_ciphertext(&ciphertext, crypto_type, &mut data)?;
     crate::cesr::finalize_envelope_frame(&mut data);
     append_signature(sender, &mut data)?;
 
     Ok(data)
 }
 
-pub(crate) fn open_x25519<'a>(
+/// Open an HPKE-Base message; the KEM is selected by the receiving VID's key type
+pub(crate) fn open<'a>(
     receiver: &dyn PrivateVid,
     sender: &dyn VerifiedVid,
     raw_header: &'a [u8],
     envelope: Envelope<&[u8]>,
     ciphertext: &'a mut [u8],
 ) -> Result<(MessageContents<'a>, Option<ParallelSignatureInfo<'a>>), CryptoError> {
-    let (ciphertext, footer) = ciphertext.split_at_mut(
-        ciphertext.len()
-            - hpke::aead::AeadTag::<X25519Aead>::size()
-            - <X25519Kem as hpke::Kem>::EncappedKey::size(),
-    );
-    let (tag, encapped_key) =
-        footer.split_at(footer.len() - <X25519Kem as hpke::Kem>::EncappedKey::size());
-
-    let receiver_decryption_key =
-        <X25519Kem as hpke::Kem>::PrivateKey::from_bytes(receiver.decryption_key().as_ref())?;
-    let encapped_key = <X25519Kem as hpke::Kem>::EncappedKey::from_bytes(encapped_key)?;
-    let tag = hpke::aead::AeadTag::<X25519Aead>::from_bytes(tag)?;
-
-    let mode = if envelope.crypto_type == CryptoType::HpkeEssr {
-        OpModeR::Base
-    } else {
-        let sender_encryption_key =
-            <X25519Kem as hpke::Kem>::PublicKey::from_bytes(sender.encryption_key().as_ref())?;
-        OpModeR::Auth(sender_encryption_key)
-    };
-
-    single_shot_open_inout_detached::<X25519Aead, X25519Kdf, X25519Kem>(
-        &mode,
-        &receiver_decryption_key,
-        &encapped_key,
-        raw_header,
-        InOutBuf::from(&mut *ciphertext),
-        &[],
-        &tag,
-    )?;
-
-    open_payload(sender, envelope, ciphertext)
+    match receiver.encryption_key_type() {
+        VidEncryptionKeyType::X25519 => {
+            open_with_kem::<X25519Kem>(receiver, sender, raw_header, envelope, ciphertext)
+        }
+        VidEncryptionKeyType::X25519MlKem768 => {
+            open_with_kem::<PqKem>(receiver, sender, raw_header, envelope, ciphertext)
+        }
+    }
 }
 
-pub(crate) fn open_pq<'a>(
+fn open_with_kem<'a, Kem: KemTrait>(
     receiver: &dyn PrivateVid,
     sender: &dyn VerifiedVid,
     raw_header: &'a [u8],
     envelope: Envelope<&[u8]>,
     ciphertext: &'a mut [u8],
 ) -> Result<(MessageContents<'a>, Option<ParallelSignatureInfo<'a>>), CryptoError> {
-    let (ciphertext, footer) = ciphertext.split_at_mut(
-        ciphertext.len()
-            - hpke_pq::aead::AeadTag::<PqAead>::size()
-            - <PqKem as hpke_pq::Kem>::EncappedKey::size(),
-    );
-    let (tag, encapped_key) =
-        footer.split_at(footer.len() - <PqKem as hpke_pq::Kem>::EncappedKey::size());
+    // the wire ciphertext is CONCAT(enc, ct); the encapsulated key size is
+    // known from the KEM, and the AEAD tag sits at the end of ct
+    let enc_size = Kem::EncappedKey::size();
+    let tag_size = AeadTag::<Aead>::size();
+    if ciphertext.len() < enc_size + tag_size {
+        return Err(CryptoError::MissingCiphertext);
+    }
+    let (encapped_key, rest) = ciphertext.split_at_mut(enc_size);
+    let (ciphertext, tag) = rest.split_at_mut(rest.len() - tag_size);
 
-    let receiver_decryption_key =
-        <PqKem as hpke_pq::Kem>::PrivateKey::from_bytes(receiver.decryption_key().as_ref())?;
-    let encapped_key = <PqKem as hpke_pq::Kem>::EncappedKey::from_bytes(encapped_key)?;
-    let tag = hpke_pq::aead::AeadTag::<PqAead>::from_bytes(tag)?;
+    let receiver_decryption_key = Kem::PrivateKey::from_bytes(receiver.decryption_key().as_ref())?;
+    let encapped_key = Kem::EncappedKey::from_bytes(encapped_key)?;
+    let tag = AeadTag::<Aead>::from_bytes(tag)?;
 
-    pq_single_shot_open_in_place_detached::<PqAead, PqKdf, PqKem>(
-        &PqOpModeR::Base,
+    single_shot_open_inout_detached::<Aead, Kdf, Kem>(
+        &OpModeR::Base,
         &receiver_decryption_key,
         &encapped_key,
+        HPKE_INFO,
+        InOutBuf::from(&mut *ciphertext),
         raw_header,
-        ciphertext,
-        &[],
         &tag,
     )?;
 
@@ -324,15 +247,12 @@ fn open_payload<'a>(
         sender_identity,
     } = crate::cesr::decode_payload(ciphertext)?;
 
-    if envelope.crypto_type == CryptoType::HpkeEssr {
-        match sender_identity {
-            Some(id) => {
-                if id != sender.identifier().as_bytes() {
-                    return Err(CryptoError::UnexpectedSender);
-                }
-            }
-            None => return Err(CryptoError::MissingSender),
-        }
+    // In HPKE-Base the sender-VID confidential field is optional (the aad binds
+    // the sender identity); when present it MUST match the envelope (spec 8.2.2)
+    if let Some(id) = sender_identity
+        && id != sender.identifier().as_bytes()
+    {
+        return Err(CryptoError::UnexpectedSender);
     }
 
     let (secret_payload, parallel_signature_info) = match payload {

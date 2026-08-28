@@ -54,11 +54,8 @@ impl FromStr for DidType {
 fn parse_crypto_type(value: &str) -> Result<cesr::CryptoType, String> {
     let normalized = value.to_ascii_lowercase().replace('_', "-");
     match normalized.as_str() {
-        "hpke-auth" => Ok(cesr::CryptoType::HpkeAuth),
-        "hpke-essr" => Ok(cesr::CryptoType::HpkeEssr),
-        "nacl-auth" => Ok(cesr::CryptoType::NaclAuth),
-        "nacl-essr" => Ok(cesr::CryptoType::NaclEssr),
-        "pq" | "x25519-kyber768-draft00" => Ok(cesr::CryptoType::X25519Kyber768Draft00),
+        "hpke" | "hpke-base" => Ok(cesr::CryptoType::HpkeBase),
+        "sealed-box" | "nacl" => Ok(cesr::CryptoType::SealedBox),
         "plaintext" => Err("plaintext is not valid for confidential send".to_string()),
         _ => Err(format!("invalid crypto type: {value}")),
     }
@@ -1117,11 +1114,8 @@ async fn run() -> Result<(), Error> {
                             };
                             let crypto_type = match message_type.crypto_type {
                                 cesr::CryptoType::Plaintext => "Plain text",
-                                cesr::CryptoType::HpkeAuth => "HPKE Auth",
-                                cesr::CryptoType::HpkeEssr => "HPKE ESSR",
-                                cesr::CryptoType::NaclAuth => "NaCl Auth",
-                                cesr::CryptoType::NaclEssr => "NaCl ESSR",
-                                cesr::CryptoType::X25519Kyber768Draft00 => "X25519Kyber768Draft00",
+                                cesr::CryptoType::HpkeBase => "HPKE-Base",
+                                cesr::CryptoType::SealedBox => "Sealed Box",
                             };
                             let signature_type = match message_type.signature_type {
                                 cesr::SignatureType::NoSignature => "no signature",

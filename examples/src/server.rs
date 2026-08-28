@@ -713,11 +713,8 @@ fn open_message(message: &[u8], payload: Option<&[u8]>) -> Option<serde_json::Va
         "signature": format_part("Signature", &parts.signature, None),
         "cryptoType": match parts.crypto_type {
             cesr::CryptoType::Plaintext => "Plain text",
-            cesr::CryptoType::HpkeAuth => "HPKE Auth",
-            cesr::CryptoType::HpkeEssr => "HPKE ESSR",
-            cesr::CryptoType::NaclAuth => "NaCl Auth",
-            cesr::CryptoType::NaclEssr => "NaCl ESSR",
-            cesr::CryptoType::X25519Kyber768Draft00 => "X25519 Kyber768 Draft 00",
+            cesr::CryptoType::HpkeBase => "HPKE-Base",
+            cesr::CryptoType::SealedBox => "Sealed Box",
         },
         "signatureType": match parts.signature_type {
             cesr::SignatureType::NoSignature => "No Signature",

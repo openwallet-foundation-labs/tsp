@@ -1137,7 +1137,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "16182b4f39a82ec8a6851155cc4c0cda3065bb1db33651726a29e1951de0f009"
 dependencies = [
  "aead 0.5.2",
- "chacha20 0.9.1",
+ "blake2 0.10.6",
  "crypto_secretbox",
  "curve25519-dalek 4.1.3",
  "salsa20",
@@ -1152,7 +1152,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9d6cf87adf719ddf43a805e92c6870a531aedda35ff640442cbaf8674e141e1"
 dependencies = [
  "aead 0.5.2",
- "chacha20 0.9.1",
  "cipher 0.4.4",
  "generic-array",
  "poly1305 0.8.0",
@@ -2103,29 +2102,6 @@ dependencies = [
  "turboshake",
  "x-wing",
  "x25519-dalek 3.0.0",
- "zeroize",
-]
-
-[[package]]
-name = "hpke_pq"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8b405447b60d50d27aaaba4fb6d7888d63868dcc4f3409bf6c4250360de07ba"
-dependencies = [
- "aead 0.5.2",
- "aes-gcm",
- "byteorder",
- "chacha20poly1305 0.10.1",
- "digest 0.10.7",
- "generic-array",
- "hkdf 0.12.4",
- "hmac 0.12.1",
- "p256",
- "rand_core 0.6.4",
- "safe_pqc_kyber",
- "sha2 0.10.9",
- "subtle",
- "x25519-dalek 2.0.1",
  "zeroize",
 ]
 
@@ -3897,15 +3873,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04d056b875a9d2e6cb9a61d127afee9ac5999b9f87bcb32079d1318e505be714"
 
 [[package]]
-name = "safe_pqc_kyber"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "108c4ad7fe882cbb078ff40de415658e9d827f636e4fb17e7d5a97503a9aceaf"
-dependencies = [
- "rand_core 0.6.4",
-]
-
-[[package]]
 name = "salsa20"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5090,7 +5057,6 @@ dependencies = [
  "getrandom 0.4.3",
  "gungraun",
  "hpke",
- "hpke_pq",
  "ml-dsa",
  "once_cell",
  "quinn",

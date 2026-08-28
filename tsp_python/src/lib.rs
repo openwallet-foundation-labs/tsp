@@ -405,11 +405,8 @@ pub enum RelationshipDelivery {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CryptoType {
     Plaintext = 0,
-    HpkeAuth = 1,
-    HpkeEssr = 2,
-    NaclAuth = 3,
-    NaclEssr = 4,
-    X25519Kyber768Draft00 = 5,
+    HpkeBase = 1,
+    SealedBox = 2,
 }
 
 #[pyclass(eq, eq_int, from_py_object)]
@@ -429,7 +426,6 @@ struct FlatReceivedTspMessage {
     sender: Option<String>,
     #[pyo3(get, set)]
     receiver: Option<String>,
-    #[pyo3(get, set)]
     #[pyo3(get, set)]
     message: Option<Vec<u8>>,
     #[pyo3(get, set)]
@@ -526,13 +522,8 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
                 this.message = Some(message.into());
                 this.crypto_type = match message_type.crypto_type {
                     tsp_sdk::cesr::CryptoType::Plaintext => Some(CryptoType::Plaintext),
-                    tsp_sdk::cesr::CryptoType::HpkeAuth => Some(CryptoType::HpkeAuth),
-                    tsp_sdk::cesr::CryptoType::HpkeEssr => Some(CryptoType::HpkeEssr),
-                    tsp_sdk::cesr::CryptoType::NaclAuth => Some(CryptoType::NaclAuth),
-                    tsp_sdk::cesr::CryptoType::NaclEssr => Some(CryptoType::NaclEssr),
-                    tsp_sdk::cesr::CryptoType::X25519Kyber768Draft00 => {
-                        Some(CryptoType::X25519Kyber768Draft00)
-                    }
+                    tsp_sdk::cesr::CryptoType::HpkeBase => Some(CryptoType::HpkeBase),
+                    tsp_sdk::cesr::CryptoType::SealedBox => Some(CryptoType::SealedBox),
                 };
                 this.signature_type = match message_type.signature_type {
                     tsp_sdk::cesr::SignatureType::NoSignature => Some(SignatureType::NoSignature),

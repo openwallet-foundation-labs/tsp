@@ -2,7 +2,7 @@ use crate::{
     cesr::{CryptoType, DecodedPayload, Envelope},
     definitions::{Payload, PrivateVid, VerifiedVid},
 };
-use crypto_box::{ChaChaBox, PublicKey, SecretKey, aead::AeadInPlace};
+use crypto_box::{PublicKey, SecretKey};
 
 use super::{
     CryptoError, MessageContents, ParallelSignatureInfo, open_relationship_accept,
@@ -13,7 +13,7 @@ use super::{
     build_relationship_request_payload, signature_type,
 };
 use crate::definitions::TSPMessage;
-use crypto_box::aead::{AeadCore, OsRng};
+use crypto_box::aead::OsRng;
 use rand::{RngCore, SeedableRng, rngs::StdRng};
 
 pub(crate) fn seal(
@@ -22,12 +22,8 @@ pub(crate) fn seal(
     secret_payload: Payload<&[u8]>,
     digest: Option<&mut super::Digest>,
     request_nonce_override: Option<[u8; 16]>,
-    crypto_type: CryptoType,
 ) -> Result<TSPMessage, CryptoError> {
-    if !matches!(crypto_type, CryptoType::NaclAuth | CryptoType::NaclEssr) {
-        return Err(CryptoError::InvalidCryptoSelection(crypto_type));
-    }
-
+    let crypto_type = CryptoType::SealedBox;
     let mut csprng = StdRng::from_entropy();
 
     let mut data = Vec::with_capacity(64);
@@ -103,22 +99,15 @@ pub(crate) fn seal(
         *digest = payload_digest_override.unwrap_or_else(|| digest_algorithm.hash(&cesr_message));
     }
 
-    let sender_secret_key = SecretKey::from_slice(sender.decryption_key())?;
+    // the libsodium anonymous sealed box: an ephemeral key pair, the nonce
+    // derived from the ephemeral and recipient public keys, X25519 +
+    // XSalsa20-Poly1305 (spec 8.3). The sender's static keys are not used;
+    // sender authenticity comes from the ESSR sender-VID field and the signature.
     let receiver_public_key = PublicKey::from_slice(receiver.encryption_key())?;
-
-    let sender_box = ChaChaBox::new(&receiver_public_key, &sender_secret_key);
-
-    // Get a random nonce to encrypt the message under
-    let nonce = ChaChaBox::generate_nonce(&mut OsRng);
-
-    // aad not yet supported: https://github.com/RustCrypto/nacl-compat/blob/78b59261458923740724c84937459f0a6017a592/crypto_box/src/lib.rs#L227
-    let tag = sender_box.encrypt_in_place_detached(&nonce, &[], &mut cesr_message);
-
-    cesr_message.extend(tag?);
-    cesr_message.extend(nonce);
+    let ciphertext = receiver_public_key.seal(&mut OsRng, &cesr_message)?;
 
     // encode and append the ciphertext to the envelope data
-    crate::cesr::encode_ciphertext(&cesr_message, crypto_type, &mut data)?;
+    crate::cesr::encode_ciphertext(&ciphertext, crypto_type, &mut data)?;
     crate::cesr::finalize_envelope_frame(&mut data);
 
     append_signature(sender, &mut data)?;
@@ -133,30 +122,28 @@ pub(crate) fn open<'a>(
     envelope: Envelope<&[u8]>,
     ciphertext: &'a mut [u8],
 ) -> Result<(MessageContents<'a>, Option<ParallelSignatureInfo<'a>>), CryptoError> {
-    let (ciphertext, footer) = ciphertext.split_at_mut(ciphertext.len() - 16 - 24);
-    let (tag, nonce) = footer.split_at(16);
-
     let receiver_secret_key = SecretKey::from_slice(receiver.decryption_key().as_slice())?;
-    let sender_public_key = PublicKey::from_slice(sender.encryption_key().as_slice())?;
-    let receiver_box = ChaChaBox::new(&sender_public_key, &receiver_secret_key);
+    let plaintext = receiver_secret_key.unseal(ciphertext)?;
 
-    receiver_box.decrypt_in_place_detached(nonce.into(), &[], ciphertext, tag.into())?;
+    // the sealed box decrypts into a fresh buffer; copy back into the message
+    // buffer so the payload can borrow from it
+    let ciphertext = &mut ciphertext[..plaintext.len()];
+    ciphertext.copy_from_slice(&plaintext);
 
-    #[allow(unused_variables)]
     let DecodedPayload {
         payload,
         sender_identity,
     } = crate::cesr::decode_payload(ciphertext)?;
 
-    if envelope.crypto_type == CryptoType::NaclEssr {
-        match sender_identity {
-            Some(id) => {
-                if id != sender.identifier().as_bytes() {
-                    return Err(CryptoError::UnexpectedSender);
-                }
+    // the sealed box is anonymous: the ESSR sender-VID confidential field is
+    // required and MUST match the envelope (spec 8.3.2)
+    match sender_identity {
+        Some(id) => {
+            if id != sender.identifier().as_bytes() {
+                return Err(CryptoError::UnexpectedSender);
             }
-            None => return Err(CryptoError::MissingSender),
         }
+        None => return Err(CryptoError::MissingSender),
     }
 
     let (secret_payload, parallel_signature_info) = match payload {

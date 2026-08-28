@@ -45,10 +45,8 @@ pub(crate) enum RelationshipDigestAlgorithm {
 impl RelationshipDigestAlgorithm {
     pub(crate) fn for_crypto_type(crypto_type: CryptoType) -> Result<Self, CryptoError> {
         Ok(match crypto_type {
-            CryptoType::NaclAuth | CryptoType::NaclEssr => RelationshipDigestAlgorithm::Blake2b256,
-            CryptoType::HpkeAuth | CryptoType::HpkeEssr | CryptoType::X25519Kyber768Draft00 => {
-                RelationshipDigestAlgorithm::Sha2_256
-            }
+            CryptoType::SealedBox => RelationshipDigestAlgorithm::Blake2b256,
+            CryptoType::HpkeBase => RelationshipDigestAlgorithm::Sha2_256,
             CryptoType::Plaintext => return Err(CryptoError::InvalidCryptoSelection(crypto_type)),
         })
     }
@@ -72,26 +70,14 @@ pub(crate) fn default_outbound_crypto_selection(
     sender: &dyn VerifiedVid,
     receiver: &dyn VerifiedVid,
 ) -> OutboundCryptoSelection {
-    let sender_key_type = sender.encryption_key_type();
     let receiver_key_type = receiver.encryption_key_type();
-    let crypto_type = if matches!(
-        receiver_key_type,
-        VidEncryptionKeyType::X25519Kyber768Draft00
-    ) {
-        CryptoType::X25519Kyber768Draft00
-    } else if cfg!(feature = "nacl")
-        && matches!(sender_key_type, VidEncryptionKeyType::X25519)
-        && matches!(receiver_key_type, VidEncryptionKeyType::X25519)
-    {
-        if cfg!(feature = "essr") {
-            CryptoType::NaclEssr
-        } else {
-            CryptoType::NaclAuth
-        }
-    } else if cfg!(feature = "essr") || !matches!(sender_key_type, VidEncryptionKeyType::X25519) {
-        CryptoType::HpkeEssr
+    let _ = sender;
+    let crypto_type = if matches!(receiver_key_type, VidEncryptionKeyType::X25519MlKem768) {
+        CryptoType::HpkeBase
+    } else if cfg!(feature = "nacl") {
+        CryptoType::SealedBox
     } else {
-        CryptoType::HpkeAuth
+        CryptoType::HpkeBase
     };
 
     OutboundCryptoSelection { crypto_type }
@@ -478,24 +464,11 @@ pub(crate) fn seal_with_selection(
     ensure_selection_matches_key_types(sender, receiver, selection.crypto_type)?;
 
     match selection.crypto_type {
-        CryptoType::NaclAuth | CryptoType::NaclEssr => tsp_nacl::seal(
-            sender,
-            receiver,
-            payload,
-            digest,
-            request_nonce_override,
-            selection.crypto_type,
-        ),
-        CryptoType::HpkeAuth | CryptoType::HpkeEssr => tsp_hpke::seal_x25519(
-            sender,
-            receiver,
-            payload,
-            digest,
-            request_nonce_override,
-            selection.crypto_type,
-        ),
-        CryptoType::X25519Kyber768Draft00 => {
-            tsp_hpke::seal_pq(sender, receiver, payload, digest, request_nonce_override)
+        CryptoType::SealedBox => {
+            tsp_nacl::seal(sender, receiver, payload, digest, request_nonce_override)
+        }
+        CryptoType::HpkeBase => {
+            tsp_hpke::seal(sender, receiver, payload, digest, request_nonce_override)
         }
         CryptoType::Plaintext => Err(CryptoError::InvalidCryptoSelection(selection.crypto_type)),
     }
@@ -506,33 +479,22 @@ fn ensure_selection_matches_key_types(
     receiver: &dyn VerifiedVid,
     crypto_type: CryptoType,
 ) -> Result<(), CryptoError> {
-    let expected_receiver = match crypto_type {
-        CryptoType::NaclAuth
-        | CryptoType::NaclEssr
-        | CryptoType::HpkeAuth
-        | CryptoType::HpkeEssr => VidEncryptionKeyType::X25519,
-        CryptoType::X25519Kyber768Draft00 => VidEncryptionKeyType::X25519Kyber768Draft00,
-        CryptoType::Plaintext => return Err(CryptoError::InvalidCryptoSelection(crypto_type)),
-    };
-
+    let _ = sender;
     let receiver_key_type = receiver.encryption_key_type();
-    if receiver_key_type != expected_receiver {
-        return Err(CryptoError::IncompatibleCryptoSelection {
-            crypto_type,
-            key_type: receiver_key_type,
-        });
-    }
-
-    let sender_requires_x25519 = matches!(
-        crypto_type,
-        CryptoType::NaclAuth | CryptoType::NaclEssr | CryptoType::HpkeAuth
-    );
-    let sender_key_type = sender.encryption_key_type();
-    if sender_requires_x25519 && !matches!(sender_key_type, VidEncryptionKeyType::X25519) {
-        return Err(CryptoError::IncompatibleSenderCryptoSelection {
-            crypto_type,
-            key_type: sender_key_type,
-        });
+    match crypto_type {
+        // the sealed box requires an X25519 recipient key; HPKE-Base accepts
+        // any supported KEM key type. Neither uses the sender's encryption
+        // keys: HPKE-Base and the anonymous sealed box need no sender KEM key.
+        CryptoType::SealedBox => {
+            if receiver_key_type != VidEncryptionKeyType::X25519 {
+                return Err(CryptoError::IncompatibleCryptoSelection {
+                    crypto_type,
+                    key_type: receiver_key_type,
+                });
+            }
+        }
+        CryptoType::HpkeBase => {}
+        CryptoType::Plaintext => return Err(CryptoError::InvalidCryptoSelection(crypto_type)),
     }
 
     Ok(())
@@ -599,15 +561,8 @@ pub(crate) fn open_with_signature_info<'a>(
     }
 
     let result = match envelope.crypto_type {
-        CryptoType::X25519Kyber768Draft00 => {
-            tsp_hpke::open_pq(receiver, sender, raw_header, envelope, ciphertext)
-        }
-        CryptoType::HpkeAuth | CryptoType::HpkeEssr => {
-            tsp_hpke::open_x25519(receiver, sender, raw_header, envelope, ciphertext)
-        }
-        CryptoType::NaclAuth | CryptoType::NaclEssr => {
-            tsp_nacl::open(receiver, sender, raw_header, envelope, ciphertext)
-        }
+        CryptoType::HpkeBase => tsp_hpke::open(receiver, sender, raw_header, envelope, ciphertext),
+        CryptoType::SealedBox => tsp_nacl::open(receiver, sender, raw_header, envelope, ciphertext),
         CryptoType::Plaintext => Err(CryptoError::MissingCiphertext),
     };
     #[cfg(feature = "bench-network-timings")]
@@ -635,7 +590,7 @@ pub fn verify<'a>(
 
 pub fn default_encryption_key_type() -> VidEncryptionKeyType {
     if cfg!(feature = "pq") {
-        VidEncryptionKeyType::X25519Kyber768Draft00
+        VidEncryptionKeyType::X25519MlKem768
     } else {
         VidEncryptionKeyType::X25519
     }
@@ -668,11 +623,10 @@ pub fn gen_encrypt_keypair_for(key_type: VidEncryptionKeyType) -> (PrivateKeyDat
                     .into(),
             )
         }
-        VidEncryptionKeyType::X25519Kyber768Draft00 => {
-            use hpke_pq::Serializable;
+        VidEncryptionKeyType::X25519MlKem768 => {
+            use hpke::Serializable;
 
-            let (private, public) =
-                <hpke_pq::kem::X25519Kyber768Draft00 as hpke_pq::Kem>::gen_keypair(&mut OsRng);
+            let (private, public) = <hpke::kem::XWing as hpke::Kem>::gen_keypair();
 
             let private = private.to_bytes();
             let public = public.to_bytes();
@@ -764,13 +718,13 @@ mod tests {
             "did:test:bob-pq-explicit",
             Url::parse("tcp://127.0.0.1:13383").unwrap(),
             VidSignatureKeyType::Ed25519,
-            VidEncryptionKeyType::X25519Kyber768Draft00,
+            VidEncryptionKeyType::X25519MlKem768,
         );
 
         for (receiver, crypto_type) in [
-            (&bob_x25519, CryptoType::HpkeAuth),
-            (&bob_x25519, CryptoType::NaclAuth),
-            (&bob_pq, CryptoType::X25519Kyber768Draft00),
+            (&bob_x25519, CryptoType::HpkeBase),
+            (&bob_x25519, CryptoType::SealedBox),
+            (&bob_pq, CryptoType::HpkeBase),
         ] {
             let mut message = seal_with_crypto_type(
                 &alice,
@@ -799,23 +753,23 @@ mod tests {
             "did:test:bob-default-pq",
             Url::parse("tcp://127.0.0.1:13387").unwrap(),
             VidSignatureKeyType::Ed25519,
-            VidEncryptionKeyType::X25519Kyber768Draft00,
+            VidEncryptionKeyType::X25519MlKem768,
         );
 
         let mut message = seal(&alice, &bob, Payload::Content(b"default pq")).unwrap();
         let (payload, opened_crypto_type, _) = open(&bob, &alice, &mut message).unwrap();
 
         assert_eq!(payload, Payload::Content(b"default pq" as &[u8]));
-        assert_eq!(opened_crypto_type, CryptoType::X25519Kyber768Draft00);
+        assert_eq!(opened_crypto_type, CryptoType::HpkeBase);
     }
 
     #[test]
-    fn default_selection_avoids_nacl_for_pq_sender_to_x25519_receiver() {
+    fn default_selection_for_pq_sender_to_x25519_receiver() {
         let alice = OwnedVid::bind_with_key_types(
             "did:test:alice-pq-to-x25519-default",
             Url::parse("tcp://127.0.0.1:13388").unwrap(),
             VidSignatureKeyType::Ed25519,
-            VidEncryptionKeyType::X25519Kyber768Draft00,
+            VidEncryptionKeyType::X25519MlKem768,
         );
         let bob = OwnedVid::bind_with_key_types(
             "did:test:bob-x25519-from-pq-default",
@@ -824,11 +778,19 @@ mod tests {
             VidEncryptionKeyType::X25519,
         );
 
-        let mut message = seal(&alice, &bob, Payload::Content(b"default hpke essr")).unwrap();
+        // the anonymous sealed box does not use the sender's encryption keys,
+        // so a PQ-keyed sender can seal to an X25519 receiver with either suite;
+        // the default follows the feature configuration
+        let mut message = seal(&alice, &bob, Payload::Content(b"default suite")).unwrap();
         let (payload, opened_crypto_type, _) = open(&bob, &alice, &mut message).unwrap();
 
-        assert_eq!(payload, Payload::Content(b"default hpke essr" as &[u8]));
-        assert_eq!(opened_crypto_type, CryptoType::HpkeEssr);
+        assert_eq!(payload, Payload::Content(b"default suite" as &[u8]));
+        let expected = if cfg!(feature = "nacl") {
+            CryptoType::SealedBox
+        } else {
+            CryptoType::HpkeBase
+        };
+        assert_eq!(opened_crypto_type, expected);
     }
 
     #[test]
@@ -850,22 +812,6 @@ mod tests {
             &alice,
             &bob,
             Payload::Content(b"selected backend"),
-            CryptoType::X25519Kyber768Draft00,
-        )
-        .unwrap_err();
-
-        assert!(matches!(
-            err,
-            CryptoError::IncompatibleCryptoSelection {
-                crypto_type: CryptoType::X25519Kyber768Draft00,
-                key_type: VidEncryptionKeyType::X25519,
-            }
-        ));
-
-        let err = seal_with_crypto_type(
-            &alice,
-            &bob,
-            Payload::Content(b"selected backend"),
             CryptoType::Plaintext,
         )
         .unwrap_err();
@@ -877,33 +823,33 @@ mod tests {
     }
 
     #[test]
-    fn explicit_crypto_selection_rejects_incompatible_sender_key() {
+    fn sealed_box_rejects_pq_receiver_key() {
         let alice = OwnedVid::bind_with_key_types(
-            "did:test:alice-pq-incompatible",
+            "did:test:alice-sealedbox",
             Url::parse("tcp://127.0.0.1:13390").unwrap(),
             VidSignatureKeyType::Ed25519,
-            VidEncryptionKeyType::X25519Kyber768Draft00,
+            VidEncryptionKeyType::X25519,
         );
         let bob = OwnedVid::bind_with_key_types(
-            "did:test:bob-x25519-incompatible",
+            "did:test:bob-pq-sealedbox",
             Url::parse("tcp://127.0.0.1:13391").unwrap(),
             VidSignatureKeyType::Ed25519,
-            VidEncryptionKeyType::X25519,
+            VidEncryptionKeyType::X25519MlKem768,
         );
 
         let err = seal_with_crypto_type(
             &alice,
             &bob,
             Payload::Content(b"selected backend"),
-            CryptoType::NaclAuth,
+            CryptoType::SealedBox,
         )
         .unwrap_err();
 
         assert!(matches!(
             err,
-            CryptoError::IncompatibleSenderCryptoSelection {
-                crypto_type: CryptoType::NaclAuth,
-                key_type: VidEncryptionKeyType::X25519Kyber768Draft00,
+            CryptoError::IncompatibleCryptoSelection {
+                crypto_type: CryptoType::SealedBox,
+                key_type: VidEncryptionKeyType::X25519MlKem768,
             }
         ));
     }

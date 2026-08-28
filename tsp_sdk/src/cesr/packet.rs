@@ -10,11 +10,8 @@ pub const TSP_CESR_GENUS: ([u8; 3], (u8, u8, u8)) = (cesr_data("AAA"), (2, 0, 0)
 
 /// Constants that determine the specific CESR types for "variable length data"
 const TSP_PLAINTEXT: u32 = cesr!("B");
-const TSP_NACL_CIPHERTEXT: u32 = cesr!("C");
-const TSP_NACLAUTH_CIPHERTEXT: u32 = cesr!("NCL");
+const TSP_SEALEDBOX_CIPHERTEXT: u32 = cesr!("C");
 const TSP_HPKEBASE_CIPHERTEXT: u32 = cesr!("F");
-const TSP_HPKEAUTH_CIPHERTEXT: u32 = cesr!("G");
-const TSP_HPKEPQ_CIPHERTEXT: u32 = cesr!("PQC");
 const TSP_VID: u32 = cesr!("B");
 
 /// Constants that determine the specific CESR types for "fixed length data"
@@ -153,31 +150,11 @@ pub mod fuzzing;
 #[repr(u8)]
 pub enum CryptoType {
     Plaintext = 0,
-    HpkeAuth = 1,
-    HpkeEssr = 2,
-    NaclAuth = 3,
-    NaclEssr = 4,
-    X25519Kyber768Draft00 = 5,
-}
-
-pub trait AsCryptoType {
-    fn crypto_type() -> CryptoType;
-}
-
-impl AsCryptoType for hpke_pq::kem::X25519Kyber768Draft00 {
-    fn crypto_type() -> CryptoType {
-        CryptoType::X25519Kyber768Draft00
-    }
-}
-
-impl AsCryptoType for hpke::kem::X25519HkdfSha256 {
-    fn crypto_type() -> CryptoType {
-        if cfg!(feature = "essr") {
-            CryptoType::HpkeEssr
-        } else {
-            CryptoType::HpkeAuth
-        }
-    }
+    /// HPKE-Base; the KEM (X25519 or X25519MLKEM768) is selected by the
+    /// recipient VID's encryption key type, with no separate code point
+    HpkeBase = 1,
+    /// The libsodium anonymous sealed box
+    SealedBox = 2,
 }
 
 impl CryptoType {
@@ -916,12 +893,9 @@ pub fn encode_signature(
 impl CryptoType {
     fn cesr_code(&self) -> Result<u32, DecodeError> {
         Ok(match self {
-            CryptoType::NaclEssr => TSP_NACL_CIPHERTEXT,
-            CryptoType::HpkeEssr => TSP_HPKEBASE_CIPHERTEXT,
-            CryptoType::HpkeAuth => TSP_HPKEAUTH_CIPHERTEXT,
-            CryptoType::NaclAuth => TSP_NACLAUTH_CIPHERTEXT,
-            CryptoType::X25519Kyber768Draft00 => TSP_HPKEPQ_CIPHERTEXT,
-            _ => return Err(DecodeError::InvalidCrypto),
+            CryptoType::SealedBox => TSP_SEALEDBOX_CIPHERTEXT,
+            CryptoType::HpkeBase => TSP_HPKEBASE_CIPHERTEXT,
+            CryptoType::Plaintext => return Err(DecodeError::InvalidCrypto),
         })
     }
 }
@@ -988,16 +962,10 @@ pub(super) fn detected_tsp_header_size_and_confidentiality(
     /* look ahead to determine the crypto and signature types; the payload
     position holds either a ciphertext primitive (confidential message) or a
     cleartext -Z## payload (non-confidential, signed-only message) */
-    let crypto_type = if decode_variable_data(TSP_HPKEAUTH_CIPHERTEXT, &mut stream).is_some() {
-        CryptoType::HpkeAuth
-    } else if decode_variable_data(TSP_HPKEBASE_CIPHERTEXT, &mut stream).is_some() {
-        CryptoType::HpkeEssr
-    } else if decode_variable_data(TSP_NACL_CIPHERTEXT, &mut stream).is_some() {
-        CryptoType::NaclEssr
-    } else if decode_variable_data(TSP_NACLAUTH_CIPHERTEXT, &mut stream).is_some() {
-        CryptoType::NaclAuth
-    } else if decode_variable_data(TSP_HPKEPQ_CIPHERTEXT, &mut stream).is_some() {
-        CryptoType::X25519Kyber768Draft00
+    let crypto_type = if decode_variable_data(TSP_HPKEBASE_CIPHERTEXT, &mut stream).is_some() {
+        CryptoType::HpkeBase
+    } else if decode_variable_data(TSP_SEALEDBOX_CIPHERTEXT, &mut stream).is_some() {
+        CryptoType::SealedBox
     } else if let Some(quadlets) = decode_count(TSP_PAYLOAD, &mut stream) {
         let payload_bytes = (quadlets as usize)
             .checked_mul(3)
@@ -1363,7 +1331,7 @@ pub fn encode_tsp_message<Vid: AsRef<[u8]>, Sig: AsRef<[u8]>>(
     sign: impl FnOnce(&Vid, &[u8]) -> Sig,
 ) -> Result<Vec<u8>, EncodeError> {
     let mut cesr = encode_envelope_vec(Envelope {
-        crypto_type: CryptoType::HpkeAuth,
+        crypto_type: CryptoType::HpkeBase,
         signature_type: SignatureType::Ed25519,
         sender,
         receiver: Some(receiver),
@@ -1371,7 +1339,7 @@ pub fn encode_tsp_message<Vid: AsRef<[u8]>, Sig: AsRef<[u8]>>(
 
     let ciphertext = &encrypt(receiver, encode_payload_vec(&message)?);
 
-    encode_ciphertext(ciphertext, CryptoType::HpkeAuth, &mut cesr)?;
+    encode_ciphertext(ciphertext, CryptoType::HpkeBase, &mut cesr)?;
     finalize_envelope_frame(&mut cesr);
     let signature = sign(sender, &cesr);
     encode_signature(signature.as_ref(), &mut cesr, SignatureType::Ed25519);
@@ -1448,14 +1416,14 @@ mod test {
             { encode_payload_vec(&Payload::<_, &[u8]>::GenericMessage(b"Hello TSP!")).unwrap() };
 
         let mut outer = encode_envelope_vec(Envelope {
-            crypto_type: CryptoType::HpkeAuth,
+            crypto_type: CryptoType::HpkeBase,
             signature_type: SignatureType::Ed25519,
             sender: &b"Alister"[..],
             receiver: Some(&b"Bobbi"[..]),
         })
         .unwrap();
         let ciphertext = dummy_crypt(&mut cesr_payload);
-        encode_ciphertext(ciphertext, CryptoType::HpkeAuth, &mut outer).unwrap();
+        encode_ciphertext(ciphertext, CryptoType::HpkeBase, &mut outer).unwrap();
         finalize_envelope_frame(&mut outer);
 
         let signed_data = outer.clone();
@@ -1495,14 +1463,14 @@ mod test {
             { encode_payload_vec(&Payload::<_, &[u8]>::GenericMessage(b"Hello TSP!")).unwrap() };
 
         let mut outer = encode_envelope_vec(Envelope {
-            crypto_type: CryptoType::HpkeAuth,
+            crypto_type: CryptoType::HpkeBase,
             signature_type: SignatureType::Ed25519,
             sender: &b"Alister"[..],
             receiver: Some(&b"Bobbi"[..]),
         })
         .unwrap();
         let ciphertext = dummy_crypt(&mut cesr_payload);
-        encode_ciphertext(ciphertext, CryptoType::HpkeAuth, &mut outer).unwrap();
+        encode_ciphertext(ciphertext, CryptoType::HpkeBase, &mut outer).unwrap();
         finalize_envelope_frame(&mut outer);
 
         let signed_data = outer.clone();
@@ -1601,7 +1569,7 @@ mod test {
         // that does not cover the ciphertext, which the receiver must reject
         finalize_envelope_frame(&mut outer);
         let ciphertext = dummy_crypt(&cesr_payload);
-        encode_ciphertext(ciphertext, CryptoType::HpkeAuth, &mut outer).unwrap();
+        encode_ciphertext(ciphertext, CryptoType::HpkeBase, &mut outer).unwrap();
         encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
 
         assert!(matches!(
@@ -1618,7 +1586,7 @@ mod test {
         let mut outer = vec![];
         encode_envelope(
             Envelope {
-                crypto_type: CryptoType::HpkeAuth,
+                crypto_type: CryptoType::HpkeBase,
                 signature_type: SignatureType::Ed25519,
                 sender: &b"Alister"[..],
                 receiver: Some(&b"Bobbi"[..]),
@@ -1628,7 +1596,7 @@ mod test {
         .unwrap();
         // no envelope frame, and signature and ciphertext in the wrong order
         encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
-        encode_ciphertext(&[], CryptoType::HpkeAuth, &mut outer).unwrap();
+        encode_ciphertext(&[], CryptoType::HpkeBase, &mut outer).unwrap();
 
         assert!(decode_envelope(&mut outer).is_err());
     }
@@ -1639,13 +1607,13 @@ mod test {
         let fixed_sig = [1; 64];
 
         let mut outer = encode_envelope_vec(Envelope {
-            crypto_type: CryptoType::HpkeAuth,
+            crypto_type: CryptoType::HpkeBase,
             signature_type: SignatureType::Ed25519,
             sender: &b"Alister"[..],
             receiver: Some(&b"Bobbi"[..]),
         })
         .unwrap();
-        encode_ciphertext(&[], CryptoType::HpkeAuth, &mut outer).unwrap();
+        encode_ciphertext(&[], CryptoType::HpkeBase, &mut outer).unwrap();
         finalize_envelope_frame(&mut outer);
         encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
 
@@ -1801,14 +1769,14 @@ mod test {
         let mut cesr_payload = encode_payload_vec(&payload).unwrap();
 
         let mut outer = encode_envelope_vec(Envelope {
-            crypto_type: CryptoType::HpkeAuth,
+            crypto_type: CryptoType::HpkeBase,
             signature_type: SignatureType::Ed25519,
             sender: &b"Alister"[..],
             receiver: Some(&b"Bobbi"[..]),
         })
         .unwrap();
         let ciphertext = dummy_crypt(&mut cesr_payload);
-        encode_ciphertext(ciphertext, CryptoType::HpkeAuth, &mut outer).unwrap();
+        encode_ciphertext(ciphertext, CryptoType::HpkeBase, &mut outer).unwrap();
         finalize_envelope_frame(&mut outer);
 
         let signed_data = outer.clone();
@@ -1870,13 +1838,13 @@ mod test {
         // 3-byte-aligned field contents, so the part lengths are exact
         // (unaligned contents include their lead bytes in the reported parts)
         let mut message = encode_envelope_vec(Envelope {
-            crypto_type: CryptoType::HpkeEssr,
+            crypto_type: CryptoType::HpkeBase,
             signature_type: SignatureType::Ed25519,
             sender: &b"did:test:bob"[..],
             receiver: Some(&b"did:test:alice3"[..]),
         })
         .unwrap();
-        encode_ciphertext(&[0xAA; 69], CryptoType::HpkeEssr, &mut message).unwrap();
+        encode_ciphertext(&[0xAA; 69], CryptoType::HpkeBase, &mut message).unwrap();
         finalize_envelope_frame(&mut message);
         encode_signature(&fixed_sig, &mut message, SignatureType::Ed25519);
 
@@ -1997,14 +1965,14 @@ mod test {
             { encode_payload_vec(&Payload::<_, &[u8]>::GenericMessage(b"Hello TSP!")).unwrap() };
 
         let mut outer = encode_envelope_vec(Envelope {
-            crypto_type: CryptoType::HpkeAuth,
+            crypto_type: CryptoType::HpkeBase,
             signature_type: SignatureType::Ed25519,
             sender: &b"Alister"[..],
             receiver: Some(&b"Bobbi"[..]),
         })
         .unwrap();
         let ciphertext = dummy_crypt(&mut cesr_payload);
-        encode_ciphertext(ciphertext, CryptoType::HpkeAuth, &mut outer).unwrap();
+        encode_ciphertext(ciphertext, CryptoType::HpkeBase, &mut outer).unwrap();
         finalize_envelope_frame(&mut outer);
 
         let signed_data = outer.clone();
