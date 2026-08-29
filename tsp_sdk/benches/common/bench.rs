@@ -1,7 +1,7 @@
 use std::hint::black_box;
 
 use tsp_sdk::{
-    ReceivedTspMessage, SecureStore, VerifiedVid,
+    ReceivedTspMessage, RelationshipStatus, SecureStore, VerifiedVid,
     cesr::decode_envelope,
     crypto::{blake2b256, sha256},
     definitions::Payload,
@@ -39,6 +39,23 @@ pub fn setup_store(_benchmark_id: &'static str, payload_len: usize) -> StoreCase
     let store = SecureStore::new();
     store.add_private_vid(alice.clone(), None).unwrap();
     store.add_private_vid(bob.clone(), None).unwrap();
+
+    // application messages are only accepted within an established
+    // relationship (spec 7.2.2); the benchmark measures the message path, not
+    // the relationship forming that precedes it
+    for (local, remote) in [(&alice, &bob), (&bob, &alice)] {
+        store
+            .set_relation_and_status_for_vid(
+                remote.identifier(),
+                RelationshipStatus::Bidirectional {
+                    thread_id: [0x11; 32],
+                    remote_thread_id: [0x22; 32],
+                    outstanding_nested_requests: vec![],
+                },
+                local.identifier(),
+            )
+            .unwrap();
+    }
 
     StoreCase {
         store,

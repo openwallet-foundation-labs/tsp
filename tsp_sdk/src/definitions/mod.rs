@@ -64,7 +64,6 @@ pub struct PendingIncomingParallelRelationship {
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub enum RelationshipStatus {
-    _Controlled,
     Bidirectional {
         thread_id: Digest,
         remote_thread_id: Digest,
@@ -92,7 +91,6 @@ impl RelationshipStatus {
 impl Display for RelationshipStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RelationshipStatus::_Controlled => write!(f, "Controlled"),
             RelationshipStatus::Bidirectional { .. } => write!(f, "Bidirectional"),
             RelationshipStatus::Unidirectional { .. } => write!(f, "Unidirectional"),
             RelationshipStatus::ReverseUnidirectional { .. } => write!(f, "ReverseUnidirectional"),
@@ -140,6 +138,11 @@ pub enum ReceivedTspMessage<Data: AsRef<[u8]> = BytesMut> {
     CancelRelationship {
         sender: String,
         receiver: String,
+        /// Whether the specification expects a `TSP_RFD` in reply: it does when
+        /// the cancelled relationship was bidirectional, and does not when it
+        /// was one-way (spec 7.3). The relationship has already been removed
+        /// either way; sending the reply is the application's to do.
+        reply_expected: bool,
     },
     ForwardRequest {
         sender: String,
@@ -153,6 +156,22 @@ pub enum ReceivedTspMessage<Data: AsRef<[u8]> = BytesMut> {
         unknown_vid: String,
         payload: BytesMut,
     },
+}
+
+impl<Data: AsRef<[u8]>> ReceivedTspMessage<Data> {
+    /// The VID that sent this message, where the message names one. A pending
+    /// message names a VID that could not be resolved, so it has no sender.
+    pub fn sender(&self) -> Option<&str> {
+        match self {
+            ReceivedTspMessage::GenericMessage { sender, .. }
+            | ReceivedTspMessage::RequestRelationship { sender, .. }
+            | ReceivedTspMessage::AcceptRelationship { sender, .. }
+            | ReceivedTspMessage::CancelRelationship { sender, .. }
+            | ReceivedTspMessage::ForwardRequest { sender, .. } => Some(sender),
+            #[cfg(feature = "async")]
+            ReceivedTspMessage::PendingMessage { .. } => None,
+        }
+    }
 }
 
 impl<Data: AsRef<[u8]>> ReceivedTspMessage<Data> {

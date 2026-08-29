@@ -43,8 +43,25 @@ pub enum Error {
     InvalidNextHop(String),
     #[error("Error: no relation established for {0}")]
     MissingDropOff(String),
+    #[error("Error: no relationship from {0} to {1}; the message is dropped")]
+    UnestablishedRelationship(String, String),
     #[error("Internal error")]
     Internal,
+}
+
+impl Error {
+    /// Whether this error describes the message stream itself failing, rather
+    /// than a single message that was discarded. Discarding one message does
+    /// not end a stream, so a caller can distinguish the two and go on
+    /// listening after the first.
+    pub fn ends_stream(&self) -> bool {
+        #[cfg(feature = "async")]
+        let ends_stream = matches!(self, Error::Transport(_));
+        #[cfg(not(feature = "async"))]
+        let ends_stream = false;
+
+        ends_stream
+    }
 }
 
 impl<T> From<std::sync::PoisonError<T>> for Error {

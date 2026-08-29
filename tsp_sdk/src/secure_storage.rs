@@ -120,7 +120,8 @@ impl From<LegacyMetadata> for Metadata {
 impl From<LegacyRelationshipStatus> for RelationshipStatus {
     fn from(value: LegacyRelationshipStatus) -> Self {
         match value {
-            LegacyRelationshipStatus::_Controlled => RelationshipStatus::_Controlled,
+            // a state that was never entered and carried no relationship
+            LegacyRelationshipStatus::_Controlled => RelationshipStatus::Unrelated,
             LegacyRelationshipStatus::Bidirectional {
                 thread_id,
                 remote_thread_id,

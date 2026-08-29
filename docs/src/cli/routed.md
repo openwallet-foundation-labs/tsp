@@ -24,11 +24,15 @@ messages to the final recipient `b`. This can be achieved in two ways:
 When this set up is done, the only thing left to send a routed message from `a` to `b`, is to set up a route.
 
 ```sh
-tsp -w a set-route b VID-FOR-P,VID-FOR-Q,VID-FOR-Q2
+tsp -w a set-route b VID-FOR-P,VID-FOR-Q,VID-FOR-B2
 ```
 
-Note, this requires `a` to have verified the VID of `p`, but it does not need to have verified the VID's `q` or `q2`. In fact, if
-the VID `q2` is an inner vid for a nested relationship, `a` will not have a way to verify it at all.
+The last entry is the *exit* of the route: `b`'s own VID at its intermediary `q`, not a VID of `q` itself
+(spec 5.3.3). `q` delivers the message over the relationship it holds with that VID, which is how it knows
+where the last hop goes.
+
+Note, this requires `a` to have verified the VID of `p`, but it does not need to have verified the VID's `q` or `b2`. In fact, if
+the VID `b2` is an inner vid for a nested relationship, `a` will not have a way to verify it at all.
 
 When this route is set up properly, sending a message proceeds as normal:
 
@@ -105,10 +109,10 @@ echo "DID_Q2=$DID_Q2"
 
 ## Send a message
 
-Now that we have set up all the relations between the nodes, we can configure the route for messages that are to be delivered from `a` to `b`. We will route these messages via `p` to `q`, and then `q2` will drop it off at `b`:
+Now that we have set up all the relations between the nodes, we can configure the route for messages that are to be delivered from `a` to `b`. We will route these messages via `p` to `q`, which drops them off at `b`'s nested VID `b2`:
 
 ```sh
-tsp -w a set-route b "p,did:web:q.teaspoon.world,$DID_Q2"
+tsp -w a set-route b "p,did:web:q.teaspoon.world,$DID_B2"
 ```
 
 Sending the routed message is trivial, now we have configured the relations and route.

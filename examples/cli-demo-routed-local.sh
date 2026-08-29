@@ -50,7 +50,8 @@ echo "DID_B2=$DID_B2"
 echo "DID_Q2=$DID_Q2"
 
 echo "---- setup the route"
-tsp --wallet a set-route b "p,$DID_Q,$DID_Q2"
+# the exit entry of the hop list is b's own VID at q (spec 5.3.3)
+tsp --wallet a set-route b "p,$DID_Q,$DID_B2"
 
 wait
 sleep 5

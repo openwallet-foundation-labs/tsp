@@ -468,17 +468,19 @@ async fn test_routed_mode() {
     );
     assert!(route.is_empty());
 
-    // test3: alice is the recipient (using "bob" as the 'final hop')
+    // test3: alice is the recipient; the exit entry of the hop list is her own
+    // VID at this intermediary (spec 5.3.3), and bob delivers over the
+    // relationship he holds with it
     bob_db
         .set_relation_and_status_for_vid(
-            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
-            RelationshipStatus::Unrelated,
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
+            RelationshipStatus::Unrelated,
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
         )
         .unwrap();
     bob_db
         .forward_routed_message(
-            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
             Vec::<&[u8]>::new(),
             &opaque_payload,
         )
@@ -719,7 +721,7 @@ async fn test_prepopulated_store_import_preserves_dirty_state() {
                 found_reverse_unidirectional += 1;
             }
             RelationshipStatus::Bidirectional { .. } => found_bidirectional += 1,
-            RelationshipStatus::_Controlled | RelationshipStatus::Unrelated => {}
+            RelationshipStatus::Unrelated => {}
         }
     }
 
@@ -974,7 +976,8 @@ async fn test_routed_delivery_after_reopen_uses_persisted_route_metadata() {
     };
     assert_eq!(forwarded_sender, topology.sender_vid);
     assert_eq!(forwarded_receiver, topology.intermediary_vid);
-    assert_eq!(next_hop, topology.intermediary_vid);
+    // the exit entry names the receiver's own VID at the intermediary (spec 5.3.3)
+    assert_eq!(next_hop, topology.receiver_vid);
     assert!(route.is_empty());
 
     let intermediary = persist_reopen_cycle(&intermediary, &fixture_intermediary, 1).await;

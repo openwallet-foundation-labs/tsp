@@ -1092,13 +1092,22 @@ async fn run() -> Result<(), Error> {
                 VerifyAndOpen(String, BytesMut),
                 Forward(String, Vec<BytesMut>, BytesMut),
                 AssignDefaultRelation(String, Digest),
+                ReplyCancel(String),
             }
 
             while let Some(message) = messages.next().await {
                 trace!("Received message: {message:?}");
                 let message = match message {
                     Ok(m) => m,
-                    Err(_) => break,
+                    // one message was discarded; the next one may be fine
+                    Err(e) if !e.ends_stream() => {
+                        debug!("discarded an incoming message: {e}");
+                        continue;
+                    }
+                    Err(e) => {
+                        info!("stopped listening: {e}");
+                        break;
+                    }
                 };
                 let handle_message = |message: ReceivedTspMessage| {
                     match message {
@@ -1234,8 +1243,16 @@ async fn run() -> Result<(), Error> {
                         ReceivedTspMessage::CancelRelationship {
                             sender,
                             receiver: _,
+                            reply_expected,
                         } => {
                             info!("received cancel relationship from {sender}");
+
+                            // a bidirectional relationship is cancelled in both
+                            // directions, and the specification expects the
+                            // cancellation to be echoed back (spec 7.3)
+                            if reply_expected {
+                                return Action::ReplyCancel(sender);
+                            }
                         }
                         ReceivedTspMessage::ForwardRequest {
                             sender,
@@ -1294,6 +1311,14 @@ async fn run() -> Result<(), Error> {
                             .forward_routed_message(&next_hop, route, &payload)
                             .await?;
                         info!("forwarding to next hop: {next_hop}");
+                    }
+                    Action::ReplyCancel(remote_vid) => {
+                        if let Err(e) = vid_wallet.send_relationship_cancel(&vid, &remote_vid).await
+                        {
+                            info!("could not reply to the cancellation from {remote_vid}: {e}");
+                        } else {
+                            info!("replied to the cancellation from {remote_vid}");
+                        }
                     }
                     Action::AssignDefaultRelation(remote_vid, thread_id) => {
                         // if we do not yet have a relationship with the remote VID, create a reverse unidirectional relationship
