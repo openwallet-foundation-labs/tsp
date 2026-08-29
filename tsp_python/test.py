@@ -48,6 +48,13 @@ class AliceBob(unittest.TestCase):
     def test_open_seal(self):
         message = b"hello world"
 
+        # an application message is only accepted inside a relationship, and a
+        # sender forms one with its first message (spec 3.6, 7.2.2)
+        _url, request = self.store.make_relationship_request(
+            self.alice.identifier(), self.bob.identifier(), None
+        )
+        self.store.open_message(request)
+
         url, sealed = self.store.seal_message(
             self.alice.identifier(), self.bob.identifier(), message
         )
@@ -262,8 +269,7 @@ class AliceBob(unittest.TestCase):
         b_store.add_verified_owned_vid(c)
 
         c_store.add_verified_owned_vid(b)
-        c_store.add_private_vid(nette_d)
-        # TODO: fix routed mode (should not require private vid for setting drop off)
+        c_store.add_verified_owned_vid(nette_d)
 
         d_store.add_verified_owned_vid(sneaky_a)
         d_store.add_verified_owned_vid(mailbox_c)
@@ -276,15 +282,21 @@ class AliceBob(unittest.TestCase):
             sneaky_a.identifier(), sneaky_d.identifier(), None
         )
 
+        # the exit entry is the destination's own VID at its intermediary
         a_store.set_route_for_vid(
             sneaky_d.identifier(),
-            [b.identifier(), c.identifier(), mailbox_c.identifier()],
+            [b.identifier(), c.identifier(), nette_d.identifier()],
         )
 
         b_store.make_relationship_request(b.identifier(), c.identifier(), None)
 
         c_store.make_relationship_request(
-            nette_d.identifier(), mailbox_c.identifier(), None
+            mailbox_c.identifier(), nette_d.identifier(), None
+        )
+
+        # the destination has an endpoint-to-endpoint relationship with the source
+        d_store.make_relationship_request(
+            sneaky_d.identifier(), sneaky_a.identifier(), None
         )
 
         # that was all the setup, now let's run some things

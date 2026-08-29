@@ -54,6 +54,11 @@ describe('tsp node tests', function() {
         store.add_private_vid(alice);
         store.add_private_vid(bob);
 
+        // an application message is only accepted inside a relationship, and a
+        // sender forms one with its first message (spec 3.6, 7.2.2)
+        let { sealed: request } = store.make_relationship_request(alice_identifier, bob_identifier, null);
+        store.open_message(request);
+
         let message = "hello world";
 
         let { url, sealed } = store.seal_message(alice_identifier, bob_identifier, message);
@@ -261,11 +266,15 @@ describe('tsp node tests', function() {
         // Set relations and routes
         a_store.make_relationship_request(nette_a.identifier(), b.identifier());
         a_store.make_relationship_request(sneaky_a.identifier(), sneaky_d.identifier());
-        a_store.set_route_for_vid(sneaky_d.identifier(), [b.identifier(), c.identifier(), mailbox_c.identifier()]);
+        // the exit entry is the destination's own VID at its intermediary
+        a_store.set_route_for_vid(sneaky_d.identifier(), [b.identifier(), c.identifier(), nette_d.identifier()]);
 
         b_store.make_relationship_request(b.identifier(), c.identifier());
 
         c_store.make_relationship_request(mailbox_c.identifier(), nette_d.identifier());
+
+        // the destination has an endpoint-to-endpoint relationship with the source
+        d_store.make_relationship_request(sneaky_d.identifier(), sneaky_a.identifier());
 
         // Prepare a message to be sent from a_store
         let hello_world = "hello world";
