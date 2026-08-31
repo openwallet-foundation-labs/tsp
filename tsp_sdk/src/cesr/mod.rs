@@ -396,6 +396,27 @@ ACDD7NDX93ZGTkZBBuSeSGsAQ7u0hngpNTZTK_Um7rUZGnLRNJvo5oOnnC1J2iBQHuxoq8PyjdT3BHS2
     }
 
     #[test]
+    fn long_form_count_code_is_double_dash() {
+        // In the CESR master table for genus -_AAACAA the long-form count codes
+        // are `--X#####`. The `-0X#####` of the earlier draft was replaced in
+        // 2025-05; a round-trip cannot tell the two apart, so pin the bytes.
+        let mut stream = Vec::new();
+        encode_count(4, 4096usize, &mut stream); // identifier 4 = "E"
+        assert_eq!(
+            stream.len(),
+            6,
+            "counts at or above 4096 take the long form"
+        );
+
+        let text = Base64UrlUnpadded::encode_string(&stream);
+        assert_eq!(
+            &text[..3],
+            "--E",
+            "long-form count code must be `--X#####`, got `{text}`"
+        );
+    }
+
+    #[test]
     fn decode_count_long_form_round_trips() {
         // All counts below 4096 use the short 3-byte form; counts >= 4096 use the
         // long 6-byte form where the header word encodes both the identifier and the
