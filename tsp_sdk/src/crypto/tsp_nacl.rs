@@ -84,7 +84,6 @@ pub(crate) fn seal(
             payload
         }
         Payload::CancelRelationship { ref thread_id } => crate::cesr::Payload::RelationshipCancel {
-            nonce: crate::cesr::Nonce::generate(|dst| csprng.fill_bytes(dst)),
             reply: digest_algorithm.field(thread_id),
         },
         Payload::NestedMessage(data) => crate::cesr::Payload::NestedMessage(data),

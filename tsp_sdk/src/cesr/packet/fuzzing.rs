@@ -86,7 +86,6 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
                 sig_new_vid: &[24; 64],
             },
             Variants::RelationshipCancel => Payload::RelationshipCancel {
-                nonce: Nonce(Arbitrary::arbitrary(u)?),
                 reply: digest(&DIGEST),
             },
         };
@@ -156,15 +155,9 @@ impl<'a> PartialEq<Payload<'a, &'a mut [u8], &'a [u8]>> for Wrapper {
                 },
             ) => l_request == r_request && l_reply == r_reply && l_vid == r_vid,
             (
-                Payload::RelationshipCancel {
-                    nonce: l_nonce,
-                    reply: l_reply,
-                },
-                Payload::RelationshipCancel {
-                    nonce: r_nonce,
-                    reply: r_reply,
-                },
-            ) => l_nonce.0 == r_nonce.0 && l_reply == r_reply,
+                Payload::RelationshipCancel { reply: l_reply },
+                Payload::RelationshipCancel { reply: r_reply },
+            ) => l_reply == r_reply,
             _ => false,
         }
     }

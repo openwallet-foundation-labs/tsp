@@ -122,8 +122,8 @@ pub enum Payload<'a, Bytes, Vid> {
         sig_new_vid: &'a Signature,
         new_vid: Vid,
     },
-    /// A TSP cancellation message; the nonce guards against replay when the digest is absent
-    RelationshipCancel { nonce: Nonce, reply: Digest<'a> },
+    /// A TSP cancellation message, naming the relationship it ends
+    RelationshipCancel { reply: Digest<'a> },
 }
 
 impl<Bytes: AsRef<[u8]>, Vid: AsRef<[u8]>> Payload<'_, Bytes, Vid> {
@@ -454,10 +454,9 @@ pub fn encode_payload(
             encode_embedded_signature(sig_new_vid, &mut temp)?;
             encode_padding(padding, &mut temp)?;
         }
-        Payload::RelationshipCancel { nonce, reply } => {
+        Payload::RelationshipCancel { reply } => {
             temp.extend(&XRFD);
             encode_sender_identity(sender_identity, &mut temp)?;
-            encode_fixed_data(TSP_NONCE, &nonce.0, &mut temp);
             encode_digest(reply, &mut temp);
             encode_padding(padding, &mut temp)?;
         }
@@ -706,16 +705,11 @@ pub fn decode_payload(stream: &mut [u8]) -> Result<DecodedPayload<'_>, DecodeErr
             }
         }
         XRFD => {
-            let nonce;
-            (nonce, stream) =
-                decode_fixed_data_mut(TSP_NONCE, stream).ok_or(DecodeError::UnexpectedData)?;
-            let nonce = Nonce(*nonce);
-
             let reply;
             (reply, stream) = decode_digest(stream)?;
             stream = decode_padding(stream)?;
 
-            Payload::RelationshipCancel { nonce, reply }
+            Payload::RelationshipCancel { reply }
         }
         _ => return Err(DecodeError::UnexpectedMsgType),
     };
@@ -1888,11 +1882,9 @@ mod test {
             reply_digest: Digest::Blake2b256(digest),
         });
         test_turn_around(Payload::RelationshipCancel {
-            nonce: Nonce(nonce),
             reply: Digest::Sha2_256(digest),
         });
         test_turn_around(Payload::RelationshipCancel {
-            nonce: Nonce(nonce),
             reply: Digest::Blake2b256(digest),
         });
     }

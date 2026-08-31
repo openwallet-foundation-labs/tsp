@@ -1902,9 +1902,9 @@ impl SecureStore {
     /// ignored, which the caller sees as a discard. Returns whether a reply is
     /// expected.
     ///
-    /// The digest identifies the relationship being cancelled, but MAY be NULL
-    /// when the canceling endpoint never received one, in which case the VID
-    /// pair identifies it on its own.
+    /// The digest identifies the relationship being cancelled. Every party to a
+    /// relationship holds at least the invite's digest, since a relationship
+    /// cannot be formed without one, so a cancellation always names it.
     fn cancel_relationship(
         &self,
         local_vid: &str,
@@ -1916,8 +1916,6 @@ impl SecureStore {
                 "unrecognized relationship cancellation from {remote_vid}; ignored"
             )))
         };
-        let recognized = |expected: Digest| thread_id == Digest::default() || thread_id == expected;
-
         let reply_expected = match self.relation_status_for_vid_pair(local_vid, remote_vid)? {
             RelationshipStatus::Bidirectional {
                 thread_id: local,
@@ -1925,7 +1923,7 @@ impl SecureStore {
                 ..
             } => {
                 // either direction's digest identifies the relationship
-                if !recognized(local) && !recognized(remote) {
+                if thread_id != local && thread_id != remote {
                     return ignore();
                 }
 
@@ -1933,7 +1931,7 @@ impl SecureStore {
             }
             RelationshipStatus::Unidirectional { thread_id: digest }
             | RelationshipStatus::ReverseUnidirectional { thread_id: digest } => {
-                if !recognized(digest) {
+                if thread_id != digest {
                     return ignore();
                 }
 

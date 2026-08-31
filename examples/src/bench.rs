@@ -1253,7 +1253,7 @@ async fn run_server(
                             frame.seq,
                         );
                         let ((ack_transport, ack_message), _) =
-                            run_measured(|| store.seal_message(&vid, &sender, None, &ack_payload))?;
+                            run_measured(|| store.seal_message(&vid, &sender, &ack_payload))?;
                         if let Err(e) = transport::send_message(&ack_transport, &ack_message).await {
                             eprintln!("bench server failed to send ack: {e}");
                         }
@@ -1353,7 +1353,7 @@ async fn run_client_throughput(
         let payload = build_frame(payload_size, FrameKind::ThroughputData, seq);
 
         let ((_, message), timings) =
-            run_measured(|| store.seal_message(&sender, &receiver, None, &payload))?;
+            run_measured(|| store.seal_message(&sender, &receiver, &payload))?;
         let signature_us = timings.signature_ns as f64 / 1_000.0;
         let seal_core_us = timings.seal_core_ns as f64 / 1_000.0;
 
@@ -1474,7 +1474,7 @@ async fn run_client_latency(
 
         let payload = build_frame(payload_size, FrameKind::LatencyRequest, seq);
         let ((_, message), timings) =
-            run_measured(|| store.seal_message(&sender, &receiver, None, &payload))?;
+            run_measured(|| store.seal_message(&sender, &receiver, &payload))?;
         let signature_us = timings.signature_ns as f64 / 1_000.0;
         let seal_core_us = timings.seal_core_ns as f64 / 1_000.0;
         let sent_bytes = message.len() as u64;
