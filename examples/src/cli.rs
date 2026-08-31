@@ -1451,8 +1451,13 @@ async fn run() -> Result<(), Error> {
                                 }
                                 _ => None,
                             };
+                            // a parallel accept arrives from the peer's new VID
+                            // over the new relationship, so the sender is it
                             let parallel_vid = match form {
                                 ReceivedRelationshipForm::Parallel { new_vid, .. } => Some(new_vid),
+                                ReceivedRelationshipForm::Direct if parallel => {
+                                    Some(sender.clone())
+                                }
                                 ReceivedRelationshipForm::Direct => None,
                             };
                             info!(

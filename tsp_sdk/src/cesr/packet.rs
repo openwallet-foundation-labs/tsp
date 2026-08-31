@@ -98,29 +98,22 @@ pub enum Payload<'a, Bytes, Vid> {
     NestedMessage(Bytes),
     /// A routed payload; same as above but with routing information attached
     RoutedMessage(Vec<Vid>, Bytes),
-    /// A TSP message requesting a relationship
-    DirectRelationProposal {
-        nonce: Nonce,
+    /// A TSP message requesting a relationship (spec 9.4.1). One layout covers
+    /// the direct, routed and referral forms: `reply_path` is empty unless the
+    /// sender asks for the reply to travel a route, and `referral` is present
+    /// only when the invite introduces a new VID over an existing relationship.
+    RelationProposal {
         request_digest: Digest<'a>,
+        nonce: Nonce,
+        reply_path: Vec<Vid>,
+        referral: Option<Referral<'a, Vid>>,
     },
-    /// A TSP message confirming a relationship
-    DirectRelationAffirm {
+    /// A TSP message confirming a relationship (spec 9.4.2). An accept has one
+    /// form: where it accepts a referral, the accepting endpoint's new VID is
+    /// the sender of the message rather than a payload field.
+    RelationAffirm {
         request_digest: Digest<'a>,
         reply_digest: Digest<'a>,
-    },
-    /// A TSP message requesting a secondary relationship alongside an existing one.
-    ParallelRelationProposal {
-        nonce: Nonce,
-        request_digest: Digest<'a>,
-        sig_new_vid: &'a Signature,
-        new_vid: Vid,
-    },
-    /// A TSP message accepting a secondary relationship request.
-    ParallelRelationAffirm {
-        request_digest: Digest<'a>,
-        reply_digest: Digest<'a>,
-        sig_new_vid: &'a Signature,
-        new_vid: Vid,
     },
     /// A TSP cancellation message, naming the relationship it ends
     RelationshipCancel { reply: Digest<'a> },
@@ -249,6 +242,7 @@ pub(crate) fn encode_parallel_relation_proposal_challenge(
     sender_identity: Option<&[u8]>,
     nonce: &Nonce,
     request_digest: Digest<'_>,
+    reply_path: &[impl AsRef<[u8]>],
     new_vid: &[u8],
 ) -> Result<Vec<u8>, EncodeError> {
     let mut temp = Vec::new();
@@ -256,23 +250,7 @@ pub(crate) fn encode_parallel_relation_proposal_challenge(
     checked_encode_variable_data(TSP_VID, sender_identity.unwrap_or(&[]), &mut temp)?;
     encode_digest(&request_digest, &mut temp);
     encode_fixed_data(TSP_NONCE, &nonce.0, &mut temp);
-    checked_encode_variable_data(TSP_VID, new_vid, &mut temp)?;
-    Ok(temp)
-}
-
-/// The signable fields of a parallel (referral) relationship accept:
-/// {XRFA, VID_sndr, Digest, Reply_Digest, VID_new}, in the unified field order.
-pub(crate) fn encode_parallel_relation_affirm_challenge(
-    sender_identity: Option<&[u8]>,
-    request_digest: Digest<'_>,
-    reply_digest: Digest<'_>,
-    new_vid: &[u8],
-) -> Result<Vec<u8>, EncodeError> {
-    let mut temp = Vec::new();
-    temp.extend(&XRFA);
-    checked_encode_variable_data(TSP_VID, sender_identity.unwrap_or(&[]), &mut temp)?;
-    encode_digest(&request_digest, &mut temp);
-    encode_digest(&reply_digest, &mut temp);
+    encode_hops(reply_path, &mut temp)?;
     checked_encode_variable_data(TSP_VID, new_vid, &mut temp)?;
     Ok(temp)
 }
@@ -399,18 +377,21 @@ pub fn encode_payload(
             encode_padding(padding, &mut temp)?;
             temp.extend(data.as_ref());
         }
-        Payload::DirectRelationProposal {
-            nonce,
+        Payload::RelationProposal {
             request_digest,
+            nonce,
+            reply_path,
+            referral,
         } => {
             temp.extend(&XRFI);
             encode_sender_identity(sender_identity, &mut temp)?;
             encode_digest(request_digest, &mut temp);
             encode_fixed_data(TSP_NONCE, &nonce.0, &mut temp);
-            checked_encode_variable_data(TSP_VID, &[], &mut temp)?; // NULL new-VID field
+            encode_hops(reply_path, &mut temp)?;
+            encode_referral(referral.as_ref(), &mut temp)?;
             encode_padding(padding, &mut temp)?;
         }
-        Payload::DirectRelationAffirm {
+        Payload::RelationAffirm {
             request_digest,
             reply_digest,
         } => {
@@ -418,40 +399,6 @@ pub fn encode_payload(
             encode_sender_identity(sender_identity, &mut temp)?;
             encode_digest(request_digest, &mut temp);
             encode_digest(reply_digest, &mut temp);
-            encode_padding(padding, &mut temp)?;
-        }
-        Payload::ParallelRelationProposal {
-            nonce,
-            request_digest,
-            sig_new_vid,
-            new_vid,
-        } => {
-            if new_vid.as_ref().is_empty() {
-                return Err(EncodeError::InvalidVid);
-            }
-            temp.extend(&XRFI);
-            encode_sender_identity(sender_identity, &mut temp)?;
-            encode_digest(request_digest, &mut temp);
-            encode_fixed_data(TSP_NONCE, &nonce.0, &mut temp);
-            checked_encode_variable_data(TSP_VID, new_vid.as_ref(), &mut temp)?;
-            encode_embedded_signature(sig_new_vid, &mut temp)?;
-            encode_padding(padding, &mut temp)?;
-        }
-        Payload::ParallelRelationAffirm {
-            request_digest,
-            reply_digest,
-            sig_new_vid,
-            new_vid,
-        } => {
-            if new_vid.as_ref().is_empty() {
-                return Err(EncodeError::InvalidVid);
-            }
-            temp.extend(&XRFA);
-            encode_sender_identity(sender_identity, &mut temp)?;
-            encode_digest(request_digest, &mut temp);
-            encode_digest(reply_digest, &mut temp);
-            checked_encode_variable_data(TSP_VID, new_vid.as_ref(), &mut temp)?;
-            encode_embedded_signature(sig_new_vid, &mut temp)?;
             encode_padding(padding, &mut temp)?;
         }
         Payload::RelationshipCancel { reply } => {
@@ -466,6 +413,76 @@ pub fn encode_payload(
     output.extend(temp.iter());
 
     Ok(())
+}
+
+/// The new VID a referral introduces, and that VID's own signature
+type Referral<'a, Vid> = (Vid, &'a Signature);
+
+/// Encode the referral field (spec 9.2): a generic list holding the new VID and
+/// that VID's own signature, or the empty list when the message is not a
+/// referral. Grouping the two means they switch on and off together.
+fn encode_referral(
+    referral: Option<&Referral<'_, impl AsRef<[u8]>>>,
+    output: &mut impl for<'a> Extend<&'a u8>,
+) -> Result<(), EncodeError> {
+    let Some((new_vid, signature)) = referral else {
+        encode_count(TSP_HOP_LIST, 0usize, output);
+
+        return Ok(());
+    };
+
+    if new_vid.as_ref().is_empty() {
+        return Err(EncodeError::InvalidVid);
+    }
+
+    let mut temp = Vec::new();
+    checked_encode_variable_data(TSP_VID, new_vid.as_ref(), &mut temp)?;
+    encode_embedded_signature(signature, &mut temp)?;
+
+    encode_count(TSP_HOP_LIST, temp.len() / 3, output);
+    output.extend(temp.iter());
+
+    Ok(())
+}
+
+/// Decode the referral field; the count delimits its byte length
+fn decode_referral<'a, Vid: TryFrom<&'a [u8]>>(
+    stream: &'a mut [u8],
+) -> Result<(Option<Referral<'a, Vid>>, &'a mut [u8]), DecodeError> {
+    let (length, stream) =
+        decode_count_mut(TSP_HOP_LIST, stream).ok_or(DecodeError::UnexpectedData)?;
+
+    let bytes = (length as usize)
+        .checked_mul(3)
+        .ok_or(DecodeError::UnexpectedData)?;
+    if bytes > stream.len() {
+        return Err(DecodeError::UnexpectedData);
+    }
+    let (mut referral, rest) = stream.split_at_mut(bytes);
+
+    if referral.is_empty() {
+        return Ok((None, rest));
+    }
+
+    let new_vid: &[u8];
+    (new_vid, referral) =
+        decode_variable_data_mut(TSP_VID, referral).ok_or(DecodeError::UnexpectedData)?;
+    if new_vid.is_empty() {
+        return Err(DecodeError::UnexpectedData);
+    }
+
+    let (signature, remainder) = decoded_signature_from_stream(referral)?;
+    if !remainder.is_empty() {
+        return Err(DecodeError::TrailingGarbage);
+    }
+
+    Ok((
+        Some((
+            new_vid.try_into().map_err(|_| DecodeError::VidError)?,
+            signature,
+        )),
+        rest,
+    ))
 }
 
 /// Encode a hops list; the count is the length in quadlets/triplets of the
@@ -645,27 +662,19 @@ pub fn decode_payload(stream: &mut [u8]) -> Result<DecodedPayload<'_>, DecodeErr
             (nonce, stream) =
                 decode_fixed_data_mut(TSP_NONCE, stream).ok_or(DecodeError::UnexpectedData)?;
 
-            let new_vid: &[u8];
-            (new_vid, stream) =
-                decode_variable_data_mut(TSP_VID, stream).ok_or(DecodeError::UnexpectedData)?;
+            let reply_path;
+            (reply_path, stream) = decode_hops(stream)?;
 
-            if new_vid.is_empty() {
-                stream = decode_padding(stream)?;
-                Payload::DirectRelationProposal {
-                    nonce: Nonce(*nonce),
-                    request_digest,
-                }
-            } else {
-                let sig_new_vid;
-                (sig_new_vid, stream) = decoded_signature_from_stream(stream)?;
-                stream = decode_padding(stream)?;
+            let referral;
+            (referral, stream) = decode_referral(stream)?;
 
-                Payload::ParallelRelationProposal {
-                    nonce: Nonce(*nonce),
-                    request_digest,
-                    sig_new_vid,
-                    new_vid,
-                }
+            stream = decode_padding(stream)?;
+
+            Payload::RelationProposal {
+                request_digest,
+                nonce: Nonce(*nonce),
+                reply_path,
+                referral,
             }
         }
         XRFA => {
@@ -675,33 +684,11 @@ pub fn decode_payload(stream: &mut [u8]) -> Result<DecodedPayload<'_>, DecodeErr
             let reply_digest;
             (reply_digest, stream) = decode_digest(stream)?;
 
-            // the next field is either the padding (direct form, ending the payload)
-            // or the new VID of the parallel (referral) form, followed by a signature
-            let vid_or_pad_mut;
-            (vid_or_pad_mut, stream) =
-                decode_variable_data_mut(TSP_VID, stream).ok_or(DecodeError::UnexpectedData)?;
-            let vid_or_pad: &[u8] = vid_or_pad_mut;
+            stream = decode_padding(stream)?;
 
-            if stream.is_empty() {
-                Payload::DirectRelationAffirm {
-                    request_digest,
-                    reply_digest,
-                }
-            } else {
-                let new_vid = vid_or_pad;
-                if new_vid.is_empty() {
-                    return Err(DecodeError::UnexpectedData);
-                }
-                let sig_new_vid;
-                (sig_new_vid, stream) = decoded_signature_from_stream(stream)?;
-                stream = decode_padding(stream)?;
-
-                Payload::ParallelRelationAffirm {
-                    request_digest,
-                    reply_digest,
-                    sig_new_vid,
-                    new_vid,
-                }
+            Payload::RelationAffirm {
+                request_digest,
+                reply_digest,
             }
         }
         XRFD => {
@@ -809,36 +796,30 @@ pub fn encode_digest_input(
     output.extend(envelope_prefix);
 
     match payload {
-        Payload::DirectRelationProposal { nonce, .. } => {
-            output.extend(&XRFI);
-            encode_sender_identity(sender_identity, output)?;
-            output.extend(&DIGEST_DUMMY);
-            encode_fixed_data(TSP_NONCE, &nonce.0, output);
-            checked_encode_variable_data(TSP_VID, &[], output)?;
-        }
-        Payload::ParallelRelationProposal { nonce, new_vid, .. } => {
-            output.extend(&XRFI);
-            encode_sender_identity(sender_identity, output)?;
-            output.extend(&DIGEST_DUMMY);
-            encode_fixed_data(TSP_NONCE, &nonce.0, output);
-            checked_encode_variable_data(TSP_VID, new_vid.as_ref(), output)?;
-        }
-        Payload::DirectRelationAffirm { request_digest, .. } => {
-            output.extend(&XRFA);
-            encode_sender_identity(sender_identity, output)?;
-            encode_digest(request_digest, output);
-            output.extend(&DIGEST_DUMMY);
-        }
-        Payload::ParallelRelationAffirm {
-            request_digest,
-            new_vid,
+        Payload::RelationProposal {
+            nonce,
+            reply_path,
+            referral,
             ..
         } => {
+            output.extend(&XRFI);
+            encode_sender_identity(sender_identity, output)?;
+            output.extend(&DIGEST_DUMMY);
+            encode_fixed_data(TSP_NONCE, &nonce.0, output);
+            encode_hops(reply_path, output)?;
+            // the new VID is covered, but its signature is not: it is produced
+            // after the digest and signs it (spec 7.2.1)
+            if let Some((new_vid, _)) = referral {
+                checked_encode_variable_data(TSP_VID, new_vid.as_ref(), output)?;
+            } else {
+                encode_count(TSP_HOP_LIST, 0usize, output);
+            }
+        }
+        Payload::RelationAffirm { request_digest, .. } => {
             output.extend(&XRFA);
             encode_sender_identity(sender_identity, output)?;
             encode_digest(request_digest, output);
             output.extend(&DIGEST_DUMMY);
-            checked_encode_variable_data(TSP_VID, new_vid.as_ref(), output)?;
         }
         _ => return Err(EncodeError::NoDigestSlot),
     }
@@ -1802,22 +1783,36 @@ mod test {
     #[test]
     #[wasm_bindgen_test]
     fn test_par_refer_rel() {
-        test_turn_around(Payload::ParallelRelationProposal {
-            nonce: Nonce([7; 16]),
+        // an invite that introduces a new VID carries the referral field
+        test_turn_around(Payload::RelationProposal {
             request_digest: Digest::Sha2_256(&Default::default()),
-            sig_new_vid: &[5; 64],
-            new_vid: b"Charlie",
+            nonce: Nonce([7; 16]),
+            reply_path: vec![],
+            referral: Some((b"Charlie", &[5; 64])),
         });
     }
 
     #[test]
     #[wasm_bindgen_test]
-    fn test_parallel_relation_accept_round_trip() {
-        test_turn_around(Payload::ParallelRelationAffirm {
-            request_digest: Digest::Sha2_256(&[3; 32]),
-            reply_digest: Digest::Blake2b256(&[4; 32]),
-            sig_new_vid: &[9; 64],
-            new_vid: b"Delta",
+    fn test_routed_relation_proposal_round_trip() {
+        // an invite that asks for a routed reply carries a reply path
+        test_turn_around(Payload::RelationProposal {
+            request_digest: Digest::Blake2b256(&[6; 32]),
+            nonce: Nonce([8; 16]),
+            reply_path: vec![b"did:test:p".as_slice(), b"did:test:a1".as_slice()],
+            referral: None,
+        });
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_routed_referral_proposal_round_trip() {
+        // both fields populated at once
+        test_turn_around(Payload::RelationProposal {
+            request_digest: Digest::Sha2_256(&[2; 32]),
+            nonce: Nonce([9; 16]),
+            reply_path: vec![b"did:test:q".as_slice()],
+            referral: Some((b"did:test:a1", &[4; 64])),
         });
     }
 
@@ -1869,15 +1864,17 @@ mod test {
         let temp = (1u8..33).collect::<Vec<u8>>();
         let digest: &[u8; 32] = temp.as_slice().try_into().unwrap();
         let nonce = [7u8; 16];
-        test_turn_around(Payload::DirectRelationProposal {
-            nonce: Nonce(nonce),
+        test_turn_around(Payload::RelationProposal {
             request_digest: Digest::Sha2_256(digest),
+            nonce: Nonce(nonce),
+            reply_path: vec![],
+            referral: None,
         });
-        test_turn_around(Payload::DirectRelationAffirm {
+        test_turn_around(Payload::RelationAffirm {
             request_digest: Digest::Sha2_256(digest),
             reply_digest: Digest::Sha2_256(digest),
         });
-        test_turn_around(Payload::DirectRelationAffirm {
+        test_turn_around(Payload::RelationAffirm {
             request_digest: Digest::Blake2b256(digest),
             reply_digest: Digest::Blake2b256(digest),
         });

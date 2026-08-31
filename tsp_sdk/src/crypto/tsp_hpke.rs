@@ -265,73 +265,53 @@ fn open_payload<'a>(
 
     let (secret_payload, parallel_signature_info) = match payload {
         crate::cesr::Payload::GenericMessage(data) => (Payload::Content(data as _), None),
-        crate::cesr::Payload::DirectRelationProposal { request_digest, .. } => (
-            open_relationship_request(
-                *request_digest.as_bytes(),
-                crate::definitions::RelationshipForm::Direct,
-            ),
-            None,
-        ),
-        crate::cesr::Payload::DirectRelationAffirm {
+        crate::cesr::Payload::RelationProposal {
             request_digest,
-            reply_digest,
-        } => (
-            open_relationship_accept(
-                *request_digest.as_bytes(),
-                *reply_digest.as_bytes(),
-                crate::definitions::RelationshipForm::Direct,
-            ),
-            None,
-        ),
-        crate::cesr::Payload::ParallelRelationProposal {
             nonce,
-            request_digest,
-            sig_new_vid,
-            new_vid,
-            ..
-        } => (
-            open_relationship_request(
-                *request_digest.as_bytes(),
-                crate::definitions::RelationshipForm::Parallel {
-                    new_vid,
-                    sig_new_vid,
-                },
-            ),
-            Some(ParallelSignatureInfo {
-                new_vid,
-                sig_new_vid,
-                signed_data: crate::cesr::encode_parallel_relation_proposal_challenge(
-                    sender_identity,
-                    &nonce,
-                    request_digest,
-                    new_vid,
-                )?,
-            }),
-        ),
-        crate::cesr::Payload::ParallelRelationAffirm {
+            reply_path,
+            referral,
+        } => {
+            let _ = reply_path;
+            match referral {
+                None => (
+                    open_relationship_request(
+                        *request_digest.as_bytes(),
+                        crate::definitions::RelationshipForm::Direct,
+                    ),
+                    None,
+                ),
+                Some((new_vid, sig_new_vid)) => (
+                    open_relationship_request(
+                        *request_digest.as_bytes(),
+                        crate::definitions::RelationshipForm::Parallel {
+                            new_vid,
+                            sig_new_vid,
+                        },
+                    ),
+                    Some(ParallelSignatureInfo {
+                        new_vid,
+                        sig_new_vid,
+                        signed_data: crate::cesr::encode_parallel_relation_proposal_challenge(
+                            sender_identity,
+                            &nonce,
+                            request_digest,
+                            &reply_path,
+                            new_vid,
+                        )?,
+                    }),
+                ),
+            }
+        }
+        crate::cesr::Payload::RelationAffirm {
             request_digest,
             reply_digest,
-            sig_new_vid,
-            new_vid,
         } => (
             open_relationship_accept(
                 *request_digest.as_bytes(),
                 *reply_digest.as_bytes(),
-                crate::definitions::RelationshipForm::Parallel {
-                    new_vid,
-                    sig_new_vid,
-                },
+                crate::definitions::RelationshipForm::Direct,
             ),
-            Some(ParallelSignatureInfo {
-                new_vid,
-                sig_new_vid,
-                signed_data: crate::cesr::encode_parallel_relation_affirm_challenge(
-                    sender_identity,
-                    request_digest,
-                    reply_digest,
-                    new_vid,
-                )?,
-            }),
+            None,
         ),
         crate::cesr::Payload::ControlMessage(_) | crate::cesr::Payload::Padding { .. } => {
             // recognized on the wire, but not yet surfaced through the API
