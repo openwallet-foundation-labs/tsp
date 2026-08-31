@@ -153,14 +153,15 @@ class AliceBob(unittest.TestCase):
 
         received = self.store.open_message(sealed)
         match received:
-            case tsp.AcceptRelationship(sender, receiver, received_thread_id, _reply_thread_id, form, delivery, nested_vid, parallel_vid):
-                self.assertEqual(sender, self.bob.identifier())
+            case tsp.AcceptRelationship(sender, receiver, received_thread_id, _reply_thread_id, form, delivery, nested_vid, _parallel_vid):
+                # the accept travels the new relationship, so bob's new VID is
+                # the sender rather than a payload field
+                self.assertEqual(sender, bob_parallel.identifier())
                 self.assertEqual(receiver, alice_parallel.identifier())
                 self.assertEqual(received_thread_id, thread_id)
-                self.assertEqual(form, tsp.RelationshipForm.Parallel)
+                self.assertEqual(form, tsp.RelationshipForm.Direct)
                 self.assertEqual(delivery, tsp.RelationshipDelivery.Direct)
                 self.assertIsNone(nested_vid)
-                self.assertEqual(parallel_vid, bob_parallel.identifier())
 
             case other:
                 self.fail(f"unexpected message type {other}")

@@ -80,7 +80,8 @@ pub fn encode_count(
 
         stream.extend(&u32::to_be_bytes(word)[1..]);
     } else {
-        let word1 = (DASH << 18) | (D0 << 12) | (bits(identifier, 6) << 6) | bits(count >> 24, 6);
+        // the long form is a double dash, `--X#####` (CESR master table for -_AAACAA)
+        let word1 = (DASH << 18) | (DASH << 12) | (bits(identifier, 6) << 6) | bits(count >> 24, 6);
         let word2 = bits(count, 24);
 
         stream.extend(&u32::to_be_bytes(word1)[1..]);

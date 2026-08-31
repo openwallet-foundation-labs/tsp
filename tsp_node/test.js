@@ -163,13 +163,14 @@ describe('tsp node tests', function() {
         received = store.open_message(sealed);
 
         if (received instanceof AcceptRelationship) {
-            assert.strictEqual(received.sender, bob.identifier());
+            // the accept travels the new relationship, so bob's new VID is the
+            // sender rather than a payload field
+            assert.strictEqual(received.sender, bobParallel.identifier());
             assert.strictEqual(received.receiver, aliceParallel.identifier());
             assert.deepStrictEqual(received.thread_id, requestThreadId);
-            assert.strictEqual(received.form, RelationshipForm.Parallel);
+            assert.strictEqual(received.form, RelationshipForm.Direct);
             assert.strictEqual(received.delivery, RelationshipDelivery.Direct);
             assert.strictEqual(received.nested_vid, null);
-            assert.strictEqual(received.new_vid, bobParallel.identifier());
         } else {
             assert.fail(`Unexpected message type: ${received}`);
         }

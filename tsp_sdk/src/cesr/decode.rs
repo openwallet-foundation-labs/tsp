@@ -153,8 +153,9 @@ pub fn decode_count(identifier: u16, stream: &mut &[u8]) -> Option<u32> {
     let index = word & mask(12);
 
     let expected = (DASH << 18) | (bits(identifier, 6) << 12) | bits(index, 12);
+    // the long form is a double dash, `--X#####` (CESR master table for -_AAACAA)
     let expected_long =
-        (DASH << 18) | D0 << 12 | (bits(identifier, 6) << 6) | bits(index & 0x3F, 6);
+        (DASH << 18) | DASH << 12 | (bits(identifier, 6) << 6) | bits(index & 0x3F, 6);
     if word == expected {
         *stream = &stream[3..];
 

@@ -159,11 +159,11 @@ pub(crate) fn build_parallel_request_signed_data(
 ) -> Result<Vec<u8>, CryptoError> {
     // the digest is derived first (its own slot dummied, the new-VID signature
     // not yet present); the signature is then made over the final digest
-    let payload = crate::cesr::Payload::<&[u8], &[u8]>::ParallelRelationProposal {
-        nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+    let payload = crate::cesr::Payload::<&[u8], &[u8]>::RelationProposal {
         request_digest: digest_algorithm.field(&*request_digest),
-        sig_new_vid: &[0; 64],
-        new_vid,
+        nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+        reply_path: vec![],
+        referral: Some((new_vid, &[0; 64])),
     };
     *request_digest = compute_relationship_digest(
         &payload,
@@ -177,35 +177,7 @@ pub(crate) fn build_parallel_request_signed_data(
         sender_in_payload,
         &nonce,
         digest_algorithm.field(request_digest),
-        new_vid,
-    )?)
-}
-
-pub(crate) fn build_parallel_accept_signed_data(
-    thread_id: &Digest,
-    sender_in_payload: Option<&[u8]>,
-    digest_algorithm: RelationshipDigestAlgorithm,
-    envelope_prefix: &[u8],
-    reply_digest: &mut Digest,
-    new_vid: &[u8],
-) -> Result<Vec<u8>, CryptoError> {
-    let payload = crate::cesr::Payload::<&[u8], &[u8]>::ParallelRelationAffirm {
-        request_digest: digest_algorithm.field(thread_id),
-        reply_digest: digest_algorithm.field(&*reply_digest),
-        sig_new_vid: &[0; 64],
-        new_vid,
-    };
-    *reply_digest = compute_relationship_digest(
-        &payload,
-        sender_in_payload,
-        envelope_prefix,
-        digest_algorithm,
-    )?;
-
-    Ok(crate::cesr::encode_parallel_relation_affirm_challenge(
-        sender_in_payload,
-        digest_algorithm.field(thread_id),
-        digest_algorithm.field(reply_digest),
+        &[] as &[&[u8]],
         new_vid,
     )?)
 }
@@ -216,19 +188,18 @@ fn relationship_request_payload<'a>(
     nonce_bytes: [u8; 16],
     request_digest: &'a Digest,
 ) -> CesrRelationshipPayload<'a> {
-    match form {
-        RelationshipForm::Direct => crate::cesr::Payload::DirectRelationProposal {
-            nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
-            request_digest: digest_algorithm.field(request_digest),
-        },
-        RelationshipForm::Parallel {
-            new_vid,
-            sig_new_vid,
-        } => crate::cesr::Payload::ParallelRelationProposal {
-            nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
-            request_digest: digest_algorithm.field(request_digest),
-            sig_new_vid,
-            new_vid,
+    crate::cesr::Payload::RelationProposal {
+        request_digest: digest_algorithm.field(request_digest),
+        nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+        // routed relationship forming is not implemented yet; when it is, the
+        // reply path the caller asks for goes here
+        reply_path: vec![],
+        referral: match form {
+            RelationshipForm::Direct => None,
+            RelationshipForm::Parallel {
+                new_vid,
+                sig_new_vid,
+            } => Some((*new_vid, *sig_new_vid)),
         },
     }
 }
@@ -239,20 +210,13 @@ fn relationship_accept_payload<'a>(
     digest_algorithm: RelationshipDigestAlgorithm,
     reply_digest: &'a Digest,
 ) -> CesrRelationshipPayload<'a> {
-    match form {
-        RelationshipForm::Direct => crate::cesr::Payload::DirectRelationAffirm {
-            request_digest: digest_algorithm.field(thread_id),
-            reply_digest: digest_algorithm.field(reply_digest),
-        },
-        RelationshipForm::Parallel {
-            new_vid,
-            sig_new_vid,
-        } => crate::cesr::Payload::ParallelRelationAffirm {
-            request_digest: digest_algorithm.field(thread_id),
-            reply_digest: digest_algorithm.field(reply_digest),
-            sig_new_vid,
-            new_vid,
-        },
+    // an accept has one form: where it accepts a referral, the accepting
+    // endpoint's new VID is the sender of the message, not a payload field
+    let _ = form;
+
+    crate::cesr::Payload::RelationAffirm {
+        request_digest: digest_algorithm.field(thread_id),
+        reply_digest: digest_algorithm.field(reply_digest),
     }
 }
 
@@ -316,10 +280,8 @@ pub(crate) fn verify_relationship_digest(
     envelope_prefix: &[u8],
 ) -> Result<(), CryptoError> {
     let embedded = match payload {
-        crate::cesr::Payload::DirectRelationProposal { request_digest, .. }
-        | crate::cesr::Payload::ParallelRelationProposal { request_digest, .. } => request_digest,
-        crate::cesr::Payload::DirectRelationAffirm { reply_digest, .. }
-        | crate::cesr::Payload::ParallelRelationAffirm { reply_digest, .. } => reply_digest,
+        crate::cesr::Payload::RelationProposal { request_digest, .. } => request_digest,
+        crate::cesr::Payload::RelationAffirm { reply_digest, .. } => reply_digest,
         _ => return Ok(()),
     };
 
@@ -712,26 +674,32 @@ mod tests {
         let algorithm = super::RelationshipDigestAlgorithm::Sha2_256;
         let nonce_bytes = [7_u8; 16];
         let mut digest = [0_u8; 32];
-        let payload = crate::cesr::Payload::<&[u8], &[u8]>::DirectRelationProposal {
-            nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+        let payload = crate::cesr::Payload::<&[u8], &[u8]>::RelationProposal {
             request_digest: algorithm.field(&digest),
+            nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+            reply_path: vec![],
+            referral: None,
         };
         let mut input = Vec::new();
         crate::cesr::encode_digest_input(&payload, Some(sender), &envelope_prefix, &mut input)
             .unwrap();
         digest = algorithm.hash(&input);
 
-        let good = crate::cesr::Payload::<&[u8], &[u8]>::DirectRelationProposal {
-            nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+        let good = crate::cesr::Payload::<&[u8], &[u8]>::RelationProposal {
             request_digest: algorithm.field(&digest),
+            nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+            reply_path: vec![],
+            referral: None,
         };
         super::verify_relationship_digest(&good, Some(sender), &envelope_prefix).unwrap();
 
         let mut tampered_digest = digest;
         tampered_digest[0] ^= 0x01;
-        let tampered = crate::cesr::Payload::<&[u8], &[u8]>::DirectRelationProposal {
-            nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+        let tampered = crate::cesr::Payload::<&[u8], &[u8]>::RelationProposal {
             request_digest: algorithm.field(&tampered_digest),
+            nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+            reply_path: vec![],
+            referral: None,
         };
         assert!(matches!(
             super::verify_relationship_digest(&tampered, Some(sender), &envelope_prefix),
