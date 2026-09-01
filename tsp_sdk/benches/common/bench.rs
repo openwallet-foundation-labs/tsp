@@ -149,8 +149,11 @@ pub enum VidVerifyInput {
 }
 
 fn setup_did_peer() -> VidVerifyInput {
+    // the long form of a did:peer:4, which is what an endpoint resolves: the
+    // short form carries no document. Fixed rather than generated so the
+    // measured work is the same run to run.
     VidVerifyInput::Peer(
-        "did:peer:2.Vz6MurhTjqX5uhQ5bJbAaoEwSDFcKDwVJTvoii51JBtSPpKzX.Ez6LbvBvy92yWENk8xKYmaX9X9nzMtQCQ2EqgdLKv2YkcpHo7.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0"
+        "did:peer:4zQmRAVYmJfBEJQmwGrLSHBuhGPzfrrc3Stpy4PJ7A4prRqv:z2kCqs4oURbyPVxWvLGsQbAdjk8rSFaHh3WrHx3BhMyxctozJVLhk8RTXhxMySbJbzBktUG1A5NFknC4vtqSuS2XsU7uvAcHCqu8RpQ5xcQNHieTHAj6rN745QAfnjjzY4YTPBBiPJ8M2HDdPV8AWFuuYXXrAFvymCLkWgoVujXuqk3cccEfM7p7cWmpVetistjz76jmy5VMrGYtCPVkWabWc7bb9baLEASCmDyM2rwfmPQP6simivu5KXoaNjFK3id5Fg1cGk8NKquFDF6nE4k6FqnXRtcXGzKxn8zkLG8QxG3zHRYjfCuFjEou7y8MhBfmB1UTuGZ2Qh7wwp6hNXgewpw8PfZkLfxia4QaamwDEAGgZ44nq1ioGUCrA3KwSQCNycxbggBmGsacER2ki5iZKKmBLcW2pZTpThmQyigApG26uW7xB1EH9Mn2XHqZRS8ie7Uyh5iyBJ8gdzUyxEuVLpFAvaJf4Kmknr8G2Tyb5LtwHkjR9nW56QYXpUThqVjyZ4APL428pJxCRR5MrTepp5ahHbY7YjTGu5eUCS8kMfpEBtvzkxeAqsaN8a2C3e"
             .to_string(),
     )
 }
