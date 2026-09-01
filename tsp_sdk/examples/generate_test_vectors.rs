@@ -1,7 +1,7 @@
 //! Generate the Rev 3 test vectors.
 //!
 //! ```sh
-//! cargo run -p tsp_sdk --example generate_test_vectors --features "pq" > tsp_sdk/test_vectors/rev3.json
+//! cargo run -p tsp_sdk --example generate_test_vectors > tsp_sdk/test_vectors/rev3.json
 //! ```
 //!
 //! Running this twice produces identical output: every random value is drawn
@@ -369,7 +369,7 @@ fn main() {
             form: RelationshipForm::Direct,
         },
         Some(&mut request_digest),
-        cesr::CryptoType::SealedBox,
+        cesr::CryptoType::HpkeBase,
         seed(8),
         Some(NONCE),
     )
@@ -386,12 +386,12 @@ fn main() {
         &m,
         payload_plaintext(
             &cesr::Payload::RelationProposal {
-                request_digest: digest_of(&request_digest, cesr::CryptoType::SealedBox),
+                request_digest: digest_of(&request_digest, cesr::CryptoType::HpkeBase),
                 nonce: cesr::Nonce::generate(|dst| *dst = NONCE),
                 reply_path: vec![],
                 referral: None,
             },
-            Some(alice.identifier().as_bytes()),
+            None,
         ),
         None,
         Some(8),
@@ -407,7 +407,7 @@ fn main() {
             "Padding_Field",
         ],
         json!({
-            "crypto": "SealedBox",
+            "crypto": "HpkeBase",
             "payload": {"request_relationship": {"thread_id": b64(&request_digest), "reply_path": [], "referral": null}}
         }),
     );
@@ -423,7 +423,7 @@ fn main() {
             form: RelationshipForm::Direct,
         },
         Some(&mut reply_digest),
-        cesr::CryptoType::SealedBox,
+        cesr::CryptoType::HpkeBase,
         seed(9),
         Some(NONCE),
     )
@@ -439,10 +439,10 @@ fn main() {
         &m,
         payload_plaintext(
             &cesr::Payload::RelationAffirm {
-                request_digest: digest_of(&request_digest, cesr::CryptoType::SealedBox),
-                reply_digest: digest_of(&reply_digest, cesr::CryptoType::SealedBox),
+                request_digest: digest_of(&request_digest, cesr::CryptoType::HpkeBase),
+                reply_digest: digest_of(&reply_digest, cesr::CryptoType::HpkeBase),
             },
-            Some(bob.identifier().as_bytes()),
+            None,
         ),
         None,
         Some(9),
@@ -456,7 +456,7 @@ fn main() {
             "Padding_Field",
         ],
         json!({
-            "crypto": "SealedBox",
+            "crypto": "HpkeBase",
             "payload": {"accept_relationship": {"thread_id": b64(&request_digest), "reply_thread_id": b64(&reply_digest)}}
         }),
     );
@@ -469,7 +469,7 @@ fn main() {
             thread_id: request_digest,
         },
         None,
-        cesr::CryptoType::SealedBox,
+        cesr::CryptoType::HpkeBase,
         seed(3),
         None,
     )
@@ -485,15 +485,73 @@ fn main() {
         &m,
         payload_plaintext(
             &cesr::Payload::RelationshipCancel {
-                reply: digest_of(&request_digest, cesr::CryptoType::SealedBox),
+                reply: digest_of(&request_digest, cesr::CryptoType::HpkeBase),
             },
-            Some(alice.identifier().as_bytes()),
+            None,
         ),
         None,
         Some(3),
         None,
         vec!["-Z##", "XRFD", "VID_sndr | 4BAA", "Digest", "Padding_Field"],
-        json!({"crypto": "SealedBox", "payload": {"cancel_relationship": {"thread_id": b64(&request_digest)}}}),
+        json!({"crypto": "HpkeBase", "payload": {"cancel_relationship": {"thread_id": b64(&request_digest)}}}),
+    );
+
+    // 6b. the same invite under the sealed box, which the specification keeps
+    // for existing implementations. Its payload rules differ from HPKE-Base in
+    // two ways that nothing else in these vectors exercises: the digest is
+    // Blake2b-256 rather than SHA2-256, and VID_sndr MUST be carried in the
+    // payload because the construction is anonymous.
+    let mut sealed_request_digest = [0_u8; 32];
+    let m = tsp_sdk::crypto::seal_reproducibly(
+        &alice,
+        &bob,
+        Payload::RequestRelationship {
+            thread_id: Default::default(),
+            reply_path: vec![],
+            form: RelationshipForm::Direct,
+        },
+        Some(&mut sealed_request_digest),
+        cesr::CryptoType::SealedBox,
+        seed(10),
+        Some(NONCE),
+    )
+    .unwrap();
+    add(
+        "control-rfi-sealed-box",
+        "7.2.1, 8, 9.4.1",
+        "A TSP_RFI under the libsodium sealed box, the suite the specification keeps only for \
+         existing implementations. Two payload rules differ from HPKE-Base: the Digest is \
+         Blake2b-256, whose CESR code is F rather than I, and VID_sndr MUST carry the sender \
+         because the sealed box is anonymous, where HPKE-Base defaults it to the NULL VID.",
+        "alice",
+        Some("bob"),
+        &m,
+        payload_plaintext(
+            &cesr::Payload::RelationProposal {
+                request_digest: digest_of(&sealed_request_digest, cesr::CryptoType::SealedBox),
+                nonce: cesr::Nonce::generate(|dst| *dst = NONCE),
+                reply_path: vec![],
+                referral: None,
+            },
+            Some(alice.identifier().as_bytes()),
+        ),
+        None,
+        Some(10),
+        Some(&b64(&NONCE)),
+        vec![
+            "-Z##",
+            "XRFI",
+            "VID_sndr",
+            "Digest",
+            "Nonce",
+            "Reply_Path",
+            "Referral_Field",
+            "Padding_Field",
+        ],
+        json!({
+            "crypto": "SealedBox",
+            "payload": {"request_relationship": {"thread_id": b64(&sealed_request_digest), "reply_path": [], "referral": null}}
+        }),
     );
 
     // 7. nested message: an XHOP payload wrapping a complete inner TSP message
@@ -502,7 +560,7 @@ fn main() {
         nested_bob.vid(),
         Payload::Content(b"hello world"),
         None,
-        cesr::CryptoType::SealedBox,
+        cesr::CryptoType::HpkeBase,
         seed(4),
         None,
     )
@@ -512,7 +570,7 @@ fn main() {
         &bob,
         Payload::NestedMessage(&inner),
         None,
-        cesr::CryptoType::SealedBox,
+        cesr::CryptoType::HpkeBase,
         seed(5),
         None,
     )
@@ -528,16 +586,10 @@ fn main() {
         "alice",
         Some("bob"),
         &m,
-        payload_plaintext(
-            &cesr::Payload::NestedMessage(&inner[..]),
-            Some(alice.identifier().as_bytes()),
-        ),
+        payload_plaintext(&cesr::Payload::NestedMessage(&inner[..]), None),
         Some((
             &inner,
-            payload_plaintext(
-                &cesr::Payload::GenericMessage(&b"hello world"[..]),
-                Some(nested_alice.identifier().as_bytes()),
-            ),
+            payload_plaintext(&cesr::Payload::GenericMessage(&b"hello world"[..]), None),
         )),
         Some(5),
         None,
@@ -550,7 +602,7 @@ fn main() {
             "Encoded_TSP_Message",
         ],
         json!({
-            "crypto": "SealedBox",
+            "crypto": "HpkeBase",
             "payload": {"nested": {"inner_sender": nested_alice.identifier(), "inner_receiver": nested_bob.identifier(), "inner_content": "hello world"}}
         }),
     );
@@ -562,7 +614,7 @@ fn main() {
         nested_bob.vid(),
         Payload::Content(b"hello world"),
         None,
-        cesr::CryptoType::SealedBox,
+        cesr::CryptoType::HpkeBase,
         seed(6),
         None,
     )
@@ -576,7 +628,7 @@ fn main() {
         p.vid(),
         Payload::RoutedMessage(hops, &e2e),
         None,
-        cesr::CryptoType::SealedBox,
+        cesr::CryptoType::HpkeBase,
         seed(7),
         None,
     )
@@ -601,14 +653,11 @@ fn main() {
                 ],
                 &e2e[..],
             ),
-            Some(alice.identifier().as_bytes()),
+            None,
         ),
         Some((
             &e2e,
-            payload_plaintext(
-                &cesr::Payload::GenericMessage(&b"hello world"[..]),
-                Some(nested_alice.identifier().as_bytes()),
-            ),
+            payload_plaintext(&cesr::Payload::GenericMessage(&b"hello world"[..]), None),
         )),
         Some(7),
         None,
@@ -623,7 +672,7 @@ fn main() {
             "Encoded_TSP_Message",
         ],
         json!({
-            "crypto": "SealedBox",
+            "crypto": "HpkeBase",
             "payload": {"routed": {
                 "hops": [q.identifier(), nested_bob.identifier()],
                 "inner_sender": nested_alice.identifier(),
