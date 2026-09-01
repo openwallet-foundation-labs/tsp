@@ -618,6 +618,17 @@ impl SecureStore {
     }
 
     /// Whether a route is configured for this VID
+    /// The route configured for this VID, if any
+    pub fn get_route_for_vid(&self, vid: &str) -> Result<Option<Vec<String>>, Error> {
+        let vid = self.try_resolve_alias(vid)?;
+
+        Ok(self
+            .vids
+            .read()?
+            .get(&vid)
+            .and_then(|context| context.get_route().map(<[String]>::to_vec)))
+    }
+
     pub fn has_route_for_vid(&self, vid: &str) -> Result<bool, Error> {
         let vid = self.try_resolve_alias(vid)?;
 
@@ -1260,8 +1271,23 @@ impl SecureStore {
                             opaque_payload: BytesMut::from_iter(message.iter()),
                         })
                     }
-                    Payload::RequestRelationship { thread_id, form } => {
+                    Payload::RequestRelationship {
+                        thread_id,
+                        form,
+                        reply_path,
+                    } => {
                         let form = received_relationship_form(form)?;
+
+                        // the sender told us how to reach it (spec 7.2.4), so
+                        // record that as the route for its VID; the accept and
+                        // everything after it then travel that path
+                        if !reply_path.is_empty() {
+                            let hops = reply_path
+                                .iter()
+                                .map(|hop| std::str::from_utf8(hop))
+                                .collect::<Result<Vec<_>, _>>()?;
+                            self.set_route_for_vid(&sender, &hops)?;
+                        }
 
                         if matches!(form, ReceivedRelationshipForm::Direct) {
                             self.record_incoming_relationship_request(
@@ -1417,37 +1443,50 @@ impl SecureStore {
         &self,
         sender: &str,
         receiver: &str,
-        route: Option<&[&str]>,
+        reply_path: Option<&[&str]>,
         selection: Option<OutboundCryptoSelection>,
     ) -> Result<(Url, Vec<u8>), Error> {
-        if route.is_some() {
-            return Err(Error::Relationship(
-                "routed relationship-forming requires Reply_Path; not implemented".into(),
-            ));
-        }
+        let sender_vid = self.get_private_vid(sender)?;
+        let receiver_vid = self.get_verified_vid(receiver)?;
 
-        let sender = self.get_private_vid(sender)?;
-        let receiver = self.get_verified_vid(receiver)?;
+        let reply_path = self.resolve_reply_path(reply_path)?;
+        let reply_path_bytes = reply_path
+            .iter()
+            .map(|hop| hop.as_bytes())
+            .collect::<Vec<_>>();
+
         let mut thread_id = Default::default();
-        let tsp_message = seal_envelope(
-            &*sender,
-            &*receiver,
+        // the invite itself travels whatever route is set for the receiver,
+        // so relationship forming over a routed path uses the same machinery
+        // as any other message (spec 7.2.4)
+        let (endpoint, tsp_message) = self.seal_message_payload_and_hash_with_selection(
+            sender_vid.identifier(),
+            receiver_vid.identifier(),
             Payload::RequestRelationship {
                 thread_id: Default::default(),
                 form: RelationshipForm::Direct,
+                reply_path: reply_path_bytes,
             },
             Some(&mut thread_id),
-            None,
             selection,
         )?;
 
         self.set_relation_and_status_for_vid(
-            receiver.identifier(),
+            receiver_vid.identifier(),
             RelationshipStatus::Unidirectional { thread_id },
-            sender.identifier(),
+            sender_vid.identifier(),
         )?;
 
-        Ok((receiver.endpoint().clone(), tsp_message.to_owned()))
+        Ok((endpoint, tsp_message))
+    }
+
+    /// Resolve the aliases of a caller-supplied reply path
+    fn resolve_reply_path(&self, reply_path: Option<&[&str]>) -> Result<Vec<String>, Error> {
+        reply_path
+            .unwrap_or_default()
+            .iter()
+            .map(|hop| self.try_resolve_alias(hop))
+            .collect()
     }
 
     fn build_parallel_signature_material(
@@ -1476,6 +1515,7 @@ impl SecureStore {
             Some(sender_identity.as_bytes()),
             digest_algorithm,
             nonce,
+            &[],
             &envelope_prefix,
             &mut digest,
             sender_new_vid.identifier().as_bytes(),
@@ -1529,6 +1569,7 @@ impl SecureStore {
             &*receiver,
             Payload::RequestRelationship {
                 thread_id: Default::default(),
+                reply_path: vec![],
                 form: RelationshipForm::Parallel {
                     new_vid: sender_new_vid.identifier().as_bytes(),
                     sig_new_vid: signature_material.sig_new_vid.as_slice(),
@@ -1558,10 +1599,15 @@ impl SecureStore {
         thread_id: Digest,
         route: Option<&[&str]>,
     ) -> Result<(Url, Vec<u8>), Error> {
-        if route.is_some() {
-            return Err(Error::Relationship(
-                "routed relationship-forming requires Reply_Path; not implemented".into(),
-            ));
+        // the accept travels the reply path the invite carried, which was
+        // recorded as the route for the inviting VID when the invite arrived.
+        // A caller may add hops of its own in front of it (spec 7.2.4).
+        if let Some(route) = route {
+            let route = self.resolve_reply_path(Some(route))?;
+            self.set_route_for_vid(
+                receiver,
+                &route.iter().map(String::as_str).collect::<Vec<_>>(),
+            )?;
         }
 
         let mut reply_thread_id = Default::default();
@@ -2512,6 +2558,69 @@ mod test {
 
     #[test]
     #[wasm_bindgen_test]
+    fn test_nested_message_from_unknown_inner_sender_opens_after_verification() {
+        // A nested message whose inner sender is unknown is reported as
+        // UnverifiedSource so the caller can resolve that VID and try again.
+        // The retry must succeed on a fresh copy of the same bytes -- this is
+        // the shape of a routed invite arriving from an endpoint the receiver
+        // has never seen.
+        let a_store = create_test_store();
+        let q_store = create_test_store();
+        let b_store = create_test_store();
+
+        let alice = create_test_vid();
+        let bob = create_test_vid();
+        let intermediary = create_test_vid();
+
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        q_store.add_private_vid(intermediary.clone(), None).unwrap();
+        q_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        b_store
+            .add_verified_vid(intermediary.clone(), None)
+            .unwrap();
+        // bob knows the intermediary, but has never seen alice
+        b_store
+            .set_relation_and_status_for_vid(
+                intermediary.identifier(),
+                RelationshipStatus::Unidirectional { thread_id: [7; 32] },
+                bob.identifier(),
+            )
+            .unwrap();
+
+        let (_url, inner) = a_store
+            .make_relationship_request(alice.identifier(), bob.identifier(), None)
+            .unwrap();
+        let (_url, nested) = q_store
+            .seal_message_payload(
+                intermediary.identifier(),
+                bob.identifier(),
+                Payload::NestedMessage(&inner),
+            )
+            .unwrap();
+
+        let mut first = nested.clone();
+        // the variant carries the payload only when the async feature is on
+        let Err(Error::UnverifiedSource(unknown, ..)) = b_store.open_message(&mut first) else {
+            panic!("an unknown inner sender should be reported");
+        };
+        assert_eq!(unknown, alice.identifier());
+
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+
+        let mut retry = nested.clone();
+        let received = b_store
+            .open_message(&mut retry)
+            .expect("the retry must open the message");
+        assert!(matches!(
+            received,
+            ReceivedTspMessage::RequestRelationship { .. }
+        ));
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
     fn test_open_seal() {
         let store = create_test_store();
         let (alice, bob) = create_test_vid_pair();
@@ -3170,6 +3279,7 @@ mod test {
             Some(alice.identifier().as_bytes()),
             relationship_digest_algorithm(&alice, &bob),
             nonce_bytes,
+            &[],
             &test_envelope_prefix(&alice, &bob),
             &mut thread_id,
             alice_parallel.identifier().as_bytes(),
@@ -3186,6 +3296,7 @@ mod test {
             &*receiver_vid,
             Payload::RequestRelationship {
                 thread_id: Default::default(),
+                reply_path: vec![],
                 form: RelationshipForm::Parallel {
                     new_vid: alice_parallel.identifier().as_ref(),
                     sig_new_vid: sig_new_vid.as_slice(),
@@ -3231,6 +3342,7 @@ mod test {
             Some(alice.identifier().as_bytes()),
             relationship_digest_algorithm(&alice, &bob),
             nonce_bytes,
+            &[],
             &test_envelope_prefix(&alice, &bob),
             &mut thread_id,
             alice_parallel.identifier().as_bytes(),
@@ -3246,6 +3358,7 @@ mod test {
             &*receiver_vid,
             Payload::RequestRelationship {
                 thread_id: Default::default(),
+                reply_path: vec![],
                 form: RelationshipForm::Parallel {
                     new_vid: alice_parallel.identifier().as_ref(),
                     sig_new_vid: sig_new_vid.as_slice(),
@@ -3414,39 +3527,98 @@ mod test {
 
     #[test]
     #[wasm_bindgen_test]
-    fn test_relationship_forming_requires_reply_path_for_routes() {
-        let store = create_test_store();
-        let (alice, bob) = create_test_vid_pair();
-        let hop = create_test_vid();
+    fn test_relationship_forming_carries_a_reply_path() {
+        // A invites B over a route, telling B how to reach it; B records that
+        // as the route for A, so its accept travels back the same way
+        // (spec 7.2.4).
+        let a_store = create_test_store();
+        let b_store = create_test_store();
 
-        store.add_private_vid(alice.clone(), None).unwrap();
-        store.add_verified_vid(bob.clone(), None).unwrap();
-        store.add_verified_vid(hop.clone(), None).unwrap();
+        let alice = create_test_vid();
+        let bob = create_test_vid();
+        let alice_intermediary = create_test_vid();
+        let bob_intermediary = create_test_vid();
 
-        let err = store
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        a_store
+            .add_verified_vid(bob_intermediary.clone(), None)
+            .unwrap();
+        a_store
+            .add_verified_vid(alice_intermediary.clone(), None)
+            .unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+        b_store
+            .add_verified_vid(alice_intermediary.clone(), None)
+            .unwrap();
+        // bob reaches alice's intermediary over his own relationship with it
+        b_store
+            .set_relation_and_status_for_vid(
+                alice_intermediary.identifier(),
+                RelationshipStatus::Unidirectional { thread_id: [6; 32] },
+                bob.identifier(),
+            )
+            .unwrap();
+
+        // alice reaches bob through his intermediary, and asks for the reply
+        // to come back through hers
+        a_store
+            .set_relation_and_status_for_vid(
+                bob_intermediary.identifier(),
+                RelationshipStatus::Unidirectional { thread_id: [5; 32] },
+                alice.identifier(),
+            )
+            .unwrap();
+        a_store
+            .set_route_for_vid(
+                bob.identifier(),
+                &[bob_intermediary.identifier(), bob.identifier()],
+            )
+            .unwrap();
+
+        let (_url, mut request) = a_store
             .make_relationship_request(
                 alice.identifier(),
                 bob.identifier(),
-                Some(&[hop.identifier()]),
+                Some(&[alice_intermediary.identifier(), alice.identifier()]),
             )
-            .unwrap_err();
-        assert!(matches!(
-            err,
-            crate::Error::Relationship(message) if message.contains("Reply_Path")
-        ));
+            .unwrap();
 
-        let err = store
-            .make_relationship_accept(
-                alice.identifier(),
-                bob.identifier(),
-                [3; 32],
-                Some(&[hop.identifier()]),
-            )
-            .unwrap_err();
-        assert!(matches!(
-            err,
-            crate::Error::Relationship(message) if message.contains("Reply_Path")
-        ));
+        // the invite reached bob's intermediary as a routed message; it hands
+        // the inner message to bob
+        let i_store = create_test_store();
+        i_store
+            .add_private_vid(bob_intermediary.clone(), None)
+            .unwrap();
+        i_store.add_verified_vid(alice.clone(), None).unwrap();
+        let forwarded = i_store.open_message(&mut request).unwrap().into_owned();
+
+        let ReceivedTspMessage::ForwardRequest { opaque_payload, .. } = forwarded else {
+            panic!("the invite did not travel the route");
+        };
+
+        let mut inner = opaque_payload.to_vec();
+        let ReceivedTspMessage::RequestRelationship { thread_id, .. } =
+            b_store.open_message(&mut inner).unwrap()
+        else {
+            panic!("bob did not receive a relationship request");
+        };
+
+        // bob now knows how to reach alice
+        assert_eq!(
+            b_store.get_route_for_vid(alice.identifier()).unwrap(),
+            Some(vec![
+                alice_intermediary.identifier().to_string(),
+                alice.identifier().to_string(),
+            ]),
+        );
+
+        // so his accept goes to alice's intermediary rather than to alice
+        let (url, _accept) = b_store
+            .make_relationship_accept(bob.identifier(), alice.identifier(), thread_id, None)
+            .unwrap();
+        assert_url_matches(&url, &alice_intermediary);
     }
 
     #[test]

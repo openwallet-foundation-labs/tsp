@@ -216,6 +216,9 @@ pub enum Payload<'a, Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]> = Bytes> {
     RequestRelationship {
         thread_id: Digest,
         form: RelationshipForm<'a, Bytes>,
+        /// The route the replying endpoint is to use to reach this sender
+        /// (spec 7.2.4). Empty when the reply is to come back directly.
+        reply_path: Vec<VidData<'a>>,
     },
     AcceptRelationship {
         thread_id: Digest,

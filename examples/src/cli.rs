@@ -213,6 +213,13 @@ enum Commands {
         ask: bool,
         #[arg(long, help = "wait for a response")]
         wait: bool,
+        #[arg(
+            long,
+            value_delimiter = ',',
+            conflicts_with = "parallel",
+            help = "route the peer should use to reply, as a comma-separated VID list ending in this endpoint's VID at its intermediary"
+        )]
+        reply_path: Option<Vec<String>>,
     },
     #[command(arg_required_else_help = true, about = "accept a relationship")]
     Accept {
@@ -1367,6 +1374,7 @@ async fn run() -> Result<(), Error> {
             parent_vid,
             ask,
             wait,
+            reply_path,
         } => {
             ensure_vid_verified(&vid_wallet, &receiver_vid, &args.wallet, ask).await?;
 
@@ -1417,7 +1425,14 @@ async fn run() -> Result<(), Error> {
                     "sent a parallel relationship request from {sender_vid} to {receiver_vid} with new identity '{new_vid}'"
                 );
             } else if let Err(e) = vid_wallet
-                .send_relationship_request(&sender_vid, &receiver_vid, None)
+                .send_relationship_request(
+                    &sender_vid,
+                    &receiver_vid,
+                    reply_path
+                        .as_ref()
+                        .map(|hops| hops.iter().map(String::as_str).collect::<Vec<_>>())
+                        .as_deref(),
+                )
                 .await
             {
                 tracing::error!("error sending message from {sender_vid} to {receiver_vid}: {e}");

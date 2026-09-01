@@ -395,13 +395,11 @@ impl AsyncSecureStore {
         match self.inner.relation_status_for_vid_pair(sender, receiver) {
             Ok(relation) => {
                 if matches!(relation, RelationshipStatus::Unrelated) {
-                    self.warn_on_direct_relationship_forming(receiver)?;
                     self.send_relationship_request(sender, receiver, None)
                         .await?
                 }
             }
             Err(Error::Relationship(_)) => {
-                self.warn_on_direct_relationship_forming(receiver)?;
                 self.send_relationship_request(sender, receiver, None)
                     .await?
             }
@@ -413,24 +411,6 @@ impl AsyncSecureStore {
         tracing::info!("sending message to {endpoint}");
 
         crate::transport::send_message(&endpoint, &message).await?;
-
-        Ok(())
-    }
-
-    /// Warn when a relationship is about to be formed directly with a receiver
-    /// for which a route is configured. The specification requires the
-    /// relationship forming message itself to travel the route in that case
-    /// (spec 7.2.4), carrying a Reply_Path; sending it directly reveals to the
-    /// destination, and to anyone observing, an endpoint the route exists to
-    /// keep out of view. Routed relationship forming is not implemented yet.
-    fn warn_on_direct_relationship_forming(&self, receiver: &str) -> Result<(), Error> {
-        if self.inner.has_route_for_vid(receiver)? {
-            tracing::warn!(
-                "forming a relationship with {receiver} directly although a route is set for it: \
-                 routed relationship forming is not implemented, so this message does not take \
-                 the route"
-            );
-        }
 
         Ok(())
     }
@@ -845,97 +825,12 @@ impl AsyncSecureStore {
 
         let db = self.inner.clone();
         let self_clone = self.clone();
-        // A message that fails any verification or validation step is discarded
-        // silently, which is a rule about the wire: nothing is sent in
-        // response, since a response would disclose information to whoever
-        // sent it (spec 3.7). It says nothing about the local caller, so the
-        // failure is passed on and what to make of it is the caller's to
-        // decide. It does not end the stream.
-        let stream: TSPStream<ReceivedTspMessage, Error> = Box::pin(
-            messages
-                .then(move |message| {
-                    let db_inner = db.clone();
-                    let self_inner = self_clone.clone();
-                    async move {
-                        let mut message = message?;
-
-                        if let Ok(colored) = crate::cesr::color_format(&message) {
-                            tracing::trace!("CESR-encoded message: {}", colored);
-                        }
-
-                        // a peer that has been silent longer than the
-                        // re-verification threshold may have rotated its keys
-                        // unobserved; refresh its key state before acting on this
-                        // message (spec 7.4.2)
-                        if let Ok((sender, _)) = crate::cesr::get_sender_receiver(&message)
-                            && let Ok(sender) = std::str::from_utf8(sender)
-                            && db_inner.has_verified_vid(sender)?
-                            && self_inner.silent_beyond_threshold(sender)?
-                        {
-                            debug!("re-resolving {sender} after silence");
-                            if let Err(e) = self_inner.refresh_key_state(sender).await {
-                                // acting on a message whose key state could not be
-                                // confirmed is exactly what the rule forbids
-                                debug!("could not confirm the key state of {sender}: {e}");
-                                return Ok(None);
-                            }
-                        }
-
-                        let opened = match db_inner.open_message(&mut message) {
-                            // first contact: the sender is not in the wallet yet,
-                            // so it has to be resolved before the message can be
-                            // opened at all
-                            Err(Error::UnverifiedSource(unknown_vid, _)) => {
-                                debug!("Verifying VID: {}", unknown_vid);
-                                match self_inner.refresh_key_state(&unknown_vid).await {
-                                    Ok(true) => db_inner.open_message(&mut message),
-                                    Ok(false) => Err(Error::UnverifiedVid(unknown_vid)),
-                                    Err(e) => Err(e),
-                                }
-                            }
-                            // a signature that does not verify may be the result of
-                            // a rotation we have not observed: within an
-                            // established relationship, re-resolve and retry once
-                            // before discarding (spec 3.7, 7.4.2)
-                            Err(Error::Crypto(CryptoError::Verify(vid, reason))) => {
-                                if db_inner.has_relationship_with(&vid)?
-                                    && self_inner.refresh_key_state(&vid).await.is_ok()
-                                {
-                                    debug!("Re-verifying VID: {}", vid);
-                                    db_inner.open_message(&mut message)
-                                } else {
-                                    Err(Error::Crypto(CryptoError::Verify(vid, reason)))
-                                }
-                            }
-                            maybe_message => maybe_message,
-                        };
-
-                        match opened {
-                            Ok(message) => {
-                                if let Some(sender) = message.sender() {
-                                    self_inner.record_seen(sender)?;
-                                }
-
-                                Ok(Some(message.into_owned()))
-                            }
-                            Err(e) => {
-                                debug!("discarded a message that failed validation: {e}");
-
-                                Ok(None)
-                            }
-                        }
-                    }
-                })
-                .filter_map(|result| async move {
-                    match result {
-                        Ok(Some(message)) => Some(Ok(message)),
-                        // silently discarded
-                        Ok(None) => None,
-                        // a transport failure, which is not a message failure
-                        Err(e) => Some(Err(e)),
-                    }
-                }),
-        );
+        let stream: TSPStream<ReceivedTspMessage, Error> =
+            Box::pin(messages.then(move |message| {
+                let db_inner = db.clone();
+                let self_inner = self_clone.clone();
+                async move { self_inner.open_incoming(&db_inner, message?).await }
+            }));
 
         Ok((stream, cursor))
     }
@@ -973,51 +868,96 @@ impl AsyncSecureStore {
 
         let db = self.inner.clone();
         let self_clone = self.clone();
+
         Ok(Box::pin(messages.then(move |message| {
             let db_inner = db.clone();
             let self_inner = self_clone.clone();
-            async move {
-                let mut message = message?;
-
-                if let Ok(colored) = crate::cesr::color_format(&message) {
-                    tracing::trace!("CESR-encoded message: {}", colored);
-                }
-
-                match db_inner.open_message(&mut message) {
-                    Err(Error::UnverifiedSource(unknown_vid, _)) => {
-                        debug!("Verifying VID: {}", unknown_vid);
-                        let options = VerifyVidOptions {
-                            resolution_context: self_inner.get_resolution_context(&unknown_vid)?,
-                        };
-                        self_inner
-                            .verify_vid_with_options(&unknown_vid, None, options)
-                            .await?;
-                        db_inner.open_message(&mut message)
-                    }
-                    Err(Error::UnverifiedVid(unknown_vid)) => {
-                        debug!("Verifying VID: {}", unknown_vid);
-                        self_inner.verify_vid(&unknown_vid, None).await?;
-                        db_inner.open_message(&mut message)
-                    }
-                    Err(Error::Crypto(CryptoError::Verify(vid, _))) => {
-                        debug!("Re-verifying VID: {}", vid);
-                        let options = VerifyVidOptions {
-                            resolution_context: self_inner.get_resolution_context(&vid)?,
-                        };
-                        self_inner
-                            .verify_vid_with_options(&vid, None, options)
-                            .await?;
-                        db_inner.open_message(&mut message)
-                    }
-                    maybe_message => maybe_message,
-                }
-                .map(|msg| msg.into_owned())
-                .map_err(|e| {
-                    tracing::error!("{}", e);
-                    e
-                })
-            }
+            async move { self_inner.open_incoming(&db_inner, message?).await }
         })))
+    }
+
+    /// Open one received message.
+    ///
+    /// A message that fails any verification or validation step is discarded
+    /// silently, which is a rule about the wire: nothing is sent in response,
+    /// since a response would disclose information to whoever sent it (spec
+    /// 3.7). It says nothing about the local caller, so the failure is returned
+    /// and what to make of it is the caller's to decide; it does not end the
+    /// stream, which `Error::ends_stream` lets the caller tell apart.
+    async fn open_incoming(
+        &self,
+        db: &SecureStore,
+        message: BytesMut,
+    ) -> Result<ReceivedTspMessage, Error> {
+        if let Ok(colored) = crate::cesr::color_format(&message) {
+            tracing::trace!("CESR-encoded message: {}", colored);
+        }
+
+        // a peer that has been silent longer than the re-verification threshold
+        // may have rotated its keys unobserved; refresh its key state before
+        // acting on this message (spec 7.4.2)
+        if let Ok((sender, _)) = crate::cesr::get_sender_receiver(&message)
+            && let Ok(sender) = std::str::from_utf8(sender)
+            && db.has_verified_vid(sender)?
+            && self.silent_beyond_threshold(sender)?
+        {
+            debug!("re-resolving {sender} after silence");
+            if let Err(e) = self.refresh_key_state(sender).await {
+                // acting on a message whose key state could not be confirmed is
+                // exactly what the rule forbids
+                debug!("could not confirm the key state of {sender}: {e}");
+
+                return Err(e);
+            }
+        }
+
+        // opening decrypts in place, so every attempt needs the message as it
+        // arrived rather than the buffer a previous attempt left behind
+        let mut attempt = message.clone();
+        let opened = match db.open_message(&mut attempt) {
+            // first contact: the sender is not in the wallet yet, so it has to
+            // be resolved before the message can be opened at all
+            Err(Error::UnverifiedSource(unknown_vid, _))
+            | Err(Error::UnverifiedVid(unknown_vid)) => {
+                debug!("verifying {unknown_vid}");
+                match self.refresh_key_state(&unknown_vid).await {
+                    Ok(true) => {
+                        attempt = message.clone();
+                        db.open_message(&mut attempt)
+                    }
+                    Ok(false) => Err(Error::UnverifiedVid(unknown_vid)),
+                    Err(e) => Err(e),
+                }
+            }
+            // a signature that does not verify may be the result of a rotation
+            // we have not observed: within an established relationship,
+            // re-resolve and retry once before discarding (spec 3.7, 7.4.2)
+            Err(Error::Crypto(CryptoError::Verify(vid, reason))) => {
+                if db.has_relationship_with(&vid)? && self.refresh_key_state(&vid).await.is_ok() {
+                    debug!("re-verifying {vid}");
+                    attempt = message.clone();
+                    db.open_message(&mut attempt)
+                } else {
+                    Err(Error::Crypto(CryptoError::Verify(vid, reason)))
+                }
+            }
+            maybe_message => maybe_message,
+        };
+
+        match opened {
+            Ok(message) => {
+                if let Some(sender) = message.sender() {
+                    self.record_seen(sender)?;
+                }
+
+                Ok(message.into_owned())
+            }
+            Err(e) => {
+                debug!("discarded a message that failed validation: {e}");
+
+                Err(e)
+            }
+        }
     }
 
     /// Send a TSP broadcast message to the specified VIDs

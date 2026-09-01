@@ -45,6 +45,7 @@ fn payload_for_seal<'a>(
         Payload::RequestRelationship {
             thread_id: _ignored,
             form,
+            reply_path,
         } => {
             let nonce_bytes = request_nonce_override.unwrap_or_else(|| {
                 let mut nonce_bytes = [0_u8; 16];
@@ -57,6 +58,7 @@ fn payload_for_seal<'a>(
                 sender_in_payload,
                 digest_algorithm,
                 nonce_bytes,
+                reply_path,
                 envelope_prefix,
                 request_digest_storage,
             )?;
@@ -277,6 +279,7 @@ fn open_payload<'a>(
                     open_relationship_request(
                         *request_digest.as_bytes(),
                         crate::definitions::RelationshipForm::Direct,
+                        reply_path,
                     ),
                     None,
                 ),
@@ -287,6 +290,7 @@ fn open_payload<'a>(
                             new_vid,
                             sig_new_vid,
                         },
+                        reply_path.clone(),
                     ),
                     Some(ParallelSignatureInfo {
                         new_vid,
