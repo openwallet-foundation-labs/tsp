@@ -1099,7 +1099,7 @@ async fn run() -> Result<(), Error> {
                 VerifyAndOpen(String, BytesMut),
                 Forward(String, Vec<BytesMut>, BytesMut),
                 AssignDefaultRelation(String, Digest),
-                ReplyCancel(String),
+                ReplyCancel(String, Digest),
             }
 
             while let Some(message) = messages.next().await {
@@ -1250,6 +1250,7 @@ async fn run() -> Result<(), Error> {
                         ReceivedTspMessage::CancelRelationship {
                             sender,
                             receiver: _,
+                            thread_id,
                             reply_expected,
                         } => {
                             info!("received cancel relationship from {sender}");
@@ -1258,7 +1259,7 @@ async fn run() -> Result<(), Error> {
                             // directions, and the specification expects the
                             // cancellation to be echoed back (spec 7.3)
                             if reply_expected {
-                                return Action::ReplyCancel(sender);
+                                return Action::ReplyCancel(sender, thread_id);
                             }
                         }
                         ReceivedTspMessage::ForwardRequest {
@@ -1319,8 +1320,10 @@ async fn run() -> Result<(), Error> {
                             .await?;
                         info!("forwarding to next hop: {next_hop}");
                     }
-                    Action::ReplyCancel(remote_vid) => {
-                        if let Err(e) = vid_wallet.send_relationship_cancel(&vid, &remote_vid).await
+                    Action::ReplyCancel(remote_vid, thread_id) => {
+                        if let Err(e) = vid_wallet
+                            .send_relationship_cancel_reply(&vid, &remote_vid, thread_id)
+                            .await
                         {
                             info!("could not reply to the cancellation from {remote_vid}: {e}");
                         } else {

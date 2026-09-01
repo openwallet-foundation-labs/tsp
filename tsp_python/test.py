@@ -231,9 +231,15 @@ class AliceBob(unittest.TestCase):
 
         received = self.store.open_message(sealed)
         match received:
-            case tsp.CancelRelationship(sender, receiver):
+            case tsp.CancelRelationship(sender, receiver, thread_id):
                 self.assertEqual(sender, self.bob.identifier())
                 self.assertEqual(receiver, self.alice.identifier())
+
+                # the cancellation can be replied to, echoing its digest
+                url, sealed = self.store.make_relationship_cancel_reply(
+                    self.alice.identifier(), self.bob.identifier(), thread_id
+                )
+                self.assertEqual(url, "tcp://127.0.0.1:1337")
 
             case other:
                 self.fail(f"unexpected message type {other}")

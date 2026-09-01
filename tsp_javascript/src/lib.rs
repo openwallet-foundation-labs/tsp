@@ -210,6 +210,26 @@ impl Store {
     }
 
     #[wasm_bindgen]
+    pub fn make_relationship_cancel_reply(
+        &self,
+        sender: String,
+        receiver: String,
+        thread_id: Vec<u8>,
+    ) -> Result<SealedMessage, Error> {
+        let thread_id = thread_id
+            .try_into()
+            .map_err(|_| Error(tsp_sdk::Error::Relationship("invalid thread id".into())))?;
+        let (url, sealed) = self
+            .0
+            .make_relationship_cancel_reply(&sender, &receiver, thread_id)
+            .map_err(Error)?;
+
+        Ok(SealedMessage {
+            url: url.to_string(),
+            sealed,
+        })
+    }
+
     pub fn make_nested_relationship_request(
         &self,
         parent_sender: String,
@@ -692,10 +712,12 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             tsp_sdk::ReceivedTspMessage::CancelRelationship {
                 sender,
                 receiver,
+                thread_id,
                 reply_expected,
             } => {
                 this.sender = Some(sender);
                 this.receiver = Some(receiver);
+                this.thread_id = Some(thread_id.to_vec());
                 this.reply_expected = Some(reply_expected);
             }
             tsp_sdk::ReceivedTspMessage::ForwardRequest {

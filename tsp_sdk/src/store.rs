@@ -1374,6 +1374,7 @@ impl SecureStore {
                         Ok(ReceivedTspMessage::CancelRelationship {
                             sender,
                             receiver: intended_receiver,
+                            thread_id,
                             reply_expected,
                         })
                     }
@@ -1693,6 +1694,23 @@ impl SecureStore {
         Ok((transport, message))
     }
 
+    /// Reply to a `TSP_RFD` that cancelled a bidirectional relationship, with a
+    /// `TSP_RFD` of our own (spec 7.3).
+    ///
+    /// `thread_id` is the digest the incoming cancellation named, carried on
+    /// [`ReceivedTspMessage::CancelRelationship`]. Receiving the cancellation
+    /// already removed the relationship, which is why this does not look one
+    /// up: the reply closes the other direction for the peer, and echoing the
+    /// digest is what identifies the relationship being closed.
+    pub fn make_relationship_cancel_reply(
+        &self,
+        sender: &str,
+        receiver: &str,
+        thread_id: Digest,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.seal_message_payload(sender, receiver, Payload::CancelRelationship { thread_id })
+    }
+
     /// Send a nested relationship request to `receiver`, creating a new nested vid with `outer_sender` as a parent.
     pub fn make_nested_relationship_request(
         &self,
@@ -1941,10 +1959,11 @@ impl SecureStore {
             RelationshipStatus::Unrelated => return ignore(),
         };
 
-        if let Some(context) = self.vids.write()?.get_mut(remote_vid) {
-            context.relation_status = RelationshipStatus::Unrelated;
-            context.relation_vid = None;
-        }
+        // only the status goes: the relation VID says which of our VIDs
+        // corresponds to this peer, which is what addresses the reply the
+        // specification asks for (spec 7.3), and cancelling from this side
+        // leaves it in place too
+        self.replace_relation_status_for_vid(remote_vid, RelationshipStatus::Unrelated)?;
 
         Ok(reply_expected)
     }
@@ -2480,8 +2499,11 @@ mod test {
         let (_url, mut cancel) = a_store
             .make_relationship_cancel(alice.identifier(), bob.identifier())
             .unwrap();
-        let ReceivedTspMessage::CancelRelationship { reply_expected, .. } =
-            b_store.open_message(&mut cancel).unwrap()
+        let ReceivedTspMessage::CancelRelationship {
+            thread_id,
+            reply_expected,
+            ..
+        } = b_store.open_message(&mut cancel).unwrap()
         else {
             panic!("unexpected message type");
         };
@@ -2495,6 +2517,11 @@ mod test {
                 .unwrap(),
             RelationshipStatus::Unrelated
         ));
+        // and bob can still build that reply, though he has already dropped
+        // the relationship it names (spec 7.3)
+        b_store
+            .make_relationship_cancel_reply(bob.identifier(), alice.identifier(), thread_id)
+            .unwrap();
 
         // one-way: the relationship is removed, but no reply is expected
         let a_store = create_test_store();

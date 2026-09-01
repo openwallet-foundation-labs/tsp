@@ -672,6 +672,41 @@ impl AsyncSecureStore {
         Ok(())
     }
 
+    /// Build the reply to a cancellation without transmitting it.
+    ///
+    /// Returns `(endpoint, message)`. Use this instead of
+    /// [`AsyncSecureStore::send_relationship_cancel_reply`] when you need to
+    /// transmit over a custom transport.
+    pub fn make_relationship_cancel_reply(
+        &self,
+        sender: &str,
+        receiver: &str,
+        thread_id: Digest,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.inner
+            .make_relationship_cancel_reply(sender, receiver, thread_id)
+    }
+
+    /// Reply to a cancellation of a bidirectional relationship with a `TSP_RFD`
+    /// of our own, echoing the digest the incoming one named (spec 7.3).
+    /// See [`SecureStore::make_relationship_cancel_reply`].
+    pub async fn send_relationship_cancel_reply(
+        &self,
+        sender: &str,
+        receiver: &str,
+        thread_id: Digest,
+    ) -> Result<(), Error> {
+        let (endpoint, message) = self
+            .inner
+            .make_relationship_cancel_reply(sender, receiver, thread_id)?;
+
+        tracing::info!("sending message to {endpoint}");
+
+        crate::transport::send_message(&endpoint, &message).await?;
+
+        Ok(())
+    }
+
     /// Build a nested relationship request message without transmitting it.
     ///
     /// Creates a new nested VID under `parent_sender` for private communication

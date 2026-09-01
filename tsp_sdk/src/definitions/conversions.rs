@@ -90,10 +90,12 @@ impl<T: AsRef<[u8]>> ReceivedTspMessage<T> {
             CancelRelationship {
                 sender,
                 receiver,
+                thread_id,
                 reply_expected,
             } => CancelRelationship {
                 sender,
                 receiver,
+                thread_id,
                 reply_expected,
             },
             ForwardRequest {

@@ -177,6 +177,12 @@ class SecureStore:
         with Wallet(self):
             return self.inner.make_relationship_cancel(sender, receiver)
 
+    def make_relationship_cancel_reply(
+        self, sender: str, receiver: str, thread_id: bytes
+    ) -> tuple[str, bytes]:
+        with Wallet(self):
+            return self.inner.make_relationship_cancel_reply(sender, receiver, thread_id)
+
     def make_nested_relationship_request(
             self, parent_sender: str, receiver: str
     ) -> tuple[tuple[str, bytes], tsp_python.OwnedVid]:
@@ -235,7 +241,9 @@ class ReceivedTspMessage:
                 )
 
             case ReceivedTspMessageVariant.CancelRelationship:
-                return CancelRelationship(msg.sender, msg.receiver)
+                return CancelRelationship(
+                    msg.sender, msg.receiver, bytes(msg.thread_id)
+                )
 
             case ReceivedTspMessageVariant.ForwardRequest:
                 return ForwardRequest(
@@ -278,6 +286,7 @@ class AcceptRelationship(ReceivedTspMessage):
 class CancelRelationship(ReceivedTspMessage):
     sender: str
     receiver: str
+    thread_id: bytes
 
 
 @dataclass

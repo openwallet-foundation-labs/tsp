@@ -73,6 +73,10 @@ class Store {
         return this.inner.make_relationship_cancel(...args);
     }
 
+    make_relationship_cancel_reply(...args) {
+        return this.inner.make_relationship_cancel_reply(...args);
+    }
+
     make_nested_relationship_accept(...args) {
         return this.inner.make_nested_relationship_accept(...args);
     }
@@ -130,6 +134,7 @@ class ReceivedTspMessage {
                 return new CancelRelationship(
                     msg.sender,
                     msg.receiver,
+                    msg.thread_id,
                 );
 
             case 4: 
@@ -189,10 +194,11 @@ class AcceptRelationship extends ReceivedTspMessage {
 }
 
 class CancelRelationship extends ReceivedTspMessage {
-    constructor(sender, receiver) {
+    constructor(sender, receiver, thread_id) {
         super();
         this.sender = sender;
         this.receiver = receiver;
+        this.thread_id = thread_id;
     }
 }
 

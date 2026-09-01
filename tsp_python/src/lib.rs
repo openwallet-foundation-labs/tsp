@@ -295,6 +295,20 @@ impl Store {
         Ok((url.to_string(), bytes))
     }
 
+    fn make_relationship_cancel_reply(
+        &self,
+        sender: String,
+        receiver: String,
+        thread_id: [u8; 32],
+    ) -> PyResult<(String, Vec<u8>)> {
+        let (url, bytes) = self
+            .inner
+            .make_relationship_cancel_reply(&sender, &receiver, thread_id)
+            .map_err(py_exception)?;
+
+        Ok((url.to_string(), bytes))
+    }
+
     fn make_nested_relationship_request(
         &self,
         parent_sender: String,
@@ -573,10 +587,12 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             tsp_sdk::ReceivedTspMessage::CancelRelationship {
                 sender,
                 receiver,
+                thread_id,
                 reply_expected,
             } => {
                 this.sender = Some(sender);
                 this.receiver = Some(receiver);
+                this.thread_id = Some(thread_id);
                 this.reply_expected = Some(reply_expected);
             }
             tsp_sdk::ReceivedTspMessage::ForwardRequest {
