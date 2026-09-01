@@ -70,7 +70,9 @@ is decided entirely by where it sits, never by its code.
 **The ciphertext code names the cipher suite.** There is no separate field saying
 which was used: `4C/5C/6C` is the libsodium anonymous sealed box, `4F/5F/6F` is
 HPKE-Base — including the post-quantum KEM, which is selected by the recipient's
-encryption key type rather than by a code point of its own.
+encryption key type rather than by a code point of its own. HPKE-Base is what the
+SDK sends by default; the sealed box is kept for existing implementations and is
+only ever chosen explicitly.
 
 Framing (count) codes introduced by TSP. A count gives the number of quadlets of
 content that follow, and that content is parsed in turn rather than being data of the

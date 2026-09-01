@@ -93,7 +93,7 @@ transport layers (such as HTTPS or QUIC) for applications that don't need this f
 
 | _  | Description                                             | Rationale                                                                                                                                       | Consequence                                                                                                                                                                                                                                  |
 |----|---------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| C1 | Encryption primitives chosen have to be IND-CCA2 secure | This is the strongest notion of security: under an adaptive chosen ciphertext attack, the attacker cannot recognize correct ciphertext.         | We use `HPKE-Auth` for encryption, a modern asymmetric "weakly authenticated" encryption standard                                                                                                                                            |
+| C1 | Encryption primitives chosen have to be IND-CCA2 secure | This is the strongest notion of security: under an adaptive chosen ciphertext attack, the attacker cannot recognize correct ciphertext.         | We use `HPKE-Base` for encryption, a modern asymmetric encryption standard; sender authentication comes from the outer signature and ESSR rather than from the encryption                                                                                                                                            |
 | C2 | Signature schemes have to be SUF-CMA secure             | This is the strongest notion of unforgeability, meaning an attacker cannot create valid signatures themselves even if given a "signing oracle". | Ed25519 will be used for creating non-repudiation signatures in TSP messages.                                                                                                                                                                |
 | C3 | Cryptographic code has to be reliable                   | TSP relies heavily on cryptography being reliable, and we should not write these ourselves.                                                     | For crypto "back-ends", code will come from the [`RustCrypto`](https://github.com/RustCrypto/) and `DALEK` projects. We avoid `ring` due to maintenance issues and `libsodium` since its Rust binding has been deprecated by its maintainer. |
 | C4 | TSP must be resilient against key compromise events     | If a private key is leaked, the goal of TSP is compromised                                                                                      | The SDK will not have an API for providing the private key of a VID to an application. Furthermore, HPKE is used that offers more protection against KCI.                                                                                    |
@@ -220,6 +220,12 @@ HPKE operation mode:
 TSP additionally supports the libsodium anonymous sealed box as an alternative to HPKE. Which of the two produced a
 message is named by the ciphertext's own CESR code — `4C/5C/6C` for the sealed box, `4F/5F/6F` for HPKE-Base — rather
 than by a separate field. See [CESR encoding](./cesr.md).
+
+**HPKE-Base is the default for every receiver.** The specification keeps the sealed box only for the sake of existing
+implementations: it is not a standardised construction, the libsodium project is implementing HPKE in parallel,
+implementors SHOULD consider migrating, and the option MAY be removed in a later revision. Post-quantum support is
+HPKE-Base with a different KEM and has no sealed-box counterpart at all. The SDK therefore never selects the sealed box
+on its own — a caller that still needs it asks for it explicitly.
 
 ### Encoding
 

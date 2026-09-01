@@ -263,18 +263,16 @@ Output:
 ```
  INFO tsp_sdk::async_store: sending message to tcp://127.0.0.1:6102
 CESR-encoded message:
--EDDYTSP-AAB4BATZGlkOnBlZXI6NHpRbWU2aGFIemFxOXB4OXlXMVpKNFIyWEJMUU1QU0h4VEhHVHh
-DaVV3R2VzMWlo4BATZGlkOnBlZXI6NHpRbVNIc2Joa1BhOEVhSHVKS3ZxOW1hUHJueTREQmIzM1daNV
-lvM3JEMUZvY0xF4CCYIaGcjGW0_r-FnQf3FacIdOB64RtQ9M0Yzeew3bOqtkMBEMV5-EPhvvcRQJnt_
-7xlGJpOV1o6j2E9RJFLVAN-FRtAW1rkkkFWQH8Htrtu-XnACFR2oEKutlwFp0a-71FaTeLNEXHPWS4x
-yiflnmnYwH__BrGdPkfaDGyYoj2BljnIcKKvYxyVIu4GRrYEvub-74ZsnFwFqKsYZJ1mRRDltFenQy6
-KICryOEMqpfL_wb4TXqJse2CFvNaNNwSdurZMjtNea7rURlAmEHoR9LJW3pUOhHnku3tA5MG23_dvYm
-ZFUk0f_DJv4FVXc1rSRezhmcoIECqkO4NyJlhFKLuVvussxFsV8zHwur_uhw1yyhQOfxgbzIgVvKrPe
-QPhGVW9pQ5lgvaU1uoCte6DUT10us9v8JOwfkYRw9lE018DfKDXJ7T5KWnwnxU_adB1jjMLY3zGjoNm
-lvfjKTOxjcvsZ7vg912Yn8pqkfZdp3omlwy6ZjaA1M5dRNviiGPqZMAT9UHfY2TWR1yV4A_77fvUdyC
-iqxuro8RjpGWRmMC7UE-qwjo_BcC9MUzpgn5nvMBtTkxxSiRdl8yoBrh123XF6gPoxQrr3Thx-CAX-K
-AWBABQFxcRT1jHtL5TQFBZvmWSc8_CA1FQYvhS0RyWdlNz6jqY3KhyE0KLA24mMXKhAjU7omIuKb6V7
-O8brgyEapQF
+-ECdYTSP-AAB4BATZGlkOnBlZXI6NHpRbWU2aGFIemFxOXB4OXlXMVpKNFIyWEJMUU1QU0h4VEhH
+VHhDaVV3R2VzMWlo4BATZGlkOnBlZXI6NHpRbVNIc2Joa1BhOEVhSHVKS3ZxOW1hUHJueTREQmIz
+M1daNVlvM3JEMUZvY0xF4FByXuVrZC37T_fCfTnFA59J2vhSVEe1IKr_cw4KV04sZ2rvK9yggA1O
+R1IHOgfEapwo2JUy7PLiMTGErtMs-YrxmlmSsRz6yE2vhxx6vzIllO-cQW7x2dEiWxp2w3bGVVmq
+LzBikuL3jCwXySd2V8edi_IaB1hg6yFRvde0s1U4FKp85cfhcDzVgc0LCsqtStffKcWyr1UKXzoc
+NZZWokbSSgCutQUgkuHKgtzmHrifXCTCNGcmbSWS5_8-EvAcRfQbmG-WLg5_IUjNvhQoDRPm8YxN
+hCsOKFSoPeg5D3VEIJMQRQzQAcbawqJoLkIWC54JVMFTp1n5Q_6K5mrfPCOpF1IgVz99m6W8wuYt
+Jy_L-3BBM9mukFVaPowEYUNyLJPMjwxfk_dozVJwF9wdSyR-
+Nu6VRlspEPEg1gAHVcYUWxJgauXdXUBlYoUAs-Yjqrm_TLzLiPsz-CAX-KAWBABNJGplbPbdjA-
+yhlgtpcp3e503l7kiweAzoxUiT7CgR0CF4b6Pu7gYRzr_GX1LDcwJ-kUkymPl9icehlYPgXoK
  INFO tsp: sent message (8 bytes) from alice-inner to did:peer:4zQmRgud6TD55KTmw9zzoTECzq4c1HWMV8Qm6mB3W7Cu6BQi
 ```
 
@@ -286,7 +284,7 @@ The output on **bob**'s end:
 
 ```
  INFO tsp: listening for messages...
- INFO tsp: received confidential message (8 bytes) from did:peer:4zQmZxraE9VfraPd5HygKsPyFV8xpXjsDvrzB7PjAYyq4BEd (Sealed Box, Ed25519 signature)
+ INFO tsp: received confidential message (8 bytes) from did:peer:4zQmZxraE9VfraPd5HygKsPyFV8xpXjsDvrzB7PjAYyq4BEd (HPKE-Base, Ed25519 signature)
 Hi Bob!
 ```
 
@@ -305,7 +303,7 @@ A caller that wants the other behaviour asks for it explicitly. From the CLI:
 which **bob** reports for what it is:
 
 ```
- INFO tsp: received confidential only within its enclosing message (8 bytes) from did:peer:4zQmZxraE9VfraPd5HygKsPyFV8xpXjsDvrzB7PjAYyq4BEd (signed only, enclosed in Sealed Box, Ed25519 signature)
+ INFO tsp: received confidential only within its enclosing message (8 bytes) from did:peer:4zQmZxraE9VfraPd5HygKsPyFV8xpXjsDvrzB7PjAYyq4BEd (signed only, enclosed in HPKE-Base, Ed25519 signature)
 Hi Bob!
 ```
 

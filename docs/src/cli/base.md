@@ -59,7 +59,7 @@ The `tsp show local` command will print all the local VIDs stored in the wallet,
 including their alias, transport, and parent.
 
 ```
-did:peer:2.Vz6MurhTjqX5uhQ5bJbAaoEwSDFcKDwVJTvoii51JBtSPpKzX.Ez6LbvBvy92yWENk8xKYmaX9X9nzMtQCQ2EqgdLKv2YkcpHo7.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0
+did:peer:4zQmSf8cCgkfPZUrGZpkPkcwsHaubEmwduGzmBPXuq7HK2sN
 	 Alias: None
 	 Transport: did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:b
 	 DID doc: None
@@ -173,7 +173,7 @@ On the receiving side you should see:
 ```
  INFO tsp: received relationship request from did:web:did.teaspoon.world:endpoint:alice, thread-id 'lrQoJ1qYIK6HEHZKvpq3p+it6djYE2YIe++5mqhASnE'
 did:web:did.teaspoon.world:endpoint:alice      lrQoJ1qYIK6HEHZKvpq3p+it6djYE2YIe++5mqhASnE
- INFO tsp: received confidential message (11 bytes) from did:web:did.teaspoon.world:endpoint:alice (Sealed Box, Ed25519 signature)
+ INFO tsp: received confidential message (11 bytes) from did:web:did.teaspoon.world:endpoint:alice (HPKE-Base, Ed25519 signature)
 Hello Bob!
 ```
 
@@ -249,14 +249,14 @@ Output:
 ```
  INFO tsp::async_store: sending message to https://demo.teaspoon.world/endpoint/did:web:did.teaspoon.world:endpoint:bob
 CESR-encoded message:
--EBIYTSP-AAB5BAOAGRpZDp3ZWI6ZGlkLnRlYXNwb29uLndvcmxkOmVuZHBvaW50OmFsaWNl4BANZGlkOndlYjpkaWQudGVhc3Bvb24ud29ybGQ6ZW5kcG9pbnQ6Ym9i4CAo9Y6yD2I1342g0-lFYarMYW4ffAf5_loxtw8UygeJdHo2YCJRyGevdJ9_c0DaRKIrdInd0BYdlLFk4IUFyNHZ1EXUaN6MaqNddx2sxwsbXGPQzH7km02_vqrX7Wt-g0pT8Nd74NSCthtYhgLz3_JR5u2RzVHyhInx-CAX-KAWBAD-V-GP5HWR3tY7mLtqpfPFPKB3jUcjeVdam3sSqtF1Gl4RR4fD4TLzbQuVG7PehrPm81CieqEYITAbCbZ12nsH
+-EA6YTSP-AAB5BAOAGRpZDp3ZWI6ZGlkLnRlYXNwb29uLndvcmxkOmVuZHBvaW50OmFsaWNl4BANZGlkOndlYjpkaWQudGVhc3Bvb24ud29ybGQ6ZW5kcG9pbnQ6Ym9i4FAaQRT2HfDzxpOGX3AmXl2ANZ8rCrKTiuGP-S8GEwfcOFZaqkCMBQ6W4spG19KnwRdKY52VTX5uo3u89_t5r4z8osc9kPbsAG6BPcSPmy7E-CAX-KAWBACuJP_dM8ox9aOO6wzQkeq6e5pDhz3ywJujPPlwt9yc6eFYITR6yjb0CXrDrYI8gQzudKf3v8YUEmUqIgjWeuAM
  INFO tsp: sent message (11 bytes) from did:web:did.teaspoon.world:endpoint:alice to did:web:did.teaspoon.world:endpoint:bob
 ```
 
 In a terminal window supporting colors, this will look like the following:
 
 <code style="display: block; line-break: anywhere; padding: 1rem;">
-<span style="color: #F66151;"><strong>-EBI</strong></span><span style="color: #F66151;"><strong>YTSP</strong>-AAB</span><span style="color: #C061CB;"><strong>5BAO</strong>AGRpZDp3ZWI6ZGlkLnRlYXNwb29uLndvcmxkOmVuZHBvaW50OmFsaWNl</span><span style="color: #2A7BDE;"><strong>4BAN</strong>ZGlkOndlYjpkaWQudGVhc3Bvb24ud29ybGQ6ZW5kcG9pbnQ6Ym9i</span><span style="color: #E9AD0C;"><strong>4CAo</strong>9Y6yD2I1342g0-lFYarMYW4ffAf5_loxtw8UygeJdHo2YCJRyGevdJ9_c0DaRKIrdInd0BYdlLFk4IUFyNHZ1EXUaN6MaqNddx2sxwsbXGPQzH7km02_vqrX7Wt-g0pT8Nd74NSCthtYhgLz3_JR5u2RzVHyhInx</span><span style="color: #33C7DE;"><strong>-CAX-KAWBA</strong>D-V-GP5HWR3tY7mLtqpfPFPKB3jUcjeVdam3sSqtF1Gl4RR4fD4TLzbQuVG7PehrPm81CieqEYITAbCbZ12nsH</span>
+<span style="color: #F66151;"><strong>-EA6</strong></span><span style="color: #F66151;"><strong>YTSP</strong>-AAB</span><span style="color: #C061CB;"><strong>5BAO</strong>AGRpZDp3ZWI6ZGlkLnRlYXNwb29uLndvcmxkOmVuZHBvaW50OmFsaWNl</span><span style="color: #2A7BDE;"><strong>4BAN</strong>ZGlkOndlYjpkaWQudGVhc3Bvb24ud29ybGQ6ZW5kcG9pbnQ6Ym9i</span><span style="color: #E9AD0C;"><strong>4FAa</strong>QRT2HfDzxpOGX3AmXl2ANZ8rCrKTiuGP-S8GEwfcOFZaqkCMBQ6W4spG19KnwRdKY52VTX5uo3u89_t5r4z8osc9kPbsAG6BPcSPmy7E</span><span style="color: #33C7DE;"><strong>-CAX-KAWBA</strong>CuJP_dM8ox9aOO6wzQkeq6e5pDhz3ywJujPPlwt9yc6eFYITR6yjb0CXrDrYI8gQzudKf3v8YUEmUqIgjWeuAM</span>
 </code>
 
 Bold characters are CESR codes; the characters after them are the data that code
@@ -264,16 +264,24 @@ introduces. Reading left to right:
 
 | Text                | Field                                                        |
 |---------------------|--------------------------------------------------------------|
-| `-EBI`              | the frame, counting the 216 bytes the signature covers       |
+| `-EA6`              | the frame, counting the 174 bytes the signature covers       |
 | `YTSP-AAB`          | the TSP genus and version, `0.0.1`                           |
 | `5BAO` + 41 bytes   | `VID_sndr`, the sender                                       |
 | `4BAN` + 39 bytes   | `VID_rcvr`, the receiver                                     |
-| `4CAo` + 120 bytes  | the ciphertext, sealed with the libsodium anonymous sealed box |
+| `4FAa` + 78 bytes   | the ciphertext, sealed with HPKE-Base                        |
 | `-CAX-KAWBA` + 64 bytes | an attachment group holding an indexed Ed25519 signature |
 
-The ciphertext code names the cipher suite: `4C/5C/6C` is the sealed box and
-`4F/5F/6F` is HPKE-Base. There is no separate field saying which was used. Pass
-`--crypto hpke` to `send` to see the other.
+The ciphertext code names the cipher suite: `4F/5F/6F` is HPKE-Base and
+`4C/5C/6C` is the libsodium sealed box. There is no separate field saying which
+was used. HPKE-Base is the default for every receiver; pass `--crypto sealed-box`
+to `send` to see the other, which the specification keeps only for the sake of
+existing implementations.
+
+The two are not the same length for the same message. Under the sealed box the
+sender's VID has to be repeated inside the ciphertext, because that construction
+is anonymous; under HPKE-Base the envelope already binds the sender through the
+associated data, so that field defaults to the NULL VID and the ciphertext is
+some forty bytes shorter.
 
 `tsp_sdk::cesr::segments` produces exactly this breakdown, with the field name and
 decoded value of every code and every run of data; see
