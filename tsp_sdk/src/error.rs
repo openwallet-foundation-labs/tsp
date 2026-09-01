@@ -45,6 +45,12 @@ pub enum Error {
     MissingDropOff(String),
     #[error("Error: no relationship from {0} to {1}; the message is dropped")]
     UnestablishedRelationship(String, String),
+    #[error(
+        "Error: the key state obtained for {0} conflicts with the key state held; reliance on it is suspended"
+    )]
+    ConflictingKeyState(String),
+    #[error("Error: not acting on a message from {0}: {1}")]
+    UnconfirmedKeyState(String, String),
     #[error("Internal error")]
     Internal,
 }

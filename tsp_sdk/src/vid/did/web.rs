@@ -1,3 +1,18 @@
+//! `did:web`, retained for testing and demonstration.
+//!
+//! **This is not a VID type the specification considers suitable.** Spec 2.2
+//! lists KERI AIDs, `did:webs`, `did:webvh`, `did:peer` and `urn:said`, and
+//! spec 2 requires a VID's key state to be verifiable. A `did:web` publishes a
+//! document with no history, so a verifier has no way to tell a rotation from a
+//! substitution — it is classified [`Unprovenanced`] for exactly that reason,
+//! and an endpoint will not confirm a change to one.
+//!
+//! It stays because it is the simplest illustration of what resolving a VID
+//! means, one request for one document, and because the demo servers use it.
+//! New deployments should use `did:webvh`.
+//!
+//! [`Unprovenanced`]: crate::vid::KeyStateProvenance::Unprovenanced
+
 use crate::definitions::{VerifiedVid, VidEncryptionKeyType, VidSignatureKeyType};
 use base64ct::{Base64UrlUnpadded, Encoding};
 use serde::{Deserialize, Serialize};

@@ -554,6 +554,18 @@ impl SecureStore {
         }
     }
 
+    /// The metadata stored alongside a VID when it was last resolved, which is
+    /// what a later resolution is compared against (spec 3.7)
+    pub fn metadata_for_vid(&self, vid: &str) -> Result<Option<serde_json::Value>, Error> {
+        let vid = self.try_resolve_alias(vid)?;
+
+        Ok(self
+            .vids
+            .read()?
+            .get(&vid)
+            .and_then(|context| context.metadata.clone()))
+    }
+
     /// List all VIDs in the wallet
     pub fn list_vids(&self) -> Result<Vec<String>, Error> {
         Ok(self.vids.read()?.keys().cloned().collect())

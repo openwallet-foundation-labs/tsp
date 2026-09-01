@@ -79,6 +79,37 @@ impl Default for KeyStatePolicy {
 struct KeyStateTracker {
     last_seen: HashMap<String, Instant>,
     last_resolved: HashMap<String, Instant>,
+    /// Peers whose key state this endpoint is not currently relying on, and
+    /// why. Spec 3.7: an endpoint suspends reliance when it cannot confirm a
+    /// peer's key state, or when what it obtains conflicts with what it holds
+    /// rather than extending it, and accepts no message under that key state —
+    /// including one that would otherwise verify — until it is confirmed.
+    unconfirmed: HashMap<String, KeyStateDoubt>,
+}
+
+/// Why an endpoint is not relying on a peer's key state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KeyStateDoubt {
+    /// The VID could not be resolved, so its current key state is unknown.
+    /// Spec 11.2 calls this common and usually transient.
+    Unconfirmed,
+    /// Resolution returned key state that replaces what was held rather than
+    /// continuing it. Spec 11.2 treats this as evidence of compromise.
+    Conflicting,
+}
+
+impl std::fmt::Display for KeyStateDoubt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeyStateDoubt::Unconfirmed => write!(f, "its key state could not be confirmed"),
+            KeyStateDoubt::Conflicting => {
+                write!(
+                    f,
+                    "the key state obtained conflicts with the key state held"
+                )
+            }
+        }
+    }
 }
 
 #[derive(Default, Clone)]
@@ -142,6 +173,30 @@ impl AsyncSecureStore {
         })
     }
 
+    /// Stop relying on this peer's key state until it can be confirmed
+    /// (spec 3.7). Returns the doubt, for reporting.
+    fn suspend_key_state(&self, vid: &str, doubt: KeyStateDoubt) -> Result<KeyStateDoubt, Error> {
+        debug!("suspending reliance on the key state of {vid}: {doubt}");
+        self.key_state
+            .write()?
+            .unconfirmed
+            .insert(vid.to_string(), doubt);
+
+        Ok(doubt)
+    }
+
+    /// Whether this endpoint is currently declining to rely on a peer's key
+    /// state; see [KeyStateDoubt]
+    pub fn key_state_doubt(&self, vid: &str) -> Result<Option<KeyStateDoubt>, Error> {
+        Ok(self.key_state.read()?.unconfirmed.get(vid).copied())
+    }
+
+    fn confirm_key_state(&self, vid: &str) -> Result<(), Error> {
+        self.key_state.write()?.unconfirmed.remove(vid);
+
+        Ok(())
+    }
+
     fn record_seen(&self, vid: &str) -> Result<(), Error> {
         self.key_state
             .write()?
@@ -149,6 +204,17 @@ impl AsyncSecureStore {
             .insert(vid.to_string(), Instant::now());
 
         Ok(())
+    }
+
+    /// Try to lift a suspension by resolving the peer again. Returns whether
+    /// the key state is now confirmed; a conflicting one leaves the suspension
+    /// in place, so this can only clear a suspension the peer has resolved.
+    async fn reconfirm_key_state(&self, vid: &str) -> Result<bool, Error> {
+        match self.refresh_key_state(vid).await {
+            Ok(true) => Ok(self.key_state_doubt(vid)?.is_none()),
+            // rate limited, or still unreachable
+            Ok(false) | Err(_) => Ok(false),
+        }
     }
 
     /// Re-resolve a peer's VID to refresh its key state, subject to the rate
@@ -283,7 +349,26 @@ impl AsyncSecureStore {
         let (verified_vid, metadata) = crate::vid::verify_vid_with_options(vid, options).await?;
 
         let verified_vid_id = verified_vid.identifier().to_string();
+
+        // key state that replaces what is held rather than continuing it is
+        // evidence of compromise, not a rotation to adopt (spec 3.7, 11.2);
+        // the held state is kept and reliance on it suspended
+        if let Ok(held) = self.inner.get_verified_vid(&verified_vid_id) {
+            let held_metadata = self.inner.metadata_for_vid(&verified_vid_id)?;
+            if !crate::vid::extends_held_key_state(
+                &*held,
+                held_metadata.as_ref(),
+                &verified_vid,
+                metadata.as_ref(),
+            ) {
+                self.suspend_key_state(&verified_vid_id, KeyStateDoubt::Conflicting)?;
+
+                return Err(Error::ConflictingKeyState(verified_vid_id));
+            }
+        }
+
         self.inner.add_verified_vid(verified_vid, metadata)?;
+        self.confirm_key_state(&verified_vid_id)?;
 
         // resolving is how key state is confirmed: this peer's state is fresh
         // as of now, for both of the policy's thresholds
@@ -928,21 +1013,41 @@ impl AsyncSecureStore {
             tracing::trace!("CESR-encoded message: {}", colored);
         }
 
-        // a peer that has been silent longer than the re-verification threshold
-        // may have rotated its keys unobserved; refresh its key state before
-        // acting on this message (spec 7.4.2)
         if let Ok((sender, _)) = crate::cesr::get_sender_receiver(&message)
             && let Ok(sender) = std::str::from_utf8(sender)
             && db.has_verified_vid(sender)?
-            && self.silent_beyond_threshold(sender)?
         {
-            debug!("re-resolving {sender} after silence");
-            if let Err(e) = self.refresh_key_state(sender).await {
-                // acting on a message whose key state could not be confirmed is
-                // exactly what the rule forbids
-                debug!("could not confirm the key state of {sender}: {e}");
+            // reliance on this peer's key state is suspended until it can be
+            // confirmed, and no message is accepted under it in the meantime —
+            // including one that would otherwise verify (spec 3.7)
+            if let Some(doubt) = self.key_state_doubt(sender)?
+                && !self.reconfirm_key_state(sender).await?
+            {
+                return Err(Error::UnconfirmedKeyState(
+                    sender.to_string(),
+                    doubt.to_string(),
+                ));
+            }
 
-                return Err(e);
+            // a peer that has been silent longer than the re-verification
+            // threshold may have rotated its keys unobserved; refresh its key
+            // state before acting on this message (spec 7.4.2)
+            if self.silent_beyond_threshold(sender)? {
+                debug!("re-resolving {sender} after silence");
+                match self.refresh_key_state(sender).await {
+                    // acting on a message whose key state could not be
+                    // confirmed is exactly what the rule forbids, and a
+                    // resolution the rate limit declined is not a confirmation
+                    Ok(false) | Err(_) => {
+                        let doubt = self.suspend_key_state(sender, KeyStateDoubt::Unconfirmed)?;
+
+                        return Err(Error::UnconfirmedKeyState(
+                            sender.to_string(),
+                            doubt.to_string(),
+                        ));
+                    }
+                    Ok(true) => {}
+                }
             }
         }
 
@@ -1097,6 +1202,65 @@ mod tests {
             })
             .unwrap();
         assert!(!store.silent_beyond_threshold("did:test:alice").unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_message_is_not_acted_on_while_key_state_is_suspended() {
+        // Spec 3.7: while an endpoint cannot confirm a peer's key state it
+        // accepts no message under that key state, including one that would
+        // otherwise verify.
+        let alice = crate::OwnedVid::new_did_peer("tcp://127.0.0.1:1337".parse().unwrap());
+        let bob = crate::OwnedVid::new_did_peer("tcp://127.0.0.1:1338".parse().unwrap());
+
+        let a_store = AsyncSecureStore::new();
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.vid().clone(), None).unwrap();
+
+        let b_store = AsyncSecureStore::new();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.vid().clone(), None).unwrap();
+        for store in [&a_store, &b_store] {
+            store
+                .as_store()
+                .set_relationship_policy(crate::store::RelationshipPolicy::Ungated)
+                .unwrap();
+        }
+
+        let (_url, sealed) = a_store
+            .as_store()
+            .seal_message(alice.identifier(), bob.identifier(), b"hello")
+            .unwrap();
+
+        // it opens while the key state is not in doubt
+        let opened = b_store
+            .open_incoming(b_store.as_store(), BytesMut::from(&sealed[..]))
+            .await;
+        assert!(opened.is_ok(), "a message opens normally: {opened:?}");
+
+        // suspend, and the same message is no longer acted on
+        b_store
+            .suspend_key_state(alice.identifier(), KeyStateDoubt::Conflicting)
+            .unwrap();
+        assert_eq!(
+            b_store.key_state_doubt(alice.identifier()).unwrap(),
+            Some(KeyStateDoubt::Conflicting)
+        );
+        let refused = b_store
+            .open_incoming(b_store.as_store(), BytesMut::from(&sealed[..]))
+            .await;
+        assert!(
+            matches!(refused, Err(Error::UnconfirmedKeyState(..))),
+            "a suspended key state refuses a message that would verify: {refused:?}"
+        );
+
+        // and once confirmed it opens again
+        b_store.confirm_key_state(alice.identifier()).unwrap();
+        assert!(
+            b_store
+                .open_incoming(b_store.as_store(), BytesMut::from(&sealed[..]))
+                .await
+                .is_ok()
+        );
     }
 
     #[test]
