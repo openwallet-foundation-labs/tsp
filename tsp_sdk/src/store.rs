@@ -933,10 +933,10 @@ impl SecureStore {
         request_digest = digest_algorithm.hash(&digest_input);
 
         let final_payload = proposal(&request_digest, nonce_bytes, digest_algorithm);
-        let mut encoded_payload = Vec::with_capacity(final_payload.calculate_size(sender_identity));
-        crate::cesr::encode_payload(&final_payload, sender_identity, None, &mut encoded_payload)?;
 
-        let message = crate::crypto::sign(sender, None, &encoded_payload)?;
+        // the inner message's payload IS the TSP_RFI (spec 9.4.13), so it is
+        // signed as it stands rather than wrapped in an application payload
+        let message = crate::crypto::sign_payload(sender, None, &final_payload, sender_identity)?;
 
         Ok((message, request_digest))
     }
@@ -980,10 +980,10 @@ impl SecureStore {
         reply_thread_id = digest_algorithm.hash(&digest_input);
 
         let final_payload = affirm(&thread_id, &reply_thread_id, digest_algorithm);
-        let mut encoded_payload = Vec::with_capacity(final_payload.calculate_size(sender_identity));
-        crate::cesr::encode_payload(&final_payload, sender_identity, None, &mut encoded_payload)?;
 
-        let message = crate::crypto::sign(sender, Some(receiver), &encoded_payload)?;
+        // likewise the TSP_RFA is the inner message's payload (spec 9.4.14)
+        let message =
+            crate::crypto::sign_payload(sender, Some(receiver), &final_payload, sender_identity)?;
 
         Ok((message, reply_thread_id))
     }
@@ -1009,24 +1009,31 @@ impl SecureStore {
             .transpose()?
             .map(str::to_owned);
 
-        let (inner_message, _) = match self.get_verified_vid(&inner_sender) {
-            Ok(sender_vid) => crate::crypto::verify(&*sender_vid, inner)?,
+        let (
+            crate::cesr::DecodedPayload {
+                payload,
+                sender_identity,
+            },
+            _,
+        ) = match self.get_verified_vid(&inner_sender) {
+            Ok(sender_vid) => crate::crypto::verify_payload(&*sender_vid, inner)?,
             Err(_) => {
                 let Ok(sender_vid) = verify_vid_offline(&inner_sender) else {
                     return Ok(None);
                 };
-                crate::crypto::verify(&sender_vid, inner)?
+                crate::crypto::verify_payload(&sender_vid, inner)?
             }
         };
 
-        let mut payload_bytes = inner_message.to_vec();
-        let crate::cesr::DecodedPayload {
+        // anything that is not a relationship control message belongs to the
+        // caller of this function, which opens it as an ordinary message
+        if !matches!(
             payload,
-            sender_identity,
-        } = match crate::cesr::decode_payload(&mut payload_bytes) {
-            Ok(decoded) => decoded,
-            Err(_) => return Ok(None),
-        };
+            crate::cesr::Payload::RelationProposal { .. }
+                | crate::cesr::Payload::RelationAffirm { .. }
+        ) {
+            return Ok(None);
+        }
 
         if sender_identity != Some(inner_sender.as_bytes()) {
             return Err(Error::Relationship(
@@ -3977,6 +3984,77 @@ mod test {
             b_store.open_message(&mut invite),
             Err(Error::UnestablishedRelationship(..))
         ));
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_nested_control_message_payload_is_the_control_payload() {
+        // The inner message of a nested TSP_RFI/TSP_RFA carries that control
+        // payload itself (spec 9.4.13/9.4.14), not an XSCS application payload
+        // wrapping one. A round trip cannot catch the difference, because the
+        // receiver peels whatever the sender wrapped, so decode the payload of
+        // the inner message directly and look at its type.
+        fn payload_type_of(message: &[u8]) -> &'static str {
+            let mut buf = message.to_vec();
+            let crate::cesr::DecodedEnvelope {
+                payload_position: Some(payload),
+                ..
+            } = crate::cesr::decode_envelope(&mut buf)
+                .unwrap()
+                .into_opened::<&[u8]>()
+                .unwrap()
+            else {
+                panic!("the inner message carries a payload");
+            };
+            match crate::cesr::decode_payload(payload).unwrap().payload {
+                crate::cesr::Payload::RelationProposal { .. } => "XRFI",
+                crate::cesr::Payload::RelationAffirm { .. } => "XRFA",
+                crate::cesr::Payload::GenericMessage(_) => "XSCS",
+                _ => "other",
+            }
+        }
+
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+        establish_existing_relationship(&a_store, &alice, &b_store, &bob);
+
+        let ((_url, mut invite), nested_a) = a_store
+            .make_nested_relationship_request(alice.identifier(), bob.identifier())
+            .unwrap();
+        let ReceivedTspMessage::RequestRelationship {
+            thread_id,
+            delivery: ReceivedRelationshipDelivery::Nested { nested_vid },
+            ..
+        } = b_store.open_message(&mut invite).unwrap()
+        else {
+            panic!("bob did not receive a nested relationship request");
+        };
+
+        let (rfi, _) = a_store
+            .make_signed_nested_request_message(
+                &*a_store.get_private_vid(nested_a.identifier()).unwrap(),
+                crate::crypto::RelationshipDigestAlgorithm::Sha2_256,
+            )
+            .unwrap();
+        assert_eq!(payload_type_of(&rfi), "XRFI");
+
+        let (_accept, nested_b) = b_store
+            .make_nested_relationship_accept(bob.identifier(), &nested_vid, thread_id)
+            .unwrap();
+        let (rfa, _) = b_store
+            .make_signed_nested_accept_message(
+                &*b_store.get_private_vid(nested_b.identifier()).unwrap(),
+                &*b_store.get_verified_vid(&nested_vid).unwrap(),
+                thread_id,
+                crate::crypto::RelationshipDigestAlgorithm::Sha2_256,
+            )
+            .unwrap();
+        assert_eq!(payload_type_of(&rfa), "XRFA");
     }
 
     #[test]

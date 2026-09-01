@@ -578,12 +578,32 @@ pub fn sign(
     nonconfidential::sign(sender, receiver, payload)
 }
 
+/// Construct and sign a non-confidential TSP message whose payload is encoded
+/// in the payload position as it stands; see [`nonconfidential::sign_payload`]
+pub(crate) fn sign_payload(
+    sender: &dyn PrivateVid,
+    receiver: Option<&dyn VerifiedVid>,
+    payload: &crate::cesr::Payload<impl AsRef<[u8]>, impl AsRef<[u8]>>,
+    sender_identity: Option<&[u8]>,
+) -> Result<TSPMessage, CryptoError> {
+    nonconfidential::sign_payload(sender, receiver, payload, sender_identity)
+}
+
 /// Decode a CESR Authentic Non-Confidential Message, verify the signature and return its contents
 pub fn verify<'a>(
     sender: &dyn VerifiedVid,
     tsp_message: &'a mut [u8],
 ) -> Result<(&'a [u8], MessageType), CryptoError> {
     nonconfidential::verify(sender, tsp_message)
+}
+
+/// Decode a CESR Authentic Non-Confidential Message, verify the signature and
+/// return its payload decoded, whatever its type
+pub(crate) fn verify_payload<'a>(
+    sender: &dyn VerifiedVid,
+    tsp_message: &'a mut [u8],
+) -> Result<(crate::cesr::DecodedPayload<'a>, MessageType), CryptoError> {
+    nonconfidential::verify_payload(sender, tsp_message)
 }
 
 pub fn default_encryption_key_type() -> VidEncryptionKeyType {
