@@ -38,6 +38,9 @@ pub(crate) struct OutboundCryptoSelection {
     /// (spec 3.2). The sealed box is anonymous and always carries it,
     /// whatever this says.
     pub essr_sender: EssrSender,
+    /// How an upper layer's own payload is protected. TSP's control messages
+    /// ignore this and are always encrypted.
+    pub confidentiality: PayloadConfidentiality,
 }
 
 impl OutboundCryptoSelection {
@@ -70,6 +73,27 @@ pub enum EssrSender {
     #[default]
     NullUnderHpkeBase,
     Always,
+}
+
+/// How an upper layer's own payload is protected.
+///
+/// This applies only to a caller's payload. TSP's own control messages are
+/// always encrypted and signed, whatever this says.
+///
+/// It matters most under nesting. Section 4 permits the inner message to be
+/// signed only, since the outer envelope already conceals it in transit — but
+/// notes that the inner payload's confidentiality then derives entirely from
+/// the outer relationship, under the outer relationship's keys rather than the
+/// inner one's. That is a choice for the caller to make deliberately, so the
+/// default here is to encrypt.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum PayloadConfidentiality {
+    /// Encrypt and sign.
+    #[default]
+    Confidential,
+    /// Sign only. Anyone who can open the enclosing envelope can read the
+    /// payload; when nested, that is the outer relationship, not the inner.
+    SignedOnly,
 }
 
 #[allow(dead_code)]
@@ -127,6 +151,7 @@ pub(crate) fn default_outbound_crypto_selection(
     OutboundCryptoSelection {
         crypto_type,
         essr_sender: EssrSender::default(),
+        confidentiality: PayloadConfidentiality::default(),
     }
 }
 
@@ -482,6 +507,7 @@ pub fn seal_reproducibly(
         OutboundCryptoSelection {
             crypto_type,
             essr_sender: EssrSender::default(),
+            confidentiality: PayloadConfidentiality::default(),
         },
         Some(seed),
     )
@@ -503,6 +529,7 @@ pub fn seal_and_hash_with_crypto_type(
         OutboundCryptoSelection {
             crypto_type,
             essr_sender: EssrSender::default(),
+            confidentiality: PayloadConfidentiality::default(),
         },
     )
 }

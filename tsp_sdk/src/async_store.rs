@@ -446,6 +446,20 @@ impl AsyncSecureStore {
         self.inner.seal_message(sender, receiver, message)
     }
 
+    /// Seal a TSP message, choosing how the payload itself is protected; see
+    /// [`crate::crypto::PayloadConfidentiality`] and
+    /// [`SecureStore::seal_message_with_confidentiality`].
+    pub fn seal_message_with_confidentiality(
+        &self,
+        sender: &str,
+        receiver: &str,
+        message: &[u8],
+        confidentiality: crate::crypto::PayloadConfidentiality,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.inner
+            .seal_message_with_confidentiality(sender, receiver, message, confidentiality)
+    }
+
     /// Send a TSP message given earlier resolved VIDs
     /// Encodes, encrypts, signs, and sends a TSP message
     ///
@@ -529,6 +543,64 @@ impl AsyncSecureStore {
         let (endpoint, message) =
             self.inner
                 .seal_message_with_crypto_type(sender, receiver, message, crypto_type)?;
+
+        tracing::info!("sending message to {endpoint}");
+
+        crate::transport::send_message(&endpoint, &message).await?;
+
+        Ok(())
+    }
+
+    /// Send a message, choosing how the payload itself is protected.
+    ///
+    /// [`crate::crypto::PayloadConfidentiality::Confidential`] is what
+    /// [`Self::send`] does. `SignedOnly` signs the payload without encrypting
+    /// it, which is only meaningful under nesting: the outer envelope is
+    /// confidential either way, so nothing goes over the wire in the clear, but
+    /// the payload's confidentiality then rests on the outer relationship's
+    /// keys rather than the inner relationship's (spec 4).
+    pub async fn send_with_confidentiality(
+        &self,
+        sender: &str,
+        receiver: &str,
+        message: &[u8],
+        confidentiality: crate::crypto::PayloadConfidentiality,
+    ) -> Result<(), Error> {
+        self.send_with(sender, receiver, message, None, confidentiality)
+            .await
+    }
+
+    /// Send a message, choosing both the cipher suite and how the payload
+    /// itself is protected. The two are independent.
+    pub async fn send_with(
+        &self,
+        sender: &str,
+        receiver: &str,
+        message: &[u8],
+        crypto_type: Option<CryptoType>,
+        confidentiality: crate::crypto::PayloadConfidentiality,
+    ) -> Result<(), Error> {
+        match self.inner.relation_status_for_vid_pair(sender, receiver) {
+            Ok(relation) => {
+                if matches!(relation, RelationshipStatus::Unrelated) {
+                    self.send_relationship_request(sender, receiver, None)
+                        .await?
+                }
+            }
+            Err(Error::Relationship(_)) => {
+                self.send_relationship_request(sender, receiver, None)
+                    .await?
+            }
+            Err(e) => return Err(e),
+        };
+
+        let (endpoint, message) = self.inner.seal_message_with(
+            sender,
+            receiver,
+            message,
+            crypto_type,
+            confidentiality,
+        )?;
 
         tracing::info!("sending message to {endpoint}");
 

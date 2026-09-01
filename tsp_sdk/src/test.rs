@@ -292,6 +292,91 @@ async fn test_nested_mode() {
     assert_eq!(message.iter().as_slice(), b"hello nested world");
 }
 
+/// A nested message's inner envelope must be encrypted unless the caller asks
+/// otherwise.
+///
+/// This looks at the bytes rather than at what `receive` reports. The receive
+/// path rewrites a plaintext inner message's `crypto_type` to the outer one's
+/// when the inner sender is a child of the outer sender, so a test that reads
+/// `message_type` cannot tell an encrypted inner message from a signed-only
+/// one — which is how a signed-only default went unnoticed.
+#[tokio::test]
+#[serial_test::serial(clean_wallet)]
+async fn nested_inner_message_is_encrypted_unless_the_caller_asks_otherwise() {
+    use crate::crypto::PayloadConfidentiality;
+
+    let alice_db = crate::test_utils::create_test_store();
+    let alice_vid = create_vid_from_file("../examples/test/alice/piv.json").await;
+    alice_db.add_private_vid(alice_vid.clone(), None).unwrap();
+    let bob_vid = create_vid_from_file("../examples/test/bob/piv.json").await;
+    alice_db
+        .add_verified_vid(bob_vid.vid().clone(), None)
+        .unwrap();
+
+    let nested_alice = OwnedVid::new_did_peer(alice_vid.endpoint().clone());
+    alice_db
+        .add_private_vid(nested_alice.clone(), None)
+        .unwrap();
+    alice_db
+        .set_parent_for_vid(nested_alice.identifier(), Some(alice_vid.identifier()))
+        .unwrap();
+
+    let nested_bob = OwnedVid::new_did_peer(bob_vid.endpoint().clone());
+    alice_db
+        .add_verified_vid(nested_bob.vid().clone(), None)
+        .unwrap();
+    alice_db
+        .set_parent_for_vid(nested_bob.identifier(), Some(bob_vid.identifier()))
+        .unwrap();
+    alice_db
+        .set_relation_and_status_for_vid(
+            nested_bob.identifier(),
+            crate::RelationshipStatus::Unrelated,
+            nested_alice.identifier(),
+        )
+        .unwrap();
+
+    // the inner message is the payload of the outer one, so opening the outer
+    // message with bob's key is what puts the inner envelope in view
+    let inner_crypto_type = |message: &[u8]| {
+        let mut message = message.to_vec();
+        let (payload, ..) = crate::crypto::open(&bob_vid, &alice_vid, &mut message).unwrap();
+        let crate::definitions::Payload::NestedMessage(inner) = payload else {
+            panic!("the outer payload is not a nested message")
+        };
+        let parts = crate::cesr::open_message_into_parts(inner).unwrap();
+
+        parts.crypto_type
+    };
+
+    let (_, default) = alice_db
+        .seal_message(
+            nested_alice.identifier(),
+            nested_bob.identifier(),
+            b"hello nested world",
+        )
+        .unwrap();
+    assert_ne!(
+        inner_crypto_type(&default),
+        crate::cesr::CryptoType::Plaintext,
+        "the inner message must be encrypted by default"
+    );
+
+    let (_, signed_only) = alice_db
+        .seal_message_with_confidentiality(
+            nested_alice.identifier(),
+            nested_bob.identifier(),
+            b"hello nested world",
+            PayloadConfidentiality::SignedOnly,
+        )
+        .unwrap();
+    assert_eq!(
+        inner_crypto_type(&signed_only),
+        crate::cesr::CryptoType::Plaintext,
+        "a caller that asks for signed-only must still get it (spec 4)"
+    );
+}
+
 #[tokio::test]
 #[serial_test::serial(tcp)]
 async fn test_routed_mode() {
