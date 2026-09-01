@@ -2601,7 +2601,8 @@ mod test {
             .unwrap();
 
         let mut first = nested.clone();
-        let Err(Error::UnverifiedSource(unknown, _)) = b_store.open_message(&mut first) else {
+        // the variant carries the payload only when the async feature is on
+        let Err(Error::UnverifiedSource(unknown, ..)) = b_store.open_message(&mut first) else {
             panic!("an unknown inner sender should be reported");
         };
         assert_eq!(unknown, alice.identifier());
