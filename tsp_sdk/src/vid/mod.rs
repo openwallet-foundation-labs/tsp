@@ -16,6 +16,8 @@ pub mod did;
 
 pub mod error;
 
+pub mod key_state;
+
 pub mod resolve;
 
 #[cfg(feature = "resolve")]
@@ -28,6 +30,8 @@ pub use did::peer::{
 };
 
 pub use error::VidError;
+
+pub use key_state::{KeyStateProvenance, extends_held_key_state, key_state_provenance};
 use url::Url;
 
 use crate::definitions::{VidEncryptionKeyType, VidSignatureKeyType};
