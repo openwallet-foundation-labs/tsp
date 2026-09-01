@@ -35,13 +35,37 @@ pub fn sign_payload(
     payload: &crate::cesr::Payload<impl AsRef<[u8]>, impl AsRef<[u8]>>,
     sender_identity: Option<&[u8]>,
 ) -> Result<TSPMessage, CryptoError> {
+    sign_payload_as(
+        sender,
+        sender.identifier(),
+        receiver,
+        payload,
+        sender_identity,
+    )
+}
+
+/// As [`sign_payload`], but writing `sender_id` into the envelope rather than
+/// the sender's own identifier.
+///
+/// This exists for a VID that is being introduced: a `did:peer:4` is used by
+/// its short form, which a peer cannot resolve until it has seen the document,
+/// so the message that introduces it carries the long form instead. The keys
+/// are the same either way, and the peer resolves the long form back to the
+/// short form it will use thereafter.
+pub fn sign_payload_as(
+    sender: &dyn PrivateVid,
+    sender_id: &str,
+    receiver: Option<&dyn VerifiedVid>,
+    payload: &crate::cesr::Payload<impl AsRef<[u8]>, impl AsRef<[u8]>>,
+    sender_identity: Option<&[u8]>,
+) -> Result<TSPMessage, CryptoError> {
     let mut data = Vec::with_capacity(64);
 
     crate::cesr::encode_envelope(
         Envelope {
             crypto_type: CryptoType::Plaintext,
             signature_type: signature_type(sender),
-            sender: sender.identifier(),
+            sender: sender_id,
             receiver: receiver.map(|r| r.identifier()),
         },
         &mut data,

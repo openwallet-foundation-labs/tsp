@@ -22,7 +22,10 @@ pub mod resolve;
 pub use did::web::{create_did_web, vid_to_did_document};
 
 #[cfg(feature = "resolve")]
-pub use did::peer::{encode_did_peer, verify_did_peer};
+pub use did::peer::{
+    encode_did_peer, encode_did_peer_long_form, introduction_identifier, short_form,
+    verify_did_peer,
+};
 
 pub use error::VidError;
 use url::Url;

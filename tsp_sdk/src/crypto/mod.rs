@@ -559,8 +559,8 @@ pub(crate) fn open_with_signature_info<'a>(
     }
 
     let result = match envelope.crypto_type {
-        CryptoType::HpkeBase => tsp_hpke::open(receiver, sender, raw_header, envelope, ciphertext),
-        CryptoType::SealedBox => tsp_nacl::open(receiver, sender, raw_header, envelope, ciphertext),
+        CryptoType::HpkeBase => tsp_hpke::open(receiver, raw_header, envelope, ciphertext),
+        CryptoType::SealedBox => tsp_nacl::open(receiver, raw_header, envelope, ciphertext),
         CryptoType::Plaintext => Err(CryptoError::MissingCiphertext),
     };
     #[cfg(feature = "bench-network-timings")]
@@ -579,14 +579,16 @@ pub fn sign(
 }
 
 /// Construct and sign a non-confidential TSP message whose payload is encoded
-/// in the payload position as it stands; see [`nonconfidential::sign_payload`]
-pub(crate) fn sign_payload(
+/// in the payload position as it stands, under `sender_id`; see
+/// [`nonconfidential::sign_payload_as`]
+pub(crate) fn sign_payload_as(
     sender: &dyn PrivateVid,
+    sender_id: &str,
     receiver: Option<&dyn VerifiedVid>,
     payload: &crate::cesr::Payload<impl AsRef<[u8]>, impl AsRef<[u8]>>,
     sender_identity: Option<&[u8]>,
 ) -> Result<TSPMessage, CryptoError> {
-    nonconfidential::sign_payload(sender, receiver, payload, sender_identity)
+    nonconfidential::sign_payload_as(sender, sender_id, receiver, payload, sender_identity)
 }
 
 /// Decode a CESR Authentic Non-Confidential Message, verify the signature and return its contents

@@ -107,6 +107,64 @@ fn digest_algorithm_for_selection(
     )?)
 }
 
+/// A private VID presented under the identifier it is being introduced by.
+///
+/// A `did:peer` is used by its short form, which a peer cannot resolve until it
+/// has seen the document, so the message that introduces it carries the long
+/// form instead. Everything else about the VID — its keys, its endpoint — is
+/// unchanged, so wrapping it here puts the right identifier in the envelope,
+/// in the AAD derived from it, and in the ESSR sender field, without the
+/// sealing code needing to know that any of this is going on.
+struct IntroducedVid<'a> {
+    inner: &'a dyn PrivateVid,
+    identifier: String,
+}
+
+impl<'a> IntroducedVid<'a> {
+    fn new(inner: &'a dyn PrivateVid) -> Self {
+        Self {
+            identifier: crate::vid::did::peer::introduction_identifier(inner),
+            inner,
+        }
+    }
+}
+
+impl VerifiedVid for IntroducedVid<'_> {
+    fn identifier(&self) -> &str {
+        &self.identifier
+    }
+
+    fn endpoint(&self) -> &Url {
+        self.inner.endpoint()
+    }
+
+    fn verifying_key(&self) -> &crate::definitions::PublicVerificationKeyData {
+        self.inner.verifying_key()
+    }
+
+    fn encryption_key(&self) -> &crate::definitions::PublicKeyData {
+        self.inner.encryption_key()
+    }
+
+    fn encryption_key_type(&self) -> crate::definitions::VidEncryptionKeyType {
+        self.inner.encryption_key_type()
+    }
+
+    fn signature_key_type(&self) -> crate::definitions::VidSignatureKeyType {
+        self.inner.signature_key_type()
+    }
+}
+
+impl PrivateVid for IntroducedVid<'_> {
+    fn decryption_key(&self) -> &crate::definitions::PrivateKeyData {
+        self.inner.decryption_key()
+    }
+
+    fn signing_key(&self) -> &crate::definitions::PrivateSigningKeyData {
+        self.inner.signing_key()
+    }
+}
+
 fn seal_envelope(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
@@ -680,10 +738,22 @@ impl SecureStore {
 
     /// Resolve alias to its corresponding DID, or leave it as is
     pub fn try_resolve_alias(&self, alias: &str) -> Result<String, Error> {
-        Ok(self
+        let resolved = self
             .resolve_alias(alias)?
             .unwrap_or(alias.to_owned())
-            .to_string())
+            .to_string();
+
+        // a did:peer is introduced by its long form and known by its short
+        // form, so a caller naming it by the form it was handed still means
+        // the VID the wallet holds
+        if !self.vids.read()?.contains_key(&resolved)
+            && let Some(short_form) = crate::vid::did::peer::short_form(&resolved)
+            && self.vids.read()?.contains_key(&short_form)
+        {
+            return Ok(short_form);
+        }
+
+        Ok(resolved)
     }
 
     /// Set alias for a DID
@@ -896,19 +966,19 @@ impl SecureStore {
         let mut nonce_bytes = [0_u8; 16];
         csprng.fill_bytes(&mut nonce_bytes);
 
-        let sender_identity = Some(sender.identifier().as_bytes());
+        // the invite introduces the new VID, so it carries the form the peer
+        // can verify without having seen it before (spec 2.1, did:peer:4 long
+        // form); the peer resolves it to the short form used thereafter
+        let wire_sender = crate::vid::did::peer::introduction_identifier(sender);
+        let sender_identity = Some(wire_sender.as_bytes());
         let mut request_digest = [0_u8; 32];
 
         // the inner message is an ordinary TSP message whose sender is the new
         // VID and whose receiver is NULL, and the digest is that message's own
         // SAID (spec 7.2.1: the innermost message that carries it)
         let mut envelope_prefix = Vec::with_capacity(64);
-        crate::cesr::encode_envelope_prefix(
-            sender.identifier().as_bytes(),
-            None,
-            &mut envelope_prefix,
-        )
-        .map_err(crate::crypto::CryptoError::from)?;
+        crate::cesr::encode_envelope_prefix(wire_sender.as_bytes(), None, &mut envelope_prefix)
+            .map_err(crate::crypto::CryptoError::from)?;
 
         fn proposal<'a>(
             request_digest: &'a Digest,
@@ -936,7 +1006,13 @@ impl SecureStore {
 
         // the inner message's payload IS the TSP_RFI (spec 9.4.13), so it is
         // signed as it stands rather than wrapped in an application payload
-        let message = crate::crypto::sign_payload(sender, None, &final_payload, sender_identity)?;
+        let message = crate::crypto::sign_payload_as(
+            sender,
+            &wire_sender,
+            None,
+            &final_payload,
+            sender_identity,
+        )?;
 
         Ok((message, request_digest))
     }
@@ -948,12 +1024,14 @@ impl SecureStore {
         thread_id: Digest,
         digest_algorithm: RelationshipDigestAlgorithm,
     ) -> Result<(Vec<u8>, Digest), Error> {
-        let sender_identity = Some(sender.identifier().as_bytes());
+        // as with the invite, the accept introduces this endpoint's new VID
+        let wire_sender = crate::vid::did::peer::introduction_identifier(sender);
+        let sender_identity = Some(wire_sender.as_bytes());
         let mut reply_thread_id = [0_u8; 32];
 
         let mut envelope_prefix = Vec::with_capacity(64);
         crate::cesr::encode_envelope_prefix(
-            sender.identifier().as_bytes(),
+            wire_sender.as_bytes(),
             Some(receiver.identifier().as_bytes()),
             &mut envelope_prefix,
         )
@@ -982,8 +1060,13 @@ impl SecureStore {
         let final_payload = affirm(&thread_id, &reply_thread_id, digest_algorithm);
 
         // likewise the TSP_RFA is the inner message's payload (spec 9.4.14)
-        let message =
-            crate::crypto::sign_payload(sender, Some(receiver), &final_payload, sender_identity)?;
+        let message = crate::crypto::sign_payload_as(
+            sender,
+            &wire_sender,
+            Some(receiver),
+            &final_payload,
+            sender_identity,
+        )?;
 
         Ok((message, reply_thread_id))
     }
@@ -1009,21 +1092,26 @@ impl SecureStore {
             .transpose()?
             .map(str::to_owned);
 
+        // a VID being introduced arrives in a form that carries its own
+        // verification material; resolving it yields the identifier the two
+        // endpoints use from here on, which is what the wallet is keyed by
+        let sender_vid: std::sync::Arc<dyn VerifiedVid> = match self.get_verified_vid(&inner_sender)
+        {
+            Ok(sender_vid) => sender_vid,
+            Err(_) => match verify_vid_offline(&inner_sender) {
+                Ok(sender_vid) => std::sync::Arc::new(sender_vid),
+                Err(_) => return Ok(None),
+            },
+        };
+        let nested_vid = sender_vid.identifier().to_string();
+
         let (
             crate::cesr::DecodedPayload {
                 payload,
                 sender_identity,
             },
             _,
-        ) = match self.get_verified_vid(&inner_sender) {
-            Ok(sender_vid) => crate::crypto::verify_payload(&*sender_vid, inner)?,
-            Err(_) => {
-                let Ok(sender_vid) = verify_vid_offline(&inner_sender) else {
-                    return Ok(None);
-                };
-                crate::crypto::verify_payload(&sender_vid, inner)?
-            }
-        };
+        ) = crate::crypto::verify_payload(&*sender_vid, inner)?;
 
         // anything that is not a relationship control message belongs to the
         // caller of this function, which opens it as an ordinary message
@@ -1064,13 +1152,13 @@ impl SecureStore {
                     ));
                 }
 
-                if self.get_verified_vid(&inner_sender).is_err() {
+                if self.get_verified_vid(&nested_vid).is_err() {
                     self.add_nested_vid(&inner_sender)?;
                 }
-                self.set_parent_for_vid(&inner_sender, Some(outer_sender))?;
+                self.set_parent_for_vid(&nested_vid, Some(outer_sender))?;
 
                 Ok(Some(NestedRelationshipEvent::Request {
-                    nested_vid: inner_sender,
+                    nested_vid,
                     thread_id: *request_digest.as_bytes(),
                 }))
             }
@@ -1086,10 +1174,10 @@ impl SecureStore {
                     ));
                 };
 
-                if self.get_verified_vid(&inner_sender).is_err() {
+                if self.get_verified_vid(&nested_vid).is_err() {
                     self.add_nested_vid(&inner_sender)?;
                 }
-                self.set_parent_for_vid(&inner_sender, Some(outer_sender))?;
+                self.set_parent_for_vid(&nested_vid, Some(outer_sender))?;
                 self.consume_pending_nested_request(
                     outer_sender,
                     *request_digest.as_bytes(),
@@ -1101,16 +1189,16 @@ impl SecureStore {
                 self.set_relation_and_status_for_vid(
                     &connect_to_vid,
                     relation_status.clone(),
-                    &inner_sender,
+                    &nested_vid,
                 )?;
                 self.set_relation_and_status_for_vid(
-                    &inner_sender,
+                    &nested_vid,
                     relation_status,
                     &connect_to_vid,
                 )?;
 
                 Ok(Some(NestedRelationshipEvent::Accept {
-                    nested_vid: inner_sender,
+                    nested_vid,
                     thread_id: *request_digest.as_bytes(),
                     reply_thread_id: *reply_digest.as_bytes(),
                 }))
@@ -1206,6 +1294,11 @@ impl SecureStore {
                         sender_vid.as_verified(),
                         message,
                     )?;
+
+                // a VID being introduced names itself in the envelope by the
+                // form that carries its verification material; from here on it
+                // is the identifier that resolves to
+                let sender = sender_vid.as_verified().identifier().to_string();
 
                 let parallel_sender_vid = parallel_signature_info
                     .map(|parallel_signature_info| {
@@ -1335,7 +1428,8 @@ impl SecureStore {
                             )?;
                         }
 
-                        if let ReceivedRelationshipForm::Parallel { new_vid, .. } = &form {
+                        let mut form = form;
+                        if let ReceivedRelationshipForm::Parallel { new_vid, .. } = &mut form {
                             match self.relation_status_for_vid_pair(&intended_receiver, &sender)? {
                                 RelationshipStatus::Bidirectional { .. } => {}
                                 RelationshipStatus::Unidirectional { .. }
@@ -1350,9 +1444,14 @@ impl SecureStore {
                                     "missing verified parallel VID for request message".into(),
                                 )
                             })?;
+                            // the referral introduced the VID in the form that
+                            // carries its verification material; from here it is
+                            // known by the identifier that resolves to
+                            *new_vid = parallel_sender_vid.as_verified().identifier().to_string();
+                            let new_vid = new_vid.clone();
                             parallel_sender_vid.persist(self)?;
                             self.add_pending_incoming_parallel_request(
-                                new_vid,
+                                &new_vid,
                                 thread_id,
                                 &intended_receiver,
                             )?;
@@ -1557,7 +1656,7 @@ impl SecureStore {
             &[],
             &envelope_prefix,
             &mut digest,
-            sender_new_vid.identifier().as_bytes(),
+            crate::vid::did::peer::introduction_identifier(sender_new_vid).as_bytes(),
         )?;
         let request_nonce = Some(nonce);
 
@@ -1592,6 +1691,9 @@ impl SecureStore {
 
         let selection = selected_outbound_crypto(&*sender, &*receiver, None);
         let digest_algorithm = digest_algorithm_for_selection(selection)?;
+        // the referral introduces the new VID, so it names the form the peer
+        // can verify without having seen it (did:peer:4 long form)
+        let new_vid_long_form = crate::vid::did::peer::introduction_identifier(&*sender_new_vid);
         let signature_material = self.build_parallel_signature_material(
             &*sender_new_vid,
             ParallelSignatureContext {
@@ -1610,7 +1712,7 @@ impl SecureStore {
                 thread_id: Default::default(),
                 reply_path: vec![],
                 form: RelationshipForm::Parallel {
-                    new_vid: sender_new_vid.identifier().as_bytes(),
+                    new_vid: new_vid_long_form.as_bytes(),
                     sig_new_vid: signature_material.sig_new_vid.as_slice(),
                 },
             },
@@ -1684,7 +1786,7 @@ impl SecureStore {
         // carries no referral field (spec 7.2.5)
         let mut reply_thread_id = Default::default();
         let tsp_message = seal_envelope(
-            &*sender_new_vid,
+            &IntroducedVid::new(&*sender_new_vid),
             &*receiver_new_vid,
             Payload::AcceptRelationship {
                 thread_id,
@@ -3351,7 +3453,7 @@ mod test {
             &[],
             &test_envelope_prefix(&alice, &bob),
             &mut thread_id,
-            alice_parallel.identifier().as_bytes(),
+            crate::vid::did::peer::introduction_identifier(&alice_parallel).as_bytes(),
         )
         .unwrap();
         let mut sig_new_vid = crate::crypto::sign_detached(&alice_parallel, &signed_data).unwrap();
@@ -3367,7 +3469,8 @@ mod test {
                 thread_id: Default::default(),
                 reply_path: vec![],
                 form: RelationshipForm::Parallel {
-                    new_vid: alice_parallel.identifier().as_ref(),
+                    new_vid: crate::vid::did::peer::introduction_identifier(&alice_parallel)
+                        .as_ref(),
                     sig_new_vid: sig_new_vid.as_slice(),
                 },
             },
@@ -3414,7 +3517,7 @@ mod test {
             &[],
             &test_envelope_prefix(&alice, &bob),
             &mut thread_id,
-            alice_parallel.identifier().as_bytes(),
+            crate::vid::did::peer::introduction_identifier(&alice_parallel).as_bytes(),
         )
         .unwrap();
         let sig_new_vid = crate::crypto::sign_detached(&alice_parallel, &signed_data).unwrap();
@@ -3429,7 +3532,8 @@ mod test {
                 thread_id: Default::default(),
                 reply_path: vec![],
                 form: RelationshipForm::Parallel {
-                    new_vid: alice_parallel.identifier().as_ref(),
+                    new_vid: crate::vid::did::peer::introduction_identifier(&alice_parallel)
+                        .as_ref(),
                     sig_new_vid: sig_new_vid.as_slice(),
                 },
             },
@@ -3476,9 +3580,10 @@ mod test {
             .expect("sealed message should not be empty");
         *last ^= 0x01;
 
-        let Err(Error::Crypto(CryptoError::Verify(vid, _))) =
-            receiver_store.open_message(&mut sealed)
-        else {
+        // the sender is a did:peer, whose short form the receiver cannot
+        // resolve without having been introduced to it, so an unknown sender
+        // is rejected before its signature is ever considered
+        let Err(Error::UnverifiedSource(vid, ..)) = receiver_store.open_message(&mut sealed) else {
             panic!("unexpected message result");
         };
 
