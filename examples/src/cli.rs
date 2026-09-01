@@ -11,6 +11,7 @@ use tsp_sdk::{
     Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid,
     ReceivedRelationshipDelivery, ReceivedRelationshipForm, ReceivedTspMessage, RelationshipStatus,
     SecureStorage, VerifiedVid, Vid, cesr,
+    crypto::PayloadConfidentiality,
     definitions::Digest,
     vid::{
         ResolutionContext, VerifyVidOptions, VidError,
@@ -48,6 +49,14 @@ impl FromStr for DidType {
             "scid" => Ok(DidType::Scid),
             _ => Err(format!("invalid did type: {s}")),
         }
+    }
+}
+
+fn parse_confidentiality(value: &str) -> Result<PayloadConfidentiality, String> {
+    match value.to_ascii_lowercase().replace('_', "-").as_str() {
+        "encrypt-sign" | "confidential" => Ok(PayloadConfidentiality::Confidential),
+        "sign-only" | "signed-only" => Ok(PayloadConfidentiality::SignedOnly),
+        _ => Err(format!("invalid confidentiality: {value}")),
     }
 }
 
@@ -172,9 +181,18 @@ enum Commands {
         #[arg(
             long,
             value_parser = parse_crypto_type,
-            help = "Override outbound crypto: hpke-auth, hpke-essr, nacl-auth, nacl-essr, pq"
+            help = "Override outbound crypto: hpke (hpke-base), or sealed-box (nacl)"
         )]
         crypto: Option<cesr::CryptoType>,
+        #[arg(
+            long,
+            value_parser = parse_confidentiality,
+            help = "How to protect the payload: encrypt-sign (default), or sign-only. \
+                    sign-only applies to a nested message, whose enclosing envelope is \
+                    encrypted either way; the payload is then readable by anyone who can \
+                    open that envelope"
+        )]
+        confidentiality: Option<PayloadConfidentiality>,
     },
     #[command(arg_required_else_help = true, about = "listen for messages")]
     Receive {
@@ -1060,6 +1078,7 @@ async fn run() -> Result<(), Error> {
             receiver_vid,
             ask,
             crypto,
+            confidentiality,
         } => {
             let receiver_vid = vid_wallet.try_resolve_alias(&receiver_vid)?;
 
@@ -1071,12 +1090,21 @@ async fn run() -> Result<(), Error> {
                 .await
                 .expect("Could not read message from stdin");
 
-            let send_result = if let Some(crypto_type) = crypto {
-                vid_wallet
-                    .send_with_crypto_type(&sender_vid, &receiver_vid, &message, crypto_type)
-                    .await
-            } else {
-                vid_wallet.send(&sender_vid, &receiver_vid, &message).await
+            let send_result = match (crypto, confidentiality) {
+                // the plain path keeps the relationship-forming behaviour of
+                // `send`, which the explicit ones reproduce
+                (None, None) => vid_wallet.send(&sender_vid, &receiver_vid, &message).await,
+                (crypto_type, confidentiality) => {
+                    vid_wallet
+                        .send_with(
+                            &sender_vid,
+                            &receiver_vid,
+                            &message,
+                            crypto_type,
+                            confidentiality.unwrap_or_default(),
+                        )
+                        .await
+                }
             };
 
             match send_result {
@@ -1132,14 +1160,33 @@ async fn run() -> Result<(), Error> {
                             message,
                             message_type,
                         } => {
-                            let status = match message_type.crypto_type {
-                                cesr::CryptoType::Plaintext => "NON-CONFIDENTIAL",
-                                _ => "confidential",
-                            };
-                            let crypto_type = match message_type.crypto_type {
+                            let describe = |crypto_type| match crypto_type {
                                 cesr::CryptoType::Plaintext => "Plain text",
                                 cesr::CryptoType::HpkeBase => "HPKE-Base",
                                 cesr::CryptoType::SealedBox => "Sealed Box",
+                            };
+                            // a signed-only message that arrived inside another
+                            // message's ciphertext was confidential on the wire,
+                            // but under the enclosing relationship's keys rather
+                            // than its own (spec 4) — so say which
+                            let status = match (
+                                message_type.crypto_type,
+                                message_type.enclosing_crypto_type,
+                            ) {
+                                (cesr::CryptoType::Plaintext, Some(_)) => {
+                                    "confidential only within its enclosing"
+                                }
+                                (cesr::CryptoType::Plaintext, None) => "NON-CONFIDENTIAL",
+                                _ => "confidential",
+                            };
+                            let crypto_type = match (
+                                message_type.crypto_type,
+                                message_type.enclosing_crypto_type,
+                            ) {
+                                (cesr::CryptoType::Plaintext, Some(enclosing)) => {
+                                    format!("signed only, enclosed in {}", describe(enclosing))
+                                }
+                                (crypto_type, _) => describe(crypto_type).to_string(),
                             };
                             let signature_type = match message_type.signature_type {
                                 cesr::SignatureType::NoSignature => "no signature",

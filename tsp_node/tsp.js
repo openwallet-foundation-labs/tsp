@@ -17,6 +17,16 @@ const SignatureType = {
     Ed25519: 1,
 }
 
+// How an upper layer's own payload is protected. TSP's control messages are
+// always encrypted, whatever this says. SignedOnly is only meaningful under
+// nesting: the enclosing envelope is confidential either way, but the payload's
+// confidentiality then rests on the enclosing relationship's keys rather than
+// its own (spec 4).
+const PayloadConfidentiality = {
+    Confidential: 0,
+    SignedOnly: 1,
+};
+
 class Store {
     constructor() {
         this.inner = new wasm.Store();
@@ -38,7 +48,11 @@ class Store {
         return this.inner.set_route_for_vid(...args);
     }
 
-    seal_message(sender, receiver, message) {
+    // `confidentiality` is optional and defaults to encrypt-and-sign; pass
+    // PayloadConfidentiality.SignedOnly to sign a nested payload without
+    // encrypting it, which leaves its confidentiality resting on the enclosing
+    // relationship's keys rather than its own (spec 4).
+    seal_message(sender, receiver, message, confidentiality) {
         let byteArray;
         
         if (typeof message === 'string') {
@@ -50,7 +64,7 @@ class Store {
             throw new TypeError("Message must be a string or a Uint8Array");
         }
 
-        return this.inner.seal_message(sender, receiver, byteArray);
+        return this.inner.seal_message(sender, receiver, byteArray, confidentiality);
     }
 
     make_relationship_request(...args) {
@@ -104,7 +118,8 @@ class ReceivedTspMessage {
                     msg.receiver,
                     new Uint8Array(msg.message),
                     msg.crypto_type,
-                    msg.signature_type
+                    msg.signature_type,
+                    msg.enclosing_crypto_type
                 );
 
             case 1: 
@@ -156,13 +171,19 @@ class ReceivedTspMessage {
 }
 
 class GenericMessage extends ReceivedTspMessage {
-    constructor(sender, receiver, message, crypto_type, signature_type) {
+    // `enclosing_crypto_type` is how the message this one arrived inside was
+    // encrypted, or undefined when it was not nested. A message whose
+    // crypto_type is Plaintext but which has an enclosing type was still
+    // confidential on the wire, under the enclosing relationship's keys rather
+    // than its own (spec 4).
+    constructor(sender, receiver, message, crypto_type, signature_type, enclosing_crypto_type) {
         super();
         this.sender = sender;
         this.receiver = receiver;
         this.message = message;
         this.crypto_type = crypto_type;
         this.signature_type = signature_type;
+        this.enclosing_crypto_type = enclosing_crypto_type;
     }
 }
 
@@ -216,6 +237,7 @@ class ForwardRequest extends ReceivedTspMessage {
 module.exports = {
     CryptoType,
     SignatureType,
+    PayloadConfidentiality,
     RelationshipForm,
     RelationshipDelivery,
     Store,

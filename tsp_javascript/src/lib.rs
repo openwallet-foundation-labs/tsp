@@ -83,10 +83,16 @@ impl Store {
         sender: String,
         receiver: String,
         message: Vec<u8>,
+        confidentiality: Option<PayloadConfidentiality>,
     ) -> Result<SealedMessage, Error> {
         let (url, sealed) = self
             .0
-            .seal_message(&sender, &receiver, &message)
+            .seal_message_with_confidentiality(
+                &sender,
+                &receiver,
+                &message,
+                confidentiality.unwrap_or_default().into(),
+            )
             .map_err(Error)?;
 
         Ok(SealedMessage {
@@ -472,6 +478,29 @@ pub enum CryptoType {
     SealedBox = 2,
 }
 
+/// How an upper layer's own payload is protected. TSP's control messages are
+/// always encrypted, whatever this says.
+///
+/// `SignedOnly` is only meaningful under nesting: the enclosing envelope is
+/// confidential either way, but the payload's confidentiality then rests on the
+/// enclosing relationship's keys rather than its own (spec 4).
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+pub enum PayloadConfidentiality {
+    #[default]
+    Confidential = 0,
+    SignedOnly = 1,
+}
+
+impl From<PayloadConfidentiality> for tsp_sdk::crypto::PayloadConfidentiality {
+    fn from(value: PayloadConfidentiality) -> Self {
+        match value {
+            PayloadConfidentiality::Confidential => Self::Confidential,
+            PayloadConfidentiality::SignedOnly => Self::SignedOnly,
+        }
+    }
+}
+
 #[wasm_bindgen]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -490,6 +519,11 @@ pub struct FlatReceivedTspMessage {
     message: Option<Vec<u8>>,
     pub crypto_type: Option<CryptoType>,
     pub signature_type: Option<SignatureType>,
+    /// How the message this one arrived inside was encrypted, when it was
+    /// nested; `None` otherwise. A message whose `crypto_type` is `Plaintext`
+    /// but which has an enclosing type was still confidential on the wire, under
+    /// the enclosing relationship's keys rather than its own (spec 4).
+    pub enclosing_crypto_type: Option<CryptoType>,
     pub form: Option<RelationshipForm>,
     pub delivery: Option<RelationshipDelivery>,
     route: Option<Vec<Vec<u8>>>,
@@ -620,6 +654,14 @@ fn flatten_relationship_delivery(
     }
 }
 
+fn crypto_type(crypto_type: tsp_sdk::cesr::CryptoType) -> CryptoType {
+    match crypto_type {
+        tsp_sdk::cesr::CryptoType::Plaintext => CryptoType::Plaintext,
+        tsp_sdk::cesr::CryptoType::HpkeBase => CryptoType::HpkeBase,
+        tsp_sdk::cesr::CryptoType::SealedBox => CryptoType::SealedBox,
+    }
+}
+
 impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
     fn from(value: tsp_sdk::ReceivedTspMessage) -> Self {
         let variant = ReceivedTspMessageVariant::from(&value);
@@ -631,6 +673,7 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             message: None,
             crypto_type: None,
             signature_type: None,
+            enclosing_crypto_type: None,
             form: None,
             delivery: None,
             route: None,
@@ -662,11 +705,8 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
                 this.sender = Some(sender);
                 this.receiver = receiver;
                 this.message = Some(message.into());
-                this.crypto_type = match message_type.crypto_type {
-                    tsp_sdk::cesr::CryptoType::Plaintext => Some(CryptoType::Plaintext),
-                    tsp_sdk::cesr::CryptoType::HpkeBase => Some(CryptoType::HpkeBase),
-                    tsp_sdk::cesr::CryptoType::SealedBox => Some(CryptoType::SealedBox),
-                };
+                this.crypto_type = Some(crypto_type(message_type.crypto_type));
+                this.enclosing_crypto_type = message_type.enclosing_crypto_type.map(crypto_type);
                 this.signature_type = match message_type.signature_type {
                     tsp_sdk::cesr::SignatureType::NoSignature => Some(SignatureType::NoSignature),
                     tsp_sdk::cesr::SignatureType::Ed25519 => Some(SignatureType::Ed25519),
