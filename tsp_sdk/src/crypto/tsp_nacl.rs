@@ -13,7 +13,6 @@ use super::{
     build_relationship_request_payload, signature_type,
 };
 use crate::definitions::TSPMessage;
-use crypto_box::aead::OsRng;
 use rand::{RngCore, SeedableRng, rngs::StdRng};
 
 pub(crate) fn seal(
@@ -22,9 +21,15 @@ pub(crate) fn seal(
     secret_payload: Payload<&[u8]>,
     digest: Option<&mut super::Digest>,
     request_nonce_override: Option<[u8; 16]>,
+    seed: Option<[u8; 32]>,
 ) -> Result<TSPMessage, CryptoError> {
     let crypto_type = CryptoType::SealedBox;
-    let mut csprng = StdRng::from_entropy();
+    // a seed makes the message reproducible, which is what a published test
+    // vector needs; production callers pass None and draw from the OS
+    let mut csprng = match seed {
+        Some(seed) => StdRng::from_seed(seed),
+        None => StdRng::from_entropy(),
+    };
 
     let mut data = Vec::with_capacity(64);
     crate::cesr::encode_envelope(
@@ -107,7 +112,7 @@ pub(crate) fn seal(
     // XSalsa20-Poly1305 (spec 8.3). The sender's static keys are not used;
     // sender authenticity comes from the ESSR sender-VID field and the signature.
     let receiver_public_key = PublicKey::from_slice(receiver.encryption_key())?;
-    let ciphertext = receiver_public_key.seal(&mut OsRng, &cesr_message)?;
+    let ciphertext = receiver_public_key.seal(&mut csprng, &cesr_message)?;
 
     // encode and append the ciphertext to the envelope data
     crate::cesr::encode_ciphertext(&ciphertext, crypto_type, &mut data)?;

@@ -241,6 +241,50 @@ impl OwnedVid {
         Self::new_did_peer_with_key_types(transport, sig_key_type, enc_key_type)
     }
 
+    /// A `did:peer` whose keys are derived from `seed` rather than drawn at
+    /// random, so the identifier it produces is the same every time.
+    ///
+    /// This exists for the published test vectors: a vector is only a test of
+    /// an encoder if a verifier can regenerate its bytes, and that requires
+    /// every value the message depends on — the keys included — to be recorded
+    /// or derivable. Classical keys only; a deterministic VID is not something
+    /// to use for a real identity.
+    pub fn new_did_peer_from_seed(transport: Url, seed: [u8; 32]) -> OwnedVid {
+        use rand::{RngCore, SeedableRng};
+
+        let mut rng = rand::rngs::StdRng::from_seed(seed);
+
+        let mut sign_seed = [0_u8; 32];
+        rng.fill_bytes(&mut sign_seed);
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&sign_seed);
+        let public_sigkey: PublicVerificationKeyData =
+            signing_key.verifying_key().to_bytes().to_vec().into();
+
+        let mut enc_seed = [0_u8; 32];
+        rng.fill_bytes(&mut enc_seed);
+        let secret_key = crypto_box::SecretKey::from(enc_seed);
+        let public_enckey: PublicKeyData = crypto_box::PublicKey::from(&secret_key)
+            .to_bytes()
+            .to_vec()
+            .into();
+
+        let mut vid = Vid {
+            id: Default::default(),
+            transport,
+            sig_key_type: VidSignatureKeyType::Ed25519,
+            enc_key_type: VidEncryptionKeyType::X25519,
+            public_sigkey,
+            public_enckey,
+        };
+        vid.id = crate::vid::did::peer::encode_did_peer(&vid);
+
+        OwnedVid {
+            vid,
+            sigkey: sign_seed.to_vec().into(),
+            enckey: secret_key.to_bytes().to_vec().into(),
+        }
+    }
+
     pub fn new_did_peer_with_key_types(
         transport: Url,
         sig_key_type: VidSignatureKeyType,
