@@ -1,0 +1,826 @@
+{
+  "generated_by": "cargo run -p tsp_sdk --example generate_test_vectors",
+  "note": "Every value a message depends on is recorded here: the identifiers with their private keys, the seed each random value was drawn from, and the nonce where one applies. A verifier can therefore regenerate the exact bytes of a vector, not only decrypt them. Regenerate with the command in generated_by; the output is byte-for-byte identical.",
+  "tsp_version": "0.0.1",
+  "vectors": [
+    {
+      "description": "A confidential application message under the libsodium anonymous sealed box. The sender's static keys play no part in the encryption, so sender authenticity rests on the ESSR sender VID inside the payload, which this suite requires, together with the outer signature.",
+      "ephemeral": {
+        "kind": "ephemeral X25519 secret",
+        "public": "wfprioKR4GMkMcd24cr7B7sM1_iy88nTHbvkED2YVys",
+        "secret": "EgVuWV1WsPbu8JDwzSWiCUkkjCeQUl0PkwIY_wtN3RA"
+      },
+      "expect": {
+        "crypto": "SealedBox",
+        "payload": {
+          "content": "hello world"
+        },
+        "signature": "Ed25519"
+      },
+      "inner": null,
+      "layout": [
+        "-Z##",
+        "XSCS",
+        "VID_sndr | 4BAA",
+        "Padding_Field",
+        "-A##",
+        "Bytes"
+      ],
+      "message": "-EBYYTSP-AAB4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB4CAtwfprioKR4GMkMcd24cr7B7sM1_iy88nTHbvkED2YVysWC_6GFqzGqxjBQhW05P2nlttvJtG8bu8WM2kZJiLlOeT7b2Wg0URDRYhOFeb4EtB8XpEUW6KqjqW_zwj79vMTAdrf8vq4u27MbDCQpI8qzeiGLN8B-tak3SI1vKAADx68VHVg5TQM-CAX-KAWBAA_SSI7-liNziKjy2VHljgJxK7EJUnbxQMbgGS4C6H1Q5Zekw5zJqFn7yxrEAMzXKbLHkQ2GMWGhXE3ZcnBz38L",
+      "name": "direct-sealed-box",
+      "nonce": null,
+      "payload_plaintext": "-ZAcXSCS4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx4BAA-AAF5BAEAGhlbGxvIHdvcmxk",
+      "receiver": "bob",
+      "seed": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "segments": [
+        {
+          "bytes": 9,
+          "code": "-EBYYTSP-AAB",
+          "field": "frame + version",
+          "note": "-E## counts the signable content that follows, then TSP_Version",
+          "text": "-EBYYTSP-AAB"
+        },
+        {
+          "bytes": 60,
+          "code": "4BAT",
+          "field": "VID_sndr",
+          "note": "the sending VID, in the envelope and so in the aad",
+          "text": "4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx"
+        },
+        {
+          "bytes": 60,
+          "code": "4BAT",
+          "field": "VID_rcvr",
+          "note": "the receiving VID; 4BAA when there is none",
+          "text": "4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB"
+        },
+        {
+          "bytes": 138,
+          "code": "4CAt",
+          "field": "ciphertext",
+          "note": "the sealed payload; for HPKE-Base this is enc followed by ct",
+          "text": "4CAtwfprioKR4GMkMcd24cr7B7sM1_iy88nTHbvkED2YVysWC_6GFqzGqxjBQhW05P2nlttvJtG8bu8WM2kZJiLlOeT7b2Wg0URDRYhOFeb4EtB8XpEUW6KqjqW_zwj79vMTAdrf8vq4u27MbDCQpI8qzeiGLN8B-tak3SI1vKAADx68VHVg5TQM"
+        },
+        {
+          "bytes": 72,
+          "code": "-CAX-KAWBAA",
+          "field": "signature",
+          "note": "-C## attachment group holding an indexed -K## signature",
+          "text": "-CAX-KAWBAA_SSI7-liNziKjy2VHljgJxK7EJUnbxQMbgGS4C6H1Q5Zekw5zJqFn7yxrEAMzXKbLHkQ2GMWGhXE3ZcnBz38L"
+        }
+      ],
+      "sender": "alice",
+      "spec": "8.3, 9.1, 9.2.8, 9.5"
+    },
+    {
+      "description": "The same message under HPKE-Base. The aad is CONCAT(TSP_Version, VID_sndr, VID_rcvr), which is exactly the envelope preceding the ciphertext; info is the five bytes YTSP-. The ciphertext field is enc followed by ct, with the AEAD tag inside ct.",
+      "ephemeral": {
+        "ikmE": "zmfPZS31ZecVid-0CvG0x7YPwxkwy_8TLqggDcwUDJg",
+        "kind": "ikmE, the HPKE encapsulation keying material",
+        "public": "1T4oA1pSbehBiIwnoXFGA24kgHowT34VdE95wF9qjSs"
+      },
+      "expect": {
+        "crypto": "HpkeBase",
+        "payload": {
+          "content": "hello world"
+        },
+        "signature": "Ed25519"
+      },
+      "inner": null,
+      "layout": [
+        "-Z##",
+        "XSCS",
+        "VID_sndr | 4BAA",
+        "Padding_Field",
+        "-A##",
+        "Bytes"
+      ],
+      "message": "-EBFYTSP-AAB4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB4FAa1T4oA1pSbehBiIwnoXFGA24kgHowT34VdE95wF9qjStBsok4fIkbu8IKODF2nsZMUAmS5BqxDbbYrvl_TNGZg4HEUuXuI1Jqeq7F24GJ-CAX-KAWBACD9JSTJex6TopuS6ZQxyLB0UbKWvIC-K1c9QWn3nlqcx7d2nYVHn2pN6jVg7TIirlLaH6AmEQGlxmw-YPUmloN",
+      "name": "direct-hpke-base",
+      "nonce": null,
+      "payload_plaintext": "-ZAJXSCS4BAA4BAA-AAF5BAEAGhlbGxvIHdvcmxk",
+      "receiver": "bob",
+      "seed": "AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "segments": [
+        {
+          "bytes": 9,
+          "code": "-EBFYTSP-AAB",
+          "field": "frame + version",
+          "note": "-E## counts the signable content that follows, then TSP_Version",
+          "text": "-EBFYTSP-AAB"
+        },
+        {
+          "bytes": 60,
+          "code": "4BAT",
+          "field": "VID_sndr",
+          "note": "the sending VID, in the envelope and so in the aad",
+          "text": "4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx"
+        },
+        {
+          "bytes": 60,
+          "code": "4BAT",
+          "field": "VID_rcvr",
+          "note": "the receiving VID; 4BAA when there is none",
+          "text": "4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB"
+        },
+        {
+          "bytes": 81,
+          "code": "4FAa",
+          "field": "ciphertext",
+          "note": "the sealed payload; for HPKE-Base this is enc followed by ct",
+          "text": "4FAa1T4oA1pSbehBiIwnoXFGA24kgHowT34VdE95wF9qjStBsok4fIkbu8IKODF2nsZMUAmS5BqxDbbYrvl_TNGZg4HEUuXuI1Jqeq7F24GJ"
+        },
+        {
+          "bytes": 72,
+          "code": "-CAX-KAWBAA",
+          "field": "signature",
+          "note": "-C## attachment group holding an indexed -K## signature",
+          "text": "-CAX-KAWBACD9JSTJex6TopuS6ZQxyLB0UbKWvIC-K1c9QWn3nlqcx7d2nYVHn2pN6jVg7TIirlLaH6AmEQGlxmw-YPUmloN"
+        }
+      ],
+      "sender": "alice",
+      "spec": "8.2, 9.1, 9.2.8"
+    },
+    {
+      "description": "A non-confidential message. The payload sits in the payload position in the clear, under the same -Z## framing a confidential payload uses once decrypted; there is no separate non-confidential field.",
+      "ephemeral": null,
+      "expect": {
+        "crypto": "Plaintext",
+        "payload": {
+          "content": "public announcement!"
+        },
+        "signature": "Ed25519"
+      },
+      "inner": null,
+      "layout": [
+        "-Z##",
+        "XSCS",
+        "VID_sndr | 4BAA",
+        "Padding_Field",
+        "-A##",
+        "Bytes"
+      ],
+      "message": "-EA3YTSP-AAB4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB-ZAMXSCS4BAA4BAA-AAI5BAHAHB1YmxpYyBhbm5vdW5jZW1lbnQh-CAX-KAWBADTxFAxv_zlEAdXfBln370F3sBPbeUjA3HbQIc3kikmYFvIntmaTbD8zOxXq0A80JyzA75c01iqVjn2bfxvciQH",
+      "name": "direct-signed-only",
+      "nonce": null,
+      "payload_plaintext": "-ZAMXSCS4BAA4BAA-AAI5BAHAHB1YmxpYyBhbm5vdW5jZW1lbnQh",
+      "receiver": "bob",
+      "seed": null,
+      "segments": [
+        {
+          "bytes": 9,
+          "code": "-EA3YTSP-AAB",
+          "field": "frame + version",
+          "note": "-E## counts the signable content that follows, then TSP_Version",
+          "text": "-EA3YTSP-AAB"
+        },
+        {
+          "bytes": 60,
+          "code": "4BAT",
+          "field": "VID_sndr",
+          "note": "the sending VID, in the envelope and so in the aad",
+          "text": "4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx"
+        },
+        {
+          "bytes": 60,
+          "code": "4BAT",
+          "field": "VID_rcvr",
+          "note": "the receiving VID; 4BAA when there is none",
+          "text": "4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB"
+        },
+        {
+          "bytes": 39,
+          "code": "-ZAM",
+          "field": "ciphertext",
+          "note": "the sealed payload; for HPKE-Base this is enc followed by ct",
+          "text": "-ZAMXSCS4BAA4BAA-AAI5BAHAHB1YmxpYyBhbm5vdW5jZW1lbnQh"
+        },
+        {
+          "bytes": 72,
+          "code": "-CAX-KAWBAA",
+          "field": "signature",
+          "note": "-C## attachment group holding an indexed -K## signature",
+          "text": "-CAX-KAWBADTxFAxv_zlEAdXfBln370F3sBPbeUjA3HbQIc3kikmYFvIntmaTbD8zOxXq0A80JyzA75c01iqVjn2bfxvciQH"
+        }
+      ],
+      "sender": "alice",
+      "spec": "3.5, 9.1"
+    },
+    {
+      "description": "A TSP_RFI. Its Digest is the message's own self-addressing identifier: computed over the version, both envelope VIDs and the payload fields, with the digest's own slot filled with the 0x23 dummy and the padding field excluded. A direct invite has an empty Reply_Path and an empty Referral_Field, both -JAA.",
+      "ephemeral": {
+        "kind": "ephemeral X25519 secret",
+        "public": "VjeHN5HJR7BiWf5xzOVvzFMaW_HsIFKa8FhQBZCDuFc",
+        "secret": "ew2j30RF7AyIl6ompEoE-0acQb8yg_Iyk303CTx8HJ8"
+      },
+      "expect": {
+        "crypto": "SealedBox",
+        "payload": {
+          "request_relationship": {
+            "referral": null,
+            "reply_path": [],
+            "thread_id": "JMfzvzY3VTtCAVhARQOvT1xVyEXyJVJIKTApii1nfZE"
+          }
+        }
+      },
+      "inner": null,
+      "layout": [
+        "-Z##",
+        "XRFI",
+        "VID_sndr | 4BAA",
+        "Digest",
+        "Nonce",
+        "Reply_Path",
+        "Referral_Field",
+        "Padding_Field"
+      ],
+      "message": "-EBlYTSP-AAB4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB4CA6VjeHN5HJR7BiWf5xzOVvzFMaW_HsIFKa8FhQBZCDuFcoTMMZnP1bEy098G-LeodcheTiIw5BzwvN4U2f581_xhPdTbXeyUqR58Ke6Joz7UDDuNHM7zTw5CmWq-3ZDeyxTmNHE2uUJS6KX7O5zZ6Hz8-YTV3K9Xjj__fcILczEu8l5WJwMYy4OEKW6vcL0eLlEfHa5Pj5iTpc6u5MFSZzFAt1iOdEq2Ud2YCj0SGl-CAX-KAWBACzMFYVL7vMUFSPdMZoCzZ3ZRQTqOjlG2TgKaMqmf1DsDihVxUk0WCjmA7vv_VPRgTSkkGJ7LuCbQxMIDIvUw0N",
+      "name": "control-rfi-direct",
+      "nonce": "EREREREREREREREREREREQ",
+      "payload_plaintext": "-ZApXRFI4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBxFCTH8782N1U7QgFYQEUDr09cVchF8iVSSCkwKYotZ32R0AARERERERERERERERERERER-JAA-JAA4BAA",
+      "receiver": "bob",
+      "seed": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "segments": [
+        {
+          "bytes": 9,
+          "code": "-EBlYTSP-AAB",
+          "field": "frame + version",
+          "note": "-E## counts the signable content that follows, then TSP_Version",
+          "text": "-EBlYTSP-AAB"
+        },
+        {
+          "bytes": 60,
+          "code": "4BAT",
+          "field": "VID_sndr",
+          "note": "the sending VID, in the envelope and so in the aad",
+          "text": "4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx"
+        },
+        {
+          "bytes": 60,
+          "code": "4BAT",
+          "field": "VID_rcvr",
+          "note": "the receiving VID; 4BAA when there is none",
+          "text": "4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB"
+        },
+        {
+          "bytes": 177,
+          "code": "4CA6",
+          "field": "ciphertext",
+          "note": "the sealed payload; for HPKE-Base this is enc followed by ct",
+          "text": "4CA6VjeHN5HJR7BiWf5xzOVvzFMaW_HsIFKa8FhQBZCDuFcoTMMZnP1bEy098G-LeodcheTiIw5BzwvN4U2f581_xhPdTbXeyUqR58Ke6Joz7UDDuNHM7zTw5CmWq-3ZDeyxTmNHE2uUJS6KX7O5zZ6Hz8-YTV3K9Xjj__fcILczEu8l5WJwMYy4OEKW6vcL0eLlEfHa5Pj5iTpc6u5MFSZzFAt1iOdEq2Ud2YCj0SGl"
+        },
+        {
+          "bytes": 72,
+          "code": "-CAX-KAWBAA",
+          "field": "signature",
+          "note": "-C## attachment group holding an indexed -K## signature",
+          "text": "-CAX-KAWBACzMFYVL7vMUFSPdMZoCzZ3ZRQTqOjlG2TgKaMqmf1DsDihVxUk0WCjmA7vv_VPRgTSkkGJ7LuCbQxMIDIvUw0N"
+        }
+      ],
+      "sender": "alice",
+      "spec": "7.2.1, 7.2.2, 9.4.1"
+    },
+    {
+      "description": "A TSP_RFA. The Digest is copied verbatim from the invite it answers; the Reply_Digest is this message's own SAID, derived the same way. The two digests are what identify the two directions of the relationship thereafter.",
+      "ephemeral": {
+        "kind": "ephemeral X25519 secret",
+        "public": "FwT8ofoUNLWO49g8FBUfcpnmGzCzvBmzWzFSoNkRBRo",
+        "secret": "vU7UpVjzd8nDZDHJ1NKaDdwEzUDHI7PRmK1Udx160J4"
+      },
+      "expect": {
+        "crypto": "SealedBox",
+        "payload": {
+          "accept_relationship": {
+            "reply_thread_id": "fFb62vGQucgVdhQWc39LSU2pDiQdWcfp3MgobWmaiFI",
+            "thread_id": "JMfzvzY3VTtCAVhARQOvT1xVyEXyJVJIKTApii1nfZE"
+          }
+        }
+      },
+      "inner": null,
+      "layout": [
+        "-Z##",
+        "XRFA",
+        "VID_sndr | 4BAA",
+        "Digest",
+        "Reply_Digest",
+        "Padding_Field"
+      ],
+      "message": "-EBoYTSP-AAB4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx4CA9FwT8ofoUNLWO49g8FBUfcpnmGzCzvBmzWzFSoNkRBRo8VatSo8ywUHw7aNt0OZQ6W0Qk2pqMxwaZLr6apvVcAqm3TDsi_aLppyxCLaqZSvf4kM7hOXbAXFMsEzh6AKehGWkwd_w21CPEPKxwgtG0lWMS6ctzPou6gf5ww3yyCCRiAFa-gVuZqPECtZewy3qJ2DsFF6GUulAYn0sOlsJDgXq7yCWN87NY1KGC7BBIBrhHYn-GMtoY-CAX-KAWBABBmfAhD6JyOJBHLtrm4TqZu-brpbhI04xaQ7Ymz20RVww0BI1r_FvfdOD54N_tXluSSaQnNowsSAplXeCM-zAI",
+      "name": "control-rfa-direct",
+      "nonce": "EREREREREREREREREREREQ",
+      "payload_plaintext": "-ZAsXRFA4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFBFCTH8782N1U7QgFYQEUDr09cVchF8iVSSCkwKYotZ32RFHxW-trxkLnIFXYUFnN_S0lNqQ4kHVnH6dzIKG1pmohS4BAA",
+      "receiver": "alice",
+      "seed": "CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "segments": [
+        {
+          "bytes": 9,
+          "code": "-EBoYTSP-AAB",
+          "field": "frame + version",
+          "note": "-E## counts the signable content that follows, then TSP_Version",
+          "text": "-EBoYTSP-AAB"
+        },
+        {
+          "bytes": 60,
+          "code": "4BAT",
+          "field": "VID_sndr",
+          "note": "the sending VID, in the envelope and so in the aad",
+          "text": "4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB"
+        },
+        {
+          "bytes": 60,
+          "code": "4BAT",
+          "field": "VID_rcvr",
+          "note": "the receiving VID; 4BAA when there is none",
+          "text": "4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx"
+        },
+        {
+          "bytes": 186,
+          "code": "4CA9",
+          "field": "ciphertext",
+          "note": "the sealed payload; for HPKE-Base this is enc followed by ct",
+          "text": "4CA9FwT8ofoUNLWO49g8FBUfcpnmGzCzvBmzWzFSoNkRBRo8VatSo8ywUHw7aNt0OZQ6W0Qk2pqMxwaZLr6apvVcAqm3TDsi_aLppyxCLaqZSvf4kM7hOXbAXFMsEzh6AKehGWkwd_w21CPEPKxwgtG0lWMS6ctzPou6gf5ww3yyCCRiAFa-gVuZqPECtZewy3qJ2DsFF6GUulAYn0sOlsJDgXq7yCWN87NY1KGC7BBIBrhHYn-GMtoY"
+        },
+        {
+          "bytes": 72,
+          "code": "-CAX-KAWBAA",
+          "field": "signature",
+          "note": "-C## attachment group holding an indexed -K## signature",
+          "text": "-CAX-KAWBABBmfAhD6JyOJBHLtrm4TqZu-brpbhI04xaQ7Ymz20RVww0BI1r_FvfdOD54N_tXluSSaQnNowsSAplXeCM-zAI"
+        }
+      ],
+      "sender": "bob",
+      "spec": "7.2.2, 9.4.2"
+    },
+    {
+      "description": "A TSP_RFD. It carries one digest, naming the relationship being cancelled, and no nonce: the nonce this message once had was removed, since a cancellation needs no freshness of its own.",
+      "ephemeral": {
+        "kind": "ephemeral X25519 secret",
+        "public": "WICO64Q7lMFVnd8gHrlJIG8tv8mVH09UZ-cx6dS1-j8",
+        "secret": "16WX82PmX4bBjabLDE16md_SNXRJfNa0xPn5_fp6GVE"
+      },
+      "expect": {
+        "crypto": "SealedBox",
+        "payload": {
+          "cancel_relationship": {
+            "thread_id": "JMfzvzY3VTtCAVhARQOvT1xVyEXyJVJIKTApii1nfZE"
+          }
+        }
+      },
+      "inner": null,
+      "layout": [
+        "-Z##",
+        "XRFD",
+        "VID_sndr | 4BAA",
+        "Digest",
+        "Padding_Field"
+      ],
+      "message": "-EBdYTSP-AAB4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB4CAyWICO64Q7lMFVnd8gHrlJIG8tv8mVH09UZ-cx6dS1-j__5gSOgiCrVJj68o5_NEz4sZt9hRW3_S9x9D0FphN7hGMkSY3ukeBtZRDZ6EG9ecQ4Q1vRwgZ80EBpnKg8TlUWw3VpcZkgNjv3uDtV68_6gIrWMwh7k_H3lwky4n2BFAjZfVXJr8_S0YpTonC27EhjIUYzPe8c-CAX-KAWBAByXSevPvrhrYXvXVjqGOQI4ORC97aRrNqaSZCT6uKwF7rYmNyNMJ1Hjbba7VtbkQDXinc8avDl5OohAwQszT0F",
+      "name": "control-rfd",
+      "nonce": null,
+      "payload_plaintext": "-ZAhXRFD4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBxFCTH8782N1U7QgFYQEUDr09cVchF8iVSSCkwKYotZ32R4BAA",
+      "receiver": "bob",
+      "seed": "AwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "segments": [
+        {
+          "bytes": 9,
+          "code": "-EBdYTSP-AAB",
+          "field": "frame + version",
+          "note": "-E## counts the signable content that follows, then TSP_Version",
+          "text": "-EBdYTSP-AAB"
+        },
+        {
+          "bytes": 60,
+          "code": "4BAT",
+          "field": "VID_sndr",
+          "note": "the sending VID, in the envelope and so in the aad",
+          "text": "4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx"
+        },
+        {
+          "bytes": 60,
+          "code": "4BAT",
+          "field": "VID_rcvr",
+          "note": "the receiving VID; 4BAA when there is none",
+          "text": "4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB"
+        },
+        {
+          "bytes": 153,
+          "code": "4CAy",
+          "field": "ciphertext",
+          "note": "the sealed payload; for HPKE-Base this is enc followed by ct",
+          "text": "4CAyWICO64Q7lMFVnd8gHrlJIG8tv8mVH09UZ-cx6dS1-j__5gSOgiCrVJj68o5_NEz4sZt9hRW3_S9x9D0FphN7hGMkSY3ukeBtZRDZ6EG9ecQ4Q1vRwgZ80EBpnKg8TlUWw3VpcZkgNjv3uDtV68_6gIrWMwh7k_H3lwky4n2BFAjZfVXJr8_S0YpTonC27EhjIUYzPe8c"
+        },
+        {
+          "bytes": 72,
+          "code": "-CAX-KAWBAA",
+          "field": "signature",
+          "note": "-C## attachment group holding an indexed -K## signature",
+          "text": "-CAX-KAWBAByXSevPvrhrYXvXVjqGOQI4ORC97aRrNqaSZCT6uKwF7rYmNyNMJ1Hjbba7VtbkQDXinc8avDl5OohAwQszT0F"
+        }
+      ],
+      "sender": "alice",
+      "spec": "7.3, 9.4.5"
+    },
+    {
+      "description": "A nested message. The outer payload is XHOP: sender VID, an empty hop list -JAA because the outer relationship is direct, a padding field, then a complete inner TSP message with its own envelope, payload and signature. The inner VIDs are did:peer short forms, 57 characters each, which is what the two endpoints use once they have exchanged the long form that carries the document.",
+      "ephemeral": {
+        "kind": "ephemeral X25519 secret",
+        "public": "gxwrClVxXrC_A-hFG730Qhi2RGW-7z8a0x-0bOCQs04",
+        "secret": "wTSnRd6U5rWz-3yO0ngUXXg_6V5WgUjGbGLk0LrLj0g"
+      },
+      "expect": {
+        "crypto": "SealedBox",
+        "payload": {
+          "nested": {
+            "inner_content": "hello world",
+            "inner_receiver": "did:peer:4zQmSMw413keKhgpTpYm1q8jzmpqNYwddVGPubkHNgp3qQei",
+            "inner_sender": "did:peer:4zQmehsjMuPkPjzg7WF2tH5X1SGuFMxacJB9RETLFwjgMDqX"
+          }
+        }
+      },
+      "inner": {
+        "payload_plaintext": "-ZAcXSCS4BATZGlkOnBlZXI6NHpRbWVoc2pNdVBrUGp6ZzdXRjJ0SDVYMVNHdUZNeGFjSkI5UkVUTEZ3amdNRHFY4BAA-AAF5BAEAGhlbGxvIHdvcmxk"
+      },
+      "layout": [
+        "-Z##",
+        "XHOP",
+        "VID_sndr | 4BAA",
+        "-JAA",
+        "Padding_Field",
+        "Encoded_TSP_Message"
+      ],
+      "message": "-EDEYTSP-AAB4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB4CCZgxwrClVxXrC_A-hFG730Qhi2RGW-7z8a0x-0bOCQs070xQQ4qh5_bVg-Dw4j6mBTF75t1HrEbHgKd4fAKwP6qXU15hpB4CCIsDt18fBDgK-lq6MKbWHqRjNdOwvlqkpW8gPMH7076-PPuTja3WhhRYsrruSjivBHueMzZIC1POiWD0R8OSXnKEITuGIbkFnkRiS3loDlDX2nxGtRxZfIw9aWDCBZ9sIgRIPmwX3DFwObCzcPYYOWQCRmNeBsjgXrqO6nypxI4E09Qcl4Ji4yrgmIp3pnZQYjh-VXtf9v0vGAecqAWmZdI-ovzSsiHH9btiQXAJcHQU41HzuwM_9HckOGYfNPOPUZmCqo1Db7eYMmqyXtQhLd6cs-CJ23AHpswktqbjzYklslLMD4CvaDAapquvXjZ7ogPFu4smEQTJUiOjp9duVMsmvEBWutHdggN4GxTnw6ozWHL09Vp1MjulW4PxAttTPgw5es0TTueOchO4Xk9ay8Xv5fbuqxs3uyw47-AocgLhMs8q35RNO0TecIHh8Rpvn8zBUGi7frdj5xrxcK9FgIm6Td3y0hhtXi5NbGa2G-CmKfeONhLelnai5GgtemoR2hj0ge-CAX-KAWBAArnJ1xl6PZzUrz40g4Y-kiacIuG8a9GVu7Vk6Aoa0jrFEZxm0p2KBVepkXLLL49-hUXlrfIQLxeiuRBd9StBUA",
+      "name": "nested-direct",
+      "nonce": null,
+      "payload_plaintext": "-ZCIXHOP4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx-JAA4BAA-EBYYTSP-AAB4BATZGlkOnBlZXI6NHpRbWVoc2pNdVBrUGp6ZzdXRjJ0SDVYMVNHdUZNeGFjSkI5UkVUTEZ3amdNRHFY4BATZGlkOnBlZXI6NHpRbVNNdzQxM2tlS2hncFRwWW0xcThqem1wcU5Zd2RkVkdQdWJrSE5ncDNxUWVp4CAt6D1uPX4lNTbpu8AEXyZ5ZH7SqcCAd-vYro42T_ZOt1uySB1Y5BhRs_FdqQ1Mpbn17tLpcAsQSuxMPrFawgJXlGc9ctD88zw4JpvtO6VWgNgNz0ucAzTYgONliNLas5SrinVvq7MOMiKzTgIJT_rpFwMwgxtThR0Fw59TOZR-uKm0nFia1gqq-CAX-KAWBABcoBXTh5WpBbdHThjlpo8KH_tJprPBAVUweTIxZnTKB7Rvj1jV76dPrL9py0ba-aGCqIJXzCtAVdZZIh2CzuEL",
+      "receiver": "bob",
+      "seed": "BQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "segments": [
+        {
+          "bytes": 9,
+          "code": "-EDEYTSP-AAB",
+          "field": "frame + version",
+          "note": "-E## counts the signable content that follows, then TSP_Version",
+          "text": "-EDEYTSP-AAB"
+        },
+        {
+          "bytes": 60,
+          "code": "4BAT",
+          "field": "VID_sndr",
+          "note": "the sending VID, in the envelope and so in the aad",
+          "text": "4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx"
+        },
+        {
+          "bytes": 60,
+          "code": "4BAT",
+          "field": "VID_rcvr",
+          "note": "the receiving VID; 4BAA when there is none",
+          "text": "4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB"
+        },
+        {
+          "bytes": 462,
+          "code": "4CCZ",
+          "field": "ciphertext",
+          "note": "the sealed payload; for HPKE-Base this is enc followed by ct",
+          "text": "4CCZgxwrClVxXrC_A-hFG730Qhi2RGW-7z8a0x-0bOCQs070xQQ4qh5_bVg-Dw4j6mBTF75t1HrEbHgKd4fAKwP6qXU15hpB4CCIsDt18fBDgK-lq6MKbWHqRjNdOwvlqkpW8gPMH7076-PPuTja3WhhRYsrruSjivBHueMzZIC1POiWD0R8OSXnKEITuGIbkFnkRiS3loDlDX2nxGtRxZfIw9aWDCBZ9sIgRIPmwX3DFwObCzcPYYOWQCRmNeBsjgXrqO6nypxI4E09Qcl4Ji4yrgmIp3pnZQYjh-VXtf9v0vGAecqAWmZdI-ovzSsiHH9btiQXAJcHQU41HzuwM_9HckOGYfNPOPUZmCqo1Db7eYMmqyXtQhLd6cs-CJ23AHpswktqbjzYklslLMD4CvaDAapquvXjZ7ogPFu4smEQTJUiOjp9duVMsmvEBWutHdggN4GxTnw6ozWHL09Vp1MjulW4PxAttTPgw5es0TTueOchO4Xk9ay8Xv5fbuqxs3uyw47-AocgLhMs8q35RNO0TecIHh8Rpvn8zBUGi7frdj5xrxcK9FgIm6Td3y0hhtXi5NbGa2G-CmKfeONhLelnai5GgtemoR2hj0ge"
+        },
+        {
+          "bytes": 72,
+          "code": "-CAX-KAWBAA",
+          "field": "signature",
+          "note": "-C## attachment group holding an indexed -K## signature",
+          "text": "-CAX-KAWBAArnJ1xl6PZzUrz40g4Y-kiacIuG8a9GVu7Vk6Aoa0jrFEZxm0p2KBVepkXLLL49-hUXlrfIQLxeiuRBd9StBUA"
+        }
+      ],
+      "sender": "alice",
+      "spec": "4, 9.4.15"
+    },
+    {
+      "description": "A routed message. The outer message goes to the first intermediary, and its XHOP payload carries the rest of the path as a hop list followed by the complete endpoint-to-endpoint message. The last entry of the hop list is the destination's own VID at its intermediary, not the intermediary's VID; the list shrinks by one at each hop. The hop list count is the byte length of the concatenated VIDs, not the number of them.",
+      "ephemeral": {
+        "kind": "ephemeral X25519 secret",
+        "public": "YdOQYzrFf_iKYqWSzj6pRD4Ck9lExJnhyPaglqJXaT4",
+        "secret": "H_LnY626_NNxiT6uU0Cd6029AGyYDUMOKrr3BlRyk4g"
+      },
+      "expect": {
+        "crypto": "SealedBox",
+        "payload": {
+          "routed": {
+            "hops": [
+              "did:peer:4zQmTKaSRexnzX2ecu1eYRusFNeWbrT5jbjr3YjtfgciZc1Q",
+              "did:peer:4zQmSMw413keKhgpTpYm1q8jzmpqNYwddVGPubkHNgp3qQei"
+            ],
+            "inner_content": "hello world",
+            "inner_receiver": "did:peer:4zQmSMw413keKhgpTpYm1q8jzmpqNYwddVGPubkHNgp3qQei",
+            "inner_sender": "did:peer:4zQmehsjMuPkPjzg7WF2tH5X1SGuFMxacJB9RETLFwjgMDqX"
+          }
+        }
+      },
+      "inner": {
+        "payload_plaintext": "-ZAcXSCS4BATZGlkOnBlZXI6NHpRbWVoc2pNdVBrUGp6ZzdXRjJ0SDVYMVNHdUZNeGFjSkI5UkVUTEZ3amdNRHFY4BAA-AAF5BAEAGhlbGxvIHdvcmxk"
+      },
+      "layout": [
+        "-Z##",
+        "XHOP",
+        "VID_sndr | 4BAA",
+        "-J##",
+        "VID_1",
+        "...",
+        "Padding_Field",
+        "Encoded_TSP_Message"
+      ],
+      "message": "-EDsYTSP-AAB4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx4BATZGlkOnBlZXI6NHpRbVh1WXg1cXVOcEFZdnUxc3lhb0hwSld4SGNlQk04UG5BUzFKODRtakVvMTE44CDBYdOQYzrFf_iKYqWSzj6pRD4Ck9lExJnhyPaglqJXaT7EEumCmtqZ0mShy5fvPLx02sSYNeqfg71RNA-g75uBbk9-3zOBSaadTxCoc4DjY4dvxmNGh5ZnbRM_SZ3zjTppBy0Cob_4UiwnzV6P5zyDKnV6QoZPdgGoJTtKYtfsbmaQgOfMh5yAJVru1piL7OfJQI29pVDXXlk29YOfy_WfsFPaCVyKHw2L9alepd1veNLDUZ2aYkcnYERN9duRwtO_X2rhWl1iHJOaZJE8mmgTlkQcc17mVhc12zKa27fnC_9bvt_G7-7S6vPhYi9Rl599LXJoMEQbaYuNxBNZO3GaAjvJ4h1kkbm0q9x6AizTsiaclxNerr7TE5us00MFqvg8j7hnOdnl4A9fcvuJ5eAydsmbmwtmOdLw2KHRXtekn9XNUttxNfzvIFMLzcblm81GcvUqEutHuydzYE9bGTmAGjDWlC8Y1Hc3fBQucXuCZ18-V0CNNgh96sTxaBVYMQNDX2wpkET8KeL-ZfD7M3OqOuBuShSHU2Q1cReOoqn_hjhoOGNYW2kQV1L8DQcgfr0faFFwW3mJVJ0p4bd-lyVntRBkuzOAX--S-dpTsPqlIg5UZrgY03C2vZzGd12nhV5pggXCY-8Q428U_Lw1CSB6UGUHX_-AlM4dpdqSCv4KUkA-i_8YG2iQxNYwwsSYvoCJEUYm2WimWV8zdXPf5ZhAC0KLirq0zYkIcqoTYB5S8fBK4-l2Q4G7lJu3URhjvn_ss7yU-CAX-KAWBAAXpoZ2KCHUsofw9FQ65eUMS_wzxFbYDuM2X1uwi3e1t5tIc4o3QqKXCUB33SUh5VCDX8Ai_wg_yG5YWlD6A7EG",
+      "name": "routed",
+      "nonce": null,
+      "payload_plaintext": "-ZCwXHOP4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx-JAo4BATZGlkOnBlZXI6NHpRbVRLYVNSZXhuelgyZWN1MWVZUnVzRk5lV2JyVDVqYmpyM1lqdGZnY2laYzFR4BATZGlkOnBlZXI6NHpRbVNNdzQxM2tlS2hncFRwWW0xcThqem1wcU5Zd2RkVkdQdWJrSE5ncDNxUWVp4BAA-EBYYTSP-AAB4BATZGlkOnBlZXI6NHpRbWVoc2pNdVBrUGp6ZzdXRjJ0SDVYMVNHdUZNeGFjSkI5UkVUTEZ3amdNRHFY4BATZGlkOnBlZXI6NHpRbVNNdzQxM2tlS2hncFRwWW0xcThqem1wcU5Zd2RkVkdQdWJrSE5ncDNxUWVp4CAtZ-xbsiOFLXQlNrYDUicVf6Rkh46KBFGKpi-X8BTOhV3tWI_rNgIIQlgYzubuSKv0grWxtEJGbDwQCD_IAO1qLBFLLmzM5PlJYh0lPqyziyipLIwHzR5QfoDwtpclA2kEYl_ekac7w0zWCAChnrARcZW8Qf44FogCQPAk_qAo-fLaZ6-IIfBo-CAX-KAWBAA_76AVgPPeWjYn1a0nZbCDT7QxrWPXs6APtZdPtVj0MT4wDV6Fwd0hUth-9p52hLwaq9Rwwy0U_XBvvUQD1vsK",
+      "receiver": "p",
+      "seed": "BwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "segments": [
+        {
+          "bytes": 9,
+          "code": "-EDsYTSP-AAB",
+          "field": "frame + version",
+          "note": "-E## counts the signable content that follows, then TSP_Version",
+          "text": "-EDsYTSP-AAB"
+        },
+        {
+          "bytes": 60,
+          "code": "4BAT",
+          "field": "VID_sndr",
+          "note": "the sending VID, in the envelope and so in the aad",
+          "text": "4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx"
+        },
+        {
+          "bytes": 60,
+          "code": "4BAT",
+          "field": "VID_rcvr",
+          "note": "the receiving VID; 4BAA when there is none",
+          "text": "4BATZGlkOnBlZXI6NHpRbVh1WXg1cXVOcEFZdnUxc3lhb0hwSld4SGNlQk04UG5BUzFKODRtakVvMTE4"
+        },
+        {
+          "bytes": 582,
+          "code": "4CDB",
+          "field": "ciphertext",
+          "note": "the sealed payload; for HPKE-Base this is enc followed by ct",
+          "text": "4CDBYdOQYzrFf_iKYqWSzj6pRD4Ck9lExJnhyPaglqJXaT7EEumCmtqZ0mShy5fvPLx02sSYNeqfg71RNA-g75uBbk9-3zOBSaadTxCoc4DjY4dvxmNGh5ZnbRM_SZ3zjTppBy0Cob_4UiwnzV6P5zyDKnV6QoZPdgGoJTtKYtfsbmaQgOfMh5yAJVru1piL7OfJQI29pVDXXlk29YOfy_WfsFPaCVyKHw2L9alepd1veNLDUZ2aYkcnYERN9duRwtO_X2rhWl1iHJOaZJE8mmgTlkQcc17mVhc12zKa27fnC_9bvt_G7-7S6vPhYi9Rl599LXJoMEQbaYuNxBNZO3GaAjvJ4h1kkbm0q9x6AizTsiaclxNerr7TE5us00MFqvg8j7hnOdnl4A9fcvuJ5eAydsmbmwtmOdLw2KHRXtekn9XNUttxNfzvIFMLzcblm81GcvUqEutHuydzYE9bGTmAGjDWlC8Y1Hc3fBQucXuCZ18-V0CNNgh96sTxaBVYMQNDX2wpkET8KeL-ZfD7M3OqOuBuShSHU2Q1cReOoqn_hjhoOGNYW2kQV1L8DQcgfr0faFFwW3mJVJ0p4bd-lyVntRBkuzOAX--S-dpTsPqlIg5UZrgY03C2vZzGd12nhV5pggXCY-8Q428U_Lw1CSB6UGUHX_-AlM4dpdqSCv4KUkA-i_8YG2iQxNYwwsSYvoCJEUYm2WimWV8zdXPf5ZhAC0KLirq0zYkIcqoTYB5S8fBK4-l2Q4G7lJu3URhjvn_ss7yU"
+        },
+        {
+          "bytes": 72,
+          "code": "-CAX-KAWBAA",
+          "field": "signature",
+          "note": "-C## attachment group holding an indexed -K## signature",
+          "text": "-CAX-KAWBAAXpoZ2KCHUsofw9FQ65eUMS_wzxFbYDuM2X1uwi3e1t5tIc4o3QqKXCUB33SUh5VCDX8Ai_wg_yG5YWlD6A7EG"
+        }
+      ],
+      "sender": "alice",
+      "spec": "5.2, 5.3.3, 9.4.16"
+    }
+  ],
+  "vids": {
+    "alice": {
+      "document": {
+        "@context": "https://www.w3.org/ns/did/v1",
+        "authentication": [
+          "#key-1"
+        ],
+        "keyAgreement": [
+          "#key-2"
+        ],
+        "service": [
+          {
+            "id": "#tsp",
+            "serviceEndpoint": {
+              "uri": "tsp://"
+            },
+            "type": "tsp"
+          }
+        ],
+        "verificationMethod": [
+          {
+            "id": "#key-1",
+            "publicKeyMultibase": "z6MkmxmKn3HK5yuyyxUKRdxzee72attgMjqZSYLZPxpGQHDy",
+            "type": "Multikey"
+          },
+          {
+            "id": "#key-2",
+            "publicKeyMultibase": "z6LSrriVba5LR7BCCUnSFaG2MaBFLcssNP1JHBpMTDziyd7D",
+            "type": "Multikey"
+          }
+        ]
+      },
+      "encKeyType": "X25519",
+      "enckey": "0G2OObWQl0Nz9fR8LyBvzVGVLezU3wu5Y7payTJY2BE",
+      "id": "did:peer:4zQmUL61Nc1F7ioiKxHNqwnJXX4srhFsKKPo6TrCmhM3dfpq",
+      "idLongForm": "did:peer:4zQmUL61Nc1F7ioiKxHNqwnJXX4srhFsKKPo6TrCmhM3dfpq:z25NRJMKpQKwnUm6k9FbTSp1eqANorDtFimHW9nGdLSgAbN1UhsQANFAnhij8VXrrwnDDG5Rb7HGrYpBGZRy3EbgmxirqJi3WuNfiajavps6kAfnvk9ykxGqcxH4u7P2TJohfbvigGMTMGxAhqkU4JDkWYi1sBp266n8tzTzD3DfRUAMspuGDnE6KM7r55U1tmXkDtRRWy97BFdh9HKfA3CPhA3gFdwRRV45CP1kGiaYU2rfwYAncrd1vfsAsZS8CoqbDWBgm7wGQNBXkjE8SuhKA8zv64cwpvbjJZioW7tx6Jo986sMDshig678dSR8whhc1zq4ZeaeDzGB6SbUZrpXXpd4aHy5AQQF7fwmStceXXEsNa4zL8xAhTszp2yFhLF399Q83hTdka8gUWyyQ26LUFDXCUivSfPxFRyUZZEQEK54sZZFP44MQoC4dDRrDqd2tyKMjTkdxVTg1Tvk1k9CNRUoHzdrboeESKmmdN39Ms3xRCVTN7cU6qGFW7Uz9xqhCinaKpzgRLp6ZSvmX4NcCTbruQeb3vMvHvJLCkMghQp",
+      "publicEnckey": "4ZKJH0k2hjrBnFa83B8ZWx2dQYjQmbnc2nJW6urQSWg",
+      "publicSigkey": "b5DCBaChqWVVGJOsGWcKuKti0SKfm53pTfOwuj-hm9g",
+      "sigKeyType": "Ed25519",
+      "sigkey": "MqiUK5zsViOi9QxQlyMXvPdraQghVOASyFiAvlFXp4U",
+      "transport": "tsp://"
+    },
+    "bob": {
+      "document": {
+        "@context": "https://www.w3.org/ns/did/v1",
+        "authentication": [
+          "#key-1"
+        ],
+        "keyAgreement": [
+          "#key-2"
+        ],
+        "service": [
+          {
+            "id": "#tsp",
+            "serviceEndpoint": {
+              "uri": "tsp://"
+            },
+            "type": "tsp"
+          }
+        ],
+        "verificationMethod": [
+          {
+            "id": "#key-1",
+            "publicKeyMultibase": "z6MkwGs7bzAzuYgH38cCWEXNw2iLs5Y3tpqxdXVFKaCwwkF7",
+            "type": "Multikey"
+          },
+          {
+            "id": "#key-2",
+            "publicKeyMultibase": "z6LSjSfozzkWiJabhxZtsnWftAtLfcZ5PjVKvJ7NeZXqGp6B",
+            "type": "Multikey"
+          }
+        ]
+      },
+      "encKeyType": "X25519",
+      "enckey": "j952DlpES4WEaSrY72PZwOi1j035m9iFxsZh_OKfcOE",
+      "id": "did:peer:4zQmZmCAsG7j1ewTjXjtddwujik33CE2cMbYSPagpMiYnt1A",
+      "idLongForm": "did:peer:4zQmZmCAsG7j1ewTjXjtddwujik33CE2cMbYSPagpMiYnt1A:z25NRJMKpQKwnUm6k9FbTSp1eqANorDtFimHW9nGdLSgAbN1UhsQANFAnhij8VXrrwnDDG5Rb7HGrYpBGZRy3EbgmxirqJi3WuNfiajavps6kAfnvk9ykxGqcxH4u7P2TJohfbvigGMTMGxAhqkU4JDkWYi1sBp266n8tzTzD3DfRUDuzmWt547vK52UYFjqvYuqeZke48ht1Tn7veKyU9an3DBDEK5iNnMZuTwssYn9WboW5tdbdA3dyKiqwbBwrTUQsaAbpAaMzKCsFouHetYm3r6ft4Ewh5F6sQeWtVzScGmrWr2M9rcyLyRC4nC711Sfh3q6tNeb393SqeLs1uMVD3AJ7mLMWGmaYSuMBewWRcaJZdEiDe4NjZa12WSuZ9hZ9UYigEMByhwiT8WVsgiNEjFwcQLdofowERUKhYYNv1sgDfZ4K7MGRtdkJw3eZRbP1T9NPwyDsiBycnKipqn4MfcnDMWVMSsiQCg1xprkVvtgtgjhYkG1A7w9UGk5497ytKuFMpzwJbu8cAxLqTFZ1phe8cft61Euqj1eoCQ1X5E",
+      "publicEnckey": "c2fBIIJWZgJFNKZ0SS7k63Q_73kW1nnwaAf2vIb-mGA",
+      "publicSigkey": "-ezxE2yQV7bti34Ofz1Cgy_Ykf3_t6ob2zc4evBKZS4",
+      "sigKeyType": "Ed25519",
+      "sigkey": "8sDXUkHnFe7exy1sGdCZl9kQQb-Xz-wuMBcGKXkVetw",
+      "transport": "tsp://"
+    },
+    "nested_alice": {
+      "document": {
+        "@context": "https://www.w3.org/ns/did/v1",
+        "authentication": [
+          "#key-1"
+        ],
+        "keyAgreement": [
+          "#key-2"
+        ],
+        "service": [
+          {
+            "id": "#tsp",
+            "serviceEndpoint": {
+              "uri": "tsp://"
+            },
+            "type": "tsp"
+          }
+        ],
+        "verificationMethod": [
+          {
+            "id": "#key-1",
+            "publicKeyMultibase": "z6Mkwg7BfmCaPF1bcNX3zhQ32srWPNB9kvmcKaTAY24YRzEr",
+            "type": "Multikey"
+          },
+          {
+            "id": "#key-2",
+            "publicKeyMultibase": "z6LSfDYU3Gjamg4Tcfa9tSYvQjCbbfKu5cM8VcahYRd9gzS1",
+            "type": "Multikey"
+          }
+        ]
+      },
+      "encKeyType": "X25519",
+      "enckey": "e2EIWSYsqFudoECVTglwKwX_i_t36CGjjDCCRF7uQ7A",
+      "id": "did:peer:4zQmehsjMuPkPjzg7WF2tH5X1SGuFMxacJB9RETLFwjgMDqX",
+      "idLongForm": "did:peer:4zQmehsjMuPkPjzg7WF2tH5X1SGuFMxacJB9RETLFwjgMDqX:z25NRJMKpQKwnUm6k9FbTSp1eqANorDtFimHW9nGdLSgAbN1UhsQANFAnhij8VXrrwnDDG5Rb7HGrYpBGZRy3EbgmxirqJi3WuNfiajavps6kAfnvk9ykxGqcxH4u7P2TJohfbvigGMTMGxAhqkU4JDkWYi1sBp266n8tzTzD3DfRUDxc1EGZZ8oysc2HpdT4rEuGHZoobGpKmo4XJSoDPKF6CfUWCr2UyzMv8dbCQWeugCqsUqQuASukLHjNPpzRx8cuSRSA7kDNG9civ4UoFrWhgvdSrPgBjeQYQFREA9ctDXCG7QkoYfNrpLhHXZ3LK3C1Jm7hQtmX926LQ75V82SSRPmwXBYXGx153XZuCm98znoU8cWADwCtJ6GhVrUSZPkkaPgrZqE1pFukaCvZf4gstRoZEwGrtDhyDdk5L6SpoLxEYCYfgFGmYpo7a1PojKqFFqp1NLzgfimW8XEuq9sL3BXraAz6kxRXCnbeEmSNHxzgJxe9S17WFsTn2jtFHLQFHgRxzpjhdXeysKxYJSDng8Cjjk8WdZeN5YkmKsve5z",
+      "publicEnckey": "NJwm8WK_zTmq60S-bjrbr1OjURO0FBfEjaTlZhmDm0Y",
+      "publicSigkey": "_-E1m_BLThHwhUuYhV0YovargFtQUkox6LnwhHx6Nnc",
+      "sigKeyType": "Ed25519",
+      "sigkey": "gOpqJhU4I8_MNADm8rODdfaMP4dv61uP8VwY8e0mjNw",
+      "transport": "tsp://"
+    },
+    "nested_bob": {
+      "document": {
+        "@context": "https://www.w3.org/ns/did/v1",
+        "authentication": [
+          "#key-1"
+        ],
+        "keyAgreement": [
+          "#key-2"
+        ],
+        "service": [
+          {
+            "id": "#tsp",
+            "serviceEndpoint": {
+              "uri": "tsp://"
+            },
+            "type": "tsp"
+          }
+        ],
+        "verificationMethod": [
+          {
+            "id": "#key-1",
+            "publicKeyMultibase": "z6MknZHaz4vbugjmbJ6GSWtmYk1F19q1H6G6i7D8svCbxuxq",
+            "type": "Multikey"
+          },
+          {
+            "id": "#key-2",
+            "publicKeyMultibase": "z6LSsDBAEGnWBZkaCLRJUke2MWPKrNNHTDDoD831myNgDteD",
+            "type": "Multikey"
+          }
+        ]
+      },
+      "encKeyType": "X25519",
+      "enckey": "0xi9nim9P3GuGznEHJJFL2JGpuCPqtCYFJ0EvBGj9Qo",
+      "id": "did:peer:4zQmSMw413keKhgpTpYm1q8jzmpqNYwddVGPubkHNgp3qQei",
+      "idLongForm": "did:peer:4zQmSMw413keKhgpTpYm1q8jzmpqNYwddVGPubkHNgp3qQei:z25NRJMKpQKwnUm6k9FbTSp1eqANorDtFimHW9nGdLSgAbN1UhsQANFAnhij8VXrrwnDDG5Rb7HGrYpBGZRy3EbgmxirqJi3WuNfiajavps6kAfnvk9ykxGqcxH4u7P2TJohfbvigGMTMGxAhqkU4JDkWYi1sBp266n8tzTzD3DfRUAgR84nfSphZZkXtF4LsDaKz5V52HNNgWgz1k8aFkjSCzTgyVcS7f2RwomT1HfyLVrW3UqCszF7iJ9vpfMviins6mHyfBkcA3bJbpeKoVTqemLZ9XgkhhGxnszeDAr8HAGrwTysiGmZeJUoweCk2RyP5f1QyWBqcNcRyDRjkShHQgpcVPy2iKceZYQbZsMRVTJveWDuzbAMzAeX2XsXDGE8y6r2dEKLikSRqFFYwGTrNEBjmkfQ9DnkRbQAK3ZoKKT94khAhbw8tZkDK3w48Vjb6XZkEcpWbpwsrAM4RDPcS7UJq3fH3WCoeSDQWoXyxncPoYmNaBK6PtwQe3PhaMoUBwUUFtEsDCuVCrAz6vpvMyZaeMv4EbmBGYwtMunWhxG",
+      "publicEnckey": "5tBNodlJELEWNo9d-rgDxcYf1ldc9fruci9PtWqUgAo",
+      "publicSigkey": "eGi5FU5ZXN-kavLZRr_ozjAXFzUPsv14y8CyPCOuR84",
+      "sigKeyType": "Ed25519",
+      "sigkey": "6X6bCFv20GqJXHcnIBba3cILwFv9eawgwOL2HgOp6ig",
+      "transport": "tsp://"
+    },
+    "p": {
+      "document": {
+        "@context": "https://www.w3.org/ns/did/v1",
+        "authentication": [
+          "#key-1"
+        ],
+        "keyAgreement": [
+          "#key-2"
+        ],
+        "service": [
+          {
+            "id": "#tsp",
+            "serviceEndpoint": {
+              "uri": "tsp://"
+            },
+            "type": "tsp"
+          }
+        ],
+        "verificationMethod": [
+          {
+            "id": "#key-1",
+            "publicKeyMultibase": "z6Mkue81e6f7y7H3aBRfstuEyVFJJqUZzRWwrU4GbbmMEynv",
+            "type": "Multikey"
+          },
+          {
+            "id": "#key-2",
+            "publicKeyMultibase": "z6LSipp6Pg49ZD9n9Y7SMXiEF7GaQTqR88jnDMQGv3Lr6QsD",
+            "type": "Multikey"
+          }
+        ]
+      },
+      "encKeyType": "X25519",
+      "enckey": "ivpbTN8fMgb3oj1S3tQ5SC5UAjDQ5oLuOlmrkbJKy38",
+      "id": "did:peer:4zQmXuYx5quNpAYvu1syaoHpJWxHceBM8PnAS1J84mjEo118",
+      "idLongForm": "did:peer:4zQmXuYx5quNpAYvu1syaoHpJWxHceBM8PnAS1J84mjEo118:z25NRJMKpQKwnUm6k9FbTSp1eqANorDtFimHW9nGdLSgAbN1UhsQANFAnhij8VXrrwnDDG5Rb7HGrYpBGZRy3EbgmxirqJi3WuNfiajavps6kAfnvk9ykxGqcxH4u7P2TJohfbvigGMTMGxAhqkU4JDkWYi1sBp266n8tzTzD3DfRUDEQsmpmjBHzq8cijG6sryWW5nVPht6pYsbuY4ccUdfcph7owJRDqYg99MemT1i7k3HvTxvnop9E89WNwWZiDLmJk5tssb7rQSatDkq2kvRhgW8eVyFnsoTdg2h87tsGpE8p6tQNyZpzAnTNVUe886osyyavxqQccEcm8idNnFEXEqtLL1oENMQvaWr8CsYUPy1rUpmv9xFPBay42n54ssn99hEMCahvW1sLFjHwcxGGco6PSMZT5DCw9yhUVSAeYpJ6eC4a2tjXB3tjcFeWifhxkp1u2yLJ1bcdxmJDvbKPghPVeCYYEm7g7RjrdFKKX1534YVEvwgeTi6H6ujmSvvs6xLwDjkmRwYpgPAucS9TMgVGJgDpEXD1brQZUP3PBJ",
+      "publicEnckey": "ajg137oz_TtbqqxihWdMYGblF9NLtFpDg8mv06leNVQ",
+      "publicSigkey": "4aeb8EZ5rJciXQvEjl1LDcZaST67KdYnqvZ2BYWU5Y8",
+      "sigKeyType": "Ed25519",
+      "sigkey": "WW-aIOkC8AcowW-6H-MmjFoUA92mzz1XYmp5DsLpxE0",
+      "transport": "tsp://"
+    },
+    "q": {
+      "document": {
+        "@context": "https://www.w3.org/ns/did/v1",
+        "authentication": [
+          "#key-1"
+        ],
+        "keyAgreement": [
+          "#key-2"
+        ],
+        "service": [
+          {
+            "id": "#tsp",
+            "serviceEndpoint": {
+              "uri": "tsp://"
+            },
+            "type": "tsp"
+          }
+        ],
+        "verificationMethod": [
+          {
+            "id": "#key-1",
+            "publicKeyMultibase": "z6Mkqr4VnuZe8wXWbsJ2sj5VjcSTry5apJHzA72mzcspXFSc",
+            "type": "Multikey"
+          },
+          {
+            "id": "#key-2",
+            "publicKeyMultibase": "z6LSf9Wyd3hPiiGaDWqZfh7TmhR7i1Zhz1GVb4kRhqe3sSM7",
+            "type": "Multikey"
+          }
+        ]
+      },
+      "encKeyType": "X25519",
+      "enckey": "GHZ-LhpY_K1f_PvDW6loXWLvFIcc6majVAR8_jWgL4c",
+      "id": "did:peer:4zQmTKaSRexnzX2ecu1eYRusFNeWbrT5jbjr3YjtfgciZc1Q",
+      "idLongForm": "did:peer:4zQmTKaSRexnzX2ecu1eYRusFNeWbrT5jbjr3YjtfgciZc1Q:z25NRJMKpQKwnUm6k9FbTSp1eqANorDtFimHW9nGdLSgAbN1UhsQANFAnhij8VXrrwnDDG5Rb7HGrYpBGZRy3EbgmxirqJi3WuNfiajavps6kAfnvk9ykxGqcxH4u7P2TJohfbvigGMTMGxAhqkU4JDkWYi1sBp266n8tzTzD3DfRUBoRT26HWqurFNeBrp2Z5RXkhxkhyxAnpoB6ZS1CthQZKhEgZz8ubr2Q29a9C2ZYyuCNNuWCCUhfm8AASng7btZiV16P3qyFpbMk1dpwabuguNC2hBAycwQ1pniBp3yDGdTrSDg7Mvd62zkzDJfCXhxTQJQ5SQvAu1bb5ZGonmjMfu3fU877FfvbYL1gqYDKcH7hZ7NnifTQP345XsY2tTav6vR2vUAzDiWwvpVJ9gApPWJExs3A8EBw3wke2m2C9uQpdu4XRaxVzWgtGd1NL3LFwcf34gEksj2VsURD4VNhdjQ4MkKSFy7uxgDSyqTXUdr1GEGeQGAtcFTq5anuPnN9kDHm48WihypUQ48jo3zM5JXE1fhL1Xypi5rWn3tkip",
+      "publicEnckey": "M5Qk6RSrDUckHiQlmduCMbu9HW6AZbJCfkQEQqWShSI",
+      "publicSigkey": "qUfbbaVzKhhddujMaJNSl9C8eGWCOBjA3WT4UGzXNOU",
+      "sigKeyType": "Ed25519",
+      "sigkey": "GolUele6xQTKisWaDZT9Q6dUNGg93_y__h-J3X_m5aU",
+      "transport": "tsp://"
+    }
+  }
+}

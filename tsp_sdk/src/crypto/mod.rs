@@ -33,6 +33,43 @@ pub(crate) struct ParallelSignatureInfo<'a> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct OutboundCryptoSelection {
     pub crypto_type: CryptoType,
+    /// Whether to carry the sender's VID in the ESSR field of the confidential
+    /// payload under HPKE-Base, where the specification makes it optional
+    /// (spec 3.2). The sealed box is anonymous and always carries it,
+    /// whatever this says.
+    pub essr_sender: EssrSender,
+}
+
+impl OutboundCryptoSelection {
+    /// What this selection puts in the payload's ESSR sender field.
+    ///
+    /// The seal path and anything that has to agree with it — the parallel
+    /// referral signature covers this field (spec 9.4.1) — must ask here
+    /// rather than decide separately, or the two disagree and the signature
+    /// fails to verify.
+    pub(crate) fn essr_sender_in_payload<'a>(
+        &self,
+        sender: &'a dyn VerifiedVid,
+    ) -> Option<&'a [u8]> {
+        match (self.crypto_type, self.essr_sender) {
+            (CryptoType::HpkeBase, EssrSender::NullUnderHpkeBase) => None,
+            _ => Some(sender.identifier().as_bytes()),
+        }
+    }
+}
+
+/// Whether an HPKE-Base message carries the sender's VID inside its payload.
+///
+/// The aad is `CONCAT(TSP_Version, VID_sndr, VID_rcvr)`, so the envelope
+/// already binds the sender and the field adds nothing — which is why the
+/// specification makes it optional there, and why the default is to omit it.
+/// An upper layer that wants it carried anyway may ask for it; a receiver
+/// accepts either and checks the field only when present (spec 3.7 step 7).
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum EssrSender {
+    #[default]
+    NullUnderHpkeBase,
+    Always,
 }
 
 #[allow(dead_code)]
@@ -87,7 +124,10 @@ pub(crate) fn default_outbound_crypto_selection(
         CryptoType::HpkeBase
     };
 
-    OutboundCryptoSelection { crypto_type }
+    OutboundCryptoSelection {
+        crypto_type,
+        essr_sender: EssrSender::default(),
+    }
 }
 
 pub(crate) fn signature_type(sender: &dyn VerifiedVid) -> SignatureType {
@@ -417,6 +457,36 @@ pub fn seal_with_crypto_type(
     seal_and_hash_with_crypto_type(sender, receiver, payload, None, crypto_type)
 }
 
+/// Seal a message reproducibly: every random value is drawn from `seed`, and
+/// a relationship payload's nonce from `nonce`.
+///
+/// This is how the published test vectors are generated. A verifier holding
+/// the keys, the seed and the nonce can regenerate the exact bytes of a
+/// vector rather than only decrypt it, which is what makes the vector a test
+/// of an encoder as well as of a decoder.
+pub fn seal_reproducibly(
+    sender: &dyn PrivateVid,
+    receiver: &dyn VerifiedVid,
+    payload: Payload<&[u8]>,
+    digest: Option<&mut Digest>,
+    crypto_type: CryptoType,
+    seed: [u8; 32],
+    nonce: Option<[u8; 16]>,
+) -> Result<TSPMessage, CryptoError> {
+    seal_with_selection_seeded(
+        sender,
+        receiver,
+        payload,
+        digest,
+        nonce,
+        OutboundCryptoSelection {
+            crypto_type,
+            essr_sender: EssrSender::default(),
+        },
+        Some(seed),
+    )
+}
+
 pub fn seal_and_hash_with_crypto_type(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
@@ -430,7 +500,10 @@ pub fn seal_and_hash_with_crypto_type(
         payload,
         digest,
         None,
-        OutboundCryptoSelection { crypto_type },
+        OutboundCryptoSelection {
+            crypto_type,
+            essr_sender: EssrSender::default(),
+        },
     )
 }
 
@@ -459,15 +532,52 @@ pub(crate) fn seal_with_selection(
     request_nonce_override: Option<[u8; 16]>,
     selection: OutboundCryptoSelection,
 ) -> Result<TSPMessage, CryptoError> {
+    seal_with_selection_seeded(
+        sender,
+        receiver,
+        payload,
+        digest,
+        request_nonce_override,
+        selection,
+        None,
+    )
+}
+
+/// As [`seal_with_selection`], but drawing every random value from `seed` when
+/// one is given, so the message produced is reproducible.
+///
+/// This exists for published test vectors: a verifier that holds the keys, the
+/// seed and the nonce can regenerate the exact bytes, rather than only being
+/// able to decrypt them. Production callers pass `None`.
+pub(crate) fn seal_with_selection_seeded(
+    sender: &dyn PrivateVid,
+    receiver: &dyn VerifiedVid,
+    payload: Payload<&[u8]>,
+    digest: Option<&mut Digest>,
+    request_nonce_override: Option<[u8; 16]>,
+    selection: OutboundCryptoSelection,
+    seed: Option<[u8; 32]>,
+) -> Result<TSPMessage, CryptoError> {
     ensure_selection_matches_key_types(sender, receiver, selection.crypto_type)?;
 
     match selection.crypto_type {
-        CryptoType::SealedBox => {
-            tsp_nacl::seal(sender, receiver, payload, digest, request_nonce_override)
-        }
-        CryptoType::HpkeBase => {
-            tsp_hpke::seal(sender, receiver, payload, digest, request_nonce_override)
-        }
+        CryptoType::SealedBox => tsp_nacl::seal(
+            sender,
+            receiver,
+            payload,
+            digest,
+            request_nonce_override,
+            seed,
+        ),
+        CryptoType::HpkeBase => tsp_hpke::seal(
+            sender,
+            receiver,
+            payload,
+            digest,
+            request_nonce_override,
+            seed,
+            selection,
+        ),
         CryptoType::Plaintext => Err(CryptoError::InvalidCryptoSelection(selection.crypto_type)),
     }
 }

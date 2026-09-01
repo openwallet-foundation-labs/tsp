@@ -270,6 +270,10 @@ struct ParallelSignatureContext<'a> {
     sender_identity: &'a str,
     receiver_identity: &'a str,
     nonce: [u8; 16],
+    /// The crypto this message will be sealed with, which decides what the
+    /// payload's ESSR sender field holds — and that field is covered by the
+    /// referral signature, so it has to be the same on both sides
+    selection: OutboundCryptoSelection,
 }
 
 fn random_nonce_bytes() -> [u8; 16] {
@@ -812,7 +816,10 @@ impl SecureStore {
             receiver,
             Payload::Content(message),
             None,
-            Some(OutboundCryptoSelection { crypto_type }),
+            Some(OutboundCryptoSelection {
+                crypto_type,
+                essr_sender: Default::default(),
+            }),
         )
     }
 
@@ -1585,7 +1592,10 @@ impl SecureStore {
             sender,
             receiver,
             route,
-            Some(OutboundCryptoSelection { crypto_type }),
+            Some(OutboundCryptoSelection {
+                crypto_type,
+                essr_sender: Default::default(),
+            }),
         )
     }
 
@@ -1651,6 +1661,7 @@ impl SecureStore {
             sender_identity,
             receiver_identity,
             nonce,
+            selection,
         } = context;
 
         let mut envelope_prefix = Vec::with_capacity(64);
@@ -1661,8 +1672,9 @@ impl SecureStore {
         )
         .map_err(crate::crypto::CryptoError::from)?;
 
+        let sender_vid = self.get_verified_vid(sender_identity)?;
         let signed_data = crate::crypto::build_parallel_request_signed_data(
-            Some(sender_identity.as_bytes()),
+            selection.essr_sender_in_payload(&*sender_vid),
             digest_algorithm,
             nonce,
             &[],
@@ -1712,6 +1724,7 @@ impl SecureStore {
                 sender_identity: sender.identifier(),
                 receiver_identity: receiver.identifier(),
                 nonce: random_nonce_bytes(),
+                selection,
             },
             digest_algorithm,
         )?;
@@ -2411,6 +2424,16 @@ mod test {
         )
         .unwrap();
         prefix
+    }
+
+    /// What the payload's ESSR sender field will hold for this pair, decided
+    /// the same way the seal path decides it — the referral signature covers
+    /// that field, so a test that builds the challenge by hand has to agree.
+    fn test_essr_sender<'a>(
+        sender: &'a dyn VerifiedVid,
+        receiver: &dyn VerifiedVid,
+    ) -> Option<&'a [u8]> {
+        super::selected_outbound_crypto(sender, receiver, None).essr_sender_in_payload(sender)
     }
 
     fn relationship_digest_algorithm(
@@ -3459,7 +3482,7 @@ mod test {
         StdRng::from_entropy().fill_bytes(&mut nonce_bytes);
         let mut thread_id = [0_u8; 32];
         let signed_data = crate::crypto::build_parallel_request_signed_data(
-            Some(alice.identifier().as_bytes()),
+            test_essr_sender(&alice, &bob),
             relationship_digest_algorithm(&alice, &bob),
             nonce_bytes,
             &[],
@@ -3523,7 +3546,7 @@ mod test {
         StdRng::from_entropy().fill_bytes(&mut nonce_bytes);
         let mut thread_id = [0_u8; 32];
         let signed_data = crate::crypto::build_parallel_request_signed_data(
-            Some(alice.identifier().as_bytes()),
+            test_essr_sender(&alice, &bob),
             relationship_digest_algorithm(&alice, &bob),
             nonce_bytes,
             &[],

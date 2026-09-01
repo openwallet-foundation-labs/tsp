@@ -4,7 +4,7 @@ use crate::{
 };
 use hpke::{
     Deserializable, Kem as KemTrait, OpModeR, OpModeS, Serializable, aead::AeadTag,
-    inout::InOutBuf, single_shot_open_inout_detached, single_shot_seal_inout_detached,
+    inout::InOutBuf, single_shot_open_inout_detached, single_shot_seal_inout_detached_with_rng,
 };
 use rand::{RngCore, SeedableRng, rngs::StdRng};
 
@@ -101,6 +101,8 @@ pub(crate) fn seal(
     secret_payload: Payload<&[u8]>,
     digest: Option<&mut super::Digest>,
     request_nonce_override: Option<[u8; 16]>,
+    seed: Option<[u8; 32]>,
+    selection: super::OutboundCryptoSelection,
 ) -> Result<TSPMessage, CryptoError> {
     match receiver.encryption_key_type() {
         VidEncryptionKeyType::X25519 => seal_with_kem::<X25519Kem>(
@@ -109,6 +111,8 @@ pub(crate) fn seal(
             secret_payload,
             digest,
             request_nonce_override,
+            seed,
+            selection,
         ),
         VidEncryptionKeyType::X25519MlKem768 => seal_with_kem::<PqKem>(
             sender,
@@ -116,9 +120,36 @@ pub(crate) fn seal(
             secret_payload,
             digest,
             request_nonce_override,
+            seed,
+            selection,
         ),
     }
 }
+
+/// `hpke` and this crate depend on different major versions of `rand_core`,
+/// so a seeded generator cannot be handed to it directly. This forwards the
+/// bytes, which is all the encapsulation asks of it.
+struct SeededRng<'a>(&'a mut StdRng);
+
+impl hpke::rand_core::TryRng for SeededRng<'_> {
+    type Error = core::convert::Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+        Ok(RngCore::next_u32(self.0))
+    }
+
+    fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+        Ok(RngCore::next_u64(self.0))
+    }
+
+    fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
+        RngCore::fill_bytes(self.0, dst);
+
+        Ok(())
+    }
+}
+
+impl hpke::rand_core::TryCryptoRng for SeededRng<'_> {}
 
 fn seal_with_kem<Kem: KemTrait>(
     sender: &dyn PrivateVid,
@@ -126,9 +157,15 @@ fn seal_with_kem<Kem: KemTrait>(
     secret_payload: Payload<&[u8]>,
     digest: Option<&mut super::Digest>,
     request_nonce_override: Option<[u8; 16]>,
+    seed: Option<[u8; 32]>,
+    selection: super::OutboundCryptoSelection,
 ) -> Result<TSPMessage, CryptoError> {
     let crypto_type = CryptoType::HpkeBase;
-    let mut csprng = StdRng::from_entropy();
+    // see the note in tsp_nacl::seal: a seed makes a test vector reproducible
+    let mut csprng = match seed {
+        Some(seed) => StdRng::from_seed(seed),
+        None => StdRng::from_entropy(),
+    };
     let mut data = Vec::with_capacity(64);
 
     // the envelope fields (version, sender VID, receiver VID); these are
@@ -143,7 +180,12 @@ fn seal_with_kem<Kem: KemTrait>(
         &mut data,
     )?;
 
-    let sender_in_payload = Some(sender.identifier().as_bytes());
+    // Under HPKE-Base the aad is CONCAT(TSP_Version, VID_sndr, VID_rcvr), so
+    // the envelope already binds the sender and the ESSR field inside the
+    // ciphertext adds nothing. The specification makes it optional here for
+    // that reason (spec 3.2), so it is NULL unless the caller asks for it; a
+    // receiver accepts either and checks it only when present (spec 3.7 step 7).
+    let sender_in_payload = selection.essr_sender_in_payload(sender);
     let mut request_digest_storage = [0_u8; 32];
     let mut reply_digest_storage = [0_u8; 32];
     let digest_algorithm = RelationshipDigestAlgorithm::for_crypto_type(crypto_type)?;
@@ -167,12 +209,15 @@ fn seal_with_kem<Kem: KemTrait>(
 
     let message_receiver = Kem::PublicKey::from_bytes(receiver.encryption_key().as_ref())?;
 
-    let (encapped_key, tag) = single_shot_seal_inout_detached::<Aead, Kdf, Kem>(
+    // the encapsulation draws randomness too, so a seeded caller has to reach
+    // the variant that takes the generator, or the message is not reproducible
+    let (encapped_key, tag) = single_shot_seal_inout_detached_with_rng::<Aead, Kdf, Kem>(
         &OpModeS::Base,
         &message_receiver,
         HPKE_INFO,
         InOutBuf::from(cesr_message.as_mut_slice()),
         &data,
+        &mut SeededRng(&mut csprng),
     )?;
 
     // the wire ciphertext is CONCAT(enc, ct), with the AEAD tag inside ct (spec 9.2.8)
