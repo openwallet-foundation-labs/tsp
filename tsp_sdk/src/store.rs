@@ -84,10 +84,6 @@ impl VidContext {
     }
 }
 
-fn nested_digest(bytes: &[u8], algorithm: RelationshipDigestAlgorithm) -> Digest {
-    algorithm.hash(bytes)
-}
-
 fn nested_digest_field<'a>(
     digest: &'a Digest,
     algorithm: RelationshipDigestAlgorithm,
@@ -903,34 +899,42 @@ impl SecureStore {
         let sender_identity = Some(sender.identifier().as_bytes());
         let mut request_digest = [0_u8; 32];
 
-        let placeholder_payload: crate::cesr::Payload<'_, &[u8], &[u8]> =
-            crate::cesr::Payload::RelationProposal {
-                request_digest: nested_digest_field(&request_digest, digest_algorithm),
-                nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
-                reply_path: vec![],
-                referral: None,
-            };
-
-        let mut encoded_payload =
-            Vec::with_capacity(placeholder_payload.calculate_size(sender_identity));
-        crate::cesr::encode_payload(
-            &placeholder_payload,
-            sender_identity,
+        // the inner message is an ordinary TSP message whose sender is the new
+        // VID and whose receiver is NULL, and the digest is that message's own
+        // SAID (spec 7.2.1: the innermost message that carries it)
+        let mut envelope_prefix = Vec::with_capacity(64);
+        crate::cesr::encode_envelope_prefix(
+            sender.identifier().as_bytes(),
             None,
-            &mut encoded_payload,
-        )?;
+            &mut envelope_prefix,
+        )
+        .map_err(crate::crypto::CryptoError::from)?;
 
-        request_digest = nested_digest(&encoded_payload, digest_algorithm);
-
-        encoded_payload.clear();
-        let payload: crate::cesr::Payload<'_, &[u8], &[u8]> =
+        fn proposal<'a>(
+            request_digest: &'a Digest,
+            nonce_bytes: [u8; 16],
+            digest_algorithm: RelationshipDigestAlgorithm,
+        ) -> crate::cesr::Payload<'a, &'a [u8], &'a [u8]> {
             crate::cesr::Payload::RelationProposal {
-                request_digest: nested_digest_field(&request_digest, digest_algorithm),
+                request_digest: nested_digest_field(request_digest, digest_algorithm),
                 nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
                 reply_path: vec![],
                 referral: None,
-            };
-        crate::cesr::encode_payload(&payload, sender_identity, None, &mut encoded_payload)?;
+            }
+        }
+
+        let mut digest_input = Vec::with_capacity(128);
+        crate::cesr::encode_digest_input(
+            &proposal(&request_digest, nonce_bytes, digest_algorithm),
+            sender_identity,
+            &envelope_prefix,
+            &mut digest_input,
+        )?;
+        request_digest = digest_algorithm.hash(&digest_input);
+
+        let final_payload = proposal(&request_digest, nonce_bytes, digest_algorithm);
+        let mut encoded_payload = Vec::with_capacity(final_payload.calculate_size(sender_identity));
+        crate::cesr::encode_payload(&final_payload, sender_identity, None, &mut encoded_payload)?;
 
         let message = crate::crypto::sign(sender, None, &encoded_payload)?;
 
@@ -947,30 +951,37 @@ impl SecureStore {
         let sender_identity = Some(sender.identifier().as_bytes());
         let mut reply_thread_id = [0_u8; 32];
 
-        let placeholder_payload: crate::cesr::Payload<'_, &[u8], &[u8]> =
-            crate::cesr::Payload::RelationAffirm {
-                request_digest: nested_digest_field(&thread_id, digest_algorithm),
-                reply_digest: nested_digest_field(&reply_thread_id, digest_algorithm),
-            };
+        let mut envelope_prefix = Vec::with_capacity(64);
+        crate::cesr::encode_envelope_prefix(
+            sender.identifier().as_bytes(),
+            Some(receiver.identifier().as_bytes()),
+            &mut envelope_prefix,
+        )
+        .map_err(crate::crypto::CryptoError::from)?;
 
-        let mut encoded_payload =
-            Vec::with_capacity(placeholder_payload.calculate_size(sender_identity));
-        crate::cesr::encode_payload(
-            &placeholder_payload,
+        fn affirm<'a>(
+            thread_id: &'a Digest,
+            reply_thread_id: &'a Digest,
+            digest_algorithm: RelationshipDigestAlgorithm,
+        ) -> crate::cesr::Payload<'a, &'a [u8], &'a [u8]> {
+            crate::cesr::Payload::RelationAffirm {
+                request_digest: nested_digest_field(thread_id, digest_algorithm),
+                reply_digest: nested_digest_field(reply_thread_id, digest_algorithm),
+            }
+        }
+
+        let mut digest_input = Vec::with_capacity(128);
+        crate::cesr::encode_digest_input(
+            &affirm(&thread_id, &reply_thread_id, digest_algorithm),
             sender_identity,
-            None,
-            &mut encoded_payload,
+            &envelope_prefix,
+            &mut digest_input,
         )?;
+        reply_thread_id = digest_algorithm.hash(&digest_input);
 
-        reply_thread_id = nested_digest(&encoded_payload, digest_algorithm);
-
-        encoded_payload.clear();
-        let payload: crate::cesr::Payload<'_, &[u8], &[u8]> =
-            crate::cesr::Payload::RelationAffirm {
-                request_digest: nested_digest_field(&thread_id, digest_algorithm),
-                reply_digest: nested_digest_field(&reply_thread_id, digest_algorithm),
-            };
-        crate::cesr::encode_payload(&payload, sender_identity, None, &mut encoded_payload)?;
+        let final_payload = affirm(&thread_id, &reply_thread_id, digest_algorithm);
+        let mut encoded_payload = Vec::with_capacity(final_payload.calculate_size(sender_identity));
+        crate::cesr::encode_payload(&final_payload, sender_identity, None, &mut encoded_payload)?;
 
         let message = crate::crypto::sign(sender, Some(receiver), &encoded_payload)?;
 
@@ -980,6 +991,7 @@ impl SecureStore {
     fn try_open_nested_relationship_message(
         &self,
         outer_sender: &str,
+        outer_receiver: &str,
         inner: &mut [u8],
     ) -> Result<Option<NestedRelationshipEvent>, Error> {
         let EnvelopeType::SignedMessage {
@@ -1022,8 +1034,23 @@ impl SecureStore {
             ));
         }
 
+        // the digest is the inner message's own SAID (spec 7.2.1), so recompute
+        // it over that message and reject a mismatch
+        let mut envelope_prefix = Vec::with_capacity(64);
+        crate::cesr::encode_envelope_prefix(
+            inner_sender.as_bytes(),
+            inner_receiver.as_deref().map(str::as_bytes),
+            &mut envelope_prefix,
+        )
+        .map_err(crate::crypto::CryptoError::from)?;
+        crate::crypto::verify_relationship_digest(&payload, sender_identity, &envelope_prefix)?;
+
         match payload {
             crate::cesr::Payload::RelationProposal { request_digest, .. } => {
+                // a nested relationship is formed on the referral of the outer
+                // one, so there has to be an outer one (spec 7.2.5)
+                self.check_relationship_gate(outer_receiver, outer_sender)?;
+
                 if inner_receiver.is_some() {
                     return Err(Error::Relationship(
                         "invalid nested relationship request receiver".into(),
@@ -1044,6 +1071,8 @@ impl SecureStore {
                 request_digest,
                 reply_digest,
             } => {
+                self.check_relationship_gate(outer_receiver, outer_sender)?;
+
                 let Some(connect_to_vid) = inner_receiver else {
                     return Err(Error::Relationship(
                         "invalid nested relationship accept receiver".into(),
@@ -1195,9 +1224,11 @@ impl SecureStore {
                         })
                     }
                     Payload::NestedMessage(inner) => {
-                        if let Some(received_message) =
-                            self.try_open_nested_relationship_message(&sender, inner)?
-                        {
+                        if let Some(received_message) = self.try_open_nested_relationship_message(
+                            &sender,
+                            &intended_receiver,
+                            inner,
+                        )? {
                             return Ok(match received_message {
                                 NestedRelationshipEvent::Request {
                                     nested_vid,
@@ -1719,6 +1750,10 @@ impl SecureStore {
     ) -> Result<((Url, Vec<u8>), OwnedVid), Error> {
         let sender = self.get_private_vid(parent_sender)?;
         let receiver = self.get_verified_vid(receiver)?;
+        // the new relationship is nested inside an existing one, which refers
+        // it; without that outer relationship there is nothing to nest in and
+        // the peer would drop the invite (spec 7.2.5)
+        self.check_relationship_gate(sender.identifier(), receiver.identifier())?;
 
         let nested_vid = self.make_propositioning_vid(sender.identifier())?;
         let selection = selected_outbound_crypto(&*sender, &*receiver, None);
@@ -3817,6 +3852,195 @@ mod test {
         assert_ne!(
             message_type.signature_type,
             crate::cesr::SignatureType::NoSignature
+        );
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_nested_relationship_cancel_travels_the_outer_relationship() {
+        // A nested relationship is cancelled with the same TSP_RFD as any
+        // other, carried as an inner message of the outer relationship, and it
+        // references the digest that formed it (spec 9.4).
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+        establish_existing_relationship(&a_store, &alice, &b_store, &bob);
+
+        let ((_url, mut invite), nested_a) = a_store
+            .make_nested_relationship_request(alice.identifier(), bob.identifier())
+            .unwrap();
+        let ReceivedTspMessage::RequestRelationship {
+            thread_id,
+            delivery: ReceivedRelationshipDelivery::Nested { nested_vid },
+            ..
+        } = b_store.open_message(&mut invite).unwrap()
+        else {
+            panic!("bob did not receive a nested relationship request");
+        };
+
+        let ((_url, mut accept), nested_b) = b_store
+            .make_nested_relationship_accept(bob.identifier(), &nested_vid, thread_id)
+            .unwrap();
+        let ReceivedTspMessage::AcceptRelationship { .. } =
+            a_store.open_message(&mut accept).unwrap()
+        else {
+            panic!("alice did not receive a nested relationship accept");
+        };
+
+        // alice ends the nested relationship
+        let (_url, mut cancel) = a_store
+            .make_relationship_cancel(nested_a.identifier(), nested_b.identifier())
+            .unwrap();
+
+        let ReceivedTspMessage::CancelRelationship {
+            sender,
+            receiver,
+            thread_id: cancelled,
+            reply_expected,
+        } = b_store.open_message(&mut cancel).unwrap()
+        else {
+            panic!("bob did not receive a cancellation");
+        };
+        assert_eq!(sender, nested_a.identifier());
+        assert_eq!(receiver, nested_b.identifier());
+        // the relationship was bidirectional, so bob replies in kind, echoing
+        // the digest even though he has already dropped the relationship
+        assert!(reply_expected);
+        let (_url, mut reply) = b_store
+            .make_relationship_cancel_reply(nested_b.identifier(), nested_a.identifier(), cancelled)
+            .unwrap();
+        // alice dropped it when she sent hers, so she ignores the reply
+        assert!(matches!(
+            a_store.open_message(&mut reply),
+            Err(Error::Relationship(_))
+        ));
+
+        // bob accepted it, which means it named one of the two digests that
+        // formed the relationship, and both sides have now dropped it
+        assert!(matches!(
+            a_store
+                .relation_status_for_vid_pair(nested_a.identifier(), nested_b.identifier())
+                .unwrap(),
+            RelationshipStatus::Unrelated
+        ));
+        assert!(matches!(
+            b_store
+                .relation_status_for_vid_pair(nested_b.identifier(), nested_a.identifier())
+                .unwrap(),
+            RelationshipStatus::Unrelated
+        ));
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_nested_relationship_needs_an_outer_relationship() {
+        // A nested relationship is referred by the outer one it sits inside, so
+        // neither endpoint takes part without that outer relationship (spec
+        // 7.2.5).
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+
+        // alice knows bob's VID but has formed no relationship with him
+        assert!(matches!(
+            a_store.make_nested_relationship_request(alice.identifier(), bob.identifier()),
+            Err(Error::UnestablishedRelationship(..))
+        ));
+
+        // and if alice believes there is one but bob has no record of it, bob
+        // does not act on the invite either
+        a_store
+            .set_relation_and_status_for_vid(
+                bob.identifier(),
+                RelationshipStatus::Bidirectional {
+                    thread_id: [1; 32],
+                    remote_thread_id: [2; 32],
+                    outstanding_nested_requests: vec![],
+                },
+                alice.identifier(),
+            )
+            .unwrap();
+        let ((_url, mut invite), _nested_a) = a_store
+            .make_nested_relationship_request(alice.identifier(), bob.identifier())
+            .unwrap();
+        assert!(matches!(
+            b_store.open_message(&mut invite),
+            Err(Error::UnestablishedRelationship(..))
+        ));
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_nested_relationship_digest_is_self_referencing() {
+        // The digests of a nested exchange are the inner messages' own SAIDs
+        // (spec 7.2.1). The receiver recomputes each one, so a legitimate
+        // exchange only completes if both sides derive it identically, and an
+        // altered message stops matching.
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+        establish_existing_relationship(&a_store, &alice, &b_store, &bob);
+
+        let ((_url, mut invite), _nested_a) = a_store
+            .make_nested_relationship_request(alice.identifier(), bob.identifier())
+            .unwrap();
+        let pristine = invite.clone();
+
+        let ReceivedTspMessage::RequestRelationship {
+            thread_id,
+            delivery: ReceivedRelationshipDelivery::Nested { nested_vid },
+            ..
+        } = b_store.open_message(&mut invite).unwrap()
+        else {
+            panic!("bob did not receive a nested relationship request");
+        };
+        // deriving it from the message means it cannot be a fixed value
+        assert!(thread_id.iter().any(|byte| *byte != 0));
+
+        // the accept echoes that digest and derives its own
+        let ((_url, mut accept), _nested_b) = b_store
+            .make_nested_relationship_accept(bob.identifier(), &nested_vid, thread_id)
+            .unwrap();
+
+        let ReceivedTspMessage::AcceptRelationship {
+            thread_id: echoed,
+            reply_thread_id,
+            ..
+        } = a_store.open_message(&mut accept).unwrap()
+        else {
+            panic!("alice did not receive a nested relationship accept");
+        };
+        assert_eq!(echoed, thread_id, "the invite's digest is echoed verbatim");
+        assert!(reply_thread_id.iter().any(|byte| *byte != 0));
+        assert_ne!(reply_thread_id, thread_id);
+
+        // an invite whose bytes were altered no longer matches its own digest
+        let b_store = create_test_store();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+        establish_existing_relationship(&a_store, &alice, &b_store, &bob);
+
+        let mut tampered = pristine.clone();
+        let position = tampered.len() / 2;
+        tampered[position] ^= 0x01;
+        assert!(
+            b_store.open_message(&mut tampered).is_err(),
+            "a nested invite whose bytes were altered must not be accepted"
         );
     }
 
