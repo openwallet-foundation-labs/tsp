@@ -149,10 +149,12 @@ fn compute_relationship_digest(
     Ok(algorithm.hash(&input))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_parallel_request_signed_data(
     sender_in_payload: Option<&[u8]>,
     digest_algorithm: RelationshipDigestAlgorithm,
     nonce_bytes: [u8; 16],
+    reply_path: &[&[u8]],
     envelope_prefix: &[u8],
     request_digest: &mut Digest,
     new_vid: &[u8],
@@ -162,7 +164,7 @@ pub(crate) fn build_parallel_request_signed_data(
     let payload = crate::cesr::Payload::<&[u8], &[u8]>::RelationProposal {
         request_digest: digest_algorithm.field(&*request_digest),
         nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
-        reply_path: vec![],
+        reply_path: reply_path.to_vec(),
         referral: Some((new_vid, &[0; 64])),
     };
     *request_digest = compute_relationship_digest(
@@ -177,7 +179,7 @@ pub(crate) fn build_parallel_request_signed_data(
         sender_in_payload,
         &nonce,
         digest_algorithm.field(request_digest),
-        &[] as &[&[u8]],
+        reply_path,
         new_vid,
     )?)
 }
@@ -186,14 +188,13 @@ fn relationship_request_payload<'a>(
     form: &RelationshipForm<'a, &'a [u8]>,
     digest_algorithm: RelationshipDigestAlgorithm,
     nonce_bytes: [u8; 16],
+    reply_path: &[&'a [u8]],
     request_digest: &'a Digest,
 ) -> CesrRelationshipPayload<'a> {
     crate::cesr::Payload::RelationProposal {
         request_digest: digest_algorithm.field(request_digest),
         nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
-        // routed relationship forming is not implemented yet; when it is, the
-        // reply path the caller asks for goes here
-        reply_path: vec![],
+        reply_path: reply_path.to_vec(),
         referral: match form {
             RelationshipForm::Direct => None,
             RelationshipForm::Parallel {
@@ -220,16 +221,23 @@ fn relationship_accept_payload<'a>(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_relationship_request_payload<'a>(
     form: &RelationshipForm<'a, &'a [u8]>,
     sender_in_payload: Option<&[u8]>,
     digest_algorithm: RelationshipDigestAlgorithm,
     nonce_bytes: [u8; 16],
+    reply_path: &[&'a [u8]],
     envelope_prefix: &[u8],
     request_digest: &'a mut Digest,
 ) -> Result<(CesrRelationshipPayload<'a>, Digest), CryptoError> {
-    let placeholder =
-        relationship_request_payload(form, digest_algorithm, nonce_bytes, &*request_digest);
+    let placeholder = relationship_request_payload(
+        form,
+        digest_algorithm,
+        nonce_bytes,
+        reply_path,
+        &*request_digest,
+    );
     *request_digest = compute_relationship_digest(
         &placeholder,
         sender_in_payload,
@@ -240,7 +248,13 @@ pub(crate) fn build_relationship_request_payload<'a>(
     let digest = *request_digest;
 
     Ok((
-        relationship_request_payload(form, digest_algorithm, nonce_bytes, &*request_digest),
+        relationship_request_payload(
+            form,
+            digest_algorithm,
+            nonce_bytes,
+            reply_path,
+            &*request_digest,
+        ),
         digest,
     ))
 }
@@ -299,8 +313,13 @@ pub(crate) fn verify_relationship_digest(
 pub(crate) fn open_relationship_request<'a>(
     thread_id: Digest,
     form: RelationshipForm<'a, &'a [u8]>,
+    reply_path: Vec<&'a [u8]>,
 ) -> Payload<'a, &'a [u8], &'a mut [u8]> {
-    Payload::RequestRelationship { thread_id, form }
+    Payload::RequestRelationship {
+        thread_id,
+        form,
+        reply_path,
+    }
 }
 
 pub(crate) fn open_relationship_accept<'a>(
