@@ -345,4 +345,34 @@ mod test {
             );
         }
     }
+
+    /// The segmenter is what "TSP Rev 3 on the Wire" and the specification's
+    /// appendix are drawn from. It is a presentation aid rather than a parser,
+    /// so nothing else would catch it falling behind the encoder: this does.
+    #[test]
+    #[wasm_bindgen_test]
+    fn the_segmenter_knows_every_code_in_every_vector() {
+        use crate::cesr::{SegmentKind, segments};
+
+        let vectors = load();
+
+        for vector in &vectors.vectors {
+            let name = vector["name"].as_str().unwrap();
+            let text = vector["message"].as_str().unwrap();
+            let message = Base64UrlUnpadded::decode_vec(text).unwrap();
+            let segments = segments(&message);
+
+            let unparsed: Vec<_> = segments
+                .iter()
+                .filter(|s| s.kind == SegmentKind::Unparsed)
+                .collect();
+            assert!(
+                unparsed.is_empty(),
+                "{name}: the segmenter does not know {unparsed:#?}"
+            );
+
+            let covered: String = segments.iter().map(|s| s.text.as_str()).collect();
+            assert_eq!(covered, text, "{name}: the segments must cover the message");
+        }
+    }
 }

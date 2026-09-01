@@ -4,10 +4,11 @@ mod detect;
 mod encode;
 pub mod error;
 mod packet;
-use base64ct::{Base64UrlUnpadded, Encoding};
+pub mod segments;
 use error::DecodeError;
 mod consts;
 pub use packet::*;
+pub use segments::{Segment, SegmentKind, segments};
 
 #[cfg(feature = "cesr-t")]
 pub use detect::to_binary;
@@ -103,35 +104,39 @@ pub fn probe(stream: &mut [u8]) -> Result<EnvelopeType<'_>, error::DecodeError> 
     })
 }
 
-/// Format a TSP message using ANSI escape codes to color the different parts
+/// The color a field is drawn in. Fields that belong together share one, so a
+/// reader tracks the message by color and the field names by [`segments`].
+fn field_color(label: &str) -> u8 {
+    match label {
+        l if l.starts_with("frame") || l.starts_with("TSP_Version") => 31,
+        l if l.starts_with("VID_sndr") => 35,
+        l if l.starts_with("VID_rcvr") || l.starts_with("VID_hop") || l.starts_with("hop list") => {
+            34
+        }
+        l if l.starts_with("ciphertext") => 33,
+        l if l.starts_with("signature") || l.starts_with("attachments") => 36,
+        "unparsed" => 41,
+        _ => 32,
+    }
+}
+
+/// Format a TSP message using ANSI escape codes to color the different parts.
+///
+/// Codes are drawn bold and the data they introduce normally, so every field of
+/// the message is visible as its own run. [`segments`] names the same fields.
 pub fn color_format(message: &[u8]) -> Result<String, DecodeError> {
-    let parts = open_message_into_parts(message)?;
-    let parts = [
-        (Some(parts.prefix), 31),
-        (Some(parts.sender), 35),
-        (parts.receiver, 34),
-        (parts.ciphertext, 33),
-        (Some(parts.signature), 36),
-    ];
+    // reject what is not a TSP message before drawing it
+    open_message_into_parts(message)?;
 
     let mut out = String::new();
-    for (part, color) in parts {
-        if let Some(part) = part {
-            let color_prefix = Base64UrlUnpadded::encode_string(part.prefix);
-            let mut contents = part.prefix.to_owned();
-            contents.extend_from_slice(part.data);
-            let color_contents = Base64UrlUnpadded::encode_string(&contents);
-            let split = if color_prefix.len().is_multiple_of(4) {
-                color_prefix.len()
-            } else {
-                color_prefix.len() - 1
-            };
-            out.push_str(&format!(
-                "\x1b[1;{color}m{}\x1b[0;{color}m{}\x1b[0m",
-                &color_contents[..split],
-                &color_contents[split..],
-            ));
-        }
+    for segment in segments(message) {
+        let color = field_color(&segment.label);
+        let weight = if segment.kind == SegmentKind::Code {
+            1
+        } else {
+            0
+        };
+        out.push_str(&format!("\x1b[{weight};{color}m{}\x1b[0m", segment.text));
     }
 
     Ok(out)

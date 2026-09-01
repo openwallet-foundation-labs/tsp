@@ -1,105 +1,175 @@
 TSP CESR Encoding
 =================
 
+TSP messages are encoded using CESR, in the code table genus `AAA` at version 2.00
+(`-_AAACAA`). The genus code is not emitted per message: it is the table this
+implementation is read against.
+
+The SDK seals, signs, verifies and opens in the **binary domain**. The text domain
+is the base64url of those bytes and is quadlet aligned, so every primitive starts on
+a four-character boundary and the two domains map onto each other exactly. That is
+what makes it safe to talk about a message as a string of characters below, and what
+lets `tsp_sdk::cesr::segments` walk a message into named fields.
+
+Fixed-length codes occupy the leading *bits* of the aligned block they share with
+their data, not whole bytes. Slicing the text of such a primitive before decoding it
+shifts the value; code and data have to be decoded together and the value taken off
+the end.
+
 CESR Code Tables
 ----------------
-Codes used by TSP that are already in the CESR draft:
 
-| Code | Description        | Code Length | Count Length | Total Length |
-|------|--------------------|-------------|--------------|--------------|
-| I    | SHA-256 Digest     |             | 1            | 44           |
-| F    | Blake2b256 Digest	|             | 1            | 44           |
-| 0A   | 128 bit Nonce      |             | 2            | 24           |
-| 0B   | Ed25519 signature	|             | 2            | 88           |
+Codes used by TSP that come from the CESR tables:
+
+| Code   | Description                | Code chars | Total chars |
+|--------|----------------------------|------------|-------------|
+| `I`    | SHA2-256 digest            | 1          | 44          |
+| `F`    | Blake2b-256 digest         | 1          | 44          |
+| `0A`   | 128-bit nonce              | 2          | 24          |
+| `B#`   | Ed25519 signature, indexed | 2          | 88          |
+| `1AAQ` | ML-DSA-65 signature        | 4          | 4416        |
+
+The Ed25519 signature is an *indexed* primitive: the character after `B` is the
+position of the signing key in the sender's VID document.
 
 Fixed-length codes introduced by TSP:
 
-| Code | Description | Code Length | Count Length | Total Length |
-|------|-------------|-------------|--------------|--------------|
-| X    | Type code   |             | 1            | 4            |
+| Code   | Description                                       | Total chars |
+|--------|---------------------------------------------------|-------------|
+| `X###` | Payload type code (`XSCS`, `XCTL`, …)             | 4           |
+| `YTSP` | TSP genus, followed by the version count code     | 4           |
 
-Variable-length codes introduces by TSP (note: this just introduces the code "B", "C" and "VID", the length of the table
-below is caused by the regular CESR encoding scheme for variable length codes).
+Variable-length codes introduced by TSP. The leading digit gives the number of lead
+pad bytes; the trailing digits give the length of the data in quadlets. The `4/5/6`
+forms carry a 12-bit length, the `7/8/9` forms a 24-bit one and are used only when
+the data does not fit the short form.
 
-The type for "VID" is temporary, pending a decision on how to choose/encode VID types; but the code for "VID" dictates
-that only a "large" encoding is available. For non-post-quantum, non-`did:peer` VID's, a shorter encoding will usually
-suffice.
+| Code      | Description                        | Code chars |
+|-----------|------------------------------------|------------|
+| `4B##`    | TSP bytes, lead 0                  | 4          |
+| `5B##`    | TSP bytes, lead 1                  | 4          |
+| `6B##`    | TSP bytes, lead 2                  | 4          |
+| `7AAB####`| TSP bytes, large, lead 0           | 8          |
+| `8AAB####`| TSP bytes, large, lead 1           | 8          |
+| `9AAB####`| TSP bytes, large, lead 2           | 8          |
+| `4C##`    | Sealed-box ciphertext, lead 0      | 4          |
+| `5C##`    | Sealed-box ciphertext, lead 1      | 4          |
+| `6C##`    | Sealed-box ciphertext, lead 2      | 4          |
+| `4F##`    | HPKE-Base ciphertext, lead 0       | 4          |
+| `5F##`    | HPKE-Base ciphertext, lead 1       | 4          |
+| `6F##`    | HPKE-Base ciphertext, lead 2       | 4          |
+| `7AAC####`| Sealed-box ciphertext, large       | 8          |
+| `7AAF####`| HPKE-Base ciphertext, large        | 8          |
 
-| Code | Description                      | Code Length | Count Length | Total Length |
-|------|----------------------------------|-------------|--------------|--------------|
-| 4B   | TSP Plaintext Lead Size 0        | 4           | 2            |              |
-| 5B   | TSP Plaintext Lead Size 1        | 4           | 2            |              |
-| 6B   | TSP Plaintext Lead Size 2        | 4           | 2            |              |
-| 7AAB | TSP Large Plaintext Lead Size 0  | 8           | 4            |              |
-| 8AAB | TSP Large Plaintext Lead Size 1  | 8           | 4            |              |
-| 9AAB | TSP Large Plaintext Lead Size 2  | 8           | 4            |              |
-| 4C   | TSP Ciphertext Lead Size 0       | 4           | 2            |              |
-| 5C   | TSP Ciphertext Lead Size 1       | 4           | 2            |              |
-| 6C   | TSP Ciphertext Lead Size 2       | 4           | 2            |              |
-| 7AAC | TSP Large Ciphertext Lead Size 0 | 8           | 4            |              |
-| 8AAC | TSP Large Ciphertext Lead Size 1 | 8           | 4            |              |
-| 9AAC | TSP Large Ciphertext Lead Size 2 | 8           | 4            |              |
-| 7VID | TSP Verifiable ID Lead Size 0    | 8           | 4            |              |
-| 8VID | TSP Verifiable ID Lead Size 1    | 8           | 4            |              |
-| 9VID | TSP Verifiable ID Lead Size 2    | 8           | 4            |              |
+Two things follow from this table.
 
-Framing codes introduces by TSP:
+**A VID, a payload and a padding field share one code.** `B` is the generic bytes
+primitive; `TSP_VID` and `TSP_PLAINTEXT` are the same code. What a `4B##` run holds
+is decided entirely by where it sits, never by its code.
 
-| Code | Description                 | Code Length | Count Length | Total Length |
-|------|-----------------------------|-------------|--------------|--------------|
-| -E## | TSP Encrypt&Signed Envelope | 4           | 2            | 4            |
-| -S## | TSP Signed-Only Envelope    | 4           | 2            | 4            |
-| -I## | TSP Hop List                | 4           | 2            | 4            |
-| -Z## | TSP Payload                 | 4           | 2            | 4            |
+**The ciphertext code names the cipher suite.** There is no separate field saying
+which was used: `4C/5C/6C` is the libsodium anonymous sealed box, `4F/5F/6F` is
+HPKE-Base — including the post-quantum KEM, which is selected by the recipient's
+encryption key type rather than by a code point of its own.
 
-TSP Message format
+Framing (count) codes introduced by TSP. A count gives the number of quadlets of
+content that follow, and that content is parsed in turn rather than being data of the
+group's own. Counts below 4096 take the short form `-X##`; larger counts take the
+long form `--X#####`.
+
+| Code   | Description                    |
+|--------|--------------------------------|
+| `-E##` | TSP message frame              |
+| `-Z##` | TSP payload                    |
+| `-J##` | TSP hop list                   |
+| `-A##` | Generic CESR stream            |
+| `-C##` | Attachment group               |
+| `-K##` | Indexed signature group        |
+
+TSP message format
 ------------------
-An encrypted TSP message is encoded as:
 
-	<ETS-ENVELOPE> <TSP-CIPHERTEXT> <SIGNATURE> 
+A TSP message is a frame, its signable content, and an attached signature:
 
-a non-encrypted TSP message is encoded as:
+    MESSAGE ::= -E## <ENVELOPE> <BODY> <SIGNATURE>
 
-    <S-ENVELOPE> <TSP-PLAINTEXT> <SIGNATURE>
+    ENVELOPE ::= YTSP <VERSION> <VID_sndr> <VID_rcvr>
+    BODY     ::= <CIPHERTEXT> | <PAYLOAD>
 
-where,
+`YTSP` is the genus, and `VERSION` is the count code that follows it: its identifier
+character carries MAJOR, and its count carries MINOR and PATCH, six bits each. The
+current version is `0.0.1`, encoded `YTSP-AAB`.
 
-    ETS-ENVELOPE ::= -E01 Xvvv Xttt <SENDER-VID> <RECEIVER-VID> <OPTIONAL:TSP-PLAINTEXT>
-    S-ENVELOPE   ::= -S01 Xvvv Xttt <SENDER-VID> <OPTIONAL:RECEIVER-VID>
+`VID_rcvr` is present in every envelope. Where there is no receiver it is the NULL
+VID — the empty bytes primitive, `4BAA`.
 
-vvv contains the two-byte "major.minor" version of TSP (currently "0.0").
-ttt contains a two-byte "encryption `scheme.signature` scheme" type indicator:
+The `-E##` count covers everything the signature is computed over: the envelope and
+the body, but not the signature itself. The signature is attached after the frame as
+`-C##` holding a `-K##` group of indexed signatures.
 
-encryption scheme\
-0 — Unencrypted (for "S" envelopes" only)\
-1 — HPKE in Auth mode\
-2 — HPKE in Base mode with ESSR\
-3 — Libsodium in Auth mode\
-4 — Libsodium in ESSR mode
+An encrypted message carries a `CIPHERTEXT` whose code names the suite. A signed-only
+message carries its `PAYLOAD` in the clear, in the same position.
 
-Specifying an encryption scheme in an "S" envelope is technically an error (since there will be no ciphertext anyway)
+Payload format
+--------------
 
-signature scheme\
-0 — Unsigned (Reserved for future use)\
-1 — Ed25519
+Decrypting a ciphertext yields a payload, which is itself a counted group:
 
-A `TSP-CIPHERTEXT` must, after successful decryption, have one of the two encodings:
+    PAYLOAD ::= -Z## <TYPE> <VID_sndr> <Padding_Field> <FIELDS...>
 
-    AUTH-PAYLOAD ::= -Z01 Xppp <PAYLOAD>
-    ESSR-PAYLOAD ::= -Z02 <SENDER-VID> Xppp <PAYLOAD>
+`TYPE` is a four-character payload type code. `VID_sndr` repeats the sender inside the
+encryption — this is the ESSR construction, and it is what binds the sender to the
+plaintext rather than only to the envelope. Under the sealed box, which is anonymous,
+it MUST carry the sender. Under HPKE-Base the sender is already bound through the aad,
+so the sender defaults to the NULL VID `4BAA`; a sender MAY still include it, and a
+receiver MUST accept either.
 
-where ppp contains a two-byte "type.subtype" indicator of the control fields present in the
-payload, which currently are:
+`Padding_Field` is a bytes primitive reserved for length hiding; it is empty unless an
+upper layer asks for padding.
 
-| type.subtype | description        | `PAYLOAD` (after decrypting)                                                                                                                                                       |
-|--------------|--------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 0.0          | generic message    | `<TSP-PLAINTEXT>` for direct, <br> `-I## <VID> <VID>... <TSP-PLAINTEXT>` for routed, with the plaintext holding the tsp message                                                    |
-| 0.1          | nested message     | `<TSP-PLAINTEXT>` <br> the plaintext holds a (signed, or signed-and-encrypted) TSP message                                                                                         |
-| 0.1          | routed message     |                                                                                                                                                                                    |
-| 1.0          | NEW_REL            | `<NONCE>`                                                                                                                                                                          |
-| 1.1          | NEW_REL_REPLY      | `<DIGEST>`                                                                                                                                                                         |
-| 1.2          | NEW_NEST_REL       | `<TSP-PLAINTEXT> <NONCE>` <br> the plaintext holds a signed-only TSP message where the sender field has the new nested VID, and an empty receiver                                  |
-| 1.3          | NEW_NEST_REL_REPLY | `<TSP-PLAINTEXT> <DIGEST>` <br> the plaintext holds a signed-only TSP message where the sender field has the new nested VID, and the receiver is the nested VID of the other party |
-| 1.4          | NEW_REFER_REL      | `<DIGEST>` `<VID>`                                                                                                                                                                 |
-| 1.5          | 3P_REFER_REL       | `<VID>`                                                                                                                                                                            |
-| 1.255        | REL_CANCEL         | `<DIGEST>`                                                                                                                                                                         |
+The payload types, and the fields each carries after the padding field:
+
+| Type   | Name       | Fields                                                  |
+|--------|------------|---------------------------------------------------------|
+| `XSCS` | `TSP_GEN`  | the application payload, carried opaquely               |
+| `XCTL` | `TSP_CTL`  | an upper-layer control payload, carried opaquely        |
+| `XPAD` | `TSP_PAD`  | a nonce; the receiver discards the message              |
+| `XHOP` | `TSP_HOP`  | a hop list `-J##`, then a complete inner TSP message    |
+| `XRFI` | `TSP_RFI`  | relationship forming invite                             |
+| `XRFA` | `TSP_RFA`  | relationship forming accept                             |
+| `XRFD` | `TSP_RFD`  | relationship forming decline or cancel                  |
+
+`XHOP` covers both nesting and routing: a nested message has an empty hop list, a
+routed message names the intermediaries it travels through. Either way the inner
+message is a complete TSP message, opaque to everyone but its own recipient — not to
+the intermediary that forwards it, nor to the endpoints of the enclosing relationship.
+
+Reading a message
+-----------------
+
+`tsp_sdk::cesr::segments` walks a message into every code and every run of data it is
+built from, with the field name each has and the value it decodes to. It is a
+presentation aid rather than a parser — decoding for use goes through the packet
+decoder, which rejects what the walker will happily describe — but it is the same
+implementation the SDK ships, so it cannot drift from the encoder.
+
+The CLI's `--verbose` flag colours a message with it: codes bold, the data they
+introduce normal, one colour per field.
+
+Test vectors
+------------
+
+`tsp_sdk/test_vectors/rev3.json` holds worked examples of each of the shapes above:
+sealed box, HPKE-Base, signed-only, the three relationship-forming messages, nested
+and routed. Every vector records the identifiers with their private keys, so it can be
+opened, and the key material every random value was drawn from, so the exact bytes can
+be regenerated rather than only decrypted. The SDK's own tests do both, and require the
+segmenter to account for every code in every vector.
+
+Regenerate them with:
+
+```sh
+cargo run -q -p tsp_sdk --example generate_test_vectors > tsp_sdk/test_vectors/rev3.json
+```
+
+The output is byte-for-byte identical unless the wire format has changed.

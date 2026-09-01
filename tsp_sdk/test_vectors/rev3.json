@@ -30,43 +30,178 @@
       "name": "direct-sealed-box",
       "nonce": null,
       "payload_plaintext": "-ZAcXSCS4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx4BAA-AAF5BAEAGhlbGxvIHdvcmxk",
+      "payload_segments": [
+        {
+          "chars": 4,
+          "field": "payload code",
+          "kind": "code",
+          "note": "counts the payload that follows",
+          "text": "-ZAc",
+          "value": "28 quadlets = 84 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "payload type",
+          "kind": "code",
+          "note": "application payload, carried opaquely",
+          "text": "XSCS",
+          "value": "TSP_GEN"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
+          "field": "VID_sndr",
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx",
+          "value": "did:peer:4zQmUL61Nc1F7ioiKxHNqwnJXX4srhFsKKPo6TrCmhM3dfpq"
+        },
+        {
+          "chars": 4,
+          "field": "Padding_Field code",
+          "kind": "code",
+          "note": "lead pad 0, count 0 quadlets",
+          "text": "4BAA",
+          "value": "empty, the NULL value"
+        },
+        {
+          "chars": 4,
+          "field": "stream code",
+          "kind": "code",
+          "note": "a generic CESR stream, carried opaquely",
+          "text": "-AAF",
+          "value": "5 quadlets = 15 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "Upper_Layer_Data code",
+          "kind": "code",
+          "note": "lead pad 1, count 4 quadlets",
+          "text": "5BAE",
+          "value": "11 bytes follow"
+        },
+        {
+          "chars": 16,
+          "field": "Upper_Layer_Data",
+          "kind": "data",
+          "note": "11 bytes",
+          "text": "AGhlbGxvIHdvcmxk",
+          "value": "hello world"
+        }
+      ],
       "receiver": "bob",
       "seed": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       "segments": [
         {
-          "bytes": 9,
-          "code": "-EBYYTSP-AAB",
-          "field": "frame + version",
-          "note": "-E## counts the signable content that follows, then TSP_Version",
-          "text": "-EBYYTSP-AAB"
+          "chars": 4,
+          "field": "frame code",
+          "kind": "code",
+          "note": "counts the signable content that follows",
+          "text": "-EBY",
+          "value": "88 quadlets = 264 bytes"
         },
         {
-          "bytes": 60,
-          "code": "4BAT",
+          "chars": 4,
+          "field": "TSP_Version code",
+          "kind": "code",
+          "note": "the TSP genus",
+          "text": "YTSP",
+          "value": null
+        },
+        {
+          "chars": 4,
+          "field": "TSP_Version",
+          "kind": "data",
+          "note": "MAJOR in the count code's identifier, then MINOR and PATCH",
+          "text": "-AAB",
+          "value": "0.0.1"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
           "field": "VID_sndr",
-          "note": "the sending VID, in the envelope and so in the aad",
-          "text": "4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx"
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx",
+          "value": "did:peer:4zQmUL61Nc1F7ioiKxHNqwnJXX4srhFsKKPo6TrCmhM3dfpq"
         },
         {
-          "bytes": 60,
-          "code": "4BAT",
+          "chars": 4,
+          "field": "VID_rcvr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
           "field": "VID_rcvr",
-          "note": "the receiving VID; 4BAA when there is none",
-          "text": "4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB"
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB",
+          "value": "did:peer:4zQmZmCAsG7j1ewTjXjtddwujik33CE2cMbYSPagpMiYnt1A"
         },
         {
-          "bytes": 138,
-          "code": "4CAt",
+          "chars": 4,
+          "field": "ciphertext code",
+          "kind": "code",
+          "note": "4C/5C/6C: libsodium anonymous sealed box; lead pad 0, count 45 quadlets",
+          "text": "4CAt",
+          "value": "135 bytes follow"
+        },
+        {
+          "chars": 180,
           "field": "ciphertext",
-          "note": "the sealed payload; for HPKE-Base this is enc followed by ct",
-          "text": "4CAtwfprioKR4GMkMcd24cr7B7sM1_iy88nTHbvkED2YVysWC_6GFqzGqxjBQhW05P2nlttvJtG8bu8WM2kZJiLlOeT7b2Wg0URDRYhOFeb4EtB8XpEUW6KqjqW_zwj79vMTAdrf8vq4u27MbDCQpI8qzeiGLN8B-tak3SI1vKAADx68VHVg5TQM"
+          "kind": "data",
+          "note": "135 bytes, shown as hex",
+          "text": "wfprioKR4GMkMcd24cr7B7sM1_iy88nTHbvkED2YVysWC_6GFqzGqxjBQhW05P2nlttvJtG8bu8WM2kZJiLlOeT7b2Wg0URDRYhOFeb4EtB8XpEUW6KqjqW_zwj79vMTAdrf8vq4u27MbDCQpI8qzeiGLN8B-tak3SI1vKAADx68VHVg5TQM",
+          "value": "c1fa6b8a8291e0632431c776e1cafb07bb0cd7f8b2f3c9d31dbbe4103d98572b160bfe8616acc6ab18c14215b4e4fda796db6f26d1bc6eef163369192622e539e4fb6f65a0d1444345884e15e6f812d07c5e91145ba2aa8ea5bfcf08fbf6f31301dadff2fab8bb6ecc6c3090a48f2acde8862cdf01fad6a4dd2235bca0000f1ebc547560e5340c"
         },
         {
-          "bytes": 72,
-          "code": "-CAX-KAWBAA",
+          "chars": 4,
+          "field": "attachments code",
+          "kind": "code",
+          "note": "attachment group",
+          "text": "-CAX",
+          "value": "23 quadlets = 69 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "signatures code",
+          "kind": "code",
+          "note": "indexed signature group",
+          "text": "-KAW",
+          "value": "22 quadlets = 66 bytes"
+        },
+        {
+          "chars": 2,
+          "field": "signature code",
+          "kind": "code",
+          "note": "Ed25519, signing key index 0",
+          "text": "BA",
+          "value": null
+        },
+        {
+          "chars": 86,
           "field": "signature",
-          "note": "-C## attachment group holding an indexed -K## signature",
-          "text": "-CAX-KAWBAA_SSI7-liNziKjy2VHljgJxK7EJUnbxQMbgGS4C6H1Q5Zekw5zJqFn7yxrEAMzXKbLHkQ2GMWGhXE3ZcnBz38L"
+          "kind": "data",
+          "note": "64 bytes",
+          "text": "A_SSI7-liNziKjy2VHljgJxK7EJUnbxQMbgGS4C6H1Q5Zekw5zJqFn7yxrEAMzXKbLHkQ2GMWGhXE3ZcnBz38L",
+          "value": "3f49223bfa588dce22a3cb6547963809c4aec42549dbc5031b8064b80ba1f543965e930e7326a167ef2c6b1003335ca6cb1e443618c58685713765c9c1cf7f0b"
         }
       ],
       "sender": "alice",
@@ -99,43 +234,170 @@
       "name": "direct-hpke-base",
       "nonce": null,
       "payload_plaintext": "-ZAJXSCS4BAA4BAA-AAF5BAEAGhlbGxvIHdvcmxk",
+      "payload_segments": [
+        {
+          "chars": 4,
+          "field": "payload code",
+          "kind": "code",
+          "note": "counts the payload that follows",
+          "text": "-ZAJ",
+          "value": "9 quadlets = 27 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "payload type",
+          "kind": "code",
+          "note": "application payload, carried opaquely",
+          "text": "XSCS",
+          "value": "TSP_GEN"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 0 quadlets",
+          "text": "4BAA",
+          "value": "empty, the NULL value"
+        },
+        {
+          "chars": 4,
+          "field": "Padding_Field code",
+          "kind": "code",
+          "note": "lead pad 0, count 0 quadlets",
+          "text": "4BAA",
+          "value": "empty, the NULL value"
+        },
+        {
+          "chars": 4,
+          "field": "stream code",
+          "kind": "code",
+          "note": "a generic CESR stream, carried opaquely",
+          "text": "-AAF",
+          "value": "5 quadlets = 15 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "Upper_Layer_Data code",
+          "kind": "code",
+          "note": "lead pad 1, count 4 quadlets",
+          "text": "5BAE",
+          "value": "11 bytes follow"
+        },
+        {
+          "chars": 16,
+          "field": "Upper_Layer_Data",
+          "kind": "data",
+          "note": "11 bytes",
+          "text": "AGhlbGxvIHdvcmxk",
+          "value": "hello world"
+        }
+      ],
       "receiver": "bob",
       "seed": "AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       "segments": [
         {
-          "bytes": 9,
-          "code": "-EBFYTSP-AAB",
-          "field": "frame + version",
-          "note": "-E## counts the signable content that follows, then TSP_Version",
-          "text": "-EBFYTSP-AAB"
+          "chars": 4,
+          "field": "frame code",
+          "kind": "code",
+          "note": "counts the signable content that follows",
+          "text": "-EBF",
+          "value": "69 quadlets = 207 bytes"
         },
         {
-          "bytes": 60,
-          "code": "4BAT",
+          "chars": 4,
+          "field": "TSP_Version code",
+          "kind": "code",
+          "note": "the TSP genus",
+          "text": "YTSP",
+          "value": null
+        },
+        {
+          "chars": 4,
+          "field": "TSP_Version",
+          "kind": "data",
+          "note": "MAJOR in the count code's identifier, then MINOR and PATCH",
+          "text": "-AAB",
+          "value": "0.0.1"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
           "field": "VID_sndr",
-          "note": "the sending VID, in the envelope and so in the aad",
-          "text": "4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx"
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx",
+          "value": "did:peer:4zQmUL61Nc1F7ioiKxHNqwnJXX4srhFsKKPo6TrCmhM3dfpq"
         },
         {
-          "bytes": 60,
-          "code": "4BAT",
+          "chars": 4,
+          "field": "VID_rcvr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
           "field": "VID_rcvr",
-          "note": "the receiving VID; 4BAA when there is none",
-          "text": "4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB"
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB",
+          "value": "did:peer:4zQmZmCAsG7j1ewTjXjtddwujik33CE2cMbYSPagpMiYnt1A"
         },
         {
-          "bytes": 81,
-          "code": "4FAa",
+          "chars": 4,
+          "field": "ciphertext code",
+          "kind": "code",
+          "note": "4F/5F/6F: HPKE-Base, including its post-quantum KEM; lead pad 0, count 26 quadlets",
+          "text": "4FAa",
+          "value": "78 bytes follow"
+        },
+        {
+          "chars": 104,
           "field": "ciphertext",
-          "note": "the sealed payload; for HPKE-Base this is enc followed by ct",
-          "text": "4FAa1T4oA1pSbehBiIwnoXFGA24kgHowT34VdE95wF9qjStBsok4fIkbu8IKODF2nsZMUAmS5BqxDbbYrvl_TNGZg4HEUuXuI1Jqeq7F24GJ"
+          "kind": "data",
+          "note": "78 bytes, shown as hex",
+          "text": "1T4oA1pSbehBiIwnoXFGA24kgHowT34VdE95wF9qjStBsok4fIkbu8IKODF2nsZMUAmS5BqxDbbYrvl_TNGZg4HEUuXuI1Jqeq7F24GJ",
+          "value": "d53e28035a526de841888c27a17146036e24807a304f7e15744f79c05f6a8d2b41b289387c891bbbc20a3831769ec64c500992e41ab10db6d8aef97f4cd1998381c452e5ee23526a7aaec5db8189"
         },
         {
-          "bytes": 72,
-          "code": "-CAX-KAWBAA",
+          "chars": 4,
+          "field": "attachments code",
+          "kind": "code",
+          "note": "attachment group",
+          "text": "-CAX",
+          "value": "23 quadlets = 69 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "signatures code",
+          "kind": "code",
+          "note": "indexed signature group",
+          "text": "-KAW",
+          "value": "22 quadlets = 66 bytes"
+        },
+        {
+          "chars": 2,
+          "field": "signature code",
+          "kind": "code",
+          "note": "Ed25519, signing key index 0",
+          "text": "BA",
+          "value": null
+        },
+        {
+          "chars": 86,
           "field": "signature",
-          "note": "-C## attachment group holding an indexed -K## signature",
-          "text": "-CAX-KAWBACD9JSTJex6TopuS6ZQxyLB0UbKWvIC-K1c9QWn3nlqcx7d2nYVHn2pN6jVg7TIirlLaH6AmEQGlxmw-YPUmloN"
+          "kind": "data",
+          "note": "64 bytes",
+          "text": "CD9JSTJex6TopuS6ZQxyLB0UbKWvIC-K1c9QWn3nlqcx7d2nYVHn2pN6jVg7TIirlLaH6AmEQGlxmw-YPUmloN",
+          "value": "83f4949325ec7a4e8a6e4ba650c722c1d146ca5af202f8ad5cf505a7de796a731eddda76151e7da937a8d583b4c88ab94b687e809844069719b0f983d49a5a0d"
         }
       ],
       "sender": "alice",
@@ -164,43 +426,210 @@
       "name": "direct-signed-only",
       "nonce": null,
       "payload_plaintext": "-ZAMXSCS4BAA4BAA-AAI5BAHAHB1YmxpYyBhbm5vdW5jZW1lbnQh",
+      "payload_segments": [
+        {
+          "chars": 4,
+          "field": "payload code",
+          "kind": "code",
+          "note": "counts the payload that follows",
+          "text": "-ZAM",
+          "value": "12 quadlets = 36 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "payload type",
+          "kind": "code",
+          "note": "application payload, carried opaquely",
+          "text": "XSCS",
+          "value": "TSP_GEN"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 0 quadlets",
+          "text": "4BAA",
+          "value": "empty, the NULL value"
+        },
+        {
+          "chars": 4,
+          "field": "Padding_Field code",
+          "kind": "code",
+          "note": "lead pad 0, count 0 quadlets",
+          "text": "4BAA",
+          "value": "empty, the NULL value"
+        },
+        {
+          "chars": 4,
+          "field": "stream code",
+          "kind": "code",
+          "note": "a generic CESR stream, carried opaquely",
+          "text": "-AAI",
+          "value": "8 quadlets = 24 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "Upper_Layer_Data code",
+          "kind": "code",
+          "note": "lead pad 1, count 7 quadlets",
+          "text": "5BAH",
+          "value": "20 bytes follow"
+        },
+        {
+          "chars": 28,
+          "field": "Upper_Layer_Data",
+          "kind": "data",
+          "note": "20 bytes",
+          "text": "AHB1YmxpYyBhbm5vdW5jZW1lbnQh",
+          "value": "public announcement!"
+        }
+      ],
       "receiver": "bob",
       "seed": null,
       "segments": [
         {
-          "bytes": 9,
-          "code": "-EA3YTSP-AAB",
-          "field": "frame + version",
-          "note": "-E## counts the signable content that follows, then TSP_Version",
-          "text": "-EA3YTSP-AAB"
+          "chars": 4,
+          "field": "frame code",
+          "kind": "code",
+          "note": "counts the signable content that follows",
+          "text": "-EA3",
+          "value": "55 quadlets = 165 bytes"
         },
         {
-          "bytes": 60,
-          "code": "4BAT",
+          "chars": 4,
+          "field": "TSP_Version code",
+          "kind": "code",
+          "note": "the TSP genus",
+          "text": "YTSP",
+          "value": null
+        },
+        {
+          "chars": 4,
+          "field": "TSP_Version",
+          "kind": "data",
+          "note": "MAJOR in the count code's identifier, then MINOR and PATCH",
+          "text": "-AAB",
+          "value": "0.0.1"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
           "field": "VID_sndr",
-          "note": "the sending VID, in the envelope and so in the aad",
-          "text": "4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx"
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx",
+          "value": "did:peer:4zQmUL61Nc1F7ioiKxHNqwnJXX4srhFsKKPo6TrCmhM3dfpq"
         },
         {
-          "bytes": 60,
-          "code": "4BAT",
+          "chars": 4,
+          "field": "VID_rcvr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
           "field": "VID_rcvr",
-          "note": "the receiving VID; 4BAA when there is none",
-          "text": "4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB"
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB",
+          "value": "did:peer:4zQmZmCAsG7j1ewTjXjtddwujik33CE2cMbYSPagpMiYnt1A"
         },
         {
-          "bytes": 39,
-          "code": "-ZAM",
-          "field": "ciphertext",
-          "note": "the sealed payload; for HPKE-Base this is enc followed by ct",
-          "text": "-ZAMXSCS4BAA4BAA-AAI5BAHAHB1YmxpYyBhbm5vdW5jZW1lbnQh"
+          "chars": 4,
+          "field": "payload code",
+          "kind": "code",
+          "note": "counts the payload that follows",
+          "text": "-ZAM",
+          "value": "12 quadlets = 36 bytes"
         },
         {
-          "bytes": 72,
-          "code": "-CAX-KAWBAA",
+          "chars": 4,
+          "field": "payload type",
+          "kind": "code",
+          "note": "application payload, carried opaquely",
+          "text": "XSCS",
+          "value": "TSP_GEN"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 0 quadlets",
+          "text": "4BAA",
+          "value": "empty, the NULL value"
+        },
+        {
+          "chars": 4,
+          "field": "Padding_Field code",
+          "kind": "code",
+          "note": "lead pad 0, count 0 quadlets",
+          "text": "4BAA",
+          "value": "empty, the NULL value"
+        },
+        {
+          "chars": 4,
+          "field": "stream code",
+          "kind": "code",
+          "note": "a generic CESR stream, carried opaquely",
+          "text": "-AAI",
+          "value": "8 quadlets = 24 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "Upper_Layer_Data code",
+          "kind": "code",
+          "note": "lead pad 1, count 7 quadlets",
+          "text": "5BAH",
+          "value": "20 bytes follow"
+        },
+        {
+          "chars": 28,
+          "field": "Upper_Layer_Data",
+          "kind": "data",
+          "note": "20 bytes",
+          "text": "AHB1YmxpYyBhbm5vdW5jZW1lbnQh",
+          "value": "public announcement!"
+        },
+        {
+          "chars": 4,
+          "field": "attachments code",
+          "kind": "code",
+          "note": "attachment group",
+          "text": "-CAX",
+          "value": "23 quadlets = 69 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "signatures code",
+          "kind": "code",
+          "note": "indexed signature group",
+          "text": "-KAW",
+          "value": "22 quadlets = 66 bytes"
+        },
+        {
+          "chars": 2,
+          "field": "signature code",
+          "kind": "code",
+          "note": "Ed25519, signing key index 0",
+          "text": "BA",
+          "value": null
+        },
+        {
+          "chars": 86,
           "field": "signature",
-          "note": "-C## attachment group holding an indexed -K## signature",
-          "text": "-CAX-KAWBADTxFAxv_zlEAdXfBln370F3sBPbeUjA3HbQIc3kikmYFvIntmaTbD8zOxXq0A80JyzA75c01iqVjn2bfxvciQH"
+          "kind": "data",
+          "note": "64 bytes",
+          "text": "DTxFAxv_zlEAdXfBln370F3sBPbeUjA3HbQIc3kikmYFvIntmaTbD8zOxXq0A80JyzA75c01iqVjn2bfxvciQH",
+          "value": "d3c45031bffce51007577c1967dfbd05dec04f6de5230371db408737922926605bc89ed99a4db0fcccec57ab403cd09cb303be5cd358aa5639f66dfc6f722407"
         }
       ],
       "sender": "alice",
@@ -238,43 +667,202 @@
       "name": "control-rfi-direct",
       "nonce": "EREREREREREREREREREREQ",
       "payload_plaintext": "-ZApXRFI4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBxFCTH8782N1U7QgFYQEUDr09cVchF8iVSSCkwKYotZ32R0AARERERERERERERERERERER-JAA-JAA4BAA",
+      "payload_segments": [
+        {
+          "chars": 4,
+          "field": "payload code",
+          "kind": "code",
+          "note": "counts the payload that follows",
+          "text": "-ZAp",
+          "value": "41 quadlets = 123 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "payload type",
+          "kind": "code",
+          "note": "relationship forming invite",
+          "text": "XRFI",
+          "value": "TSP_RFI"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
+          "field": "VID_sndr",
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx",
+          "value": "did:peer:4zQmUL61Nc1F7ioiKxHNqwnJXX4srhFsKKPo6TrCmhM3dfpq"
+        },
+        {
+          "chars": 1,
+          "field": "Digest code",
+          "kind": "code",
+          "note": "Blake2b-256, 32 bytes",
+          "text": "F",
+          "value": null
+        },
+        {
+          "chars": 43,
+          "field": "Digest",
+          "kind": "data",
+          "note": "43 characters",
+          "text": "CTH8782N1U7QgFYQEUDr09cVchF8iVSSCkwKYotZ32R",
+          "value": "24c7f3bf3637553b420158404503af4f5c55c845f22552482930298a2d677d91"
+        },
+        {
+          "chars": 2,
+          "field": "Nonce code",
+          "kind": "code",
+          "note": "128 bits",
+          "text": "0A",
+          "value": null
+        },
+        {
+          "chars": 22,
+          "field": "Nonce",
+          "kind": "data",
+          "note": "22 characters",
+          "text": "ARERERERERERERERERERER",
+          "value": "11111111111111111111111111111111"
+        },
+        {
+          "chars": 4,
+          "field": "hop list code",
+          "kind": "code",
+          "note": "a list of VIDs",
+          "text": "-JAA",
+          "value": "empty"
+        },
+        {
+          "chars": 4,
+          "field": "hop list code",
+          "kind": "code",
+          "note": "a list of VIDs",
+          "text": "-JAA",
+          "value": "empty"
+        },
+        {
+          "chars": 4,
+          "field": "Padding_Field code",
+          "kind": "code",
+          "note": "lead pad 0, count 0 quadlets",
+          "text": "4BAA",
+          "value": "empty, the NULL value"
+        }
+      ],
       "receiver": "bob",
       "seed": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       "segments": [
         {
-          "bytes": 9,
-          "code": "-EBlYTSP-AAB",
-          "field": "frame + version",
-          "note": "-E## counts the signable content that follows, then TSP_Version",
-          "text": "-EBlYTSP-AAB"
+          "chars": 4,
+          "field": "frame code",
+          "kind": "code",
+          "note": "counts the signable content that follows",
+          "text": "-EBl",
+          "value": "101 quadlets = 303 bytes"
         },
         {
-          "bytes": 60,
-          "code": "4BAT",
+          "chars": 4,
+          "field": "TSP_Version code",
+          "kind": "code",
+          "note": "the TSP genus",
+          "text": "YTSP",
+          "value": null
+        },
+        {
+          "chars": 4,
+          "field": "TSP_Version",
+          "kind": "data",
+          "note": "MAJOR in the count code's identifier, then MINOR and PATCH",
+          "text": "-AAB",
+          "value": "0.0.1"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
           "field": "VID_sndr",
-          "note": "the sending VID, in the envelope and so in the aad",
-          "text": "4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx"
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx",
+          "value": "did:peer:4zQmUL61Nc1F7ioiKxHNqwnJXX4srhFsKKPo6TrCmhM3dfpq"
         },
         {
-          "bytes": 60,
-          "code": "4BAT",
+          "chars": 4,
+          "field": "VID_rcvr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
           "field": "VID_rcvr",
-          "note": "the receiving VID; 4BAA when there is none",
-          "text": "4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB"
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB",
+          "value": "did:peer:4zQmZmCAsG7j1ewTjXjtddwujik33CE2cMbYSPagpMiYnt1A"
         },
         {
-          "bytes": 177,
-          "code": "4CA6",
+          "chars": 4,
+          "field": "ciphertext code",
+          "kind": "code",
+          "note": "4C/5C/6C: libsodium anonymous sealed box; lead pad 0, count 58 quadlets",
+          "text": "4CA6",
+          "value": "174 bytes follow"
+        },
+        {
+          "chars": 232,
           "field": "ciphertext",
-          "note": "the sealed payload; for HPKE-Base this is enc followed by ct",
-          "text": "4CA6VjeHN5HJR7BiWf5xzOVvzFMaW_HsIFKa8FhQBZCDuFcoTMMZnP1bEy098G-LeodcheTiIw5BzwvN4U2f581_xhPdTbXeyUqR58Ke6Joz7UDDuNHM7zTw5CmWq-3ZDeyxTmNHE2uUJS6KX7O5zZ6Hz8-YTV3K9Xjj__fcILczEu8l5WJwMYy4OEKW6vcL0eLlEfHa5Pj5iTpc6u5MFSZzFAt1iOdEq2Ud2YCj0SGl"
+          "kind": "data",
+          "note": "174 bytes, shown as hex",
+          "text": "VjeHN5HJR7BiWf5xzOVvzFMaW_HsIFKa8FhQBZCDuFcoTMMZnP1bEy098G-LeodcheTiIw5BzwvN4U2f581_xhPdTbXeyUqR58Ke6Joz7UDDuNHM7zTw5CmWq-3ZDeyxTmNHE2uUJS6KX7O5zZ6Hz8-YTV3K9Xjj__fcILczEu8l5WJwMYy4OEKW6vcL0eLlEfHa5Pj5iTpc6u5MFSZzFAt1iOdEq2Ud2YCj0SGl",
+          "value": "5637873791c947b06259fe71cce56fcc531a5bf1ec20529af05850059083b857284cc3199cfd5b132d3df06f8b7a875c85e4e2230e41cf0bcde14d9fe7cd7fc613dd4db5dec94a91e7c29ee89a33ed40c3b8d1ccef34f0e42996abedd90decb14e6347136b94252e8a5fb3b9cd9e87cfcf984d5dcaf578e3fff7dc20b73312ef25e56270318cb8384296eaf70bd1e2e511f1dae4f8f9893a5ceaee4c152673140b7588e744ab651dd980a3d121a5"
         },
         {
-          "bytes": 72,
-          "code": "-CAX-KAWBAA",
+          "chars": 4,
+          "field": "attachments code",
+          "kind": "code",
+          "note": "attachment group",
+          "text": "-CAX",
+          "value": "23 quadlets = 69 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "signatures code",
+          "kind": "code",
+          "note": "indexed signature group",
+          "text": "-KAW",
+          "value": "22 quadlets = 66 bytes"
+        },
+        {
+          "chars": 2,
+          "field": "signature code",
+          "kind": "code",
+          "note": "Ed25519, signing key index 0",
+          "text": "BA",
+          "value": null
+        },
+        {
+          "chars": 86,
           "field": "signature",
-          "note": "-C## attachment group holding an indexed -K## signature",
-          "text": "-CAX-KAWBACzMFYVL7vMUFSPdMZoCzZ3ZRQTqOjlG2TgKaMqmf1DsDihVxUk0WCjmA7vv_VPRgTSkkGJ7LuCbQxMIDIvUw0N"
+          "kind": "data",
+          "note": "64 bytes",
+          "text": "CzMFYVL7vMUFSPdMZoCzZ3ZRQTqOjlG2TgKaMqmf1DsDihVxUk0WCjmA7vv_VPRgTSkkGJ7LuCbQxMIDIvUw0N",
+          "value": "b33056152fbbcc50548f74c6680b3677651413a8e8e51b64e029a32a99fd43b038a1571524d160a3980eefbff54f4604d2924189ecbb826d0c4c20322f530d0d"
         }
       ],
       "sender": "alice",
@@ -309,43 +897,186 @@
       "name": "control-rfa-direct",
       "nonce": "EREREREREREREREREREREQ",
       "payload_plaintext": "-ZAsXRFA4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFBFCTH8782N1U7QgFYQEUDr09cVchF8iVSSCkwKYotZ32RFHxW-trxkLnIFXYUFnN_S0lNqQ4kHVnH6dzIKG1pmohS4BAA",
+      "payload_segments": [
+        {
+          "chars": 4,
+          "field": "payload code",
+          "kind": "code",
+          "note": "counts the payload that follows",
+          "text": "-ZAs",
+          "value": "44 quadlets = 132 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "payload type",
+          "kind": "code",
+          "note": "relationship forming accept",
+          "text": "XRFA",
+          "value": "TSP_RFA"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
+          "field": "VID_sndr",
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB",
+          "value": "did:peer:4zQmZmCAsG7j1ewTjXjtddwujik33CE2cMbYSPagpMiYnt1A"
+        },
+        {
+          "chars": 1,
+          "field": "Digest code",
+          "kind": "code",
+          "note": "Blake2b-256, 32 bytes",
+          "text": "F",
+          "value": null
+        },
+        {
+          "chars": 43,
+          "field": "Digest",
+          "kind": "data",
+          "note": "43 characters",
+          "text": "CTH8782N1U7QgFYQEUDr09cVchF8iVSSCkwKYotZ32R",
+          "value": "24c7f3bf3637553b420158404503af4f5c55c845f22552482930298a2d677d91"
+        },
+        {
+          "chars": 1,
+          "field": "Digest code",
+          "kind": "code",
+          "note": "Blake2b-256, 32 bytes",
+          "text": "F",
+          "value": null
+        },
+        {
+          "chars": 43,
+          "field": "Digest",
+          "kind": "data",
+          "note": "43 characters",
+          "text": "HxW-trxkLnIFXYUFnN_S0lNqQ4kHVnH6dzIKG1pmohS",
+          "value": "7c56fadaf190b9c815761416737f4b494da90e241d59c7e9dcc8286d699a8852"
+        },
+        {
+          "chars": 4,
+          "field": "Padding_Field code",
+          "kind": "code",
+          "note": "lead pad 0, count 0 quadlets",
+          "text": "4BAA",
+          "value": "empty, the NULL value"
+        }
+      ],
       "receiver": "alice",
       "seed": "CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       "segments": [
         {
-          "bytes": 9,
-          "code": "-EBoYTSP-AAB",
-          "field": "frame + version",
-          "note": "-E## counts the signable content that follows, then TSP_Version",
-          "text": "-EBoYTSP-AAB"
+          "chars": 4,
+          "field": "frame code",
+          "kind": "code",
+          "note": "counts the signable content that follows",
+          "text": "-EBo",
+          "value": "104 quadlets = 312 bytes"
         },
         {
-          "bytes": 60,
-          "code": "4BAT",
+          "chars": 4,
+          "field": "TSP_Version code",
+          "kind": "code",
+          "note": "the TSP genus",
+          "text": "YTSP",
+          "value": null
+        },
+        {
+          "chars": 4,
+          "field": "TSP_Version",
+          "kind": "data",
+          "note": "MAJOR in the count code's identifier, then MINOR and PATCH",
+          "text": "-AAB",
+          "value": "0.0.1"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
           "field": "VID_sndr",
-          "note": "the sending VID, in the envelope and so in the aad",
-          "text": "4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB"
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB",
+          "value": "did:peer:4zQmZmCAsG7j1ewTjXjtddwujik33CE2cMbYSPagpMiYnt1A"
         },
         {
-          "bytes": 60,
-          "code": "4BAT",
+          "chars": 4,
+          "field": "VID_rcvr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
           "field": "VID_rcvr",
-          "note": "the receiving VID; 4BAA when there is none",
-          "text": "4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx"
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx",
+          "value": "did:peer:4zQmUL61Nc1F7ioiKxHNqwnJXX4srhFsKKPo6TrCmhM3dfpq"
         },
         {
-          "bytes": 186,
-          "code": "4CA9",
+          "chars": 4,
+          "field": "ciphertext code",
+          "kind": "code",
+          "note": "4C/5C/6C: libsodium anonymous sealed box; lead pad 0, count 61 quadlets",
+          "text": "4CA9",
+          "value": "183 bytes follow"
+        },
+        {
+          "chars": 244,
           "field": "ciphertext",
-          "note": "the sealed payload; for HPKE-Base this is enc followed by ct",
-          "text": "4CA9FwT8ofoUNLWO49g8FBUfcpnmGzCzvBmzWzFSoNkRBRo8VatSo8ywUHw7aNt0OZQ6W0Qk2pqMxwaZLr6apvVcAqm3TDsi_aLppyxCLaqZSvf4kM7hOXbAXFMsEzh6AKehGWkwd_w21CPEPKxwgtG0lWMS6ctzPou6gf5ww3yyCCRiAFa-gVuZqPECtZewy3qJ2DsFF6GUulAYn0sOlsJDgXq7yCWN87NY1KGC7BBIBrhHYn-GMtoY"
+          "kind": "data",
+          "note": "183 bytes, shown as hex",
+          "text": "FwT8ofoUNLWO49g8FBUfcpnmGzCzvBmzWzFSoNkRBRo8VatSo8ywUHw7aNt0OZQ6W0Qk2pqMxwaZLr6apvVcAqm3TDsi_aLppyxCLaqZSvf4kM7hOXbAXFMsEzh6AKehGWkwd_w21CPEPKxwgtG0lWMS6ctzPou6gf5ww3yyCCRiAFa-gVuZqPECtZewy3qJ2DsFF6GUulAYn0sOlsJDgXq7yCWN87NY1KGC7BBIBrhHYn-GMtoY",
+          "value": "1704fca1fa1434b58ee3d83c14151f7299e61b30b3bc19b35b3152a0d911051a3c55ab52a3ccb0507c3b68db7439943a5b4424da9a8cc706992ebe9aa6f55c02a9b74c3b22fda2e9a72c422daa994af7f890cee13976c05c532c13387a00a7a119693077fc36d423c43cac7082d1b4956312e9cb733e8bba81fe70c37cb20824620056be815b99a8f102b597b0cb7a89d83b0517a194ba50189f4b0e96c243817abbc8258df3b358d4a182ec104806b847627f8632da18"
         },
         {
-          "bytes": 72,
-          "code": "-CAX-KAWBAA",
+          "chars": 4,
+          "field": "attachments code",
+          "kind": "code",
+          "note": "attachment group",
+          "text": "-CAX",
+          "value": "23 quadlets = 69 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "signatures code",
+          "kind": "code",
+          "note": "indexed signature group",
+          "text": "-KAW",
+          "value": "22 quadlets = 66 bytes"
+        },
+        {
+          "chars": 2,
+          "field": "signature code",
+          "kind": "code",
+          "note": "Ed25519, signing key index 0",
+          "text": "BA",
+          "value": null
+        },
+        {
+          "chars": 86,
           "field": "signature",
-          "note": "-C## attachment group holding an indexed -K## signature",
-          "text": "-CAX-KAWBABBmfAhD6JyOJBHLtrm4TqZu-brpbhI04xaQ7Ymz20RVww0BI1r_FvfdOD54N_tXluSSaQnNowsSAplXeCM-zAI"
+          "kind": "data",
+          "note": "64 bytes",
+          "text": "BBmfAhD6JyOJBHLtrm4TqZu-brpbhI04xaQ7Ymz20RVww0BI1r_FvfdOD54N_tXluSSaQnNowsSAplXeCM-zAI",
+          "value": "4199f0210fa2723890472edae6e13a99bbe6eba5b848d38c5a43b626cf6d11570c34048d6bfc5bdf74e0f9e0dfed5e5b9249a427368c2c480a655de08cfb3008"
         }
       ],
       "sender": "bob",
@@ -378,43 +1109,170 @@
       "name": "control-rfd",
       "nonce": null,
       "payload_plaintext": "-ZAhXRFD4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBxFCTH8782N1U7QgFYQEUDr09cVchF8iVSSCkwKYotZ32R4BAA",
+      "payload_segments": [
+        {
+          "chars": 4,
+          "field": "payload code",
+          "kind": "code",
+          "note": "counts the payload that follows",
+          "text": "-ZAh",
+          "value": "33 quadlets = 99 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "payload type",
+          "kind": "code",
+          "note": "relationship forming decline or cancel",
+          "text": "XRFD",
+          "value": "TSP_RFD"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
+          "field": "VID_sndr",
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx",
+          "value": "did:peer:4zQmUL61Nc1F7ioiKxHNqwnJXX4srhFsKKPo6TrCmhM3dfpq"
+        },
+        {
+          "chars": 1,
+          "field": "Digest code",
+          "kind": "code",
+          "note": "Blake2b-256, 32 bytes",
+          "text": "F",
+          "value": null
+        },
+        {
+          "chars": 43,
+          "field": "Digest",
+          "kind": "data",
+          "note": "43 characters",
+          "text": "CTH8782N1U7QgFYQEUDr09cVchF8iVSSCkwKYotZ32R",
+          "value": "24c7f3bf3637553b420158404503af4f5c55c845f22552482930298a2d677d91"
+        },
+        {
+          "chars": 4,
+          "field": "Padding_Field code",
+          "kind": "code",
+          "note": "lead pad 0, count 0 quadlets",
+          "text": "4BAA",
+          "value": "empty, the NULL value"
+        }
+      ],
       "receiver": "bob",
       "seed": "AwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       "segments": [
         {
-          "bytes": 9,
-          "code": "-EBdYTSP-AAB",
-          "field": "frame + version",
-          "note": "-E## counts the signable content that follows, then TSP_Version",
-          "text": "-EBdYTSP-AAB"
+          "chars": 4,
+          "field": "frame code",
+          "kind": "code",
+          "note": "counts the signable content that follows",
+          "text": "-EBd",
+          "value": "93 quadlets = 279 bytes"
         },
         {
-          "bytes": 60,
-          "code": "4BAT",
+          "chars": 4,
+          "field": "TSP_Version code",
+          "kind": "code",
+          "note": "the TSP genus",
+          "text": "YTSP",
+          "value": null
+        },
+        {
+          "chars": 4,
+          "field": "TSP_Version",
+          "kind": "data",
+          "note": "MAJOR in the count code's identifier, then MINOR and PATCH",
+          "text": "-AAB",
+          "value": "0.0.1"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
           "field": "VID_sndr",
-          "note": "the sending VID, in the envelope and so in the aad",
-          "text": "4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx"
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx",
+          "value": "did:peer:4zQmUL61Nc1F7ioiKxHNqwnJXX4srhFsKKPo6TrCmhM3dfpq"
         },
         {
-          "bytes": 60,
-          "code": "4BAT",
+          "chars": 4,
+          "field": "VID_rcvr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
           "field": "VID_rcvr",
-          "note": "the receiving VID; 4BAA when there is none",
-          "text": "4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB"
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB",
+          "value": "did:peer:4zQmZmCAsG7j1ewTjXjtddwujik33CE2cMbYSPagpMiYnt1A"
         },
         {
-          "bytes": 153,
-          "code": "4CAy",
+          "chars": 4,
+          "field": "ciphertext code",
+          "kind": "code",
+          "note": "4C/5C/6C: libsodium anonymous sealed box; lead pad 0, count 50 quadlets",
+          "text": "4CAy",
+          "value": "150 bytes follow"
+        },
+        {
+          "chars": 200,
           "field": "ciphertext",
-          "note": "the sealed payload; for HPKE-Base this is enc followed by ct",
-          "text": "4CAyWICO64Q7lMFVnd8gHrlJIG8tv8mVH09UZ-cx6dS1-j__5gSOgiCrVJj68o5_NEz4sZt9hRW3_S9x9D0FphN7hGMkSY3ukeBtZRDZ6EG9ecQ4Q1vRwgZ80EBpnKg8TlUWw3VpcZkgNjv3uDtV68_6gIrWMwh7k_H3lwky4n2BFAjZfVXJr8_S0YpTonC27EhjIUYzPe8c"
+          "kind": "data",
+          "note": "150 bytes, shown as hex",
+          "text": "WICO64Q7lMFVnd8gHrlJIG8tv8mVH09UZ-cx6dS1-j__5gSOgiCrVJj68o5_NEz4sZt9hRW3_S9x9D0FphN7hGMkSY3ukeBtZRDZ6EG9ecQ4Q1vRwgZ80EBpnKg8TlUWw3VpcZkgNjv3uDtV68_6gIrWMwh7k_H3lwky4n2BFAjZfVXJr8_S0YpTonC27EhjIUYzPe8c",
+          "value": "58808eeb843b94c1559ddf201eb949206f2dbfc9951f4f5467e731e9d4b5fa3fffe6048e8220ab5498faf28e7f344cf8b19b7d8515b7fd2f71f43d05a6137b846324498dee91e06d6510d9e841bd79c438435bd1c2067cd040699ca83c4e5516c37569719920363bf7b83b55ebcffa808ad633087b93f1f7970932e27d811408d97d55c9afcfd2d18a53a270b6ec48632146333def1c"
         },
         {
-          "bytes": 72,
-          "code": "-CAX-KAWBAA",
+          "chars": 4,
+          "field": "attachments code",
+          "kind": "code",
+          "note": "attachment group",
+          "text": "-CAX",
+          "value": "23 quadlets = 69 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "signatures code",
+          "kind": "code",
+          "note": "indexed signature group",
+          "text": "-KAW",
+          "value": "22 quadlets = 66 bytes"
+        },
+        {
+          "chars": 2,
+          "field": "signature code",
+          "kind": "code",
+          "note": "Ed25519, signing key index 0",
+          "text": "BA",
+          "value": null
+        },
+        {
+          "chars": 86,
           "field": "signature",
-          "note": "-C## attachment group holding an indexed -K## signature",
-          "text": "-CAX-KAWBAByXSevPvrhrYXvXVjqGOQI4ORC97aRrNqaSZCT6uKwF7rYmNyNMJ1Hjbba7VtbkQDXinc8avDl5OohAwQszT0F"
+          "kind": "data",
+          "note": "64 bytes",
+          "text": "ByXSevPvrhrYXvXVjqGOQI4ORC97aRrNqaSZCT6uKwF7rYmNyNMJ1Hjbba7VtbkQDXinc8avDl5OohAwQszT0F",
+          "value": "725d27af3efae1ad85ef5d58ea18e408e0e442f7b691acda9a499093eae2b017bad898dc8d309d478db6daed5b5b9100d78a773c6af0e5e4ea2103042ccd3d05"
         }
       ],
       "sender": "alice",
@@ -438,7 +1296,73 @@
         }
       },
       "inner": {
-        "payload_plaintext": "-ZAcXSCS4BATZGlkOnBlZXI6NHpRbWVoc2pNdVBrUGp6ZzdXRjJ0SDVYMVNHdUZNeGFjSkI5UkVUTEZ3amdNRHFY4BAA-AAF5BAEAGhlbGxvIHdvcmxk"
+        "payload_plaintext": "-ZAcXSCS4BATZGlkOnBlZXI6NHpRbWVoc2pNdVBrUGp6ZzdXRjJ0SDVYMVNHdUZNeGFjSkI5UkVUTEZ3amdNRHFY4BAA-AAF5BAEAGhlbGxvIHdvcmxk",
+        "payload_segments": [
+          {
+            "chars": 4,
+            "field": "payload code",
+            "kind": "code",
+            "note": "counts the payload that follows",
+            "text": "-ZAc",
+            "value": "28 quadlets = 84 bytes"
+          },
+          {
+            "chars": 4,
+            "field": "payload type",
+            "kind": "code",
+            "note": "application payload, carried opaquely",
+            "text": "XSCS",
+            "value": "TSP_GEN"
+          },
+          {
+            "chars": 4,
+            "field": "VID_sndr code",
+            "kind": "code",
+            "note": "lead pad 0, count 19 quadlets",
+            "text": "4BAT",
+            "value": "57 bytes follow"
+          },
+          {
+            "chars": 76,
+            "field": "VID_sndr",
+            "kind": "data",
+            "note": "57 bytes",
+            "text": "ZGlkOnBlZXI6NHpRbWVoc2pNdVBrUGp6ZzdXRjJ0SDVYMVNHdUZNeGFjSkI5UkVUTEZ3amdNRHFY",
+            "value": "did:peer:4zQmehsjMuPkPjzg7WF2tH5X1SGuFMxacJB9RETLFwjgMDqX"
+          },
+          {
+            "chars": 4,
+            "field": "Padding_Field code",
+            "kind": "code",
+            "note": "lead pad 0, count 0 quadlets",
+            "text": "4BAA",
+            "value": "empty, the NULL value"
+          },
+          {
+            "chars": 4,
+            "field": "stream code",
+            "kind": "code",
+            "note": "a generic CESR stream, carried opaquely",
+            "text": "-AAF",
+            "value": "5 quadlets = 15 bytes"
+          },
+          {
+            "chars": 4,
+            "field": "Upper_Layer_Data code",
+            "kind": "code",
+            "note": "lead pad 1, count 4 quadlets",
+            "text": "5BAE",
+            "value": "11 bytes follow"
+          },
+          {
+            "chars": 16,
+            "field": "Upper_Layer_Data",
+            "kind": "data",
+            "note": "11 bytes",
+            "text": "AGhlbGxvIHdvcmxk",
+            "value": "hello world"
+          }
+        ]
       },
       "layout": [
         "-Z##",
@@ -452,43 +1376,266 @@
       "name": "nested-direct",
       "nonce": null,
       "payload_plaintext": "-ZCIXHOP4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx-JAA4BAA-EBYYTSP-AAB4BATZGlkOnBlZXI6NHpRbWVoc2pNdVBrUGp6ZzdXRjJ0SDVYMVNHdUZNeGFjSkI5UkVUTEZ3amdNRHFY4BATZGlkOnBlZXI6NHpRbVNNdzQxM2tlS2hncFRwWW0xcThqem1wcU5Zd2RkVkdQdWJrSE5ncDNxUWVp4CAt6D1uPX4lNTbpu8AEXyZ5ZH7SqcCAd-vYro42T_ZOt1uySB1Y5BhRs_FdqQ1Mpbn17tLpcAsQSuxMPrFawgJXlGc9ctD88zw4JpvtO6VWgNgNz0ucAzTYgONliNLas5SrinVvq7MOMiKzTgIJT_rpFwMwgxtThR0Fw59TOZR-uKm0nFia1gqq-CAX-KAWBABcoBXTh5WpBbdHThjlpo8KH_tJprPBAVUweTIxZnTKB7Rvj1jV76dPrL9py0ba-aGCqIJXzCtAVdZZIh2CzuEL",
+      "payload_segments": [
+        {
+          "chars": 4,
+          "field": "payload code",
+          "kind": "code",
+          "note": "counts the payload that follows",
+          "text": "-ZCI",
+          "value": "136 quadlets = 408 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "payload type",
+          "kind": "code",
+          "note": "nested or routed payload: a hop list, then an inner message",
+          "text": "XHOP",
+          "value": "TSP_HOP"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
+          "field": "VID_sndr",
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx",
+          "value": "did:peer:4zQmUL61Nc1F7ioiKxHNqwnJXX4srhFsKKPo6TrCmhM3dfpq"
+        },
+        {
+          "chars": 4,
+          "field": "hop list code",
+          "kind": "code",
+          "note": "a list of VIDs",
+          "text": "-JAA",
+          "value": "empty"
+        },
+        {
+          "chars": 4,
+          "field": "Padding_Field code",
+          "kind": "code",
+          "note": "lead pad 0, count 0 quadlets",
+          "text": "4BAA",
+          "value": "empty, the NULL value"
+        },
+        {
+          "chars": 4,
+          "field": "frame code",
+          "kind": "code",
+          "note": "counts the signable content that follows",
+          "text": "-EBY",
+          "value": "88 quadlets = 264 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "TSP_Version code",
+          "kind": "code",
+          "note": "the TSP genus",
+          "text": "YTSP",
+          "value": null
+        },
+        {
+          "chars": 4,
+          "field": "TSP_Version",
+          "kind": "data",
+          "note": "MAJOR in the count code's identifier, then MINOR and PATCH",
+          "text": "-AAB",
+          "value": "0.0.1"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
+          "field": "VID_sndr",
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbWVoc2pNdVBrUGp6ZzdXRjJ0SDVYMVNHdUZNeGFjSkI5UkVUTEZ3amdNRHFY",
+          "value": "did:peer:4zQmehsjMuPkPjzg7WF2tH5X1SGuFMxacJB9RETLFwjgMDqX"
+        },
+        {
+          "chars": 4,
+          "field": "VID_rcvr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
+          "field": "VID_rcvr",
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVNNdzQxM2tlS2hncFRwWW0xcThqem1wcU5Zd2RkVkdQdWJrSE5ncDNxUWVp",
+          "value": "did:peer:4zQmSMw413keKhgpTpYm1q8jzmpqNYwddVGPubkHNgp3qQei"
+        },
+        {
+          "chars": 4,
+          "field": "ciphertext code",
+          "kind": "code",
+          "note": "4C/5C/6C: libsodium anonymous sealed box; lead pad 0, count 45 quadlets",
+          "text": "4CAt",
+          "value": "135 bytes follow"
+        },
+        {
+          "chars": 180,
+          "field": "ciphertext",
+          "kind": "data",
+          "note": "135 bytes, shown as hex",
+          "text": "6D1uPX4lNTbpu8AEXyZ5ZH7SqcCAd-vYro42T_ZOt1uySB1Y5BhRs_FdqQ1Mpbn17tLpcAsQSuxMPrFawgJXlGc9ctD88zw4JpvtO6VWgNgNz0ucAzTYgONliNLas5SrinVvq7MOMiKzTgIJT_rpFwMwgxtThR0Fw59TOZR-uKm0nFia1gqq",
+          "value": "e83d6e3d7e253536e9bbc0045f2679647ed2a9c08077ebd8ae8e364ff64eb75bb2481d58e41851b3f15da90d4ca5b9f5eed2e9700b104aec4c3eb15ac2025794673d72d0fcf33c38269bed3ba55680d80dcf4b9c0334d880e36588d2dab394ab8a756fabb30e3222b34e02094ffae9170330831b53851d05c39f5339947eb8a9b49c589ad60aaa"
+        },
+        {
+          "chars": 4,
+          "field": "attachments code",
+          "kind": "code",
+          "note": "attachment group",
+          "text": "-CAX",
+          "value": "23 quadlets = 69 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "signatures code",
+          "kind": "code",
+          "note": "indexed signature group",
+          "text": "-KAW",
+          "value": "22 quadlets = 66 bytes"
+        },
+        {
+          "chars": 2,
+          "field": "signature code",
+          "kind": "code",
+          "note": "Ed25519, signing key index 0",
+          "text": "BA",
+          "value": null
+        },
+        {
+          "chars": 86,
+          "field": "signature",
+          "kind": "data",
+          "note": "64 bytes",
+          "text": "BcoBXTh5WpBbdHThjlpo8KH_tJprPBAVUweTIxZnTKB7Rvj1jV76dPrL9py0ba-aGCqIJXzCtAVdZZIh2CzuEL",
+          "value": "5ca015d38795a905b7474e18e5a68f0a1ffb49a6b3c10155307932316674ca07b46f8f58d5efa74facbf69cb46daf9a182a88257cc2b4055d659221d82cee10b"
+        }
+      ],
       "receiver": "bob",
       "seed": "BQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       "segments": [
         {
-          "bytes": 9,
-          "code": "-EDEYTSP-AAB",
-          "field": "frame + version",
-          "note": "-E## counts the signable content that follows, then TSP_Version",
-          "text": "-EDEYTSP-AAB"
+          "chars": 4,
+          "field": "frame code",
+          "kind": "code",
+          "note": "counts the signable content that follows",
+          "text": "-EDE",
+          "value": "196 quadlets = 588 bytes"
         },
         {
-          "bytes": 60,
-          "code": "4BAT",
+          "chars": 4,
+          "field": "TSP_Version code",
+          "kind": "code",
+          "note": "the TSP genus",
+          "text": "YTSP",
+          "value": null
+        },
+        {
+          "chars": 4,
+          "field": "TSP_Version",
+          "kind": "data",
+          "note": "MAJOR in the count code's identifier, then MINOR and PATCH",
+          "text": "-AAB",
+          "value": "0.0.1"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
           "field": "VID_sndr",
-          "note": "the sending VID, in the envelope and so in the aad",
-          "text": "4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx"
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx",
+          "value": "did:peer:4zQmUL61Nc1F7ioiKxHNqwnJXX4srhFsKKPo6TrCmhM3dfpq"
         },
         {
-          "bytes": 60,
-          "code": "4BAT",
+          "chars": 4,
+          "field": "VID_rcvr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
           "field": "VID_rcvr",
-          "note": "the receiving VID; 4BAA when there is none",
-          "text": "4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB"
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB",
+          "value": "did:peer:4zQmZmCAsG7j1ewTjXjtddwujik33CE2cMbYSPagpMiYnt1A"
         },
         {
-          "bytes": 462,
-          "code": "4CCZ",
+          "chars": 4,
+          "field": "ciphertext code",
+          "kind": "code",
+          "note": "4C/5C/6C: libsodium anonymous sealed box; lead pad 0, count 153 quadlets",
+          "text": "4CCZ",
+          "value": "459 bytes follow"
+        },
+        {
+          "chars": 612,
           "field": "ciphertext",
-          "note": "the sealed payload; for HPKE-Base this is enc followed by ct",
-          "text": "4CCZgxwrClVxXrC_A-hFG730Qhi2RGW-7z8a0x-0bOCQs070xQQ4qh5_bVg-Dw4j6mBTF75t1HrEbHgKd4fAKwP6qXU15hpB4CCIsDt18fBDgK-lq6MKbWHqRjNdOwvlqkpW8gPMH7076-PPuTja3WhhRYsrruSjivBHueMzZIC1POiWD0R8OSXnKEITuGIbkFnkRiS3loDlDX2nxGtRxZfIw9aWDCBZ9sIgRIPmwX3DFwObCzcPYYOWQCRmNeBsjgXrqO6nypxI4E09Qcl4Ji4yrgmIp3pnZQYjh-VXtf9v0vGAecqAWmZdI-ovzSsiHH9btiQXAJcHQU41HzuwM_9HckOGYfNPOPUZmCqo1Db7eYMmqyXtQhLd6cs-CJ23AHpswktqbjzYklslLMD4CvaDAapquvXjZ7ogPFu4smEQTJUiOjp9duVMsmvEBWutHdggN4GxTnw6ozWHL09Vp1MjulW4PxAttTPgw5es0TTueOchO4Xk9ay8Xv5fbuqxs3uyw47-AocgLhMs8q35RNO0TecIHh8Rpvn8zBUGi7frdj5xrxcK9FgIm6Td3y0hhtXi5NbGa2G-CmKfeONhLelnai5GgtemoR2hj0ge"
+          "kind": "data",
+          "note": "459 bytes, shown as hex",
+          "text": "gxwrClVxXrC_A-hFG730Qhi2RGW-7z8a0x-0bOCQs070xQQ4qh5_bVg-Dw4j6mBTF75t1HrEbHgKd4fAKwP6qXU15hpB4CCIsDt18fBDgK-lq6MKbWHqRjNdOwvlqkpW8gPMH7076-PPuTja3WhhRYsrruSjivBHueMzZIC1POiWD0R8OSXnKEITuGIbkFnkRiS3loDlDX2nxGtRxZfIw9aWDCBZ9sIgRIPmwX3DFwObCzcPYYOWQCRmNeBsjgXrqO6nypxI4E09Qcl4Ji4yrgmIp3pnZQYjh-VXtf9v0vGAecqAWmZdI-ovzSsiHH9btiQXAJcHQU41HzuwM_9HckOGYfNPOPUZmCqo1Db7eYMmqyXtQhLd6cs-CJ23AHpswktqbjzYklslLMD4CvaDAapquvXjZ7ogPFu4smEQTJUiOjp9duVMsmvEBWutHdggN4GxTnw6ozWHL09Vp1MjulW4PxAttTPgw5es0TTueOchO4Xk9ay8Xv5fbuqxs3uyw47-AocgLhMs8q35RNO0TecIHh8Rpvn8zBUGi7frdj5xrxcK9FgIm6Td3y0hhtXi5NbGa2G-CmKfeONhLelnai5GgtemoR2hj0ge",
+          "value": "831c2b0a55715eb0bf03e8451bbdf44218b64465beef3f1ad31fb46ce090b34ef4c50438aa1e7f6d583e0f0e23ea605317be6dd47ac46c780a7787c02b03faa97535e61a41e02088b03b75f1f04380afa5aba30a6d61ea46335d3b0be5aa4a56f203cc1fbd3bebe3cfb938dadd6861458b2baee4a38af047b9e3336480b53ce8960f447c3925e7284213b8621b9059e44624b79680e50d7da7c46b51c597c8c3d6960c2059f6c2204483e6c17dc317039b0b370f61839640246635e06c8e05eba8eea7ca9c48e04d3d41c978262e32ae0988a77a6765062387e557b5ff6fd2f18079ca805a665d23ea2fcd2b221c7f5bb62417009707414e351f3bb033ff4772438661f34f38f519982aa8d436fb798326ab25ed4212dde9cb3e089db7007a6cc24b6a6e3cd8925b252cc0f80af68301aa6abaf5e367ba203c5bb8b261104c95223a3a7d76e54cb26bc4056bad1dd8203781b14e7c3aa335872f4f55a75323ba55b83f102db533e0c397acd134ee78e7213b85e4f5acbc5efe5f6eeab1b37bb2c38efe0287202e132cf2adf944d3b44de7081e1f11a6f9fccc15068bb7eb763e71af170af458089ba4dddf2d2186d5e2e4d6c66b61be0a629f78e3612de9676a2e4682d7a6a11da18f481e"
         },
         {
-          "bytes": 72,
-          "code": "-CAX-KAWBAA",
+          "chars": 4,
+          "field": "attachments code",
+          "kind": "code",
+          "note": "attachment group",
+          "text": "-CAX",
+          "value": "23 quadlets = 69 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "signatures code",
+          "kind": "code",
+          "note": "indexed signature group",
+          "text": "-KAW",
+          "value": "22 quadlets = 66 bytes"
+        },
+        {
+          "chars": 2,
+          "field": "signature code",
+          "kind": "code",
+          "note": "Ed25519, signing key index 0",
+          "text": "BA",
+          "value": null
+        },
+        {
+          "chars": 86,
           "field": "signature",
-          "note": "-C## attachment group holding an indexed -K## signature",
-          "text": "-CAX-KAWBAArnJ1xl6PZzUrz40g4Y-kiacIuG8a9GVu7Vk6Aoa0jrFEZxm0p2KBVepkXLLL49-hUXlrfIQLxeiuRBd9StBUA"
+          "kind": "data",
+          "note": "64 bytes",
+          "text": "ArnJ1xl6PZzUrz40g4Y-kiacIuG8a9GVu7Vk6Aoa0jrFEZxm0p2KBVepkXLLL49-hUXlrfIQLxeiuRBd9StBUA",
+          "value": "2b9c9d7197a3d9cd4af3e3483863e92269c22e1bc6bd195bbb564e80a1ad23ac5119c66d29d8a0557a99172cb2f8f7e8545e5adf2102f17a2b9105df52b41500"
         }
       ],
       "sender": "alice",
@@ -516,7 +1663,73 @@
         }
       },
       "inner": {
-        "payload_plaintext": "-ZAcXSCS4BATZGlkOnBlZXI6NHpRbWVoc2pNdVBrUGp6ZzdXRjJ0SDVYMVNHdUZNeGFjSkI5UkVUTEZ3amdNRHFY4BAA-AAF5BAEAGhlbGxvIHdvcmxk"
+        "payload_plaintext": "-ZAcXSCS4BATZGlkOnBlZXI6NHpRbWVoc2pNdVBrUGp6ZzdXRjJ0SDVYMVNHdUZNeGFjSkI5UkVUTEZ3amdNRHFY4BAA-AAF5BAEAGhlbGxvIHdvcmxk",
+        "payload_segments": [
+          {
+            "chars": 4,
+            "field": "payload code",
+            "kind": "code",
+            "note": "counts the payload that follows",
+            "text": "-ZAc",
+            "value": "28 quadlets = 84 bytes"
+          },
+          {
+            "chars": 4,
+            "field": "payload type",
+            "kind": "code",
+            "note": "application payload, carried opaquely",
+            "text": "XSCS",
+            "value": "TSP_GEN"
+          },
+          {
+            "chars": 4,
+            "field": "VID_sndr code",
+            "kind": "code",
+            "note": "lead pad 0, count 19 quadlets",
+            "text": "4BAT",
+            "value": "57 bytes follow"
+          },
+          {
+            "chars": 76,
+            "field": "VID_sndr",
+            "kind": "data",
+            "note": "57 bytes",
+            "text": "ZGlkOnBlZXI6NHpRbWVoc2pNdVBrUGp6ZzdXRjJ0SDVYMVNHdUZNeGFjSkI5UkVUTEZ3amdNRHFY",
+            "value": "did:peer:4zQmehsjMuPkPjzg7WF2tH5X1SGuFMxacJB9RETLFwjgMDqX"
+          },
+          {
+            "chars": 4,
+            "field": "Padding_Field code",
+            "kind": "code",
+            "note": "lead pad 0, count 0 quadlets",
+            "text": "4BAA",
+            "value": "empty, the NULL value"
+          },
+          {
+            "chars": 4,
+            "field": "stream code",
+            "kind": "code",
+            "note": "a generic CESR stream, carried opaquely",
+            "text": "-AAF",
+            "value": "5 quadlets = 15 bytes"
+          },
+          {
+            "chars": 4,
+            "field": "Upper_Layer_Data code",
+            "kind": "code",
+            "note": "lead pad 1, count 4 quadlets",
+            "text": "5BAE",
+            "value": "11 bytes follow"
+          },
+          {
+            "chars": 16,
+            "field": "Upper_Layer_Data",
+            "kind": "data",
+            "note": "11 bytes",
+            "text": "AGhlbGxvIHdvcmxk",
+            "value": "hello world"
+          }
+        ]
       },
       "layout": [
         "-Z##",
@@ -532,43 +1745,298 @@
       "name": "routed",
       "nonce": null,
       "payload_plaintext": "-ZCwXHOP4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx-JAo4BATZGlkOnBlZXI6NHpRbVRLYVNSZXhuelgyZWN1MWVZUnVzRk5lV2JyVDVqYmpyM1lqdGZnY2laYzFR4BATZGlkOnBlZXI6NHpRbVNNdzQxM2tlS2hncFRwWW0xcThqem1wcU5Zd2RkVkdQdWJrSE5ncDNxUWVp4BAA-EBYYTSP-AAB4BATZGlkOnBlZXI6NHpRbWVoc2pNdVBrUGp6ZzdXRjJ0SDVYMVNHdUZNeGFjSkI5UkVUTEZ3amdNRHFY4BATZGlkOnBlZXI6NHpRbVNNdzQxM2tlS2hncFRwWW0xcThqem1wcU5Zd2RkVkdQdWJrSE5ncDNxUWVp4CAtZ-xbsiOFLXQlNrYDUicVf6Rkh46KBFGKpi-X8BTOhV3tWI_rNgIIQlgYzubuSKv0grWxtEJGbDwQCD_IAO1qLBFLLmzM5PlJYh0lPqyziyipLIwHzR5QfoDwtpclA2kEYl_ekac7w0zWCAChnrARcZW8Qf44FogCQPAk_qAo-fLaZ6-IIfBo-CAX-KAWBAA_76AVgPPeWjYn1a0nZbCDT7QxrWPXs6APtZdPtVj0MT4wDV6Fwd0hUth-9p52hLwaq9Rwwy0U_XBvvUQD1vsK",
+      "payload_segments": [
+        {
+          "chars": 4,
+          "field": "payload code",
+          "kind": "code",
+          "note": "counts the payload that follows",
+          "text": "-ZCw",
+          "value": "176 quadlets = 528 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "payload type",
+          "kind": "code",
+          "note": "nested or routed payload: a hop list, then an inner message",
+          "text": "XHOP",
+          "value": "TSP_HOP"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
+          "field": "VID_sndr",
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx",
+          "value": "did:peer:4zQmUL61Nc1F7ioiKxHNqwnJXX4srhFsKKPo6TrCmhM3dfpq"
+        },
+        {
+          "chars": 4,
+          "field": "hop list code",
+          "kind": "code",
+          "note": "a list of VIDs",
+          "text": "-JAo",
+          "value": "40 quadlets = 120 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "VID_hop code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
+          "field": "VID_hop",
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVRLYVNSZXhuelgyZWN1MWVZUnVzRk5lV2JyVDVqYmpyM1lqdGZnY2laYzFR",
+          "value": "did:peer:4zQmTKaSRexnzX2ecu1eYRusFNeWbrT5jbjr3YjtfgciZc1Q"
+        },
+        {
+          "chars": 4,
+          "field": "VID_hop code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
+          "field": "VID_hop",
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVNNdzQxM2tlS2hncFRwWW0xcThqem1wcU5Zd2RkVkdQdWJrSE5ncDNxUWVp",
+          "value": "did:peer:4zQmSMw413keKhgpTpYm1q8jzmpqNYwddVGPubkHNgp3qQei"
+        },
+        {
+          "chars": 4,
+          "field": "Padding_Field code",
+          "kind": "code",
+          "note": "lead pad 0, count 0 quadlets",
+          "text": "4BAA",
+          "value": "empty, the NULL value"
+        },
+        {
+          "chars": 4,
+          "field": "frame code",
+          "kind": "code",
+          "note": "counts the signable content that follows",
+          "text": "-EBY",
+          "value": "88 quadlets = 264 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "TSP_Version code",
+          "kind": "code",
+          "note": "the TSP genus",
+          "text": "YTSP",
+          "value": null
+        },
+        {
+          "chars": 4,
+          "field": "TSP_Version",
+          "kind": "data",
+          "note": "MAJOR in the count code's identifier, then MINOR and PATCH",
+          "text": "-AAB",
+          "value": "0.0.1"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
+          "field": "VID_sndr",
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbWVoc2pNdVBrUGp6ZzdXRjJ0SDVYMVNHdUZNeGFjSkI5UkVUTEZ3amdNRHFY",
+          "value": "did:peer:4zQmehsjMuPkPjzg7WF2tH5X1SGuFMxacJB9RETLFwjgMDqX"
+        },
+        {
+          "chars": 4,
+          "field": "VID_rcvr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
+          "field": "VID_rcvr",
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVNNdzQxM2tlS2hncFRwWW0xcThqem1wcU5Zd2RkVkdQdWJrSE5ncDNxUWVp",
+          "value": "did:peer:4zQmSMw413keKhgpTpYm1q8jzmpqNYwddVGPubkHNgp3qQei"
+        },
+        {
+          "chars": 4,
+          "field": "ciphertext code",
+          "kind": "code",
+          "note": "4C/5C/6C: libsodium anonymous sealed box; lead pad 0, count 45 quadlets",
+          "text": "4CAt",
+          "value": "135 bytes follow"
+        },
+        {
+          "chars": 180,
+          "field": "ciphertext",
+          "kind": "data",
+          "note": "135 bytes, shown as hex",
+          "text": "Z-xbsiOFLXQlNrYDUicVf6Rkh46KBFGKpi-X8BTOhV3tWI_rNgIIQlgYzubuSKv0grWxtEJGbDwQCD_IAO1qLBFLLmzM5PlJYh0lPqyziyipLIwHzR5QfoDwtpclA2kEYl_ekac7w0zWCAChnrARcZW8Qf44FogCQPAk_qAo-fLaZ6-IIfBo",
+          "value": "67ec5bb223852d742536b6035227157fa464878e8a04518aa62f97f014ce855ded588feb360208425818cee6ee48abf482b5b1b442466c3c10083fc800ed6a2c114b2e6ccce4f949621d253eacb38b28a92c8c07cd1e507e80f0b69725036904625fde91a73bc34cd60800a19eb0117195bc41fe3816880240f024fea028f9f2da67af8821f068"
+        },
+        {
+          "chars": 4,
+          "field": "attachments code",
+          "kind": "code",
+          "note": "attachment group",
+          "text": "-CAX",
+          "value": "23 quadlets = 69 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "signatures code",
+          "kind": "code",
+          "note": "indexed signature group",
+          "text": "-KAW",
+          "value": "22 quadlets = 66 bytes"
+        },
+        {
+          "chars": 2,
+          "field": "signature code",
+          "kind": "code",
+          "note": "Ed25519, signing key index 0",
+          "text": "BA",
+          "value": null
+        },
+        {
+          "chars": 86,
+          "field": "signature",
+          "kind": "data",
+          "note": "64 bytes",
+          "text": "A_76AVgPPeWjYn1a0nZbCDT7QxrWPXs6APtZdPtVj0MT4wDV6Fwd0hUth-9p52hLwaq9Rwwy0U_XBvvUQD1vsK",
+          "value": "3fefa01580f3de5a3627d5ad2765b0834fb431ad63d7b3a00fb5974fb558f4313e300d5e85c1dd2152d87ef69e7684bc1aabd470c32d14fd706fbd4403d6fb0a"
+        }
+      ],
       "receiver": "p",
       "seed": "BwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       "segments": [
         {
-          "bytes": 9,
-          "code": "-EDsYTSP-AAB",
-          "field": "frame + version",
-          "note": "-E## counts the signable content that follows, then TSP_Version",
-          "text": "-EDsYTSP-AAB"
+          "chars": 4,
+          "field": "frame code",
+          "kind": "code",
+          "note": "counts the signable content that follows",
+          "text": "-EDs",
+          "value": "236 quadlets = 708 bytes"
         },
         {
-          "bytes": 60,
-          "code": "4BAT",
+          "chars": 4,
+          "field": "TSP_Version code",
+          "kind": "code",
+          "note": "the TSP genus",
+          "text": "YTSP",
+          "value": null
+        },
+        {
+          "chars": 4,
+          "field": "TSP_Version",
+          "kind": "data",
+          "note": "MAJOR in the count code's identifier, then MINOR and PATCH",
+          "text": "-AAB",
+          "value": "0.0.1"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
           "field": "VID_sndr",
-          "note": "the sending VID, in the envelope and so in the aad",
-          "text": "4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx"
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx",
+          "value": "did:peer:4zQmUL61Nc1F7ioiKxHNqwnJXX4srhFsKKPo6TrCmhM3dfpq"
         },
         {
-          "bytes": 60,
-          "code": "4BAT",
+          "chars": 4,
+          "field": "VID_rcvr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
           "field": "VID_rcvr",
-          "note": "the receiving VID; 4BAA when there is none",
-          "text": "4BATZGlkOnBlZXI6NHpRbVh1WXg1cXVOcEFZdnUxc3lhb0hwSld4SGNlQk04UG5BUzFKODRtakVvMTE4"
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVh1WXg1cXVOcEFZdnUxc3lhb0hwSld4SGNlQk04UG5BUzFKODRtakVvMTE4",
+          "value": "did:peer:4zQmXuYx5quNpAYvu1syaoHpJWxHceBM8PnAS1J84mjEo118"
         },
         {
-          "bytes": 582,
-          "code": "4CDB",
+          "chars": 4,
+          "field": "ciphertext code",
+          "kind": "code",
+          "note": "4C/5C/6C: libsodium anonymous sealed box; lead pad 0, count 193 quadlets",
+          "text": "4CDB",
+          "value": "579 bytes follow"
+        },
+        {
+          "chars": 772,
           "field": "ciphertext",
-          "note": "the sealed payload; for HPKE-Base this is enc followed by ct",
-          "text": "4CDBYdOQYzrFf_iKYqWSzj6pRD4Ck9lExJnhyPaglqJXaT7EEumCmtqZ0mShy5fvPLx02sSYNeqfg71RNA-g75uBbk9-3zOBSaadTxCoc4DjY4dvxmNGh5ZnbRM_SZ3zjTppBy0Cob_4UiwnzV6P5zyDKnV6QoZPdgGoJTtKYtfsbmaQgOfMh5yAJVru1piL7OfJQI29pVDXXlk29YOfy_WfsFPaCVyKHw2L9alepd1veNLDUZ2aYkcnYERN9duRwtO_X2rhWl1iHJOaZJE8mmgTlkQcc17mVhc12zKa27fnC_9bvt_G7-7S6vPhYi9Rl599LXJoMEQbaYuNxBNZO3GaAjvJ4h1kkbm0q9x6AizTsiaclxNerr7TE5us00MFqvg8j7hnOdnl4A9fcvuJ5eAydsmbmwtmOdLw2KHRXtekn9XNUttxNfzvIFMLzcblm81GcvUqEutHuydzYE9bGTmAGjDWlC8Y1Hc3fBQucXuCZ18-V0CNNgh96sTxaBVYMQNDX2wpkET8KeL-ZfD7M3OqOuBuShSHU2Q1cReOoqn_hjhoOGNYW2kQV1L8DQcgfr0faFFwW3mJVJ0p4bd-lyVntRBkuzOAX--S-dpTsPqlIg5UZrgY03C2vZzGd12nhV5pggXCY-8Q428U_Lw1CSB6UGUHX_-AlM4dpdqSCv4KUkA-i_8YG2iQxNYwwsSYvoCJEUYm2WimWV8zdXPf5ZhAC0KLirq0zYkIcqoTYB5S8fBK4-l2Q4G7lJu3URhjvn_ss7yU"
+          "kind": "data",
+          "note": "579 bytes, shown as hex",
+          "text": "YdOQYzrFf_iKYqWSzj6pRD4Ck9lExJnhyPaglqJXaT7EEumCmtqZ0mShy5fvPLx02sSYNeqfg71RNA-g75uBbk9-3zOBSaadTxCoc4DjY4dvxmNGh5ZnbRM_SZ3zjTppBy0Cob_4UiwnzV6P5zyDKnV6QoZPdgGoJTtKYtfsbmaQgOfMh5yAJVru1piL7OfJQI29pVDXXlk29YOfy_WfsFPaCVyKHw2L9alepd1veNLDUZ2aYkcnYERN9duRwtO_X2rhWl1iHJOaZJE8mmgTlkQcc17mVhc12zKa27fnC_9bvt_G7-7S6vPhYi9Rl599LXJoMEQbaYuNxBNZO3GaAjvJ4h1kkbm0q9x6AizTsiaclxNerr7TE5us00MFqvg8j7hnOdnl4A9fcvuJ5eAydsmbmwtmOdLw2KHRXtekn9XNUttxNfzvIFMLzcblm81GcvUqEutHuydzYE9bGTmAGjDWlC8Y1Hc3fBQucXuCZ18-V0CNNgh96sTxaBVYMQNDX2wpkET8KeL-ZfD7M3OqOuBuShSHU2Q1cReOoqn_hjhoOGNYW2kQV1L8DQcgfr0faFFwW3mJVJ0p4bd-lyVntRBkuzOAX--S-dpTsPqlIg5UZrgY03C2vZzGd12nhV5pggXCY-8Q428U_Lw1CSB6UGUHX_-AlM4dpdqSCv4KUkA-i_8YG2iQxNYwwsSYvoCJEUYm2WimWV8zdXPf5ZhAC0KLirq0zYkIcqoTYB5S8fBK4-l2Q4G7lJu3URhjvn_ss7yU",
+          "value": "61d390633ac57ff88a62a592ce3ea9443e0293d944c499e1c8f6a096a257693ec412e9829ada99d264a1cb97ef3cbc74dac49835ea9f83bd51340fa0ef9b816e4f7edf338149a69d4f10a87380e363876fc663468796676d133f499df38d3a69072d02a1bff8522c27cd5e8fe73c832a757a42864f7601a8253b4a62d7ec6e669080e7cc879c80255aeed6988bece7c9408dbda550d75e5936f5839fcbf59fb053da095c8a1f0d8bf5a95ea5dd6f78d2c3519d9a62472760444df5db91c2d3bf5f6ae15a5d621c939a64913c9a681396441c735ee6561735db329adbb7e70bff5bbedfc6efeed2eaf3e1622f51979f7d2d726830441b698b8dc413593b719a023bc9e21d6491b9b4abdc7a022cd3b2269c97135eaebed3139bacd34305aaf83c8fb86739d9e5e00f5f72fb89e5e03276c99b9b0b6639d2f0d8a1d15ed7a49fd5cd52db7135fcef20530bcdc6e59bcd4672f52a12eb47bb2773604f5b1939801a30d6942f18d477377c142e717b82675f3e57408d36087deac4f16815583103435f6c299044fc29e2fe65f0fb3373aa3ae06e4a148753643571178ea2a9ff8638683863585b69105752fc0d07207ebd1f6851705b7989549d29e1b77e972567b51064bb33805fef92f9da53b0faa5220e5466b818d370b6bd9cc6775da7855e698205c263ef10e36f14fcbc3509207a5065075fff8094ce1da5da920afe0a52403e8bff181b6890c4d630c2c498be8089114626d968a6595f337573dfe598400b428b8abab4cd890872aa13601e52f1f04ae3e9764381bb949bb7511863be7fecb3bc94"
         },
         {
-          "bytes": 72,
-          "code": "-CAX-KAWBAA",
+          "chars": 4,
+          "field": "attachments code",
+          "kind": "code",
+          "note": "attachment group",
+          "text": "-CAX",
+          "value": "23 quadlets = 69 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "signatures code",
+          "kind": "code",
+          "note": "indexed signature group",
+          "text": "-KAW",
+          "value": "22 quadlets = 66 bytes"
+        },
+        {
+          "chars": 2,
+          "field": "signature code",
+          "kind": "code",
+          "note": "Ed25519, signing key index 0",
+          "text": "BA",
+          "value": null
+        },
+        {
+          "chars": 86,
           "field": "signature",
-          "note": "-C## attachment group holding an indexed -K## signature",
-          "text": "-CAX-KAWBAAXpoZ2KCHUsofw9FQ65eUMS_wzxFbYDuM2X1uwi3e1t5tIc4o3QqKXCUB33SUh5VCDX8Ai_wg_yG5YWlD6A7EG"
+          "kind": "data",
+          "note": "64 bytes",
+          "text": "AXpoZ2KCHUsofw9FQ65eUMS_wzxFbYDuM2X1uwi3e1t5tIc4o3QqKXCUB33SUh5VCDX8Ai_wg_yG5YWlD6A7EG",
+          "value": "17a686762821d4b287f0f4543ae5e50c4bfc33c456d80ee3365f5bb08b77b5b79b48738a3742a297094077dd2521e550835fc022ff083fc86e585a50fa03b106"
         }
       ],
       "sender": "alice",

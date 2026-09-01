@@ -35,56 +35,27 @@ fn peer_vid(n: u8) -> OwnedVid {
     OwnedVid::new_did_peer_from_seed("tsp://".parse().unwrap(), seed)
 }
 
-/// The message split into its CESR parts by the SDK's own decoder, so the
-/// boundaries shown are the ones a receiver actually parses rather than a
-/// hand annotation that can drift.
-fn segments(message: &[u8]) -> serde_json::Value {
-    let parts = cesr::open_message_into_parts(message).expect("message parses");
-    let mut out = Vec::new();
-
-    let mut push = |label: &str, part: &cesr::Part<'_>, note: &str| {
-        let mut whole = part.prefix.to_vec();
-        whole.extend_from_slice(part.data);
-        out.push(json!({
-            "field": label,
-            "code": b64(part.prefix),
-            "bytes": whole.len(),
-            "text": b64(&whole),
-            "note": note,
-        }));
-    };
-
-    push(
-        "frame + version",
-        &parts.prefix,
-        "-E## counts the signable content that follows, then TSP_Version",
-    );
-    push(
-        "VID_sndr",
-        &parts.sender,
-        "the sending VID, in the envelope and so in the aad",
-    );
-    if let Some(receiver) = &parts.receiver {
-        push(
-            "VID_rcvr",
-            receiver,
-            "the receiving VID; 4BAA when there is none",
-        );
-    }
-    if let Some(ciphertext) = &parts.ciphertext {
-        push(
-            "ciphertext",
-            ciphertext,
-            "the sealed payload; for HPKE-Base this is enc followed by ct",
-        );
-    }
-    push(
-        "signature",
-        &parts.signature,
-        "-C## attachment group holding an indexed -K## signature",
-    );
-
-    json!(out)
+/// A stream walked into its CESR primitives by [`cesr::segments`], so the
+/// breakdown a reader sees is the SDK's own rather than a hand annotation, or a
+/// second walker outside the repository, that can drift.
+fn segments(stream: &[u8]) -> serde_json::Value {
+    json!(
+        cesr::segments(stream)
+            .into_iter()
+            .map(|s| json!({
+                "kind": match s.kind {
+                    cesr::SegmentKind::Code => "code",
+                    cesr::SegmentKind::Data => "data",
+                    cesr::SegmentKind::Unparsed => "unparsed",
+                },
+                "field": s.label,
+                "chars": s.text.len(),
+                "text": s.text,
+                "note": s.note,
+                "value": s.value,
+            }))
+            .collect::<Vec<_>>()
+    )
 }
 
 /// The payload as it stands inside the ciphertext, which is what a receiver
@@ -254,6 +225,7 @@ fn main() {
             "message": b64(message),
             "segments": segments(message),
             "payload_plaintext": b64(&plaintext),
+            "payload_segments": segments(&plaintext),
             // for a nested or routed message, the payload of the message
             // carried inside: without it the inner ciphertext stays opaque and
             // the content the vector actually conveys cannot be seen
@@ -266,7 +238,10 @@ fn main() {
                         "{name}: reconstructed inner plaintext does not match its ciphertext"
                     );
                 }
-                json!({"payload_plaintext": b64(&plaintext)})
+                json!({
+                    "payload_plaintext": b64(&plaintext),
+                    "payload_segments": segments(&plaintext),
+                })
             }),
             "seed": seed_used.map(|n| b64(&seed(n))),
             "ephemeral": seed_used.and_then(|n| ephemeral_key(seed(n), message)),
