@@ -45,6 +45,16 @@ mod test {
         }
     }
 
+    fn signature_type(expect: &serde_json::Value) -> SignatureType {
+        // most vectors are Ed25519 and say nothing; the post-quantum one names
+        // ML-DSA-65, which is the only thing about it that is not HPKE-Base
+        match expect["signature"].as_str().unwrap_or("Ed25519") {
+            "Ed25519" => SignatureType::Ed25519,
+            "MlDsa65" => SignatureType::MlDsa65,
+            other => panic!("unknown signature type in vectors: {other}"),
+        }
+    }
+
     fn crypto_type(name: &str) -> CryptoType {
         match name {
             "SealedBox" => CryptoType::SealedBox,
@@ -91,7 +101,7 @@ mod test {
                 assert_eq!(message_type.crypto_type, CryptoType::Plaintext, "{name}");
                 assert_eq!(
                     message_type.signature_type,
-                    SignatureType::Ed25519,
+                    signature_type(expect),
                     "{name}"
                 );
                 assert_eq!(
@@ -110,7 +120,7 @@ mod test {
                     .unwrap_or_else(|e| panic!("{name}: vector does not open: {e}"));
 
             assert_eq!(crypto, expected_crypto, "{name}: crypto type");
-            assert_eq!(signature, SignatureType::Ed25519, "{name}: signature type");
+            assert_eq!(signature, signature_type(expect), "{name}: signature type");
 
             match payload {
                 Payload::Content(content) => {
@@ -240,7 +250,7 @@ mod test {
             }
         }
 
-        assert_eq!(vectors.vectors.len(), 9, "every vector was exercised");
+        assert_eq!(vectors.vectors.len(), 10, "every vector was exercised");
     }
 
     #[test]

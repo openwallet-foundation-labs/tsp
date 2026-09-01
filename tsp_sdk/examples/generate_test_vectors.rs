@@ -35,6 +35,21 @@ fn peer_vid(n: u8) -> OwnedVid {
     OwnedVid::new_did_peer_from_seed("tsp://".parse().unwrap(), seed)
 }
 
+/// The same, with post-quantum key types. ML-DSA generates deterministically
+/// from a seed by FIPS 204, and the hybrid KEM by HPKE's `DeriveKeyPair`, so a
+/// post-quantum VID is as reproducible as a classical one.
+fn pq_peer_vid(n: u8) -> OwnedVid {
+    let mut seed = [0_u8; 32];
+    seed[0] = 0xB0 | n;
+
+    OwnedVid::new_did_peer_from_seed_with_key_types(
+        "tsp://".parse().unwrap(),
+        seed,
+        tsp_sdk::definitions::VidSignatureKeyType::MlDsa65,
+        tsp_sdk::definitions::VidEncryptionKeyType::X25519MlKem768,
+    )
+}
+
 /// A stream walked into its CESR primitives by [`cesr::segments`], so the
 /// breakdown a reader sees is the SDK's own rather than a hand annotation, or a
 /// second walker outside the repository, that can drift.
@@ -148,8 +163,17 @@ fn ephemeral_key(seed: [u8; 32], message: &[u8]) -> Option<serde_json::Value> {
                 })
             })
         }
-        // HPKE draws keying material and derives the keypair from it, which is
-        // the ikmE that RFC 9180 publishes for its own vectors
+        // HPKE over X25519 draws keying material and derives the keypair from
+        // it, which is the ikmE that RFC 9180 publishes for its own vectors.
+        //
+        // The post-quantum hybrid KEM works differently: it derives no
+        // ephemeral keypair at all, drawing 64 bytes of encapsulation
+        // randomness and feeding them to a deterministic encapsulation whose
+        // entry point the hpke crate does not expose. Nothing here can then be
+        // checked against the wire, and an unverified value is not worth
+        // publishing — so that vector carries its seed alone, and
+        // `every_vector_regenerates_from_what_the_file_records` is what
+        // establishes that its bytes reproduce.
         cesr::CryptoType::HpkeBase => {
             let (_, public) = hpke::kem::X25519HkdfSha256::derive_keypair(&drawn);
             (public.to_bytes()[..] == on_the_wire[..]).then(|| {
@@ -173,6 +197,9 @@ fn main() {
     // the intermediaries a routed message traverses
     let p = peer_vid(5);
     let q = peer_vid(6);
+    // post-quantum endpoints: the same HPKE-Base mode, a different KEM
+    let pq_alice = pq_peer_vid(1);
+    let pq_bob = pq_peer_vid(2);
 
     // one fixed seed per vector, so the file records every random value the
     // message drew and a verifier can regenerate the bytes exactly
@@ -196,24 +223,33 @@ fn main() {
                    nonce_used: Option<&str>,
                    layout: Vec<&str>,
                    expect: serde_json::Value| {
-        // the sealed box adds a 32-byte ephemeral key and a 16-byte tag; HPKE
-        // adds a 32-byte encapsulation and a 16-byte tag. Either way the
-        // ciphertext is 48 bytes longer than the plaintext, so a wrong
-        // reconstruction shows up here rather than silently on the page.
+        // A ciphertext is the encoded payload plus the scheme's encapsulation
+        // and a 16-byte AEAD tag. The sealed box and HPKE over X25519 both
+        // prepend 32 bytes; the post-quantum hybrid KEM prepends 1120. Checking
+        // the length here means a wrong reconstruction shows up now rather than
+        // silently on the page.
+        const X25519_OVERHEAD: usize = 32 + 16;
+        const HYBRID_KEM_OVERHEAD: usize = 1120 + 16;
         let parts = cesr::open_message_into_parts(message).expect("message parses");
         if let Some(ct) = parts.ciphertext {
-            let (found, expected) = match parts.crypto_type {
+            match parts.crypto_type {
                 // a signed-only message carries its payload in the clear, and
                 // the -Z## code is the part's own prefix rather than data
-                cesr::CryptoType::Plaintext => (ct.prefix.len() + ct.data.len(), plaintext.len()),
-                // the ciphertext is the whole encoded payload plus a 32-byte
-                // ephemeral or encapsulated key and a 16-byte tag
-                _ => (ct.data.len(), plaintext.len() + 48),
-            };
-            assert_eq!(
-                found, expected,
-                "{name}: reconstructed plaintext does not match the payload on the wire"
-            );
+                cesr::CryptoType::Plaintext => assert_eq!(
+                    ct.prefix.len() + ct.data.len(),
+                    plaintext.len(),
+                    "{name}: reconstructed plaintext does not match the payload on the wire"
+                ),
+                _ => {
+                    let overhead = ct.data.len() - plaintext.len();
+                    assert!(
+                        overhead == X25519_OVERHEAD || overhead == HYBRID_KEM_OVERHEAD,
+                        "{name}: reconstructed plaintext does not match the payload on the wire \
+                         (ciphertext is {overhead} bytes longer, expected {X25519_OVERHEAD} or \
+                         {HYBRID_KEM_OVERHEAD})"
+                    );
+                }
+            }
         }
 
         vectors.push(json!({
@@ -327,6 +363,48 @@ fn main() {
             "Bytes",
         ],
         json!({"crypto": "HpkeBase", "signature": "Ed25519", "payload": {"content": "hello world"}}),
+    );
+
+    // 2b. the same HPKE-Base message with post-quantum keys
+    let m = tsp_sdk::crypto::seal_reproducibly(
+        &pq_alice,
+        &pq_bob,
+        Payload::Content(b"hello world"),
+        None,
+        cesr::CryptoType::HpkeBase,
+        seed(11),
+        None,
+    )
+    .unwrap();
+    add(
+        "direct-hpke-base-pq",
+        "8.2, 8.3, 9.2.8",
+        "The same message as direct-hpke-base, to endpoints whose VIDs declare post-quantum \
+         key types. Post-quantum support is not a separate mode: this is HPKE-Base with the \
+         X25519MLKEM768 hybrid KEM, selected by the recipient VID's encryption key type, and \
+         the ciphertext code is the same 4F as any other HPKE-Base message. What changes is \
+         size — the encapsulation is 1120 bytes rather than 32 — and the signature, which is \
+         ML-DSA-65 under the code 1AAQ rather than an indexed Ed25519 signature. There is no \
+         sealed-box counterpart to this vector; that suite has no post-quantum option. This is \
+         the one vector with no published ephemeral value: the hybrid KEM derives no ephemeral \
+         keypair, drawing encapsulation randomness instead, so there is nothing of that shape to \
+         publish and check. Its bytes reproduce from the recorded seed.",
+        "pq_alice",
+        Some("pq_bob"),
+        &m,
+        payload_plaintext(&cesr::Payload::GenericMessage(&b"hello world"[..]), None),
+        None,
+        Some(11),
+        None,
+        vec![
+            "-Z##",
+            "XSCS",
+            "VID_sndr | 4BAA",
+            "Padding_Field",
+            "-A##",
+            "Bytes",
+        ],
+        json!({"crypto": "HpkeBase", "signature": "MlDsa65", "payload": {"content": "hello world"}}),
     );
 
     // 3. signed-only
@@ -697,6 +775,8 @@ fn main() {
             "nested_bob": described(&nested_bob),
             "p": described(&p),
             "q": described(&q),
+            "pq_alice": described(&pq_alice),
+            "pq_bob": described(&pq_bob),
         },
         "vectors": vectors,
     });
