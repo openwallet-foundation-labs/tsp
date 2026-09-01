@@ -228,8 +228,10 @@ async fn test_nested_mode() {
     alice_db
         .set_parent_for_vid(nested_alice_vid.identifier(), Some(alice_vid.identifier()))
         .unwrap();
+    // a nested VID is introduced by the form that carries its verification
+    // material; its short form is what both sides use once it is known
     alice_db
-        .verify_vid(nested_bob_vid.identifier(), None)
+        .verify_vid(&crate::vid::introduction_identifier(&nested_bob_vid), None)
         .await
         .unwrap();
     alice_db
@@ -244,7 +246,10 @@ async fn test_nested_mode() {
         .unwrap();
 
     bob_db
-        .verify_vid(nested_alice_vid.identifier(), None)
+        .verify_vid(
+            &crate::vid::introduction_identifier(&nested_alice_vid),
+            None,
+        )
         .await
         .unwrap();
     bob_db

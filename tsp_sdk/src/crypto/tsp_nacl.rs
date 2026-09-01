@@ -120,7 +120,6 @@ pub(crate) fn seal(
 
 pub(crate) fn open<'a>(
     receiver: &dyn PrivateVid,
-    sender: &dyn VerifiedVid,
     raw_header: &'a [u8],
     envelope: Envelope<&[u8]>,
     ciphertext: &'a mut [u8],
@@ -143,9 +142,11 @@ pub(crate) fn open<'a>(
 
     // the sealed box is anonymous: the ESSR sender-VID confidential field is
     // required and MUST match the envelope (spec 8.3.2)
+    // as in HPKE-Base, the comparison is against the envelope rather than the
+    // resolved VID's identifier, which differ for a VID being introduced
     match sender_identity {
         Some(id) => {
-            if id != sender.identifier().as_bytes() {
+            if id != envelope.sender {
                 return Err(CryptoError::UnexpectedSender);
             }
         }

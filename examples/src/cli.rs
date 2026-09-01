@@ -672,7 +672,13 @@ async fn run() -> Result<(), Error> {
                 .resolve_alias(&alias)?
                 .ok_or(Error::MissingVid("Cannot find this alias".to_string()))?;
 
-            print!("{vid}");
+            // this hands the VID to someone out of band, so it prints the form
+            // they can verify: a did:peer's short form means nothing to an
+            // endpoint that has not seen its document
+            match vid_wallet.as_store().get_verified_vid(&vid) {
+                Ok(verified) => print!("{}", tsp_sdk::vid::introduction_identifier(&*verified)),
+                Err(_) => print!("{vid}"),
+            }
         }
         Commands::Create {
             r#type,
@@ -835,9 +841,12 @@ async fn run() -> Result<(), Error> {
             let metadata = match metadata {
                 Some(metadata) => Some(metadata),
                 None => {
-                    let (_, metadata) = verify_vid(private_vid.identifier())
-                        .await
-                        .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
+                    // resolve what a peer would be given, which for a did:peer
+                    // is its long form: the short form carries no document
+                    let (_, metadata) =
+                        verify_vid(&tsp_sdk::vid::introduction_identifier(private_vid.vid()))
+                            .await
+                            .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
                     metadata
                 }
             };
@@ -1095,7 +1104,6 @@ async fn run() -> Result<(), Error> {
             // closures cannot be async, and async fn's don't easily do recursion
             enum Action {
                 Nothing,
-                Verify(String),
                 VerifyAndOpen(String, BytesMut),
                 Forward(String, Vec<BytesMut>, BytesMut),
                 AssignDefaultRelation(String, Digest),
@@ -1182,7 +1190,10 @@ async fn run() -> Result<(), Error> {
                                         "received parallel relationship request for '{new_vid}' from {sender}"
                                     );
                                     println!("{new_vid}\t{thread_id_string}");
-                                    return Action::Verify(new_vid);
+                                    // the referral carried the new VID's own
+                                    // verification material, which the SDK has
+                                    // already checked and stored; there is
+                                    // nothing left to resolve
                                 }
                                 (
                                     ReceivedRelationshipDelivery::Nested { nested_vid },
@@ -1192,7 +1203,6 @@ async fn run() -> Result<(), Error> {
                                         "received nested parallel relationship request from '{nested_vid}' for '{new_vid}' from {sender}"
                                     );
                                     println!("{new_vid}\t{thread_id_string}");
-                                    return Action::Verify(new_vid);
                                 }
                                 (ReceivedRelationshipDelivery::Routed, _) => {
                                     error!(
@@ -1308,11 +1318,6 @@ async fn run() -> Result<(), Error> {
                         info!("{vid} is verified and added to the wallet {}", &args.wallet);
 
                         let _ = handle_message(message);
-                    }
-                    Action::Verify(vid) => {
-                        vid_wallet.verify_vid(&vid, None).await?;
-
-                        info!("{vid} is verified and added to the wallet {}", &args.wallet);
                     }
                     Action::Forward(next_hop, route, payload) => {
                         vid_wallet

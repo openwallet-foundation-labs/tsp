@@ -193,24 +193,22 @@ fn seal_with_kem<Kem: KemTrait>(
 /// Open an HPKE-Base message; the KEM is selected by the receiving VID's key type
 pub(crate) fn open<'a>(
     receiver: &dyn PrivateVid,
-    sender: &dyn VerifiedVid,
     raw_header: &'a [u8],
     envelope: Envelope<&[u8]>,
     ciphertext: &'a mut [u8],
 ) -> Result<(MessageContents<'a>, Option<ParallelSignatureInfo<'a>>), CryptoError> {
     match receiver.encryption_key_type() {
         VidEncryptionKeyType::X25519 => {
-            open_with_kem::<X25519Kem>(receiver, sender, raw_header, envelope, ciphertext)
+            open_with_kem::<X25519Kem>(receiver, raw_header, envelope, ciphertext)
         }
         VidEncryptionKeyType::X25519MlKem768 => {
-            open_with_kem::<PqKem>(receiver, sender, raw_header, envelope, ciphertext)
+            open_with_kem::<PqKem>(receiver, raw_header, envelope, ciphertext)
         }
     }
 }
 
 fn open_with_kem<'a, Kem: KemTrait>(
     receiver: &dyn PrivateVid,
-    sender: &dyn VerifiedVid,
     raw_header: &'a [u8],
     envelope: Envelope<&[u8]>,
     ciphertext: &'a mut [u8],
@@ -239,11 +237,10 @@ fn open_with_kem<'a, Kem: KemTrait>(
         &tag,
     )?;
 
-    open_payload(sender, raw_header, envelope, ciphertext)
+    open_payload(raw_header, envelope, ciphertext)
 }
 
 fn open_payload<'a>(
-    sender: &dyn VerifiedVid,
     raw_header: &[u8],
     envelope: Envelope<&[u8]>,
     ciphertext: &'a mut [u8],
@@ -259,8 +256,12 @@ fn open_payload<'a>(
 
     // In HPKE-Base the sender-VID confidential field is optional (the aad binds
     // the sender identity); when present it MUST match the envelope (spec 8.2.2)
+    // it is compared against the envelope rather than the resolved VID's own
+    // identifier: a VID being introduced is named in the envelope by the form
+    // that carries its verification material, which is not the identifier it
+    // resolves to
     if let Some(id) = sender_identity
-        && id != sender.identifier().as_bytes()
+        && id != envelope.sender
     {
         return Err(CryptoError::UnexpectedSender);
     }
