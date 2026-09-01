@@ -138,10 +138,14 @@ pub enum ReceivedTspMessage<Data: AsRef<[u8]> = BytesMut> {
     CancelRelationship {
         sender: String,
         receiver: String,
+        /// The digest the cancellation named, which is one of the two the
+        /// relationship was formed with. A reply echoes it (spec 7.3).
+        thread_id: Digest,
         /// Whether the specification expects a `TSP_RFD` in reply: it does when
         /// the cancelled relationship was bidirectional, and does not when it
         /// was one-way (spec 7.3). The relationship has already been removed
-        /// either way; sending the reply is the application's to do.
+        /// either way, so the reply goes out with
+        /// [`crate::SecureStore::make_relationship_cancel_reply`].
         reply_expected: bool,
     },
     ForwardRequest {

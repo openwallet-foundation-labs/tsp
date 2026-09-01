@@ -219,8 +219,13 @@ describe('tsp node tests', function() {
         received = store.open_message(sealed);
 
         if (received instanceof CancelRelationship ) {
-            const { sender } = received;
+            const { sender, thread_id } = received;
             assert.strictEqual(sender, bob.identifier());
+
+            // the cancellation can be replied to, echoing its digest
+            ({ url, sealed } = store.make_relationship_cancel_reply(
+                alice.identifier(), bob.identifier(), thread_id));
+            assert.strictEqual(url, "tcp://127.0.0.1:1337");
         } else {
             assert.fail(`Unexpected message type: ${received}`);
         }
