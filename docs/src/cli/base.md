@@ -79,11 +79,11 @@ will provide all resolved VIDs that the local VID has a relation with,
 including the alias, relation status, and transport.
 
 ```
-did:web:q.teaspoon.world
+did:webvh:QmTNAE7o3Ze2bR11R9wD1saxUJj3nnSfqwxNfBrocj5mZd:did.teaspoon.world:endpoint:q
 	 Relation Status: Bidirectional
 	 Alias: q
-	 Transport: https://q.teaspoon.world/transport/did:web:q.teaspoon.world
-	 DID doc: https://q.teaspoon.world/.well-known/did.json
+	 Transport: https://q.teaspoon.world/transport/[vid_placeholder]
+	 DID doc: https://did.teaspoon.world/endpoint/q/did.jsonl
 	 public enc key: slqqOWKP1WhCN+X/tuGgoUkrryA6F//f5rV6cqXsL3Q=
 	 public sign key: djnK+ljzZsA2gX/X/IUy1Y06+j5Souo1bzTDZ9RoJxc=
 ```

@@ -18,8 +18,13 @@ when no public address can be exposed, behind a firewall.
 
 We host two demo intermediaries publicly for testing:
 
-- [Intermediary P](https://p.teaspoon.world/), which has the identifier `did:web:p.teaspoon.world`
-- [Intermediary Q](https://q.teaspoon.world/), which has the identifier `did:web:q.teaspoon.world`
+- [Intermediary P](https://p.teaspoon.world/)
+- [Intermediary Q](https://q.teaspoon.world/)
+
+Each one publishes its own identifier on its home page. They use `did:webvh`, so the identifier
+carries a verifiable history of its keys: an intermediary can be restarted or redeployed without
+the relationships its clients hold with it becoming invalid. Read the identifier from the page
+rather than copying one from documentation, which can fall out of date.
 
 These two instances both run the `examples/src/intermediary.rs` server. These intermediaries also support buffering messages, which means they are able to hold messages for clients which are not currently listening (although there are no guarantees for how long the message will be held).
 

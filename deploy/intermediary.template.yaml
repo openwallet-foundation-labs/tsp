@@ -18,10 +18,16 @@ spec:
     spec:
       containerConcurrency: 80
       timeoutSeconds: 300
+      serviceAccountName: 797284806017-compute@developer.gserviceaccount.com
       containers:
         - name: demo-intermediary
           image: us-central1-docker.pkg.dev/teaspoon-world-demo/tsp/openwallet-foundation-labs/tsp/demo-intermediary:${TAG}
-          args: [ ${DOMAIN} ]
+          args: [ "${DOMAIN}", "--wallet", "/tmp/wallet", "--did-server", "${DID_SERVER}", "--name", "${NAME}", "--bucket", "${BUCKET}" ]
+          env:
+            # Only the name of the secret, which is not itself sensitive. The service reads the
+            # value at startup using its own identity, so the password never appears here.
+            - name: TSP_WALLET_SECRET
+              value: ${WALLET_SECRET}
           ports:
             - name: http1
               containerPort: 3001
@@ -35,6 +41,13 @@ spec:
             failureThreshold: 1
             tcpSocket:
               port: 3001
+          # The bucket is deliberately not mounted. A mounted bucket has to pretend a whole
+          # object can be edited in place, which is what a database file does constantly and
+          # what object storage cannot do. Instead the wallet lives on the instance's own disk
+          # and is written back whole on every change, which is the one thing object storage
+          # does exactly right.
+          #
+          # One bucket per intermediary: the wallet holds its own keys and is never shared.
   traffic:
     - percent: 100
       latestRevision: true
