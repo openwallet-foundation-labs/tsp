@@ -179,6 +179,9 @@ mod test {
                         "{name}"
                     );
                 }
+                Payload::ControlMessage(_) | Payload::Padding => {
+                    panic!("{name}: no vector carries these payload types yet")
+                }
                 Payload::NestedMessage(inner) => {
                     assert_eq!(declared_type, "XHOP", "{name}: payload type");
                     let e = &expect["payload"]["nested"];

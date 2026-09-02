@@ -146,6 +146,22 @@ routed message names the intermediaries it travels through. Either way the inner
 message is a complete TSP message, opaque to everyone but its own recipient — not to
 the intermediary that forwards it, nor to the endpoints of the enclosing relationship.
 
+`XSCS` and `XCTL` are the same shape and TSP treats them identically: it carries both
+opaquely and interprets neither. Two codes exist so that an upper layer can tell its
+control plane from its data plane without reserving part of its own format to say
+which is which. Send one with `--kind control`; it arrives as
+`ReceivedTspMessage::ControlMessage` rather than `GenericMessage`.
+
+`XPAD` carries nothing at all. It exists so that an observer counting or timing
+messages sees some that mean nothing. The receiver discards it — "silently", which
+constrains what goes back on the wire, not whether the application is told. Send one
+with `--kind padding`, and give it `--padding` bytes to choose its size.
+
+The padding field is not exclusive to `XPAD`: every payload layout carries one, and
+any message may use it to hide how long its real content is. It is excluded from the
+SAID digest, so padding a message does not change its thread id (spec 7.2.1). Pass
+`--padding N` to `send`, or `SendOptions::padding` through the SDK.
+
 Reading a message
 -----------------
 

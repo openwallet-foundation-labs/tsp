@@ -161,6 +161,19 @@ class ReceivedTspMessage {
                     msg.opaque_payload,
                 );
 
+            case 6:
+                return new ControlMessage(
+                    msg.sender,
+                    msg.receiver,
+                    new Uint8Array(msg.message),
+                    msg.crypto_type,
+                    msg.signature_type,
+                    msg.enclosing_crypto_type
+                );
+
+            case 7:
+                return new PaddingMessage(msg.sender, msg.receiver);
+
             case 5: 
                 throw new Error("todo!");
 
@@ -184,6 +197,21 @@ class GenericMessage extends ReceivedTspMessage {
         this.crypto_type = crypto_type;
         this.signature_type = signature_type;
         this.enclosing_crypto_type = enclosing_crypto_type;
+    }
+}
+
+// An upper layer's own control payload (XCTL). Carried opaquely, exactly as a
+// GenericMessage is; the separate class exists so an upper layer can route its
+// control plane separately from its data plane.
+class ControlMessage extends GenericMessage {}
+
+// A padding message (XPAD). It carries nothing — it exists so that traffic
+// analysis sees messages that mean nothing. Discard it.
+class PaddingMessage extends ReceivedTspMessage {
+    constructor(sender, receiver) {
+        super();
+        this.sender = sender;
+        this.receiver = receiver;
     }
 }
 
@@ -245,6 +273,8 @@ module.exports = {
     Vid,
     ReceivedTspMessage,
     GenericMessage,
+    ControlMessage,
+    PaddingMessage,
     AcceptRelationship,
     CancelRelationship,
     RequestRelationship,

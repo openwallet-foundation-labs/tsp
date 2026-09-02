@@ -520,6 +520,14 @@ async fn new_message(
         Ok(ReceivedTspMessage::GenericMessage { sender, .. }) => {
             tracing::error!("received generic message from {sender}")
         }
+        Ok(ReceivedTspMessage::ControlMessage { sender, .. }) => {
+            tracing::error!("received an upper-layer control message from {sender}")
+        }
+        // padding exists to be ignored; an intermediary is not its destination
+        // and there is nothing in it to forward
+        Ok(ReceivedTspMessage::PaddingMessage { sender, .. }) => {
+            tracing::debug!("discarding a padding message from {sender}")
+        }
         Ok(ReceivedTspMessage::RequestRelationship {
             sender,
             receiver: _,

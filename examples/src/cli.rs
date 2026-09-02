@@ -10,7 +10,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{
     Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid,
     ReceivedRelationshipDelivery, ReceivedRelationshipForm, ReceivedTspMessage, RelationshipStatus,
-    SecureStorage, VerifiedVid, Vid, cesr,
+    SecureStorage, SendOptions, VerifiedVid, Vid, cesr,
     crypto::PayloadConfidentiality,
     definitions::Digest,
     vid::{
@@ -49,6 +49,24 @@ impl FromStr for DidType {
             "scid" => Ok(DidType::Scid),
             _ => Err(format!("invalid did type: {s}")),
         }
+    }
+}
+
+/// Which payload type `send` puts on the wire.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+enum PayloadKind {
+    #[default]
+    Message,
+    Control,
+    Padding,
+}
+
+fn parse_payload_kind(value: &str) -> Result<PayloadKind, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "message" | "generic" | "xscs" => Ok(PayloadKind::Message),
+        "control" | "ctl" | "xctl" => Ok(PayloadKind::Control),
+        "padding" | "pad" | "xpad" => Ok(PayloadKind::Padding),
+        _ => Err(format!("invalid payload kind: {value}")),
     }
 }
 
@@ -184,6 +202,20 @@ enum Commands {
             help = "Override outbound crypto: hpke (hpke-base), or sealed-box (nacl)"
         )]
         crypto: Option<cesr::CryptoType>,
+        #[arg(
+            long,
+            value_parser = parse_payload_kind,
+            help = "What kind of payload to send: message (XSCS, the default), control (XCTL, \
+                    the upper layer's own control plane), or padding (XPAD, which carries \
+                    nothing and exists to be counted by an observer)"
+        )]
+        kind: Option<PayloadKind>,
+        #[arg(
+            long,
+            help = "Bytes of padding to carry in the payload's padding field, for hiding how \
+                    long the real content is. Excluded from the message's thread id."
+        )]
+        padding: Option<usize>,
         #[arg(
             long,
             value_parser = parse_confidentiality,
@@ -1079,6 +1111,8 @@ async fn run() -> Result<(), Error> {
             ask,
             crypto,
             confidentiality,
+            kind,
+            padding,
         } => {
             let receiver_vid = vid_wallet.try_resolve_alias(&receiver_vid)?;
 
@@ -1090,19 +1124,36 @@ async fn run() -> Result<(), Error> {
                 .await
                 .expect("Could not read message from stdin");
 
-            let send_result = match (crypto, confidentiality) {
-                // the plain path keeps the relationship-forming behaviour of
-                // `send`, which the explicit ones reproduce
-                (None, None) => vid_wallet.send(&sender_vid, &receiver_vid, &message).await,
-                (crypto_type, confidentiality) => {
+            // padding is given as a length; its content carries no meaning, so
+            // zeros are as good as anything and cost nothing to generate
+            let padding = padding.map(|len| vec![0_u8; len]);
+            let options = SendOptions {
+                crypto_type: crypto,
+                confidentiality: confidentiality.unwrap_or_default(),
+                padding: padding.as_deref(),
+            };
+
+            let send_result = match kind.unwrap_or_default() {
+                PayloadKind::Control => {
                     vid_wallet
-                        .send_with(
-                            &sender_vid,
-                            &receiver_vid,
-                            &message,
-                            crypto_type,
-                            confidentiality.unwrap_or_default(),
-                        )
+                        .send_control_message(&sender_vid, &receiver_vid, &message, options)
+                        .await
+                }
+                PayloadKind::Padding => {
+                    vid_wallet
+                        .send_padding_message(&sender_vid, &receiver_vid, options)
+                        .await
+                }
+                // the plain path keeps the relationship-forming behaviour of
+                // `send`, which the explicit one reproduces
+                PayloadKind::Message
+                    if crypto.is_none() && confidentiality.is_none() && padding.is_none() =>
+                {
+                    vid_wallet.send(&sender_vid, &receiver_vid, &message).await
+                }
+                PayloadKind::Message => {
+                    vid_wallet
+                        .send_with(&sender_vid, &receiver_vid, &message, options)
                         .await
                 }
             };
@@ -1154,6 +1205,19 @@ async fn run() -> Result<(), Error> {
                 };
                 let handle_message = |message: ReceivedTspMessage| {
                     match message {
+                        ReceivedTspMessage::ControlMessage {
+                            sender, message, ..
+                        } => {
+                            info!(
+                                "received upper-layer control message ({} bytes) from {sender}",
+                                message.len()
+                            );
+                            println!("{}", String::from_utf8_lossy(&message));
+                        }
+                        // it carries nothing; saying so is the whole report
+                        ReceivedTspMessage::PaddingMessage { sender, .. } => {
+                            info!("received padding message from {sender}, discarding");
+                        }
                         ReceivedTspMessage::GenericMessage {
                             sender,
                             receiver: _,
@@ -1505,6 +1569,12 @@ async fn run() -> Result<(), Error> {
                     match message {
                         ReceivedTspMessage::GenericMessage { sender, .. } => {
                             info!("received generic message from {sender}")
+                        }
+                        ReceivedTspMessage::ControlMessage { sender, .. } => {
+                            info!("received upper-layer control message from {sender}")
+                        }
+                        ReceivedTspMessage::PaddingMessage { sender, .. } => {
+                            info!("received padding message from {sender}, discarding")
                         }
                         ReceivedTspMessage::RequestRelationship { sender, .. } => {
                             info!("received relationship request from {sender}")

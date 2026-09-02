@@ -93,11 +93,31 @@ fn nested_digest_field<'a>(
     algorithm.field(digest)
 }
 
-fn selected_outbound_crypto(
+/// How an outbound message is formed, beyond what it says.
+///
+/// Every field has a default that is the right answer unless a caller has a
+/// reason otherwise: the cipher suite the recipient's keys call for, an
+/// encrypted payload, and no padding.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SendOptions<'a> {
+    /// The cipher suite. `None` is HPKE-Base, or its post-quantum KEM where the
+    /// recipient's encryption key type asks for one.
+    pub crypto_type: Option<crate::cesr::CryptoType>,
+    /// Whether the payload is encrypted or only signed. Meaningful under
+    /// nesting; see [`PayloadConfidentiality`].
+    pub confidentiality: PayloadConfidentiality,
+    /// Bytes for the payload's padding field, which hides the length of what
+    /// the message actually carries. `None` encodes the empty field `4BAA`.
+    /// The field is excluded from the SAID digest, so padding does not change
+    /// a message's thread id (spec 7.2.1).
+    pub padding: Option<&'a [u8]>,
+}
+
+fn selected_outbound_crypto<'a>(
     sender: &dyn VerifiedVid,
     receiver: &dyn VerifiedVid,
-    selection: Option<OutboundCryptoSelection>,
-) -> OutboundCryptoSelection {
+    selection: Option<OutboundCryptoSelection<'a>>,
+) -> OutboundCryptoSelection<'a> {
     selection.unwrap_or_else(|| crate::crypto::default_outbound_crypto_selection(sender, receiver))
 }
 
@@ -275,7 +295,7 @@ struct ParallelSignatureContext<'a> {
     /// The crypto this message will be sealed with, which decides what the
     /// payload's ESSR sender field holds — and that field is covered by the
     /// referral signature, so it has to be the same on both sides
-    selection: OutboundCryptoSelection,
+    selection: OutboundCryptoSelection<'static>,
 }
 
 fn random_nonce_bytes() -> [u8; 16] {
@@ -822,6 +842,7 @@ impl SecureStore {
                 crypto_type,
                 essr_sender: Default::default(),
                 confidentiality: Default::default(),
+                padding: None,
             }),
         )
     }
@@ -844,7 +865,15 @@ impl SecureStore {
         message: &[u8],
         confidentiality: PayloadConfidentiality,
     ) -> Result<(Url, Vec<u8>), Error> {
-        self.seal_message_with(sender, receiver, message, None, confidentiality)
+        self.seal_message_with(
+            sender,
+            receiver,
+            message,
+            SendOptions {
+                confidentiality,
+                ..Default::default()
+            },
+        )
     }
 
     /// Seal a TSP message, choosing both the cipher suite and how the payload
@@ -857,8 +886,49 @@ impl SecureStore {
         sender: &str,
         receiver: &str,
         message: &[u8],
-        crypto_type: Option<crate::cesr::CryptoType>,
-        confidentiality: PayloadConfidentiality,
+        options: SendOptions<'_>,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.seal_payload_with(sender, receiver, Payload::Content(message), options)
+    }
+
+    /// Seal an upper layer's own control payload (`XCTL`).
+    ///
+    /// TSP carries it opaquely, exactly as it carries an application message.
+    /// The separate payload type exists so that an upper layer can tell its
+    /// control plane from its data plane without reserving part of its own
+    /// format to say which is which (spec 9.3). It arrives as
+    /// [`crate::ReceivedTspMessage::ControlMessage`].
+    pub fn seal_control_message(
+        &self,
+        sender: &str,
+        receiver: &str,
+        message: &[u8],
+        options: SendOptions<'_>,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.seal_payload_with(sender, receiver, Payload::ControlMessage(message), options)
+    }
+
+    /// Seal a padding message (`XPAD`), which carries nothing.
+    ///
+    /// It exists so that an observer counting or timing messages sees ones that
+    /// mean nothing (spec 7.5). Give it `options.padding` to choose its size;
+    /// with none it is as small as a TSP message gets, which is its own kind of
+    /// signal, so a caller hiding a traffic pattern should pass some.
+    pub fn seal_padding_message(
+        &self,
+        sender: &str,
+        receiver: &str,
+        options: SendOptions<'_>,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.seal_payload_with(sender, receiver, Payload::Padding, options)
+    }
+
+    fn seal_payload_with(
+        &self,
+        sender: &str,
+        receiver: &str,
+        payload: Payload<&[u8]>,
+        options: SendOptions<'_>,
     ) -> Result<(Url, Vec<u8>), Error> {
         let sender_vid = self.get_private_vid(sender)?;
         let receiver_vid = self.get_verified_vid(receiver)?;
@@ -870,11 +940,12 @@ impl SecureStore {
         self.seal_message_payload_and_hash_with_selection(
             sender,
             receiver,
-            Payload::Content(message),
+            payload,
             None,
             Some(OutboundCryptoSelection {
-                crypto_type: crypto_type.unwrap_or(selection.crypto_type),
-                confidentiality,
+                crypto_type: options.crypto_type.unwrap_or(selection.crypto_type),
+                confidentiality: options.confidentiality,
+                padding: options.padding,
                 ..selection
             }),
         )
@@ -1412,6 +1483,29 @@ impl SecureStore {
                             },
                         })
                     }
+                    Payload::ControlMessage(message) => {
+                        // an upper layer's control payload is addressed to a VID
+                        // and carries its data, so spec 7.2.2 applies to it as it
+                        // does to an application message
+                        self.check_relationship_gate(&intended_receiver, &sender)?;
+
+                        Ok(ReceivedTspMessage::ControlMessage {
+                            sender,
+                            receiver: Some(intended_receiver),
+                            message,
+                            message_type: MessageType {
+                                crypto_type,
+                                signature_type,
+                                enclosing_crypto_type: None,
+                            },
+                        })
+                    }
+                    // not gated: there is nothing in a padding message to accept
+                    // or refuse, and the receiver discards it either way
+                    Payload::Padding => Ok(ReceivedTspMessage::PaddingMessage {
+                        sender,
+                        receiver: Some(intended_receiver),
+                    }),
                     Payload::NestedMessage(inner) => {
                         if let Some(received_message) = self.try_open_nested_relationship_message(
                             &sender,
@@ -1681,6 +1775,7 @@ impl SecureStore {
                 crypto_type,
                 essr_sender: Default::default(),
                 confidentiality: Default::default(),
+                padding: None,
             }),
         )
     }
@@ -2491,7 +2586,7 @@ mod test {
     use crate::{
         Error, Payload, PendingParallelRelationship, ReceivedRelationshipDelivery,
         ReceivedRelationshipForm, ReceivedTspMessage, RelationshipForm, RelationshipStatus,
-        SecureStore, VerifiedVid,
+        SecureStore, SendOptions, VerifiedVid,
         crypto::{CryptoError, PayloadConfidentiality},
         store::RelationshipPolicy,
     };
@@ -4473,6 +4568,97 @@ mod test {
             Some(crate::cesr::CryptoType::Plaintext),
             "and the enclosing message it arrived in was encrypted"
         );
+    }
+
+    /// `XCTL`, `XPAD` and a caller's padding all reach the wire and come back.
+    ///
+    /// Before this they existed only at the CESR layer: the crypto layer
+    /// answered `UnsupportedPayload` for the two payload types, and the padding
+    /// field was hard-coded empty at every seal site.
+    #[test]
+    #[wasm_bindgen_test]
+    fn control_padding_and_a_padded_payload_round_trip() {
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let a = create_test_vid();
+        let b = create_test_vid();
+
+        for (store, own, other) in [(&a_store, &a, &b), (&b_store, &b, &a)] {
+            store.add_private_vid(own.clone(), None).unwrap();
+            store.add_verified_vid(other.clone(), None).unwrap();
+            store
+                .set_relation_and_status_for_vid(
+                    other.identifier(),
+                    RelationshipStatus::Unidirectional {
+                        thread_id: Default::default(),
+                    },
+                    own.identifier(),
+                )
+                .unwrap();
+        }
+
+        // an upper layer's control payload arrives as its own kind, not as a
+        // generic message — that distinction is the whole point of XCTL
+        let (_, mut sealed) = a_store
+            .seal_control_message(
+                a.identifier(),
+                b.identifier(),
+                b"turn left",
+                Default::default(),
+            )
+            .unwrap();
+        let ReceivedTspMessage::ControlMessage { message, .. } =
+            b_store.open_message(&mut sealed).unwrap()
+        else {
+            panic!("a control payload must not arrive as anything else")
+        };
+        assert_eq!(message, b"turn left");
+
+        // a padding message carries nothing and says so
+        let (_, mut sealed) = a_store
+            .seal_padding_message(
+                a.identifier(),
+                b.identifier(),
+                SendOptions {
+                    padding: Some(&[0_u8; 64]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert!(matches!(
+            b_store.open_message(&mut sealed).unwrap(),
+            ReceivedTspMessage::PaddingMessage { .. }
+        ));
+
+        // padding rides in any payload, lengthening the message without
+        // changing what it says
+        let plain = a_store
+            .seal_message(a.identifier(), b.identifier(), b"hello world")
+            .unwrap()
+            .1;
+        let (_, mut padded) = a_store
+            .seal_message_with(
+                a.identifier(),
+                b.identifier(),
+                b"hello world",
+                SendOptions {
+                    padding: Some(&[0_u8; 128]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert!(
+            padded.len() > plain.len() + 100,
+            "padding must actually reach the wire: {} vs {}",
+            padded.len(),
+            plain.len()
+        );
+        let ReceivedTspMessage::GenericMessage { message, .. } =
+            b_store.open_message(&mut padded).unwrap()
+        else {
+            panic!("a padded message is still a generic message")
+        };
+        assert_eq!(message, b"hello world");
     }
 
     /// An addressed application message is dropped outside a relationship
