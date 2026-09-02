@@ -365,48 +365,6 @@ fn main() {
         json!({"crypto": "HpkeBase", "signature": "Ed25519", "payload": {"content": "hello world"}}),
     );
 
-    // 2b. the same HPKE-Base message with post-quantum keys
-    let m = tsp_sdk::crypto::seal_reproducibly(
-        &pq_alice,
-        &pq_bob,
-        Payload::Content(b"hello world"),
-        None,
-        cesr::CryptoType::HpkeBase,
-        seed(11),
-        None,
-    )
-    .unwrap();
-    add(
-        "direct-hpke-base-pq",
-        "8.2, 8.3, 9.2.8",
-        "The same message as direct-hpke-base, to endpoints whose VIDs declare post-quantum \
-         key types. Post-quantum support is not a separate mode: this is HPKE-Base with the \
-         X25519MLKEM768 hybrid KEM, selected by the recipient VID's encryption key type, and \
-         the ciphertext code is the same 4F as any other HPKE-Base message. What changes is \
-         size — the encapsulation is 1120 bytes rather than 32 — and the signature, which is \
-         ML-DSA-65 under the code 1AAQ rather than an indexed Ed25519 signature. There is no \
-         sealed-box counterpart to this vector; that suite has no post-quantum option. This is \
-         the one vector with no published ephemeral value: the hybrid KEM derives no ephemeral \
-         keypair, drawing encapsulation randomness instead, so there is nothing of that shape to \
-         publish and check. Its bytes reproduce from the recorded seed.",
-        "pq_alice",
-        Some("pq_bob"),
-        &m,
-        payload_plaintext(&cesr::Payload::GenericMessage(&b"hello world"[..]), None),
-        None,
-        Some(11),
-        None,
-        vec![
-            "-Z##",
-            "XSCS",
-            "VID_sndr | 4BAA",
-            "Padding_Field",
-            "-A##",
-            "Bytes",
-        ],
-        json!({"crypto": "HpkeBase", "signature": "MlDsa65", "payload": {"content": "hello world"}}),
-    );
-
     // 3. signed-only
     let m = tsp_sdk::crypto::sign(&alice, Some(&bob), b"public announcement!").unwrap();
     add(
@@ -758,6 +716,50 @@ fn main() {
                 "inner_content": "hello world"
             }}
         }),
+    );
+
+    // 9. the same HPKE-Base message with post-quantum keys. Last, so that
+    // a reader meets every classical vector before the one whose keys and
+    // signature are an order of magnitude larger.
+    let m = tsp_sdk::crypto::seal_reproducibly(
+        &pq_alice,
+        &pq_bob,
+        Payload::Content(b"hello world"),
+        None,
+        cesr::CryptoType::HpkeBase,
+        seed(11),
+        None,
+    )
+    .unwrap();
+    add(
+        "direct-hpke-base-pq",
+        "8.2, 8.3, 9.2.8",
+        "The same message as direct-hpke-base, to endpoints whose VIDs declare post-quantum \
+         key types. Post-quantum support is not a separate mode: this is HPKE-Base with the \
+         X25519MLKEM768 hybrid KEM, selected by the recipient VID's encryption key type, and \
+         the ciphertext code is the same 4F as any other HPKE-Base message. What changes is \
+         size — the encapsulation is 1120 bytes rather than 32 — and the signature, which is \
+         ML-DSA-65 under the code 1AAQ rather than an indexed Ed25519 signature. There is no \
+         sealed-box counterpart to this vector; that suite has no post-quantum option. This is \
+         the one vector with no published ephemeral value: the hybrid KEM derives no ephemeral \
+         keypair, drawing encapsulation randomness instead, so there is nothing of that shape to \
+         publish and check. Its bytes reproduce from the recorded seed.",
+        "pq_alice",
+        Some("pq_bob"),
+        &m,
+        payload_plaintext(&cesr::Payload::GenericMessage(&b"hello world"[..]), None),
+        None,
+        Some(11),
+        None,
+        vec![
+            "-Z##",
+            "XSCS",
+            "VID_sndr | 4BAA",
+            "Padding_Field",
+            "-A##",
+            "Bytes",
+        ],
+        json!({"crypto": "HpkeBase", "signature": "MlDsa65", "payload": {"content": "hello world"}}),
     );
 
     let doc = json!({

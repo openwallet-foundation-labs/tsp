@@ -404,198 +404,6 @@
       "spec": "8.2, 9.1, 9.2.8"
     },
     {
-      "description": "The same message as direct-hpke-base, to endpoints whose VIDs declare post-quantum key types. Post-quantum support is not a separate mode: this is HPKE-Base with the X25519MLKEM768 hybrid KEM, selected by the recipient VID's encryption key type, and the ciphertext code is the same 4F as any other HPKE-Base message. What changes is size — the encapsulation is 1120 bytes rather than 32 — and the signature, which is ML-DSA-65 under the code 1AAQ rather than an indexed Ed25519 signature. There is no sealed-box counterpart to this vector; that suite has no post-quantum option. This is the one vector with no published ephemeral value: the hybrid KEM derives no ephemeral keypair, drawing encapsulation randomness instead, so there is nothing of that shape to publish and check. Its bytes reproduce from the recorded seed.",
-      "ephemeral": null,
-      "expect": {
-        "crypto": "HpkeBase",
-        "payload": {
-          "content": "hello world"
-        },
-        "signature": "MlDsa65"
-      },
-      "inner": null,
-      "layout": [
-        "-Z##",
-        "XSCS",
-        "VID_sndr | 4BAA",
-        "Padding_Field",
-        "-A##",
-        "Bytes"
-      ],
-      "message": "-EGwYTSP-AAB4BATZGlkOnBlZXI6NHpRbWJMcXUzd2VadHNuTmVzQnplY0NabTVGQTZ1YUdrZ0NXWVI1V25kcjZHenpk4BATZGlkOnBlZXI6NHpRbVpzS21mZm53WVZiR0xiNlptWjhna2d5VHM4RDc2WVFSQnQ1WW5GTks0U25v5FGFAG_gn35RNoXWKshZoo7uJpjoK4rcKk2jfCWOYB5delcb_W29HoRlEL0dSVeU4hgMITPH3cryDD1lyXErM9gmApU_t3X2VMWTbHMN8i8YqhdzaUnPWWDqRNtFjChapB_euEuUWFXJYvlz7tyudeTDJxbbXFn5s_fzwvfKwPMsvzF0asVGhxKC77xe3cMht126-gHc0xx908WrHrMVUtfLXWQiQmIsnXcbHqPwbHnxDWamgaWPkbwjebDDnJGHwkAg1jBz9_Wo6RYymhGpBGqc2L9IsGfYSzy9PaSb22sg5BtTLO1vf3o_d3KoAks7uHG7RYDQgarMl4pWZUaICod3MK7yZlTR9LOsnXqkn2UXMyNg5Tr0bX6iEIw4bM77HXu2Ic84eF-2DfgXbK2I6DdH-KcH2b2EMmv95kC4WED-jPGoQA2Wd7kBNYlbYouQU4nDmmdVjOVvo2AeD0_aDu3cN2nQyINx34ryTcGjG6sfg6H6FYWT6yET7vpfPpZlx_cs_qq9QC9d5yjZOSzyEmgQE4a0QVGtxdk8a_Bd2O8gGutWbM5fFNLoPEwreECPHIuhuMBXMmIqRS1igha8yN_dvapSle1WrHVy9EADQww4KzR8DHvPVuqbCEKtm5_zA0jYiLtiiCGkfUJnBI5k07acUjSSmWz3idGItf-SmY4latHXAeWF6i18cJZkJjV2MA3s1ufE0xB2QgRMs_zwpDAB94ICwBUcMBuce40rVhamBx4_RPvr-FsX_IUMBOCRf-p_Av3RKqE2KQa83IgWUbgUnvXHsmNOtArVpTD5wtIDB-Pcwq_jvOgyKYupgddkTwo9jY50q4R3u2Nvm47NjurQKJ1jvmVsv-ouSfIYGeUrqWOkbwjfkgenLJHv7ZnXE2bPI-KkkM4n5f2OjCfHuirtQnstKEd4gCbhUSx5BSpjoNLT77emBWb_NjiKdCZ8dugvuu48R9uaAc3PtBQyf1xkyHpUoge7FLHRDC_Kc4mITunie4eC4SjaBpyVwL2PwW-pPr8J1RHOX0KNqxFq_7ZocLPdzAtgaYkLO7kaIBRKH4gGPRsoO4eyk0DrUzIaZBqp4VJRE7EcE48FjtneHHvjPc0eA4v35CWpdPtvEHgeAwsXgfF64Bn_PIMgyMt29Ja-s7Ob4j4TGOBXxxdMUhf67z9nnUARnLej12ARzaz9Wa00fQjfvJQVaxbjeZ9kFDM69vjW997615Oxute1YenKcZqACx9EoghOqj_xwJphXfBIQcy27pYcOPDm5Q1vjLryDv5kyyp0bIni5sIqUQnrJ9InUy2VBtSB0wE_drnoiwQu2_rMb_M0jgnuNZ-N3Y9haW4AMX7a-5uttqK-eyQO0OogmCBr8pLN0ZC7aQz2KbPl_TDxQQgrCn2ra_1VsYn8hl0x_D1FQUeB4y6bA3LnfUuVkYYYoUFQQGy5oCdT-AjqCSqfOoGRjRRBfsOpm67DykdVa1BXIEgfXNPCzfHzPHvAkYdH1aar1fOZINtK9jKJZjz-5RtiE2yvMWqj62_re06ceJqlv9LSAixKs1tb-CRR-KRQ1AAQYMLICZQ_SIqSR82-_Ka09Gh6sD-P2mGOT-kvnba2VbJ-rWOFQ38MFm6fizezJiGoUTAxHbQZCgfYJJUxidYX1q0ZeYCagJc34B5q_Kbgddy2EET-pZP1aA-KLIVnsn-2oyskvbBohipnE2wNmJj1FdBmvmD-ElvWR-HkUNNMXQuIf-MWehP2Wtnr8CDBnzAekL1PGxDU-LfmQQmQAhAFC6L2fweKfOduDYE2gAFSQh7nt6fGcglJQuGM7B-xLVFgGqVgwan0-A5PPaIfbReO5WpjvF523CUWZwai6R4si6O_U_2wf9PwcXf3mEfuvxWqxfxZk-3YqQ168wpNTrwnkVTMPEwFJa1VH0UI_qrMbJPioNG1hhYHRSQ9PbBKr5YrAcEvC3fVBAG5Xdes4BvD9ZZsH13tI3YAdQyl8HVmMULgYFrRZ7otzBXdIYXxUDgCKP_0WRXx-RGieDJe7dTfPXWMoVDWJ6sey7v7TdQeEe0IXAeMtEq8ARF9rXnQPwABW43TYBAK_PyHcn_f0tK9CIPH1JT8HfV_W5JVGnzukYbJvEOo5nQmyDCpj71EQRBHvu3szouB7UEgoc7Jzy-qw41zq7WDMJZMdIcruwVkwI2vI74rLk-u_eaYXQFM3IRIzo-XF6v5cgFrtUvRF1qff_d-8jkwFV3urGJdx2zqaI7u42dt6vgWMCiKa4tGbXjyNLFoWvN0oHNCu8wJnMCNCKKW0PDvDw8ymw0paBTUxFdnrJ5S5Qha8lLiz75lqAUc7z7WtrdQcKQuJNUhpNDALzot57mclglr-6QfGkc6xZ-SZS8dBErtDPatXcCc0dMIubbkxBtiDsQ6gbJjnyKKw11d3zPL6XJWiK57y82IqMQ7VQTa9PWyToq7nl44luZK6Z6ulwAd7pvSQ4Ge-FvpPjgNuj-6idQASixfOaNQGVcxdp_yZESM5uq5NkaE8BLxOiJVXdjFpFE5kNVllgUZNP00L8fbpA4ttsoopghGouhNd14dJn49hmm9ZprmQcvDofEVAj1OxL1NOzZ-_eVKrOodCxsn24sr3VpSQuQ1vtZfwoZ9z7wRfbv78ab4JUEPuW3BAnytQPjRgwGe3yjU1m6qEiTXs1uI9x3H6gyTvqjpw26AkFpZgNd-0I7fcVKi7qGAZHXUmsT0lrk2GW2gtH6uIF0F9pPYaFJYwpCh7nCbCd16Ew0qI6CjEnkaFxedRSxINf07A9AgXeON11ZrxYnc2ft3X0tvjKzDhOqmjmGN14MZ2sgbiEuzkEbfJ8KqeBlFt6JEdlEKbX_y2yqBqt-ET1piBwG66w20c9kpIr70gYF17a6zUMMirQEmTZr5aecdlkULuzKuhg2f-x_5AY3_hUcprbjFnz9NrO-Ui-1W3_aVtlKXvuI0JsEi8Qc-VxVvdkhBTiMGDMSzYYB4qMN-13Lna6UesHJQO9wUYhiuJgbm8MfIn47dEfvEjW01LKn9NpjFkFy_CxHvfabuWflzqV6EGXCyb8bHjVbFVc8CN2u4c9ZmSgBbkLwJWTkQXV8G7YETGg6jhdNshxIOE6WH4besSMb6PejXDCQyH5ylkfvRGbvRv0-zNDY5UiMpAzb74iSCaMfpJfDd5fGjCiTS3XVH2apczDWjJAK3g80YSEQY2LhqVbNWlDyXdNa6lSjcbK3kc96-KVO0rEvwUx2pbBhjteciWr0F_YVY8EAPzVqFR5TeYw-CcIvKxuloBsaA4J-V3LNn16UCSBLMC2cku_2wGOw02lB8zq6sZCeZ2GIBBrgPTe96JjtKaI8eM1gNu8hRzm3fll7tzwB3Y82hPC9pDbYYnr1L4UYRz8QjtqiguRxOrI4WGHYRLywirhrjQO-Zi9M9eOt8SbGlSIcFvlREQyPjnWoHC-EkeYGh2wvei64GrGRpV9aLYWXbCqBe_lrrbIHlxn17fGhVIpDI37GRONAslNwc0DbprAMRUXK1G4e20CYglpTPZHfpIqRxMHhXvcqjLa3huGuZAvZtD9LlfMTCWwVGJ2-OHIrSmBNQ6lvKUVOln3Bg9WTYQ_GF4BHYaDpLevPEzL5XzGFw9mUdC0KPo_MKn0kwhYyP2JO0yPc3OMAzfnydOzK71qi3j9UJxPYQig8yJ77_hJJqTMbltXa95AI1m0OQIuNBjmec0GBg5aUIl51-vFdRwThZo_sa9GVFHpBluOcAQnVjOHgmqoHjHQBJ2k3hKt5fphZZ-x6xtb6XO194UAzeS379oJA99JYOvsiwhWuvi8VKtwHv05SmPfjSiVsqjUlescpHEJ_qKE_lgEt9Yk-XNqSARimLx85YubFuN5nl3TjHYPOTci790lm0TOZ9qtNo8flKBBq3ZsjztrtTgxBD3BH1TBGOWtfHkk6u7EU83DKC37NMz8ix6YpFWpOsIZJPdb27z7_crXX7zwqUz-c4CmdY4c_n_hu71GtNEdl9oBTJA88cb7xjgNX5nM5rR02cp8gijl8aBKw76lwhTzFC7xddUyqv4SIvVyiwQ0m660qNUEdLn-4_IBb-P4p2Lsk7mbYrQMZrPzoeltr8puEWYUvrL4OGya5oisK6cyjSG_MoUG6PKOhC35PSvRRcHJJNL_3Fmva_Oa0QfZjV7QzhGL-atjXjhLaUTFG8GI61ehqwoAYVTaEVDfBeAfseCoJeTBd8R8KiPRk_uMJzHANUISUA19I0AflsxSYyUAUJk6BzZl-PHxJUWVqZPfEN8rO2clEb5jpJZXTI8F-h7UMP0o7vM8o27x5btu59i_2hgLxODjfUIlvVg1KQVCdiDfS953LF-cQBVbfQOfG160brgl6A5xKHgS6UGxB2d_vZN2kBIdi4juFcaPALx3p-yhb9rGeMkfLeVmiFif8-o6XBYPiOIolK0fm4xPJUoTLBTHU9w8ZjJZNG0UlgpnNktmYMuM2HRBwrk-S7ttfdYWLUsBXvFkDZnS5MhoYhzewSG5Zk3fVWWPd_ReQFgtbBeoHb7v5LZfLiFVdGuiHryc0D57vp1CHckDIn2bSJ13ZyNuS6ow3yO7dua4hOnGCCJ8_ZF4vDPgr8BAEwYmEBPsw4dZwT8-R5devr2ykbwN0T9wlzyIyh4hzB6xdGE5-6dTOVe8qSAinpCCm87Z6QQS6VILJJsZaiCtq-ngp2NsczrlXddHQzDPxC41DZO_Y0nhJ0aRr4DApHEcCaoZYF4X9t0G9rZA6fueUK2ytMqAdHv67-h1EU1ii-z8dteqKrXe45Wd0veWWSvCvM4cbWMYpNTRw1osTJS4VAzj_tOkNG-cpuk79ealqvY8WcRKn7o6xFBRMPYzqkyBt7L4tND0ddsj2g3bvn5acb0Y9ElPIOOWhvPZiRkrVWnU72ayLhB0gK4bvG1E-z_zCZPygSH2cveUYrlZmHTtHcNxX4dFG-a_elQcbqSxMju0RVx4NY-jWAM0IxOywrSel-0c_gi6L68K1yyFPKyLko0ZAUOEUCLM5zUdbttHl5DFBjIyw9iUsSNr_z2sIY3nJoXV4Aelk5Ao8HFFShyiPhIdprl4_OcJ9joEKR40rD8aEI6xUoWK3jGb-zIja_CzEe5UnijtlHtiUqNN6tzF4LCq1cs8nvPL7w5E83prMQImSM_jIGF4LkXnhZXoE8JaP_19II-F7Vw8RDuCOuKPpHn5kDCcMVirMtdpxrPICO-YDmXB4AgCVPgaKV953hBaI97tWauj-Oulrz37X-ksYQ2OO7V-Eq6wNy4nSvwGuPtLpmRNi3FzUSoSGxfYKJxV3wkW7DNqLiGHPT5b9Pz50Kpt5x3oRHzuaVT9JdnK_45ie1IwDsZ7-v1ZWt4B4QFoKwx7X2KVWaua4465xUd6Wrj3PqXuo6DcgWKdg1NJnmc6Kchv5culU6GyL-fvASxaJTG47C_6ckGIGv1ctT8RWgLn7Jcf9PE58VaXBGBQ5-vN7S5BeDsUBj7fZNtP81AKHI6rcf7zxGnxhPDavBfH1pErTg9wp3XslJzeok5TkGZAjNewiodf6GDvkFMJbO_9-J5HpaAGbKXyfIFz1lKXwPdLG9oiJ4A4oNu0AcQrCEPXz3UC3gfavQ-dLN4mW7rQeoXCEBjUldmDaC0vzhgPOp76VjGP8wrLkr3r1kyrWhbcyJSvUWsQi-40qNo8vZ0tJlqBKfIM2WOV8gL9_sIEI1EvESyqTiEqM4yr3iTT2-jcIyjpTtYErIvkAiN7kOZQ22JN60xz_FXSVow7SUb822zvd8XznMEUp92MXIpOeazseJzKeGUzW74iYFdJaih4AOLDmudWggYVW8SyBAC2XxU0RiXtEfoLgz6aTXJc04ldRl3E9zwFgSq63o9jlKgYeO1PADQ2KEkNLkWpWZpfP8XHKNoLHKAxEWHDM-U6YAAAAAAAAAAAAAAAAAAAAABQwTGR8n",
-      "name": "direct-hpke-base-pq",
-      "nonce": null,
-      "payload_plaintext": "-ZAJXSCS4BAA4BAA-AAF5BAEAGhlbGxvIHdvcmxk",
-      "payload_segments": [
-        {
-          "chars": 4,
-          "field": "payload code",
-          "kind": "code",
-          "note": "counts the payload that follows",
-          "text": "-ZAJ",
-          "value": "9 quadlets = 27 bytes"
-        },
-        {
-          "chars": 4,
-          "field": "payload type",
-          "kind": "code",
-          "note": "application payload, carried opaquely",
-          "text": "XSCS",
-          "value": "TSP_GEN"
-        },
-        {
-          "chars": 4,
-          "field": "VID_sndr code",
-          "kind": "code",
-          "note": "lead pad 0, count 0 quadlets",
-          "text": "4BAA",
-          "value": "empty, the NULL value"
-        },
-        {
-          "chars": 4,
-          "field": "Padding_Field code",
-          "kind": "code",
-          "note": "lead pad 0, count 0 quadlets",
-          "text": "4BAA",
-          "value": "empty, the NULL value"
-        },
-        {
-          "chars": 4,
-          "field": "stream code",
-          "kind": "code",
-          "note": "a generic CESR stream, carried opaquely",
-          "text": "-AAF",
-          "value": "5 quadlets = 15 bytes"
-        },
-        {
-          "chars": 4,
-          "field": "Upper_Layer_Data code",
-          "kind": "code",
-          "note": "lead pad 1, count 4 quadlets",
-          "text": "5BAE",
-          "value": "11 bytes follow"
-        },
-        {
-          "chars": 16,
-          "field": "Upper_Layer_Data",
-          "kind": "data",
-          "note": "11 bytes",
-          "text": "AGhlbGxvIHdvcmxk",
-          "value": "hello world"
-        }
-      ],
-      "receiver": "pq_bob",
-      "seed": "CwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-      "segments": [
-        {
-          "chars": 4,
-          "field": "frame code",
-          "kind": "code",
-          "note": "counts the signable content that follows",
-          "text": "-EGw",
-          "value": "432 quadlets = 1296 bytes"
-        },
-        {
-          "chars": 4,
-          "field": "TSP_Version code",
-          "kind": "code",
-          "note": "the TSP genus",
-          "text": "YTSP",
-          "value": null
-        },
-        {
-          "chars": 4,
-          "field": "TSP_Version",
-          "kind": "data",
-          "note": "MAJOR in the count code's identifier, then MINOR and PATCH",
-          "text": "-AAB",
-          "value": "0.0.1"
-        },
-        {
-          "chars": 4,
-          "field": "VID_sndr code",
-          "kind": "code",
-          "note": "lead pad 0, count 19 quadlets",
-          "text": "4BAT",
-          "value": "57 bytes follow"
-        },
-        {
-          "chars": 76,
-          "field": "VID_sndr",
-          "kind": "data",
-          "note": "57 bytes",
-          "text": "ZGlkOnBlZXI6NHpRbWJMcXUzd2VadHNuTmVzQnplY0NabTVGQTZ1YUdrZ0NXWVI1V25kcjZHenpk",
-          "value": "did:peer:4zQmbLqu3weZtsnNesBzecCZm5FA6uaGkgCWYR5Wndr6Gzzd"
-        },
-        {
-          "chars": 4,
-          "field": "VID_rcvr code",
-          "kind": "code",
-          "note": "lead pad 0, count 19 quadlets",
-          "text": "4BAT",
-          "value": "57 bytes follow"
-        },
-        {
-          "chars": 76,
-          "field": "VID_rcvr",
-          "kind": "data",
-          "note": "57 bytes",
-          "text": "ZGlkOnBlZXI6NHpRbVpzS21mZm53WVZiR0xiNlptWjhna2d5VHM4RDc2WVFSQnQ1WW5GTks0U25v",
-          "value": "did:peer:4zQmZsKmffnwYVbGLb6ZmZ8gkgyTs8D76YQRBt5YnFNK4Sno"
-        },
-        {
-          "chars": 4,
-          "field": "ciphertext code",
-          "kind": "code",
-          "note": "4F/5F/6F: HPKE-Base, including its post-quantum KEM; lead pad 1, count 389 quadlets",
-          "text": "5FGF",
-          "value": "1166 bytes follow"
-        },
-        {
-          "chars": 1556,
-          "field": "ciphertext",
-          "kind": "data",
-          "note": "1166 bytes, shown as hex",
-          "text": "AG_gn35RNoXWKshZoo7uJpjoK4rcKk2jfCWOYB5delcb_W29HoRlEL0dSVeU4hgMITPH3cryDD1lyXErM9gmApU_t3X2VMWTbHMN8i8YqhdzaUnPWWDqRNtFjChapB_euEuUWFXJYvlz7tyudeTDJxbbXFn5s_fzwvfKwPMsvzF0asVGhxKC77xe3cMht126-gHc0xx908WrHrMVUtfLXWQiQmIsnXcbHqPwbHnxDWamgaWPkbwjebDDnJGHwkAg1jBz9_Wo6RYymhGpBGqc2L9IsGfYSzy9PaSb22sg5BtTLO1vf3o_d3KoAks7uHG7RYDQgarMl4pWZUaICod3MK7yZlTR9LOsnXqkn2UXMyNg5Tr0bX6iEIw4bM77HXu2Ic84eF-2DfgXbK2I6DdH-KcH2b2EMmv95kC4WED-jPGoQA2Wd7kBNYlbYouQU4nDmmdVjOVvo2AeD0_aDu3cN2nQyINx34ryTcGjG6sfg6H6FYWT6yET7vpfPpZlx_cs_qq9QC9d5yjZOSzyEmgQE4a0QVGtxdk8a_Bd2O8gGutWbM5fFNLoPEwreECPHIuhuMBXMmIqRS1igha8yN_dvapSle1WrHVy9EADQww4KzR8DHvPVuqbCEKtm5_zA0jYiLtiiCGkfUJnBI5k07acUjSSmWz3idGItf-SmY4latHXAeWF6i18cJZkJjV2MA3s1ufE0xB2QgRMs_zwpDAB94ICwBUcMBuce40rVhamBx4_RPvr-FsX_IUMBOCRf-p_Av3RKqE2KQa83IgWUbgUnvXHsmNOtArVpTD5wtIDB-Pcwq_jvOgyKYupgddkTwo9jY50q4R3u2Nvm47NjurQKJ1jvmVsv-ouSfIYGeUrqWOkbwjfkgenLJHv7ZnXE2bPI-KkkM4n5f2OjCfHuirtQnstKEd4gCbhUSx5BSpjoNLT77emBWb_NjiKdCZ8dugvuu48R9uaAc3PtBQyf1xkyHpUoge7FLHRDC_Kc4mITunie4eC4SjaBpyVwL2PwW-pPr8J1RHOX0KNqxFq_7ZocLPdzAtgaYkLO7kaIBRKH4gGPRsoO4eyk0DrUzIaZBqp4VJRE7EcE48FjtneHHvjPc0eA4v35CWpdPtvEHgeAwsXgfF64Bn_PIMgyMt29Ja-s7Ob4j4TGOBXxxdMUhf67z9nnUARnLej12ARzaz9Wa00fQjfvJQVaxbjeZ9kFDM69vjW997615Oxute1YenKcZqACx9EoghOqj_xwJphXfBIQcy27pYcOPDm5Q1vjLryDv5kyyp0bIni5sIqUQnrJ9InUy2VBtSB0wE_drnoiwQu2_rMb_M0jgnuNZ-N3Y9haW4AMX7a-5uttqK-eyQO0OogmCBr8pLN0ZC7aQz2KbPl_TDxQQgrCn2ra_1VsYn8hl0x_D1FQUeB4y6bA3LnfUuVkYYYoUFQQGy5oCdT-AjqCSqfOoGRjRRBfsOpm67DykdVa1BXIEgfXNPCzfHzPHvAkYdH1aar1fOZINtK9jKJZjz-5RtiE2yvMWqj62_re06ceJqlv9LSAixKs1tb",
-          "value": "6fe09f7e513685d62ac859a28eee2698e82b8adc2a4da37c258e601e5d7a571bfd6dbd1e846510bd1d495794e2180c2133c7ddcaf20c3d65c9712b33d82602953fb775f654c5936c730df22f18aa17736949cf5960ea44db458c285aa41fdeb84b945855c962f973eedcae75e4c32716db5c59f9b3f7f3c2f7cac0f32cbf31746ac546871282efbc5eddc321b75dbafa01dcd31c7dd3c5ab1eb31552d7cb5d642242622c9d771b1ea3f06c79f10d66a681a58f91bc2379b0c39c9187c24020d63073f7f5a8e916329a11a9046a9cd8bf48b067d84b3cbd3da49bdb6b20e41b532ced6f7f7a3f7772a8024b3bb871bb4580d081aacc978a566546880a877730aef26654d1f4b3ac9d7aa49f6517332360e53af46d7ea2108c386ccefb1d7bb621cf38785fb60df8176cad88e83747f8a707d9bd84326bfde640b85840fe8cf1a8400d9677b90135895b628b905389c39a67558ce56fa3601e0f4fda0eeddc3769d0c88371df8af24dc1a31bab1f83a1fa158593eb2113eefa5f3e9665c7f72cfeaabd402f5de728d9392cf21268101386b44151adc5d93c6bf05dd8ef201aeb566cce5f14d2e83c4c2b78408f1c8ba1b8c05732622a452d628216bcc8dfddbdaa5295ed56ac7572f44003430c382b347c0c7bcf56ea9b0842ad9b9ff30348d888bb628821a47d4267048e64d3b69c523492996cf789d188b5ff92998e256ad1d701e585ea2d7c709664263576300decd6e7c4d3107642044cb3fcf0a43001f78202c0151c301b9c7b8d2b5616a6071e3f44fbebf85b17fc850c04e0917fea7f02fdd12aa1362906bcdc881651b8149ef5c7b2634eb40ad5a530f9c2d20307e3dcc2afe3bce832298ba981d7644f0a3d8d8e74ab8477bb636f9b8ecd8eead0289d63be656cbfea2e49f21819e52ba963a46f08df9207a72c91efed99d71366cf23e2a490ce27e5fd8e8c27c7ba2aed427b2d2847788026e1512c79052a63a0d2d3efb7a60566ff36388a74267c76e82fbaee3c47db9a01cdcfb414327f5c64c87a54a207bb14b1d10c2fca7389884ee9e27b8782e128da069c95c0bd8fc16fa93ebf09d511ce5f428dab116affb66870b3ddcc0b6069890b3bb91a20144a1f88063d1b283b87b29340eb53321a641aa9e1525113b11c138f058ed9de1c7be33dcd1e038bf7e425a974fb6f10781e030b1781f17ae019ff3c8320c8cb76f496beb3b39be23e1318e057c7174c5217faef3f679d40119cb7a3d76011cdacfd59ad347d08dfbc94156b16e3799f6414333af6f8d6f7defad793b1bad7b561e9ca719a800b1f44a2084eaa3ff1c09a615df04841ccb6ee961c38f0e6e50d6f8cbaf20efe64cb2a746c89e2e6c22a5109eb27d227532d9506d481d3013f76b9e88b042edbfacc6ff3348e09ee359f8ddd8f61696e00317edafb9badb6a2be7b240ed0ea2098206bf292cdd190bb690cf629b3e5fd30f141082b0a7dab6bfd55b189fc865d31fc3d45414781e32e9b0372e77d4b95918618a14150406cb9a02753f808ea092a9f3a81918d14417ec3a99baec3ca47556b505720481f5cd3c2cdf1f33c7bc0918747d5a6abd5f39920db4af63289663cfee51b62136caf316aa3eb6feb7b4e9c789aa5bfd2d2022c4ab35b5b"
-        },
-        {
-          "chars": 4,
-          "field": "attachments code",
-          "kind": "code",
-          "note": "attachment group",
-          "text": "-CRR",
-          "value": "1105 quadlets = 3315 bytes"
-        },
-        {
-          "chars": 4,
-          "field": "signatures code",
-          "kind": "code",
-          "note": "indexed signature group",
-          "text": "-KRQ",
-          "value": "1104 quadlets = 3312 bytes"
-        },
-        {
-          "chars": 4,
-          "field": "signature code",
-          "kind": "code",
-          "note": "ML-DSA-65",
-          "text": "1AAQ",
-          "value": null
-        },
-        {
-          "chars": 4412,
-          "field": "signature",
-          "kind": "data",
-          "note": "3309 bytes",
-          "text": "YMLICZQ_SIqSR82-_Ka09Gh6sD-P2mGOT-kvnba2VbJ-rWOFQ38MFm6fizezJiGoUTAxHbQZCgfYJJUxidYX1q0ZeYCagJc34B5q_Kbgddy2EET-pZP1aA-KLIVnsn-2oyskvbBohipnE2wNmJj1FdBmvmD-ElvWR-HkUNNMXQuIf-MWehP2Wtnr8CDBnzAekL1PGxDU-LfmQQmQAhAFC6L2fweKfOduDYE2gAFSQh7nt6fGcglJQuGM7B-xLVFgGqVgwan0-A5PPaIfbReO5WpjvF523CUWZwai6R4si6O_U_2wf9PwcXf3mEfuvxWqxfxZk-3YqQ168wpNTrwnkVTMPEwFJa1VH0UI_qrMbJPioNG1hhYHRSQ9PbBKr5YrAcEvC3fVBAG5Xdes4BvD9ZZsH13tI3YAdQyl8HVmMULgYFrRZ7otzBXdIYXxUDgCKP_0WRXx-RGieDJe7dTfPXWMoVDWJ6sey7v7TdQeEe0IXAeMtEq8ARF9rXnQPwABW43TYBAK_PyHcn_f0tK9CIPH1JT8HfV_W5JVGnzukYbJvEOo5nQmyDCpj71EQRBHvu3szouB7UEgoc7Jzy-qw41zq7WDMJZMdIcruwVkwI2vI74rLk-u_eaYXQFM3IRIzo-XF6v5cgFrtUvRF1qff_d-8jkwFV3urGJdx2zqaI7u42dt6vgWMCiKa4tGbXjyNLFoWvN0oHNCu8wJnMCNCKKW0PDvDw8ymw0paBTUxFdnrJ5S5Qha8lLiz75lqAUc7z7WtrdQcKQuJNUhpNDALzot57mclglr-6QfGkc6xZ-SZS8dBErtDPatXcCc0dMIubbkxBtiDsQ6gbJjnyKKw11d3zPL6XJWiK57y82IqMQ7VQTa9PWyToq7nl44luZK6Z6ulwAd7pvSQ4Ge-FvpPjgNuj-6idQASixfOaNQGVcxdp_yZESM5uq5NkaE8BLxOiJVXdjFpFE5kNVllgUZNP00L8fbpA4ttsoopghGouhNd14dJn49hmm9ZprmQcvDofEVAj1OxL1NOzZ-_eVKrOodCxsn24sr3VpSQuQ1vtZfwoZ9z7wRfbv78ab4JUEPuW3BAnytQPjRgwGe3yjU1m6qEiTXs1uI9x3H6gyTvqjpw26AkFpZgNd-0I7fcVKi7qGAZHXUmsT0lrk2GW2gtH6uIF0F9pPYaFJYwpCh7nCbCd16Ew0qI6CjEnkaFxedRSxINf07A9AgXeON11ZrxYnc2ft3X0tvjKzDhOqmjmGN14MZ2sgbiEuzkEbfJ8KqeBlFt6JEdlEKbX_y2yqBqt-ET1piBwG66w20c9kpIr70gYF17a6zUMMirQEmTZr5aecdlkULuzKuhg2f-x_5AY3_hUcprbjFnz9NrO-Ui-1W3_aVtlKXvuI0JsEi8Qc-VxVvdkhBTiMGDMSzYYB4qMN-13Lna6UesHJQO9wUYhiuJgbm8MfIn47dEfvEjW01LKn9NpjFkFy_CxHvfabuWflzqV6EGXCyb8bHjVbFVc8CN2u4c9ZmSgBbkLwJWTkQXV8G7YETGg6jhdNshxIOE6WH4besSMb6PejXDCQyH5ylkfvRGbvRv0-zNDY5UiMpAzb74iSCaMfpJfDd5fGjCiTS3XVH2apczDWjJAK3g80YSEQY2LhqVbNWlDyXdNa6lSjcbK3kc96-KVO0rEvwUx2pbBhjteciWr0F_YVY8EAPzVqFR5TeYw-CcIvKxuloBsaA4J-V3LNn16UCSBLMC2cku_2wGOw02lB8zq6sZCeZ2GIBBrgPTe96JjtKaI8eM1gNu8hRzm3fll7tzwB3Y82hPC9pDbYYnr1L4UYRz8QjtqiguRxOrI4WGHYRLywirhrjQO-Zi9M9eOt8SbGlSIcFvlREQyPjnWoHC-EkeYGh2wvei64GrGRpV9aLYWXbCqBe_lrrbIHlxn17fGhVIpDI37GRONAslNwc0DbprAMRUXK1G4e20CYglpTPZHfpIqRxMHhXvcqjLa3huGuZAvZtD9LlfMTCWwVGJ2-OHIrSmBNQ6lvKUVOln3Bg9WTYQ_GF4BHYaDpLevPEzL5XzGFw9mUdC0KPo_MKn0kwhYyP2JO0yPc3OMAzfnydOzK71qi3j9UJxPYQig8yJ77_hJJqTMbltXa95AI1m0OQIuNBjmec0GBg5aUIl51-vFdRwThZo_sa9GVFHpBluOcAQnVjOHgmqoHjHQBJ2k3hKt5fphZZ-x6xtb6XO194UAzeS379oJA99JYOvsiwhWuvi8VKtwHv05SmPfjSiVsqjUlescpHEJ_qKE_lgEt9Yk-XNqSARimLx85YubFuN5nl3TjHYPOTci790lm0TOZ9qtNo8flKBBq3ZsjztrtTgxBD3BH1TBGOWtfHkk6u7EU83DKC37NMz8ix6YpFWpOsIZJPdb27z7_crXX7zwqUz-c4CmdY4c_n_hu71GtNEdl9oBTJA88cb7xjgNX5nM5rR02cp8gijl8aBKw76lwhTzFC7xddUyqv4SIvVyiwQ0m660qNUEdLn-4_IBb-P4p2Lsk7mbYrQMZrPzoeltr8puEWYUvrL4OGya5oisK6cyjSG_MoUG6PKOhC35PSvRRcHJJNL_3Fmva_Oa0QfZjV7QzhGL-atjXjhLaUTFG8GI61ehqwoAYVTaEVDfBeAfseCoJeTBd8R8KiPRk_uMJzHANUISUA19I0AflsxSYyUAUJk6BzZl-PHxJUWVqZPfEN8rO2clEb5jpJZXTI8F-h7UMP0o7vM8o27x5btu59i_2hgLxODjfUIlvVg1KQVCdiDfS953LF-cQBVbfQOfG160brgl6A5xKHgS6UGxB2d_vZN2kBIdi4juFcaPALx3p-yhb9rGeMkfLeVmiFif8-o6XBYPiOIolK0fm4xPJUoTLBTHU9w8ZjJZNG0UlgpnNktmYMuM2HRBwrk-S7ttfdYWLUsBXvFkDZnS5MhoYhzewSG5Zk3fVWWPd_ReQFgtbBeoHb7v5LZfLiFVdGuiHryc0D57vp1CHckDIn2bSJ13ZyNuS6ow3yO7dua4hOnGCCJ8_ZF4vDPgr8BAEwYmEBPsw4dZwT8-R5devr2ykbwN0T9wlzyIyh4hzB6xdGE5-6dTOVe8qSAinpCCm87Z6QQS6VILJJsZaiCtq-ngp2NsczrlXddHQzDPxC41DZO_Y0nhJ0aRr4DApHEcCaoZYF4X9t0G9rZA6fueUK2ytMqAdHv67-h1EU1ii-z8dteqKrXe45Wd0veWWSvCvM4cbWMYpNTRw1osTJS4VAzj_tOkNG-cpuk79ealqvY8WcRKn7o6xFBRMPYzqkyBt7L4tND0ddsj2g3bvn5acb0Y9ElPIOOWhvPZiRkrVWnU72ayLhB0gK4bvG1E-z_zCZPygSH2cveUYrlZmHTtHcNxX4dFG-a_elQcbqSxMju0RVx4NY-jWAM0IxOywrSel-0c_gi6L68K1yyFPKyLko0ZAUOEUCLM5zUdbttHl5DFBjIyw9iUsSNr_z2sIY3nJoXV4Aelk5Ao8HFFShyiPhIdprl4_OcJ9joEKR40rD8aEI6xUoWK3jGb-zIja_CzEe5UnijtlHtiUqNN6tzF4LCq1cs8nvPL7w5E83prMQImSM_jIGF4LkXnhZXoE8JaP_19II-F7Vw8RDuCOuKPpHn5kDCcMVirMtdpxrPICO-YDmXB4AgCVPgaKV953hBaI97tWauj-Oulrz37X-ksYQ2OO7V-Eq6wNy4nSvwGuPtLpmRNi3FzUSoSGxfYKJxV3wkW7DNqLiGHPT5b9Pz50Kpt5x3oRHzuaVT9JdnK_45ie1IwDsZ7-v1ZWt4B4QFoKwx7X2KVWaua4465xUd6Wrj3PqXuo6DcgWKdg1NJnmc6Kchv5culU6GyL-fvASxaJTG47C_6ckGIGv1ctT8RWgLn7Jcf9PE58VaXBGBQ5-vN7S5BeDsUBj7fZNtP81AKHI6rcf7zxGnxhPDavBfH1pErTg9wp3XslJzeok5TkGZAjNewiodf6GDvkFMJbO_9-J5HpaAGbKXyfIFz1lKXwPdLG9oiJ4A4oNu0AcQrCEPXz3UC3gfavQ-dLN4mW7rQeoXCEBjUldmDaC0vzhgPOp76VjGP8wrLkr3r1kyrWhbcyJSvUWsQi-40qNo8vZ0tJlqBKfIM2WOV8gL9_sIEI1EvESyqTiEqM4yr3iTT2-jcIyjpTtYErIvkAiN7kOZQ22JN60xz_FXSVow7SUb822zvd8XznMEUp92MXIpOeazseJzKeGUzW74iYFdJaih4AOLDmudWggYVW8SyBAC2XxU0RiXtEfoLgz6aTXJc04ldRl3E9zwFgSq63o9jlKgYeO1PADQ2KEkNLkWpWZpfP8XHKNoLHKAxEWHDM-U6YAAAAAAAAAAAAAAAAAAAAABQwTGR8n",
-          "value": "60c2c809943f488a9247cdbefca6b4f4687ab03f8fda618e4fe92f9db6b655b27ead6385437f0c166e9f8b37b32621a85130311db4190a07d824953189d617d6ad1979809a809737e01e6afca6e075dcb61044fea593f5680f8a2c8567b27fb6a32b24bdb068862a67136c0d9898f515d066be60fe125bd647e1e450d34c5d0b887fe3167a13f65ad9ebf020c19f301e90bd4f1b10d4f8b7e64109900210050ba2f67f078a7ce76e0d8136800152421ee7b7a7c672094942e18cec1fb12d51601aa560c1a9f4f80e4f3da21f6d178ee56a63bc5e76dc25166706a2e91e2c8ba3bf53fdb07fd3f07177f79847eebf15aac5fc5993edd8a90d7af30a4d4ebc279154cc3c4c0525ad551f4508feaacc6c93e2a0d1b586160745243d3db04aaf962b01c12f0b77d50401b95dd7ace01bc3f5966c1f5ded237600750ca5f075663142e0605ad167ba2dcc15dd2185f150380228fff45915f1f911a278325eedd4df3d758ca150d627ab1ecbbbfb4dd41e11ed085c078cb44abc01117dad79d03f00015b8dd360100afcfc87727fdfd2d2bd0883c7d494fc1df57f5b92551a7cee9186c9bc43a8e67426c830a98fbd44411047beedecce8b81ed4120a1cec9cf2faac38d73abb58330964c74872bbb0564c08daf23be2b2e4faefde6985d014cdc8448ce8f9717abf972016bb54bd1175a9f7ff77ef23930155deeac625dc76cea688eeee3676deaf81630288a6b8b466d78f234b1685af374a07342bbcc099cc08d08a296d0f0ef0f0f329b0d296814d4c45767ac9e52e5085af252e2cfbe65a8051cef3ed6b6b75070a42e24d521a4d0c02f3a2de7b99c96096bfba41f1a473ac59f92652f1d044aed0cf6ad5dc09cd1d308b9b6e4c41b620ec43a81b2639f228ac35d5ddf33cbe9725688ae7bcbcd88a8c43b5504daf4f5b24e8abb9e5e3896e64ae99eae97001dee9bd243819ef85be93e380dba3fba89d4004a2c5f39a350195731769ff264448ce6eab9364684f012f13a22555dd8c5a4513990d56596051934fd342fc7dba40e2db6ca28a60846a2e84d775e1d267e3d8669bd669ae641cbc3a1f115023d4ec4bd4d3b367efde54aacea1d0b1b27db8b2bdd5a5242e435bed65fc2867dcfbc117dbbfbf1a6f825410fb96dc1027cad40f8d183019edf28d4d66eaa1224d7b35b88f71dc7ea0c93bea8e9c36e80905a5980d77ed08edf7152a2eea1806475d49ac4f496b936196da0b47eae205d05f693d8685258c290a1ee709b09dd7a130d2a23a0a312791a17179d452c4835fd3b03d0205de38dd7566bc589dcd9fb775f4b6f8cacc384eaa68e618dd78319dac81b884bb39046df27c2aa781945b7a24476510a6d7ff2db2a81aadf844f5a620701baeb0db473d92922bef4818175edaeb350c322ad01264d9af969e71d96450bbb32ae860d9ffb1ff9018dff854729adb8c59f3f4dacef948bed56dff695b65297bee23426c122f1073e57156f7648414e23060cc4b3618078a8c37ed772e76ba51eb072503bdc146218ae2606e6f0c7c89f8edd11fbc48d6d352ca9fd3698c5905cbf0b11ef7da6ee59f973a95e841970b26fc6c78d56c555cf02376bb873d6664a005b90bc095939105d5f06ed81131a0ea385d36c87120e13a587e1b7ac48c6fa3de8d70c24321f9ca591fbd119bbd1bf4fb33436395223290336fbe2248268c7e925f0dde5f1a30a24d2dd7547d9aa5ccc35a32402b783cd18484418d8b86a55b356943c9774d6ba9528dc6cade473debe2953b4ac4bf0531da96c1863b5e7225abd05fd8558f0400fcd5a854794de630f82708bcac6e96806c680e09f95dcb367d7a5024812cc0b6724bbfdb018ec34da507cceaeac642799d8620106b80f4def7a263b4a688f1e33580dbbc851ce6ddf965eedcf007763cda13c2f690db6189ebd4be14611cfc423b6a8a0b91c4eac8e161876112f2c22ae1ae340ef998bd33d78eb7c49b1a5488705be54444323e39d6a070be1247981a1db0bde8bae06ac646957d68b6165db0aa05efe5aeb6c81e5c67d7b7c68552290c8dfb19138d02c94dc1cd036e9ac03115172b51b87b6d026209694cf6477e922a471307857bdcaa32dade1b86b9902f66d0fd2e57cc4c25b0546276f8e1c8ad2981350ea5bca5153a59f7060f564d843f185e011d8683a4b7af3c4ccbe57cc6170f6651d0b428fa3f30a9f4930858c8fd893b4c8f73738c0337e7c9d3b32bbd6a8b78fd509c4f6108a0f3227beff84926a4cc6e5b576bde402359b439022e3418e679cd06060e5a508979d7ebc5751c13859a3fb1af465451e9065b8e700427563387826aa81e31d0049da4de12ade5fa61659fb1eb1b5be973b5f78500cde4b7efda0903df4960ebec8b0856baf8bc54ab701efd394a63df8d2895b2a8d495eb1ca47109fea284fe5804b7d624f9736a48046298bc7ce58b9b16e3799e5dd38c760f393722efdd259b44ce67daad368f1f94a041ab766c8f3b6bb53831043dc11f54c118e5ad7c7924eaeec453cdc3282dfb34ccfc8b1e98a455a93ac21924f75bdbbcfbfdcad75fbcf0a94cfe7380a6758e1cfe7fe1bbbd46b4d11d97da014c903cf1c6fbc6380d5f99cce6b474d9ca7c8228e5f1a04ac3bea5c214f3142ef175d532aafe1222f5728b04349baeb4a8d50474b9fee3f2016fe3f8a762ec93b99b62b40c66b3f3a1e96dafca6e116614beb2f8386c9ae688ac2ba7328d21bf328506e8f28e842df93d2bd145c1c924d2ffdc59af6bf39ad107d98d5ed0ce118bf9ab635e384b6944c51bc188eb57a1ab0a006154da1150df05e01fb1e0a825e4c177c47c2a23d193fb8c2731c0354212500d7d23401f96cc5263250050993a073665f8f1f1254595a993df10df2b3b672511be63a496574c8f05fa1ed430fd28eef33ca36ef1e5bb6ee7d8bfda180bc4e0e37d4225bd58352905427620df4bde772c5f9c40155b7d039f1b5eb46eb825e80e71287812e941b107677fbd937690121d8b88ee15c68f00bc77a7eca16fdac678c91f2de56688589ff3ea3a5c160f88e22894ad1f9b8c4f254a132c14c753dc3c663259346d14960a67364b6660cb8cd87441c2b93e4bbb6d7dd6162d4b015ef1640d99d2e4c868621cdec121b9664ddf55658f77f45e40582d6c17a81dbeefe4b65f2e2155746ba21ebc9cd03e7bbe9d421dc903227d9b489d7767236e4baa30df23bb76e6b884e9c608227cfd9178bc33e0afc0401306261013ecc38759c13f3e47975ebebdb291bc0dd13f70973c88ca1e21cc1eb1746139fba7533957bca920229e90829bced9e90412e9520b249b196a20adabe9e0a7636c733ae55dd7474330cfc42e350d93bf6349e1274691af80c0a4711c09aa19605e17f6dd06f6b640e9fb9e50adb2b4ca80747bfaefe875114d628becfc76d7aa2ab5dee3959dd2f796592bc2bcce1c6d6318a4d4d1c35a2c4c94b8540ce3fed3a4346f9ca6e93bf5e6a5aaf63c59c44a9fba3ac4505130f633aa4c81b7b2f8b4d0f475db23da0ddbbe7e5a71bd18f4494f20e39686f3d989192b5569d4ef66b22e107480ae1bbc6d44fb3ff30993f28121f672f79462b9599874ed1dc3715f87451be6bf7a541c6ea4b1323bb4455c78358fa35803342313b2c2b49e97ed1cfe08ba2faf0ad72c853cac8b928d190143845022cce7351d6edb479790c5063232c3d894b1236bff3dac218de72685d5e007a5939028f071454a1ca23e121da6b978fce709f63a04291e34ac3f1a108eb152858ade319bfb32236bf0b311ee549e28ed947b6252a34deadcc5e0b0aad5cb3c9ef3cbef0e44f37a6b31022648cfe32061782e45e78595e813c25a3ffd7d208f85ed5c3c443b823ae28fa479f990309c3158ab32d769c6b3c808ef980e65c1e0080254f81a295f79de105a23deed59aba3f8eba5af3dfb5fe92c610d8e3bb57e12aeb0372e274afc06b8fb4ba6644d8b7173512a121b17d8289c55df0916ec336a2e21873d3e5bf4fcf9d0aa6de71de8447cee6954fd25d9caff8e627b52300ec67bfafd595ade01e101682b0c7b5f629559ab9ae38eb9c5477a5ab8f73ea5eea3a0dc81629d8353499e673a29c86fe5cba553a1b22fe7ef012c5a2531b8ec2ffa7241881afd5cb53f115a02e7ec971ff4f139f15697046050e7ebcded2e41783b14063edf64db4ff3500a1c8eab71fef3c469f184f0dabc17c7d6912b4e0f70a775ec949cdea24e539066408cd7b08a875fe860ef9053096ceffdf89e47a5a0066ca5f27c8173d65297c0f74b1bda22278038a0dbb401c42b0843d7cf7502de07dabd0f9d2cde265bbad07a85c21018d495d983682d2fce180f3a9efa56318ff30acb92bdebd64cab5a16dcc894af516b108bee34a8da3cbd9d2d265a8129f20cd96395f202fdfec20423512f112caa4e212a338cabde24d3dbe8dc2328e94ed604ac8be402237b90e650db624deb4c73fc55d2568c3b4946fcdb6cef77c5f39cc114a7dd8c5c8a4e79acec789cca7865335bbe226057496a287800e2c39ae7568206155bc4b20400b65f15344625ed11fa0b833e9a4d725cd3895d465dc4f73c05812abade8f6394a81878ed4f00343628490d2e45a9599a5f3fc5c728da0b1ca0311161c333e53a600000000000000000000000000000000050c13191f27"
-        }
-      ],
-      "sender": "pq_alice",
-      "spec": "8.2, 8.3, 9.2.8"
-    },
-    {
       "description": "A non-confidential message. The payload sits in the payload position in the clear, under the same -Z## framing a confidential payload uses once decrypted; there is no separate non-confidential field.",
       "ephemeral": null,
       "expect": {
@@ -2410,6 +2218,198 @@
       ],
       "sender": "alice",
       "spec": "5.2, 5.3.3, 9.4.16"
+    },
+    {
+      "description": "The same message as direct-hpke-base, to endpoints whose VIDs declare post-quantum key types. Post-quantum support is not a separate mode: this is HPKE-Base with the X25519MLKEM768 hybrid KEM, selected by the recipient VID's encryption key type, and the ciphertext code is the same 4F as any other HPKE-Base message. What changes is size — the encapsulation is 1120 bytes rather than 32 — and the signature, which is ML-DSA-65 under the code 1AAQ rather than an indexed Ed25519 signature. There is no sealed-box counterpart to this vector; that suite has no post-quantum option. This is the one vector with no published ephemeral value: the hybrid KEM derives no ephemeral keypair, drawing encapsulation randomness instead, so there is nothing of that shape to publish and check. Its bytes reproduce from the recorded seed.",
+      "ephemeral": null,
+      "expect": {
+        "crypto": "HpkeBase",
+        "payload": {
+          "content": "hello world"
+        },
+        "signature": "MlDsa65"
+      },
+      "inner": null,
+      "layout": [
+        "-Z##",
+        "XSCS",
+        "VID_sndr | 4BAA",
+        "Padding_Field",
+        "-A##",
+        "Bytes"
+      ],
+      "message": "-EGwYTSP-AAB4BATZGlkOnBlZXI6NHpRbWJMcXUzd2VadHNuTmVzQnplY0NabTVGQTZ1YUdrZ0NXWVI1V25kcjZHenpk4BATZGlkOnBlZXI6NHpRbVpzS21mZm53WVZiR0xiNlptWjhna2d5VHM4RDc2WVFSQnQ1WW5GTks0U25v5FGFAG_gn35RNoXWKshZoo7uJpjoK4rcKk2jfCWOYB5delcb_W29HoRlEL0dSVeU4hgMITPH3cryDD1lyXErM9gmApU_t3X2VMWTbHMN8i8YqhdzaUnPWWDqRNtFjChapB_euEuUWFXJYvlz7tyudeTDJxbbXFn5s_fzwvfKwPMsvzF0asVGhxKC77xe3cMht126-gHc0xx908WrHrMVUtfLXWQiQmIsnXcbHqPwbHnxDWamgaWPkbwjebDDnJGHwkAg1jBz9_Wo6RYymhGpBGqc2L9IsGfYSzy9PaSb22sg5BtTLO1vf3o_d3KoAks7uHG7RYDQgarMl4pWZUaICod3MK7yZlTR9LOsnXqkn2UXMyNg5Tr0bX6iEIw4bM77HXu2Ic84eF-2DfgXbK2I6DdH-KcH2b2EMmv95kC4WED-jPGoQA2Wd7kBNYlbYouQU4nDmmdVjOVvo2AeD0_aDu3cN2nQyINx34ryTcGjG6sfg6H6FYWT6yET7vpfPpZlx_cs_qq9QC9d5yjZOSzyEmgQE4a0QVGtxdk8a_Bd2O8gGutWbM5fFNLoPEwreECPHIuhuMBXMmIqRS1igha8yN_dvapSle1WrHVy9EADQww4KzR8DHvPVuqbCEKtm5_zA0jYiLtiiCGkfUJnBI5k07acUjSSmWz3idGItf-SmY4latHXAeWF6i18cJZkJjV2MA3s1ufE0xB2QgRMs_zwpDAB94ICwBUcMBuce40rVhamBx4_RPvr-FsX_IUMBOCRf-p_Av3RKqE2KQa83IgWUbgUnvXHsmNOtArVpTD5wtIDB-Pcwq_jvOgyKYupgddkTwo9jY50q4R3u2Nvm47NjurQKJ1jvmVsv-ouSfIYGeUrqWOkbwjfkgenLJHv7ZnXE2bPI-KkkM4n5f2OjCfHuirtQnstKEd4gCbhUSx5BSpjoNLT77emBWb_NjiKdCZ8dugvuu48R9uaAc3PtBQyf1xkyHpUoge7FLHRDC_Kc4mITunie4eC4SjaBpyVwL2PwW-pPr8J1RHOX0KNqxFq_7ZocLPdzAtgaYkLO7kaIBRKH4gGPRsoO4eyk0DrUzIaZBqp4VJRE7EcE48FjtneHHvjPc0eA4v35CWpdPtvEHgeAwsXgfF64Bn_PIMgyMt29Ja-s7Ob4j4TGOBXxxdMUhf67z9nnUARnLej12ARzaz9Wa00fQjfvJQVaxbjeZ9kFDM69vjW997615Oxute1YenKcZqACx9EoghOqj_xwJphXfBIQcy27pYcOPDm5Q1vjLryDv5kyyp0bIni5sIqUQnrJ9InUy2VBtSB0wE_drnoiwQu2_rMb_M0jgnuNZ-N3Y9haW4AMX7a-5uttqK-eyQO0OogmCBr8pLN0ZC7aQz2KbPl_TDxQQgrCn2ra_1VsYn8hl0x_D1FQUeB4y6bA3LnfUuVkYYYoUFQQGy5oCdT-AjqCSqfOoGRjRRBfsOpm67DykdVa1BXIEgfXNPCzfHzPHvAkYdH1aar1fOZINtK9jKJZjz-5RtiE2yvMWqj62_re06ceJqlv9LSAixKs1tb-CRR-KRQ1AAQYMLICZQ_SIqSR82-_Ka09Gh6sD-P2mGOT-kvnba2VbJ-rWOFQ38MFm6fizezJiGoUTAxHbQZCgfYJJUxidYX1q0ZeYCagJc34B5q_Kbgddy2EET-pZP1aA-KLIVnsn-2oyskvbBohipnE2wNmJj1FdBmvmD-ElvWR-HkUNNMXQuIf-MWehP2Wtnr8CDBnzAekL1PGxDU-LfmQQmQAhAFC6L2fweKfOduDYE2gAFSQh7nt6fGcglJQuGM7B-xLVFgGqVgwan0-A5PPaIfbReO5WpjvF523CUWZwai6R4si6O_U_2wf9PwcXf3mEfuvxWqxfxZk-3YqQ168wpNTrwnkVTMPEwFJa1VH0UI_qrMbJPioNG1hhYHRSQ9PbBKr5YrAcEvC3fVBAG5Xdes4BvD9ZZsH13tI3YAdQyl8HVmMULgYFrRZ7otzBXdIYXxUDgCKP_0WRXx-RGieDJe7dTfPXWMoVDWJ6sey7v7TdQeEe0IXAeMtEq8ARF9rXnQPwABW43TYBAK_PyHcn_f0tK9CIPH1JT8HfV_W5JVGnzukYbJvEOo5nQmyDCpj71EQRBHvu3szouB7UEgoc7Jzy-qw41zq7WDMJZMdIcruwVkwI2vI74rLk-u_eaYXQFM3IRIzo-XF6v5cgFrtUvRF1qff_d-8jkwFV3urGJdx2zqaI7u42dt6vgWMCiKa4tGbXjyNLFoWvN0oHNCu8wJnMCNCKKW0PDvDw8ymw0paBTUxFdnrJ5S5Qha8lLiz75lqAUc7z7WtrdQcKQuJNUhpNDALzot57mclglr-6QfGkc6xZ-SZS8dBErtDPatXcCc0dMIubbkxBtiDsQ6gbJjnyKKw11d3zPL6XJWiK57y82IqMQ7VQTa9PWyToq7nl44luZK6Z6ulwAd7pvSQ4Ge-FvpPjgNuj-6idQASixfOaNQGVcxdp_yZESM5uq5NkaE8BLxOiJVXdjFpFE5kNVllgUZNP00L8fbpA4ttsoopghGouhNd14dJn49hmm9ZprmQcvDofEVAj1OxL1NOzZ-_eVKrOodCxsn24sr3VpSQuQ1vtZfwoZ9z7wRfbv78ab4JUEPuW3BAnytQPjRgwGe3yjU1m6qEiTXs1uI9x3H6gyTvqjpw26AkFpZgNd-0I7fcVKi7qGAZHXUmsT0lrk2GW2gtH6uIF0F9pPYaFJYwpCh7nCbCd16Ew0qI6CjEnkaFxedRSxINf07A9AgXeON11ZrxYnc2ft3X0tvjKzDhOqmjmGN14MZ2sgbiEuzkEbfJ8KqeBlFt6JEdlEKbX_y2yqBqt-ET1piBwG66w20c9kpIr70gYF17a6zUMMirQEmTZr5aecdlkULuzKuhg2f-x_5AY3_hUcprbjFnz9NrO-Ui-1W3_aVtlKXvuI0JsEi8Qc-VxVvdkhBTiMGDMSzYYB4qMN-13Lna6UesHJQO9wUYhiuJgbm8MfIn47dEfvEjW01LKn9NpjFkFy_CxHvfabuWflzqV6EGXCyb8bHjVbFVc8CN2u4c9ZmSgBbkLwJWTkQXV8G7YETGg6jhdNshxIOE6WH4besSMb6PejXDCQyH5ylkfvRGbvRv0-zNDY5UiMpAzb74iSCaMfpJfDd5fGjCiTS3XVH2apczDWjJAK3g80YSEQY2LhqVbNWlDyXdNa6lSjcbK3kc96-KVO0rEvwUx2pbBhjteciWr0F_YVY8EAPzVqFR5TeYw-CcIvKxuloBsaA4J-V3LNn16UCSBLMC2cku_2wGOw02lB8zq6sZCeZ2GIBBrgPTe96JjtKaI8eM1gNu8hRzm3fll7tzwB3Y82hPC9pDbYYnr1L4UYRz8QjtqiguRxOrI4WGHYRLywirhrjQO-Zi9M9eOt8SbGlSIcFvlREQyPjnWoHC-EkeYGh2wvei64GrGRpV9aLYWXbCqBe_lrrbIHlxn17fGhVIpDI37GRONAslNwc0DbprAMRUXK1G4e20CYglpTPZHfpIqRxMHhXvcqjLa3huGuZAvZtD9LlfMTCWwVGJ2-OHIrSmBNQ6lvKUVOln3Bg9WTYQ_GF4BHYaDpLevPEzL5XzGFw9mUdC0KPo_MKn0kwhYyP2JO0yPc3OMAzfnydOzK71qi3j9UJxPYQig8yJ77_hJJqTMbltXa95AI1m0OQIuNBjmec0GBg5aUIl51-vFdRwThZo_sa9GVFHpBluOcAQnVjOHgmqoHjHQBJ2k3hKt5fphZZ-x6xtb6XO194UAzeS379oJA99JYOvsiwhWuvi8VKtwHv05SmPfjSiVsqjUlescpHEJ_qKE_lgEt9Yk-XNqSARimLx85YubFuN5nl3TjHYPOTci790lm0TOZ9qtNo8flKBBq3ZsjztrtTgxBD3BH1TBGOWtfHkk6u7EU83DKC37NMz8ix6YpFWpOsIZJPdb27z7_crXX7zwqUz-c4CmdY4c_n_hu71GtNEdl9oBTJA88cb7xjgNX5nM5rR02cp8gijl8aBKw76lwhTzFC7xddUyqv4SIvVyiwQ0m660qNUEdLn-4_IBb-P4p2Lsk7mbYrQMZrPzoeltr8puEWYUvrL4OGya5oisK6cyjSG_MoUG6PKOhC35PSvRRcHJJNL_3Fmva_Oa0QfZjV7QzhGL-atjXjhLaUTFG8GI61ehqwoAYVTaEVDfBeAfseCoJeTBd8R8KiPRk_uMJzHANUISUA19I0AflsxSYyUAUJk6BzZl-PHxJUWVqZPfEN8rO2clEb5jpJZXTI8F-h7UMP0o7vM8o27x5btu59i_2hgLxODjfUIlvVg1KQVCdiDfS953LF-cQBVbfQOfG160brgl6A5xKHgS6UGxB2d_vZN2kBIdi4juFcaPALx3p-yhb9rGeMkfLeVmiFif8-o6XBYPiOIolK0fm4xPJUoTLBTHU9w8ZjJZNG0UlgpnNktmYMuM2HRBwrk-S7ttfdYWLUsBXvFkDZnS5MhoYhzewSG5Zk3fVWWPd_ReQFgtbBeoHb7v5LZfLiFVdGuiHryc0D57vp1CHckDIn2bSJ13ZyNuS6ow3yO7dua4hOnGCCJ8_ZF4vDPgr8BAEwYmEBPsw4dZwT8-R5devr2ykbwN0T9wlzyIyh4hzB6xdGE5-6dTOVe8qSAinpCCm87Z6QQS6VILJJsZaiCtq-ngp2NsczrlXddHQzDPxC41DZO_Y0nhJ0aRr4DApHEcCaoZYF4X9t0G9rZA6fueUK2ytMqAdHv67-h1EU1ii-z8dteqKrXe45Wd0veWWSvCvM4cbWMYpNTRw1osTJS4VAzj_tOkNG-cpuk79ealqvY8WcRKn7o6xFBRMPYzqkyBt7L4tND0ddsj2g3bvn5acb0Y9ElPIOOWhvPZiRkrVWnU72ayLhB0gK4bvG1E-z_zCZPygSH2cveUYrlZmHTtHcNxX4dFG-a_elQcbqSxMju0RVx4NY-jWAM0IxOywrSel-0c_gi6L68K1yyFPKyLko0ZAUOEUCLM5zUdbttHl5DFBjIyw9iUsSNr_z2sIY3nJoXV4Aelk5Ao8HFFShyiPhIdprl4_OcJ9joEKR40rD8aEI6xUoWK3jGb-zIja_CzEe5UnijtlHtiUqNN6tzF4LCq1cs8nvPL7w5E83prMQImSM_jIGF4LkXnhZXoE8JaP_19II-F7Vw8RDuCOuKPpHn5kDCcMVirMtdpxrPICO-YDmXB4AgCVPgaKV953hBaI97tWauj-Oulrz37X-ksYQ2OO7V-Eq6wNy4nSvwGuPtLpmRNi3FzUSoSGxfYKJxV3wkW7DNqLiGHPT5b9Pz50Kpt5x3oRHzuaVT9JdnK_45ie1IwDsZ7-v1ZWt4B4QFoKwx7X2KVWaua4465xUd6Wrj3PqXuo6DcgWKdg1NJnmc6Kchv5culU6GyL-fvASxaJTG47C_6ckGIGv1ctT8RWgLn7Jcf9PE58VaXBGBQ5-vN7S5BeDsUBj7fZNtP81AKHI6rcf7zxGnxhPDavBfH1pErTg9wp3XslJzeok5TkGZAjNewiodf6GDvkFMJbO_9-J5HpaAGbKXyfIFz1lKXwPdLG9oiJ4A4oNu0AcQrCEPXz3UC3gfavQ-dLN4mW7rQeoXCEBjUldmDaC0vzhgPOp76VjGP8wrLkr3r1kyrWhbcyJSvUWsQi-40qNo8vZ0tJlqBKfIM2WOV8gL9_sIEI1EvESyqTiEqM4yr3iTT2-jcIyjpTtYErIvkAiN7kOZQ22JN60xz_FXSVow7SUb822zvd8XznMEUp92MXIpOeazseJzKeGUzW74iYFdJaih4AOLDmudWggYVW8SyBAC2XxU0RiXtEfoLgz6aTXJc04ldRl3E9zwFgSq63o9jlKgYeO1PADQ2KEkNLkWpWZpfP8XHKNoLHKAxEWHDM-U6YAAAAAAAAAAAAAAAAAAAAABQwTGR8n",
+      "name": "direct-hpke-base-pq",
+      "nonce": null,
+      "payload_plaintext": "-ZAJXSCS4BAA4BAA-AAF5BAEAGhlbGxvIHdvcmxk",
+      "payload_segments": [
+        {
+          "chars": 4,
+          "field": "payload code",
+          "kind": "code",
+          "note": "counts the payload that follows",
+          "text": "-ZAJ",
+          "value": "9 quadlets = 27 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "payload type",
+          "kind": "code",
+          "note": "application payload, carried opaquely",
+          "text": "XSCS",
+          "value": "TSP_GEN"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 0 quadlets",
+          "text": "4BAA",
+          "value": "empty, the NULL value"
+        },
+        {
+          "chars": 4,
+          "field": "Padding_Field code",
+          "kind": "code",
+          "note": "lead pad 0, count 0 quadlets",
+          "text": "4BAA",
+          "value": "empty, the NULL value"
+        },
+        {
+          "chars": 4,
+          "field": "stream code",
+          "kind": "code",
+          "note": "a generic CESR stream, carried opaquely",
+          "text": "-AAF",
+          "value": "5 quadlets = 15 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "Upper_Layer_Data code",
+          "kind": "code",
+          "note": "lead pad 1, count 4 quadlets",
+          "text": "5BAE",
+          "value": "11 bytes follow"
+        },
+        {
+          "chars": 16,
+          "field": "Upper_Layer_Data",
+          "kind": "data",
+          "note": "11 bytes",
+          "text": "AGhlbGxvIHdvcmxk",
+          "value": "hello world"
+        }
+      ],
+      "receiver": "pq_bob",
+      "seed": "CwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "segments": [
+        {
+          "chars": 4,
+          "field": "frame code",
+          "kind": "code",
+          "note": "counts the signable content that follows",
+          "text": "-EGw",
+          "value": "432 quadlets = 1296 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "TSP_Version code",
+          "kind": "code",
+          "note": "the TSP genus",
+          "text": "YTSP",
+          "value": null
+        },
+        {
+          "chars": 4,
+          "field": "TSP_Version",
+          "kind": "data",
+          "note": "MAJOR in the count code's identifier, then MINOR and PATCH",
+          "text": "-AAB",
+          "value": "0.0.1"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
+          "field": "VID_sndr",
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbWJMcXUzd2VadHNuTmVzQnplY0NabTVGQTZ1YUdrZ0NXWVI1V25kcjZHenpk",
+          "value": "did:peer:4zQmbLqu3weZtsnNesBzecCZm5FA6uaGkgCWYR5Wndr6Gzzd"
+        },
+        {
+          "chars": 4,
+          "field": "VID_rcvr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
+          "field": "VID_rcvr",
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVpzS21mZm53WVZiR0xiNlptWjhna2d5VHM4RDc2WVFSQnQ1WW5GTks0U25v",
+          "value": "did:peer:4zQmZsKmffnwYVbGLb6ZmZ8gkgyTs8D76YQRBt5YnFNK4Sno"
+        },
+        {
+          "chars": 4,
+          "field": "ciphertext code",
+          "kind": "code",
+          "note": "4F/5F/6F: HPKE-Base, including its post-quantum KEM; lead pad 1, count 389 quadlets",
+          "text": "5FGF",
+          "value": "1166 bytes follow"
+        },
+        {
+          "chars": 1556,
+          "field": "ciphertext",
+          "kind": "data",
+          "note": "1166 bytes, shown as hex",
+          "text": "AG_gn35RNoXWKshZoo7uJpjoK4rcKk2jfCWOYB5delcb_W29HoRlEL0dSVeU4hgMITPH3cryDD1lyXErM9gmApU_t3X2VMWTbHMN8i8YqhdzaUnPWWDqRNtFjChapB_euEuUWFXJYvlz7tyudeTDJxbbXFn5s_fzwvfKwPMsvzF0asVGhxKC77xe3cMht126-gHc0xx908WrHrMVUtfLXWQiQmIsnXcbHqPwbHnxDWamgaWPkbwjebDDnJGHwkAg1jBz9_Wo6RYymhGpBGqc2L9IsGfYSzy9PaSb22sg5BtTLO1vf3o_d3KoAks7uHG7RYDQgarMl4pWZUaICod3MK7yZlTR9LOsnXqkn2UXMyNg5Tr0bX6iEIw4bM77HXu2Ic84eF-2DfgXbK2I6DdH-KcH2b2EMmv95kC4WED-jPGoQA2Wd7kBNYlbYouQU4nDmmdVjOVvo2AeD0_aDu3cN2nQyINx34ryTcGjG6sfg6H6FYWT6yET7vpfPpZlx_cs_qq9QC9d5yjZOSzyEmgQE4a0QVGtxdk8a_Bd2O8gGutWbM5fFNLoPEwreECPHIuhuMBXMmIqRS1igha8yN_dvapSle1WrHVy9EADQww4KzR8DHvPVuqbCEKtm5_zA0jYiLtiiCGkfUJnBI5k07acUjSSmWz3idGItf-SmY4latHXAeWF6i18cJZkJjV2MA3s1ufE0xB2QgRMs_zwpDAB94ICwBUcMBuce40rVhamBx4_RPvr-FsX_IUMBOCRf-p_Av3RKqE2KQa83IgWUbgUnvXHsmNOtArVpTD5wtIDB-Pcwq_jvOgyKYupgddkTwo9jY50q4R3u2Nvm47NjurQKJ1jvmVsv-ouSfIYGeUrqWOkbwjfkgenLJHv7ZnXE2bPI-KkkM4n5f2OjCfHuirtQnstKEd4gCbhUSx5BSpjoNLT77emBWb_NjiKdCZ8dugvuu48R9uaAc3PtBQyf1xkyHpUoge7FLHRDC_Kc4mITunie4eC4SjaBpyVwL2PwW-pPr8J1RHOX0KNqxFq_7ZocLPdzAtgaYkLO7kaIBRKH4gGPRsoO4eyk0DrUzIaZBqp4VJRE7EcE48FjtneHHvjPc0eA4v35CWpdPtvEHgeAwsXgfF64Bn_PIMgyMt29Ja-s7Ob4j4TGOBXxxdMUhf67z9nnUARnLej12ARzaz9Wa00fQjfvJQVaxbjeZ9kFDM69vjW997615Oxute1YenKcZqACx9EoghOqj_xwJphXfBIQcy27pYcOPDm5Q1vjLryDv5kyyp0bIni5sIqUQnrJ9InUy2VBtSB0wE_drnoiwQu2_rMb_M0jgnuNZ-N3Y9haW4AMX7a-5uttqK-eyQO0OogmCBr8pLN0ZC7aQz2KbPl_TDxQQgrCn2ra_1VsYn8hl0x_D1FQUeB4y6bA3LnfUuVkYYYoUFQQGy5oCdT-AjqCSqfOoGRjRRBfsOpm67DykdVa1BXIEgfXNPCzfHzPHvAkYdH1aar1fOZINtK9jKJZjz-5RtiE2yvMWqj62_re06ceJqlv9LSAixKs1tb",
+          "value": "6fe09f7e513685d62ac859a28eee2698e82b8adc2a4da37c258e601e5d7a571bfd6dbd1e846510bd1d495794e2180c2133c7ddcaf20c3d65c9712b33d82602953fb775f654c5936c730df22f18aa17736949cf5960ea44db458c285aa41fdeb84b945855c962f973eedcae75e4c32716db5c59f9b3f7f3c2f7cac0f32cbf31746ac546871282efbc5eddc321b75dbafa01dcd31c7dd3c5ab1eb31552d7cb5d642242622c9d771b1ea3f06c79f10d66a681a58f91bc2379b0c39c9187c24020d63073f7f5a8e916329a11a9046a9cd8bf48b067d84b3cbd3da49bdb6b20e41b532ced6f7f7a3f7772a8024b3bb871bb4580d081aacc978a566546880a877730aef26654d1f4b3ac9d7aa49f6517332360e53af46d7ea2108c386ccefb1d7bb621cf38785fb60df8176cad88e83747f8a707d9bd84326bfde640b85840fe8cf1a8400d9677b90135895b628b905389c39a67558ce56fa3601e0f4fda0eeddc3769d0c88371df8af24dc1a31bab1f83a1fa158593eb2113eefa5f3e9665c7f72cfeaabd402f5de728d9392cf21268101386b44151adc5d93c6bf05dd8ef201aeb566cce5f14d2e83c4c2b78408f1c8ba1b8c05732622a452d628216bcc8dfddbdaa5295ed56ac7572f44003430c382b347c0c7bcf56ea9b0842ad9b9ff30348d888bb628821a47d4267048e64d3b69c523492996cf789d188b5ff92998e256ad1d701e585ea2d7c709664263576300decd6e7c4d3107642044cb3fcf0a43001f78202c0151c301b9c7b8d2b5616a6071e3f44fbebf85b17fc850c04e0917fea7f02fdd12aa1362906bcdc881651b8149ef5c7b2634eb40ad5a530f9c2d20307e3dcc2afe3bce832298ba981d7644f0a3d8d8e74ab8477bb636f9b8ecd8eead0289d63be656cbfea2e49f21819e52ba963a46f08df9207a72c91efed99d71366cf23e2a490ce27e5fd8e8c27c7ba2aed427b2d2847788026e1512c79052a63a0d2d3efb7a60566ff36388a74267c76e82fbaee3c47db9a01cdcfb414327f5c64c87a54a207bb14b1d10c2fca7389884ee9e27b8782e128da069c95c0bd8fc16fa93ebf09d511ce5f428dab116affb66870b3ddcc0b6069890b3bb91a20144a1f88063d1b283b87b29340eb53321a641aa9e1525113b11c138f058ed9de1c7be33dcd1e038bf7e425a974fb6f10781e030b1781f17ae019ff3c8320c8cb76f496beb3b39be23e1318e057c7174c5217faef3f679d40119cb7a3d76011cdacfd59ad347d08dfbc94156b16e3799f6414333af6f8d6f7defad793b1bad7b561e9ca719a800b1f44a2084eaa3ff1c09a615df04841ccb6ee961c38f0e6e50d6f8cbaf20efe64cb2a746c89e2e6c22a5109eb27d227532d9506d481d3013f76b9e88b042edbfacc6ff3348e09ee359f8ddd8f61696e00317edafb9badb6a2be7b240ed0ea2098206bf292cdd190bb690cf629b3e5fd30f141082b0a7dab6bfd55b189fc865d31fc3d45414781e32e9b0372e77d4b95918618a14150406cb9a02753f808ea092a9f3a81918d14417ec3a99baec3ca47556b505720481f5cd3c2cdf1f33c7bc0918747d5a6abd5f39920db4af63289663cfee51b62136caf316aa3eb6feb7b4e9c789aa5bfd2d2022c4ab35b5b"
+        },
+        {
+          "chars": 4,
+          "field": "attachments code",
+          "kind": "code",
+          "note": "attachment group",
+          "text": "-CRR",
+          "value": "1105 quadlets = 3315 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "signatures code",
+          "kind": "code",
+          "note": "indexed signature group",
+          "text": "-KRQ",
+          "value": "1104 quadlets = 3312 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "signature code",
+          "kind": "code",
+          "note": "ML-DSA-65",
+          "text": "1AAQ",
+          "value": null
+        },
+        {
+          "chars": 4412,
+          "field": "signature",
+          "kind": "data",
+          "note": "3309 bytes",
+          "text": "YMLICZQ_SIqSR82-_Ka09Gh6sD-P2mGOT-kvnba2VbJ-rWOFQ38MFm6fizezJiGoUTAxHbQZCgfYJJUxidYX1q0ZeYCagJc34B5q_Kbgddy2EET-pZP1aA-KLIVnsn-2oyskvbBohipnE2wNmJj1FdBmvmD-ElvWR-HkUNNMXQuIf-MWehP2Wtnr8CDBnzAekL1PGxDU-LfmQQmQAhAFC6L2fweKfOduDYE2gAFSQh7nt6fGcglJQuGM7B-xLVFgGqVgwan0-A5PPaIfbReO5WpjvF523CUWZwai6R4si6O_U_2wf9PwcXf3mEfuvxWqxfxZk-3YqQ168wpNTrwnkVTMPEwFJa1VH0UI_qrMbJPioNG1hhYHRSQ9PbBKr5YrAcEvC3fVBAG5Xdes4BvD9ZZsH13tI3YAdQyl8HVmMULgYFrRZ7otzBXdIYXxUDgCKP_0WRXx-RGieDJe7dTfPXWMoVDWJ6sey7v7TdQeEe0IXAeMtEq8ARF9rXnQPwABW43TYBAK_PyHcn_f0tK9CIPH1JT8HfV_W5JVGnzukYbJvEOo5nQmyDCpj71EQRBHvu3szouB7UEgoc7Jzy-qw41zq7WDMJZMdIcruwVkwI2vI74rLk-u_eaYXQFM3IRIzo-XF6v5cgFrtUvRF1qff_d-8jkwFV3urGJdx2zqaI7u42dt6vgWMCiKa4tGbXjyNLFoWvN0oHNCu8wJnMCNCKKW0PDvDw8ymw0paBTUxFdnrJ5S5Qha8lLiz75lqAUc7z7WtrdQcKQuJNUhpNDALzot57mclglr-6QfGkc6xZ-SZS8dBErtDPatXcCc0dMIubbkxBtiDsQ6gbJjnyKKw11d3zPL6XJWiK57y82IqMQ7VQTa9PWyToq7nl44luZK6Z6ulwAd7pvSQ4Ge-FvpPjgNuj-6idQASixfOaNQGVcxdp_yZESM5uq5NkaE8BLxOiJVXdjFpFE5kNVllgUZNP00L8fbpA4ttsoopghGouhNd14dJn49hmm9ZprmQcvDofEVAj1OxL1NOzZ-_eVKrOodCxsn24sr3VpSQuQ1vtZfwoZ9z7wRfbv78ab4JUEPuW3BAnytQPjRgwGe3yjU1m6qEiTXs1uI9x3H6gyTvqjpw26AkFpZgNd-0I7fcVKi7qGAZHXUmsT0lrk2GW2gtH6uIF0F9pPYaFJYwpCh7nCbCd16Ew0qI6CjEnkaFxedRSxINf07A9AgXeON11ZrxYnc2ft3X0tvjKzDhOqmjmGN14MZ2sgbiEuzkEbfJ8KqeBlFt6JEdlEKbX_y2yqBqt-ET1piBwG66w20c9kpIr70gYF17a6zUMMirQEmTZr5aecdlkULuzKuhg2f-x_5AY3_hUcprbjFnz9NrO-Ui-1W3_aVtlKXvuI0JsEi8Qc-VxVvdkhBTiMGDMSzYYB4qMN-13Lna6UesHJQO9wUYhiuJgbm8MfIn47dEfvEjW01LKn9NpjFkFy_CxHvfabuWflzqV6EGXCyb8bHjVbFVc8CN2u4c9ZmSgBbkLwJWTkQXV8G7YETGg6jhdNshxIOE6WH4besSMb6PejXDCQyH5ylkfvRGbvRv0-zNDY5UiMpAzb74iSCaMfpJfDd5fGjCiTS3XVH2apczDWjJAK3g80YSEQY2LhqVbNWlDyXdNa6lSjcbK3kc96-KVO0rEvwUx2pbBhjteciWr0F_YVY8EAPzVqFR5TeYw-CcIvKxuloBsaA4J-V3LNn16UCSBLMC2cku_2wGOw02lB8zq6sZCeZ2GIBBrgPTe96JjtKaI8eM1gNu8hRzm3fll7tzwB3Y82hPC9pDbYYnr1L4UYRz8QjtqiguRxOrI4WGHYRLywirhrjQO-Zi9M9eOt8SbGlSIcFvlREQyPjnWoHC-EkeYGh2wvei64GrGRpV9aLYWXbCqBe_lrrbIHlxn17fGhVIpDI37GRONAslNwc0DbprAMRUXK1G4e20CYglpTPZHfpIqRxMHhXvcqjLa3huGuZAvZtD9LlfMTCWwVGJ2-OHIrSmBNQ6lvKUVOln3Bg9WTYQ_GF4BHYaDpLevPEzL5XzGFw9mUdC0KPo_MKn0kwhYyP2JO0yPc3OMAzfnydOzK71qi3j9UJxPYQig8yJ77_hJJqTMbltXa95AI1m0OQIuNBjmec0GBg5aUIl51-vFdRwThZo_sa9GVFHpBluOcAQnVjOHgmqoHjHQBJ2k3hKt5fphZZ-x6xtb6XO194UAzeS379oJA99JYOvsiwhWuvi8VKtwHv05SmPfjSiVsqjUlescpHEJ_qKE_lgEt9Yk-XNqSARimLx85YubFuN5nl3TjHYPOTci790lm0TOZ9qtNo8flKBBq3ZsjztrtTgxBD3BH1TBGOWtfHkk6u7EU83DKC37NMz8ix6YpFWpOsIZJPdb27z7_crXX7zwqUz-c4CmdY4c_n_hu71GtNEdl9oBTJA88cb7xjgNX5nM5rR02cp8gijl8aBKw76lwhTzFC7xddUyqv4SIvVyiwQ0m660qNUEdLn-4_IBb-P4p2Lsk7mbYrQMZrPzoeltr8puEWYUvrL4OGya5oisK6cyjSG_MoUG6PKOhC35PSvRRcHJJNL_3Fmva_Oa0QfZjV7QzhGL-atjXjhLaUTFG8GI61ehqwoAYVTaEVDfBeAfseCoJeTBd8R8KiPRk_uMJzHANUISUA19I0AflsxSYyUAUJk6BzZl-PHxJUWVqZPfEN8rO2clEb5jpJZXTI8F-h7UMP0o7vM8o27x5btu59i_2hgLxODjfUIlvVg1KQVCdiDfS953LF-cQBVbfQOfG160brgl6A5xKHgS6UGxB2d_vZN2kBIdi4juFcaPALx3p-yhb9rGeMkfLeVmiFif8-o6XBYPiOIolK0fm4xPJUoTLBTHU9w8ZjJZNG0UlgpnNktmYMuM2HRBwrk-S7ttfdYWLUsBXvFkDZnS5MhoYhzewSG5Zk3fVWWPd_ReQFgtbBeoHb7v5LZfLiFVdGuiHryc0D57vp1CHckDIn2bSJ13ZyNuS6ow3yO7dua4hOnGCCJ8_ZF4vDPgr8BAEwYmEBPsw4dZwT8-R5devr2ykbwN0T9wlzyIyh4hzB6xdGE5-6dTOVe8qSAinpCCm87Z6QQS6VILJJsZaiCtq-ngp2NsczrlXddHQzDPxC41DZO_Y0nhJ0aRr4DApHEcCaoZYF4X9t0G9rZA6fueUK2ytMqAdHv67-h1EU1ii-z8dteqKrXe45Wd0veWWSvCvM4cbWMYpNTRw1osTJS4VAzj_tOkNG-cpuk79ealqvY8WcRKn7o6xFBRMPYzqkyBt7L4tND0ddsj2g3bvn5acb0Y9ElPIOOWhvPZiRkrVWnU72ayLhB0gK4bvG1E-z_zCZPygSH2cveUYrlZmHTtHcNxX4dFG-a_elQcbqSxMju0RVx4NY-jWAM0IxOywrSel-0c_gi6L68K1yyFPKyLko0ZAUOEUCLM5zUdbttHl5DFBjIyw9iUsSNr_z2sIY3nJoXV4Aelk5Ao8HFFShyiPhIdprl4_OcJ9joEKR40rD8aEI6xUoWK3jGb-zIja_CzEe5UnijtlHtiUqNN6tzF4LCq1cs8nvPL7w5E83prMQImSM_jIGF4LkXnhZXoE8JaP_19II-F7Vw8RDuCOuKPpHn5kDCcMVirMtdpxrPICO-YDmXB4AgCVPgaKV953hBaI97tWauj-Oulrz37X-ksYQ2OO7V-Eq6wNy4nSvwGuPtLpmRNi3FzUSoSGxfYKJxV3wkW7DNqLiGHPT5b9Pz50Kpt5x3oRHzuaVT9JdnK_45ie1IwDsZ7-v1ZWt4B4QFoKwx7X2KVWaua4465xUd6Wrj3PqXuo6DcgWKdg1NJnmc6Kchv5culU6GyL-fvASxaJTG47C_6ckGIGv1ctT8RWgLn7Jcf9PE58VaXBGBQ5-vN7S5BeDsUBj7fZNtP81AKHI6rcf7zxGnxhPDavBfH1pErTg9wp3XslJzeok5TkGZAjNewiodf6GDvkFMJbO_9-J5HpaAGbKXyfIFz1lKXwPdLG9oiJ4A4oNu0AcQrCEPXz3UC3gfavQ-dLN4mW7rQeoXCEBjUldmDaC0vzhgPOp76VjGP8wrLkr3r1kyrWhbcyJSvUWsQi-40qNo8vZ0tJlqBKfIM2WOV8gL9_sIEI1EvESyqTiEqM4yr3iTT2-jcIyjpTtYErIvkAiN7kOZQ22JN60xz_FXSVow7SUb822zvd8XznMEUp92MXIpOeazseJzKeGUzW74iYFdJaih4AOLDmudWggYVW8SyBAC2XxU0RiXtEfoLgz6aTXJc04ldRl3E9zwFgSq63o9jlKgYeO1PADQ2KEkNLkWpWZpfP8XHKNoLHKAxEWHDM-U6YAAAAAAAAAAAAAAAAAAAAABQwTGR8n",
+          "value": "60c2c809943f488a9247cdbefca6b4f4687ab03f8fda618e4fe92f9db6b655b27ead6385437f0c166e9f8b37b32621a85130311db4190a07d824953189d617d6ad1979809a809737e01e6afca6e075dcb61044fea593f5680f8a2c8567b27fb6a32b24bdb068862a67136c0d9898f515d066be60fe125bd647e1e450d34c5d0b887fe3167a13f65ad9ebf020c19f301e90bd4f1b10d4f8b7e64109900210050ba2f67f078a7ce76e0d8136800152421ee7b7a7c672094942e18cec1fb12d51601aa560c1a9f4f80e4f3da21f6d178ee56a63bc5e76dc25166706a2e91e2c8ba3bf53fdb07fd3f07177f79847eebf15aac5fc5993edd8a90d7af30a4d4ebc279154cc3c4c0525ad551f4508feaacc6c93e2a0d1b586160745243d3db04aaf962b01c12f0b77d50401b95dd7ace01bc3f5966c1f5ded237600750ca5f075663142e0605ad167ba2dcc15dd2185f150380228fff45915f1f911a278325eedd4df3d758ca150d627ab1ecbbbfb4dd41e11ed085c078cb44abc01117dad79d03f00015b8dd360100afcfc87727fdfd2d2bd0883c7d494fc1df57f5b92551a7cee9186c9bc43a8e67426c830a98fbd44411047beedecce8b81ed4120a1cec9cf2faac38d73abb58330964c74872bbb0564c08daf23be2b2e4faefde6985d014cdc8448ce8f9717abf972016bb54bd1175a9f7ff77ef23930155deeac625dc76cea688eeee3676deaf81630288a6b8b466d78f234b1685af374a07342bbcc099cc08d08a296d0f0ef0f0f329b0d296814d4c45767ac9e52e5085af252e2cfbe65a8051cef3ed6b6b75070a42e24d521a4d0c02f3a2de7b99c96096bfba41f1a473ac59f92652f1d044aed0cf6ad5dc09cd1d308b9b6e4c41b620ec43a81b2639f228ac35d5ddf33cbe9725688ae7bcbcd88a8c43b5504daf4f5b24e8abb9e5e3896e64ae99eae97001dee9bd243819ef85be93e380dba3fba89d4004a2c5f39a350195731769ff264448ce6eab9364684f012f13a22555dd8c5a4513990d56596051934fd342fc7dba40e2db6ca28a60846a2e84d775e1d267e3d8669bd669ae641cbc3a1f115023d4ec4bd4d3b367efde54aacea1d0b1b27db8b2bdd5a5242e435bed65fc2867dcfbc117dbbfbf1a6f825410fb96dc1027cad40f8d183019edf28d4d66eaa1224d7b35b88f71dc7ea0c93bea8e9c36e80905a5980d77ed08edf7152a2eea1806475d49ac4f496b936196da0b47eae205d05f693d8685258c290a1ee709b09dd7a130d2a23a0a312791a17179d452c4835fd3b03d0205de38dd7566bc589dcd9fb775f4b6f8cacc384eaa68e618dd78319dac81b884bb39046df27c2aa781945b7a24476510a6d7ff2db2a81aadf844f5a620701baeb0db473d92922bef4818175edaeb350c322ad01264d9af969e71d96450bbb32ae860d9ffb1ff9018dff854729adb8c59f3f4dacef948bed56dff695b65297bee23426c122f1073e57156f7648414e23060cc4b3618078a8c37ed772e76ba51eb072503bdc146218ae2606e6f0c7c89f8edd11fbc48d6d352ca9fd3698c5905cbf0b11ef7da6ee59f973a95e841970b26fc6c78d56c555cf02376bb873d6664a005b90bc095939105d5f06ed81131a0ea385d36c87120e13a587e1b7ac48c6fa3de8d70c24321f9ca591fbd119bbd1bf4fb33436395223290336fbe2248268c7e925f0dde5f1a30a24d2dd7547d9aa5ccc35a32402b783cd18484418d8b86a55b356943c9774d6ba9528dc6cade473debe2953b4ac4bf0531da96c1863b5e7225abd05fd8558f0400fcd5a854794de630f82708bcac6e96806c680e09f95dcb367d7a5024812cc0b6724bbfdb018ec34da507cceaeac642799d8620106b80f4def7a263b4a688f1e33580dbbc851ce6ddf965eedcf007763cda13c2f690db6189ebd4be14611cfc423b6a8a0b91c4eac8e161876112f2c22ae1ae340ef998bd33d78eb7c49b1a5488705be54444323e39d6a070be1247981a1db0bde8bae06ac646957d68b6165db0aa05efe5aeb6c81e5c67d7b7c68552290c8dfb19138d02c94dc1cd036e9ac03115172b51b87b6d026209694cf6477e922a471307857bdcaa32dade1b86b9902f66d0fd2e57cc4c25b0546276f8e1c8ad2981350ea5bca5153a59f7060f564d843f185e011d8683a4b7af3c4ccbe57cc6170f6651d0b428fa3f30a9f4930858c8fd893b4c8f73738c0337e7c9d3b32bbd6a8b78fd509c4f6108a0f3227beff84926a4cc6e5b576bde402359b439022e3418e679cd06060e5a508979d7ebc5751c13859a3fb1af465451e9065b8e700427563387826aa81e31d0049da4de12ade5fa61659fb1eb1b5be973b5f78500cde4b7efda0903df4960ebec8b0856baf8bc54ab701efd394a63df8d2895b2a8d495eb1ca47109fea284fe5804b7d624f9736a48046298bc7ce58b9b16e3799e5dd38c760f393722efdd259b44ce67daad368f1f94a041ab766c8f3b6bb53831043dc11f54c118e5ad7c7924eaeec453cdc3282dfb34ccfc8b1e98a455a93ac21924f75bdbbcfbfdcad75fbcf0a94cfe7380a6758e1cfe7fe1bbbd46b4d11d97da014c903cf1c6fbc6380d5f99cce6b474d9ca7c8228e5f1a04ac3bea5c214f3142ef175d532aafe1222f5728b04349baeb4a8d50474b9fee3f2016fe3f8a762ec93b99b62b40c66b3f3a1e96dafca6e116614beb2f8386c9ae688ac2ba7328d21bf328506e8f28e842df93d2bd145c1c924d2ffdc59af6bf39ad107d98d5ed0ce118bf9ab635e384b6944c51bc188eb57a1ab0a006154da1150df05e01fb1e0a825e4c177c47c2a23d193fb8c2731c0354212500d7d23401f96cc5263250050993a073665f8f1f1254595a993df10df2b3b672511be63a496574c8f05fa1ed430fd28eef33ca36ef1e5bb6ee7d8bfda180bc4e0e37d4225bd58352905427620df4bde772c5f9c40155b7d039f1b5eb46eb825e80e71287812e941b107677fbd937690121d8b88ee15c68f00bc77a7eca16fdac678c91f2de56688589ff3ea3a5c160f88e22894ad1f9b8c4f254a132c14c753dc3c663259346d14960a67364b6660cb8cd87441c2b93e4bbb6d7dd6162d4b015ef1640d99d2e4c868621cdec121b9664ddf55658f77f45e40582d6c17a81dbeefe4b65f2e2155746ba21ebc9cd03e7bbe9d421dc903227d9b489d7767236e4baa30df23bb76e6b884e9c608227cfd9178bc33e0afc0401306261013ecc38759c13f3e47975ebebdb291bc0dd13f70973c88ca1e21cc1eb1746139fba7533957bca920229e90829bced9e90412e9520b249b196a20adabe9e0a7636c733ae55dd7474330cfc42e350d93bf6349e1274691af80c0a4711c09aa19605e17f6dd06f6b640e9fb9e50adb2b4ca80747bfaefe875114d628becfc76d7aa2ab5dee3959dd2f796592bc2bcce1c6d6318a4d4d1c35a2c4c94b8540ce3fed3a4346f9ca6e93bf5e6a5aaf63c59c44a9fba3ac4505130f633aa4c81b7b2f8b4d0f475db23da0ddbbe7e5a71bd18f4494f20e39686f3d989192b5569d4ef66b22e107480ae1bbc6d44fb3ff30993f28121f672f79462b9599874ed1dc3715f87451be6bf7a541c6ea4b1323bb4455c78358fa35803342313b2c2b49e97ed1cfe08ba2faf0ad72c853cac8b928d190143845022cce7351d6edb479790c5063232c3d894b1236bff3dac218de72685d5e007a5939028f071454a1ca23e121da6b978fce709f63a04291e34ac3f1a108eb152858ade319bfb32236bf0b311ee549e28ed947b6252a34deadcc5e0b0aad5cb3c9ef3cbef0e44f37a6b31022648cfe32061782e45e78595e813c25a3ffd7d208f85ed5c3c443b823ae28fa479f990309c3158ab32d769c6b3c808ef980e65c1e0080254f81a295f79de105a23deed59aba3f8eba5af3dfb5fe92c610d8e3bb57e12aeb0372e274afc06b8fb4ba6644d8b7173512a121b17d8289c55df0916ec336a2e21873d3e5bf4fcf9d0aa6de71de8447cee6954fd25d9caff8e627b52300ec67bfafd595ade01e101682b0c7b5f629559ab9ae38eb9c5477a5ab8f73ea5eea3a0dc81629d8353499e673a29c86fe5cba553a1b22fe7ef012c5a2531b8ec2ffa7241881afd5cb53f115a02e7ec971ff4f139f15697046050e7ebcded2e41783b14063edf64db4ff3500a1c8eab71fef3c469f184f0dabc17c7d6912b4e0f70a775ec949cdea24e539066408cd7b08a875fe860ef9053096ceffdf89e47a5a0066ca5f27c8173d65297c0f74b1bda22278038a0dbb401c42b0843d7cf7502de07dabd0f9d2cde265bbad07a85c21018d495d983682d2fce180f3a9efa56318ff30acb92bdebd64cab5a16dcc894af516b108bee34a8da3cbd9d2d265a8129f20cd96395f202fdfec20423512f112caa4e212a338cabde24d3dbe8dc2328e94ed604ac8be402237b90e650db624deb4c73fc55d2568c3b4946fcdb6cef77c5f39cc114a7dd8c5c8a4e79acec789cca7865335bbe226057496a287800e2c39ae7568206155bc4b20400b65f15344625ed11fa0b833e9a4d725cd3895d465dc4f73c05812abade8f6394a81878ed4f00343628490d2e45a9599a5f3fc5c728da0b1ca0311161c333e53a600000000000000000000000000000000050c13191f27"
+        }
+      ],
+      "sender": "pq_alice",
+      "spec": "8.2, 8.3, 9.2.8"
     }
   ],
   "vids": {
