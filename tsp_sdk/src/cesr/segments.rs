@@ -444,7 +444,7 @@ mod test {
         let labelled = |name: &str| segments.iter().find(|s| s.label == name).cloned();
         assert_eq!(
             labelled("TSP_Version").and_then(|s| s.value).as_deref(),
-            Some("0.0.1")
+            Some("0.1.0")
         );
         assert_eq!(
             labelled("VID_sndr").and_then(|s| s.value).as_deref(),

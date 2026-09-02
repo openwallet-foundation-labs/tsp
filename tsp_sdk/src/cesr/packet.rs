@@ -1,7 +1,14 @@
 use super::consts::{cesr, cesr_data};
 
-/// The TSP version supported by this spec
-const TSP_VERSION: (u16, u8, u8) = (0, 0, 1);
+/// The TSP version supported by this spec.
+///
+/// Rev 3 is 0.1.0, not 0.0.1: implementations of Rev 2 emit 0.0.1, and the two
+/// revisions are not interoperable — the wire changed throughout. Leaving the
+/// version alone would have made a Rev 3 message indistinguishable from a Rev 2
+/// one until it failed to decode, which is exactly what a version field exists
+/// to prevent. Encoded `YTSP-ABA`, where MAJOR is the count code's identifier
+/// and MINOR and PATCH are six bits each of its count.
+const TSP_VERSION: (u16, u8, u8) = (0, 1, 0);
 
 /// The CESR code table this implementation follows: genus `AAA`, version 2.00,
 /// identified by the genus/version code `-_AAACAA` (not emitted per message).

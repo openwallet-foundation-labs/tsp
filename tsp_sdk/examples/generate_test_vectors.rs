@@ -763,7 +763,7 @@ fn main() {
     );
 
     let doc = json!({
-        "tsp_version": "0.0.1",
+        "tsp_version": "0.1.0",
         "generated_by": "cargo run -p tsp_sdk --example generate_test_vectors",
         "note": "Every value a message depends on is recorded here: the identifiers with their \
                  private keys, the seed each random value was drawn from, and the nonce where one \
