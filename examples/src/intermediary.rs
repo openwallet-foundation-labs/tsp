@@ -122,11 +122,50 @@ async fn access_token() -> Result<String, Box<dyn std::error::Error>> {
 
 /// The files that make up the wallet.
 ///
-/// The second holds writes that have not yet been folded into the first, so a copy of the wallet
-/// is only complete with both. The shared-memory file is deliberately not included: it is rebuilt
-/// on open, and restoring a stale one would be worse than having none.
+/// The second holds writes not yet folded into the first, so a copy is only complete with both.
+/// The shared-memory file is deliberately absent: it is rebuilt on open, and restoring a stale
+/// one would be worse than having none.
 fn wallet_files(wallet: &str) -> [String; 2] {
     [format!("{wallet}.sqlite"), format!("{wallet}.sqlite-wal")]
+}
+
+/// The single object the wallet is kept in.
+fn wallet_object(wallet: &str) -> String {
+    format!("{wallet}.wallet")
+}
+
+/// Pack the wallet's files into one byte string, each preceded by its length.
+///
+/// The wallet is two files but must be stored as one object. A bucket writes an object completely
+/// or not at all, so one object can never be found half-written; two objects written in sequence
+/// can be, if the instance stops between them, leaving a database beside a log that does not
+/// belong to it.
+fn wallet_pack(parts: Vec<Vec<u8>>) -> Vec<u8> {
+    let mut packed = Vec::new();
+
+    for part in parts {
+        packed.extend_from_slice(&(part.len() as u64).to_be_bytes());
+        packed.extend_from_slice(&part);
+    }
+
+    packed
+}
+
+/// Undo `wallet_pack`.
+fn wallet_unpack(packed: &[u8]) -> Option<Vec<Vec<u8>>> {
+    let mut parts = Vec::new();
+    let mut rest = packed;
+
+    while !rest.is_empty() {
+        let (header, body) = rest.split_at_checked(8)?;
+        let length = u64::from_be_bytes(header.try_into().ok()?) as usize;
+        let (part, remainder) = body.split_at_checked(length)?;
+
+        parts.push(part.to_vec());
+        rest = remainder;
+    }
+
+    Some(parts)
 }
 
 /// Fetch the wallet from the bucket, if there is one there.
@@ -136,48 +175,59 @@ fn wallet_files(wallet: &str) -> [String; 2] {
 /// running, and the bucket holds the copy that outlives it.
 async fn wallet_download(bucket: &str, wallet: &str) -> Result<(), Box<dyn std::error::Error>> {
     let token = access_token().await?;
+    let object = wallet_object(wallet);
 
-    for file in wallet_files(wallet) {
-        let response = http_client()
-            .get(format!(
-                "https://storage.googleapis.com/storage/v1/b/{bucket}/o/{file}?alt=media"
-            ))
-            .bearer_auth(&token)
-            .send()
-            .await?;
+    let response = http_client()
+        .get(format!(
+            "https://storage.googleapis.com/storage/v1/b/{bucket}/o/{object}?alt=media"
+        ))
+        .bearer_auth(&token)
+        .send()
+        .await?;
 
-        if response.status() == reqwest::StatusCode::NOT_FOUND {
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        tracing::info!("no wallet in {bucket} yet");
+
+        return Ok(());
+    }
+
+    let packed = response.error_for_status()?.bytes().await?;
+    let parts = wallet_unpack(&packed).ok_or("the stored wallet is malformed")?;
+
+    for (file, part) in wallet_files(wallet).iter().zip(parts) {
+        if part.is_empty() {
+            let _ = tokio::fs::remove_file(file).await;
+
             continue;
         }
 
-        let body = response.error_for_status()?.bytes().await?;
-        tokio::fs::write(&file, &body).await?;
-        tracing::info!("restored {file} ({} bytes)", body.len());
+        tokio::fs::write(file, &part).await?;
+        tracing::info!("restored {file} ({} bytes)", part.len());
     }
 
     Ok(())
 }
 
-/// Write the wallet back to the bucket as whole objects.
+/// Write the wallet back to the bucket as a single object.
 async fn wallet_upload(bucket: &str, wallet: &str) -> Result<(), Box<dyn std::error::Error>> {
     let token = access_token().await?;
+    let object = wallet_object(wallet);
 
+    let mut parts = Vec::new();
     for file in wallet_files(wallet) {
-        let Ok(body) = tokio::fs::read(&file).await else {
-            continue;
-        };
-
-        http_client()
-            .post(format!(
-                "https://storage.googleapis.com/upload/storage/v1/b/{bucket}/o?uploadType=media&name={file}"
-            ))
-            .bearer_auth(&token)
-            .header("Content-Type", "application/octet-stream")
-            .body(body)
-            .send()
-            .await?
-            .error_for_status()?;
+        parts.push(tokio::fs::read(&file).await.unwrap_or_default());
     }
+
+    http_client()
+        .post(format!(
+            "https://storage.googleapis.com/upload/storage/v1/b/{bucket}/o?uploadType=media&name={object}"
+        ))
+        .bearer_auth(&token)
+        .header("Content-Type", "application/octet-stream")
+        .body(wallet_pack(parts))
+        .send()
+        .await?
+        .error_for_status()?;
 
     Ok(())
 }
@@ -621,6 +671,9 @@ struct IntermediaryState {
     /// Where the wallet is kept between runs, and the name of its files on local disk.
     bucket: Option<String>,
     wallet: String,
+    /// Held across a save so that two of them cannot interleave. Without it one save could read
+    /// the wallet's files for storing while another is part way through writing them.
+    saving: Mutex<()>,
     /// Per-recipient message buffers with monotonic IDs
     buffers: RwLock<HashMap<String, RecipientBuffer>>,
     /// Per-recipient SSE subscriber notifications
@@ -682,6 +735,8 @@ impl IntermediaryState {
     /// state. The whole wallet is rewritten each time, which is sound for a single instance;
     /// per-record writes are what several instances would need.
     async fn save(&self) {
+        let _saving = self.saving.lock().await;
+
         let state = match self.db.read().await.export() {
             Ok(state) => state,
             Err(e) => {
@@ -852,6 +907,7 @@ async fn main() {
         vault,
         bucket: args.bucket.clone(),
         wallet: args.wallet.clone(),
+        saving: Mutex::new(()),
         buffers: RwLock::new(HashMap::new()),
         subscribers: Mutex::new(SseSubscribers::new()),
         buffer_ttl,
@@ -1429,4 +1485,35 @@ async fn log_websocket_handler(
             }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{wallet_pack, wallet_unpack};
+
+    #[test]
+    fn packing_a_wallet_is_reversible() {
+        let parts = vec![b"a database".to_vec(), b"a log".to_vec()];
+
+        assert_eq!(wallet_unpack(&wallet_pack(parts.clone())), Some(parts));
+    }
+
+    #[test]
+    fn an_absent_log_survives_the_round_trip() {
+        let parts = vec![b"a database".to_vec(), Vec::new()];
+
+        assert_eq!(wallet_unpack(&wallet_pack(parts.clone())), Some(parts));
+    }
+
+    #[test]
+    fn a_truncated_wallet_is_refused_rather_than_half_read() {
+        let packed = wallet_pack(vec![b"a database".to_vec(), b"a log".to_vec()]);
+
+        for length in 1..packed.len() {
+            assert_ne!(
+                wallet_unpack(&packed[..length]),
+                Some(vec![b"a database".to_vec(), b"a log".to_vec()])
+            );
+        }
+    }
 }
