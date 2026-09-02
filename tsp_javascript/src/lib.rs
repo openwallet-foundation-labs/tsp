@@ -435,6 +435,9 @@ pub enum ReceivedTspMessageVariant {
     CancelRelationship = 3,
     ForwardRequest = 4,
     PendingMessage = 5,
+    // appended: the numbers above are matched by value in tsp_node
+    ControlMessage = 6,
+    PaddingMessage = 7,
 }
 
 impl From<&tsp_sdk::ReceivedTspMessage> for ReceivedTspMessageVariant {
@@ -450,6 +453,8 @@ impl From<&tsp_sdk::ReceivedTspMessage> for ReceivedTspMessageVariant {
             tsp_sdk::ReceivedTspMessage::AcceptRelationship { .. } => Self::AcceptRelationship,
             tsp_sdk::ReceivedTspMessage::CancelRelationship { .. } => Self::CancelRelationship,
             tsp_sdk::ReceivedTspMessage::ForwardRequest { .. } => Self::ForwardRequest,
+            tsp_sdk::ReceivedTspMessage::ControlMessage { .. } => Self::ControlMessage,
+            tsp_sdk::ReceivedTspMessage::PaddingMessage { .. } => Self::PaddingMessage,
             _ => unreachable!("pending messages are handled before variant flattening"),
         }
     }
@@ -654,6 +659,14 @@ fn flatten_relationship_delivery(
     }
 }
 
+fn signature_type(signature_type: tsp_sdk::cesr::SignatureType) -> SignatureType {
+    match signature_type {
+        tsp_sdk::cesr::SignatureType::NoSignature => SignatureType::NoSignature,
+        tsp_sdk::cesr::SignatureType::Ed25519 => SignatureType::Ed25519,
+        tsp_sdk::cesr::SignatureType::MlDsa65 => SignatureType::MlDsa65,
+    }
+}
+
 fn crypto_type(crypto_type: tsp_sdk::cesr::CryptoType) -> CryptoType {
     match crypto_type {
         tsp_sdk::cesr::CryptoType::Plaintext => CryptoType::Plaintext,
@@ -696,6 +709,23 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
 
         #[allow(unreachable_patterns)]
         match value {
+            tsp_sdk::ReceivedTspMessage::ControlMessage {
+                sender,
+                receiver,
+                message,
+                message_type,
+            } => {
+                this.sender = Some(sender);
+                this.receiver = receiver;
+                this.message = Some(message.into());
+                this.crypto_type = Some(crypto_type(message_type.crypto_type));
+                this.enclosing_crypto_type = message_type.enclosing_crypto_type.map(crypto_type);
+                this.signature_type = Some(signature_type(message_type.signature_type));
+            }
+            tsp_sdk::ReceivedTspMessage::PaddingMessage { sender, receiver } => {
+                this.sender = Some(sender);
+                this.receiver = receiver;
+            }
             tsp_sdk::ReceivedTspMessage::GenericMessage {
                 sender,
                 receiver,
@@ -707,11 +737,7 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
                 this.message = Some(message.into());
                 this.crypto_type = Some(crypto_type(message_type.crypto_type));
                 this.enclosing_crypto_type = message_type.enclosing_crypto_type.map(crypto_type);
-                this.signature_type = match message_type.signature_type {
-                    tsp_sdk::cesr::SignatureType::NoSignature => Some(SignatureType::NoSignature),
-                    tsp_sdk::cesr::SignatureType::Ed25519 => Some(SignatureType::Ed25519),
-                    tsp_sdk::cesr::SignatureType::MlDsa65 => Some(SignatureType::MlDsa65),
-                };
+                this.signature_type = Some(signature_type(message_type.signature_type));
             }
             tsp_sdk::ReceivedTspMessage::RequestRelationship {
                 sender,

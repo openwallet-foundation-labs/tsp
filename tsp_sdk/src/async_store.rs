@@ -566,8 +566,16 @@ impl AsyncSecureStore {
         message: &[u8],
         confidentiality: crate::crypto::PayloadConfidentiality,
     ) -> Result<(), Error> {
-        self.send_with(sender, receiver, message, None, confidentiality)
-            .await
+        self.send_with(
+            sender,
+            receiver,
+            message,
+            crate::SendOptions {
+                confidentiality,
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     /// Send a message, choosing both the cipher suite and how the payload
@@ -577,9 +585,59 @@ impl AsyncSecureStore {
         sender: &str,
         receiver: &str,
         message: &[u8],
-        crypto_type: Option<CryptoType>,
-        confidentiality: crate::crypto::PayloadConfidentiality,
+        options: crate::SendOptions<'_>,
     ) -> Result<(), Error> {
+        self.form_relationship_if_needed(sender, receiver).await?;
+        let (endpoint, message) = self
+            .inner
+            .seal_message_with(sender, receiver, message, options)?;
+
+        tracing::info!("sending message to {endpoint}");
+        crate::transport::send_message(&endpoint, &message).await?;
+
+        Ok(())
+    }
+
+    /// Send an upper layer's own control payload (`XCTL`); see
+    /// [`SecureStore::seal_control_message`].
+    pub async fn send_control_message(
+        &self,
+        sender: &str,
+        receiver: &str,
+        message: &[u8],
+        options: crate::SendOptions<'_>,
+    ) -> Result<(), Error> {
+        self.form_relationship_if_needed(sender, receiver).await?;
+        let (endpoint, message) = self
+            .inner
+            .seal_control_message(sender, receiver, message, options)?;
+
+        tracing::info!("sending control message to {endpoint}");
+        crate::transport::send_message(&endpoint, &message).await?;
+
+        Ok(())
+    }
+
+    /// Send a padding message (`XPAD`), which carries nothing; see
+    /// [`SecureStore::seal_padding_message`].
+    pub async fn send_padding_message(
+        &self,
+        sender: &str,
+        receiver: &str,
+        options: crate::SendOptions<'_>,
+    ) -> Result<(), Error> {
+        self.form_relationship_if_needed(sender, receiver).await?;
+        let (endpoint, message) = self.inner.seal_padding_message(sender, receiver, options)?;
+
+        tracing::info!("sending padding message to {endpoint}");
+        crate::transport::send_message(&endpoint, &message).await?;
+
+        Ok(())
+    }
+
+    /// The first message of a relationship must carry the relationship-forming
+    /// fields (spec 3.6), so form the relationship first when there is none.
+    async fn form_relationship_if_needed(&self, sender: &str, receiver: &str) -> Result<(), Error> {
         match self.inner.relation_status_for_vid_pair(sender, receiver) {
             Ok(relation) => {
                 if matches!(relation, RelationshipStatus::Unrelated) {
@@ -592,19 +650,7 @@ impl AsyncSecureStore {
                     .await?
             }
             Err(e) => return Err(e),
-        };
-
-        let (endpoint, message) = self.inner.seal_message_with(
-            sender,
-            receiver,
-            message,
-            crypto_type,
-            confidentiality,
-        )?;
-
-        tracing::info!("sending message to {endpoint}");
-
-        crate::transport::send_message(&endpoint, &message).await?;
+        }
 
         Ok(())
     }

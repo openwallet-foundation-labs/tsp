@@ -11,7 +11,7 @@ use rand::{RngCore, SeedableRng, rngs::StdRng};
 use super::{
     CryptoError, MessageContents, ParallelSignatureInfo, RelationshipDigestAlgorithm,
     append_signature, build_relationship_accept_payload, build_relationship_request_payload,
-    open_relationship_accept, open_relationship_request, signature_type,
+    signature_type,
 };
 
 type Aead = hpke::aead::ChaCha20Poly1305;
@@ -42,6 +42,12 @@ fn payload_for_seal<'a>(
 
     let payload = match secret_payload {
         Payload::Content(data) => crate::cesr::Payload::GenericMessage(*data),
+        Payload::ControlMessage(data) => crate::cesr::Payload::ControlMessage(*data),
+        // a padding message is nothing but a fresh nonce: it exists to be
+        // indistinguishable from traffic that means something (spec 7.5)
+        Payload::Padding => crate::cesr::Payload::Padding {
+            nonce: crate::cesr::Nonce::generate(|dst| csprng.fill_bytes(dst)),
+        },
         Payload::RequestRelationship {
             thread_id: _ignored,
             form,
@@ -201,7 +207,12 @@ fn seal_with_kem<Kem: KemTrait>(
     )?;
 
     let mut cesr_message = Vec::with_capacity(secret_payload.calculate_size(sender_in_payload));
-    crate::cesr::encode_payload(&secret_payload, sender_in_payload, None, &mut cesr_message)?;
+    crate::cesr::encode_payload(
+        &secret_payload,
+        sender_in_payload,
+        selection.padding,
+        &mut cesr_message,
+    )?;
 
     if let Some(digest) = digest {
         *digest = payload_digest_override.unwrap_or_else(|| digest_algorithm.hash(&cesr_message));
@@ -311,73 +322,7 @@ fn open_payload<'a>(
         return Err(CryptoError::UnexpectedSender);
     }
 
-    let (secret_payload, parallel_signature_info) = match payload {
-        crate::cesr::Payload::GenericMessage(data) => (Payload::Content(data as _), None),
-        crate::cesr::Payload::RelationProposal {
-            request_digest,
-            nonce,
-            reply_path,
-            referral,
-        } => {
-            let _ = reply_path;
-            match referral {
-                None => (
-                    open_relationship_request(
-                        *request_digest.as_bytes(),
-                        crate::definitions::RelationshipForm::Direct,
-                        reply_path,
-                    ),
-                    None,
-                ),
-                Some((new_vid, sig_new_vid)) => (
-                    open_relationship_request(
-                        *request_digest.as_bytes(),
-                        crate::definitions::RelationshipForm::Parallel {
-                            new_vid,
-                            sig_new_vid,
-                        },
-                        reply_path.clone(),
-                    ),
-                    Some(ParallelSignatureInfo {
-                        new_vid,
-                        sig_new_vid,
-                        signed_data: crate::cesr::encode_parallel_relation_proposal_challenge(
-                            sender_identity,
-                            &nonce,
-                            request_digest,
-                            &reply_path,
-                            new_vid,
-                        )?,
-                    }),
-                ),
-            }
-        }
-        crate::cesr::Payload::RelationAffirm {
-            request_digest,
-            reply_digest,
-        } => (
-            open_relationship_accept(
-                *request_digest.as_bytes(),
-                *reply_digest.as_bytes(),
-                crate::definitions::RelationshipForm::Direct,
-            ),
-            None,
-        ),
-        crate::cesr::Payload::ControlMessage(_) | crate::cesr::Payload::Padding { .. } => {
-            // recognized on the wire, but not yet surfaced through the API
-            return Err(CryptoError::UnsupportedPayload);
-        }
-        crate::cesr::Payload::RelationshipCancel { reply, .. } => (
-            Payload::CancelRelationship {
-                thread_id: *reply.as_bytes(),
-            },
-            None,
-        ),
-        crate::cesr::Payload::NestedMessage(data) => (Payload::NestedMessage(data), None),
-        crate::cesr::Payload::RoutedMessage(hops, data) => {
-            (Payload::RoutedMessage(hops, data as _), None)
-        }
-    };
+    let (secret_payload, parallel_signature_info) = super::open_payload(payload, sender_identity)?;
 
     Ok((
         (

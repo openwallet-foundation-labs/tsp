@@ -132,6 +132,26 @@ pub enum ReceivedTspMessage<Data: AsRef<[u8]> = BytesMut> {
         message: Data,
         message_type: MessageType,
     },
+    /// An upper layer's own control payload (`XCTL`). Carried opaquely, exactly
+    /// as [`ReceivedTspMessage::GenericMessage`] is; it arrives as its own
+    /// variant so that an upper layer can route its control plane separately
+    /// from its data plane (spec 9.3).
+    ControlMessage {
+        sender: String,
+        receiver: Option<String>,
+        message: Data,
+        message_type: MessageType,
+    },
+    /// A padding message (`XPAD`). It carries nothing: it exists so that
+    /// traffic analysis sees messages that mean nothing. The specification says
+    /// the receiver SHOULD silently discard it — silence being about what goes
+    /// back on the wire, which is nothing. It is reported rather than swallowed
+    /// so that an application can account for what it received; there is simply
+    /// nothing in it to act on.
+    PaddingMessage {
+        sender: String,
+        receiver: Option<String>,
+    },
     RequestRelationship {
         sender: String,
         receiver: String,
@@ -180,6 +200,8 @@ impl<Data: AsRef<[u8]>> ReceivedTspMessage<Data> {
     pub fn sender(&self) -> Option<&str> {
         match self {
             ReceivedTspMessage::GenericMessage { sender, .. }
+            | ReceivedTspMessage::ControlMessage { sender, .. }
+            | ReceivedTspMessage::PaddingMessage { sender, .. }
             | ReceivedTspMessage::RequestRelationship { sender, .. }
             | ReceivedTspMessage::AcceptRelationship { sender, .. }
             | ReceivedTspMessage::CancelRelationship { sender, .. }
@@ -224,6 +246,15 @@ pub enum RelationshipForm<'a, Bytes: AsRef<[u8]>> {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Payload<'a, Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]> = Bytes> {
     Content(Bytes),
+    /// An upper layer's own control payload (`XCTL`). TSP carries it opaquely,
+    /// exactly as it carries [`Payload::Content`]; the separate type exists so
+    /// that an upper layer can tell its control plane from its data plane
+    /// without reserving part of its own format for the distinction (spec 9.3).
+    ControlMessage(Bytes),
+    /// A padding message (`XPAD`), which carries no information at all — it
+    /// exists so that traffic analysis sees messages that mean nothing. The
+    /// receiver discards it (spec 7.5).
+    Padding,
     NestedMessage(MaybeMutBytes),
     RoutedMessage(Vec<VidData<'a>>, Bytes),
     CancelRelationship {
@@ -247,6 +278,8 @@ impl<Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]>> Payload<'_, Bytes, MaybeMut
     pub fn as_bytes(&self) -> &[u8] {
         match self {
             Payload::Content(bytes) => bytes.as_ref(),
+            Payload::ControlMessage(bytes) => bytes.as_ref(),
+            Payload::Padding => &[],
             Payload::NestedMessage(bytes) => bytes.as_ref(),
             Payload::RoutedMessage(_, bytes) => bytes.as_ref(),
             Payload::CancelRelationship { .. } => &[],
@@ -262,6 +295,10 @@ impl<Bytes: AsRef<[u8]>> fmt::Display for Payload<'_, Bytes> {
             Payload::Content(bytes) => {
                 write!(f, "Content: {}", String::from_utf8_lossy(bytes.as_ref()))
             }
+            Payload::ControlMessage(bytes) => {
+                write!(f, "Control: {}", String::from_utf8_lossy(bytes.as_ref()))
+            }
+            Payload::Padding => write!(f, "Padding"),
             Payload::NestedMessage(bytes) => write!(
                 f,
                 "Nested Message: {}",

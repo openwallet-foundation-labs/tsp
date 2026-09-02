@@ -29,6 +29,18 @@ impl<T: AsRef<[u8]>> ReceivedTspMessage<T> {
                 message: f(message),
                 message_type,
             },
+            ControlMessage {
+                sender,
+                receiver,
+                message,
+                message_type,
+            } => ControlMessage {
+                sender,
+                receiver,
+                message: f(message),
+                message_type,
+            },
+            PaddingMessage { sender, receiver } => PaddingMessage { sender, receiver },
             RequestRelationship {
                 sender,
                 receiver,

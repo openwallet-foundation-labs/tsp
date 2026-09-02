@@ -31,7 +31,7 @@ pub(crate) struct ParallelSignatureInfo<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct OutboundCryptoSelection {
+pub(crate) struct OutboundCryptoSelection<'a> {
     pub crypto_type: CryptoType,
     /// Whether to carry the sender's VID in the ESSR field of the confidential
     /// payload under HPKE-Base, where the specification makes it optional
@@ -41,9 +41,13 @@ pub(crate) struct OutboundCryptoSelection {
     /// How an upper layer's own payload is protected. TSP's control messages
     /// ignore this and are always encrypted.
     pub confidentiality: PayloadConfidentiality,
+    /// Bytes for the payload's padding field, which every payload layout
+    /// carries and which is excluded from the SAID digest (spec 7.2.1). `None`
+    /// encodes the empty field `4BAA`, which is what "no padding" means.
+    pub padding: Option<&'a [u8]>,
 }
 
-impl OutboundCryptoSelection {
+impl OutboundCryptoSelection<'_> {
     /// What this selection puts in the payload's ESSR sender field.
     ///
     /// The seal path and anything that has to agree with it — the parallel
@@ -146,7 +150,7 @@ impl RelationshipDigestAlgorithm {
 pub(crate) fn default_outbound_crypto_selection(
     sender: &dyn VerifiedVid,
     receiver: &dyn VerifiedVid,
-) -> OutboundCryptoSelection {
+) -> OutboundCryptoSelection<'static> {
     let _ = (sender, receiver);
 
     OutboundCryptoSelection {
@@ -155,6 +159,7 @@ pub(crate) fn default_outbound_crypto_selection(
         crypto_type: CryptoType::HpkeBase,
         essr_sender: EssrSender::default(),
         confidentiality: PayloadConfidentiality::default(),
+        padding: None,
     }
 }
 
@@ -378,6 +383,89 @@ pub(crate) fn verify_relationship_digest(
     Ok(())
 }
 
+/// Turn a decoded CESR payload into the SDK's own payload type.
+///
+/// Both confidential backends decode to the same shapes, so this lives here
+/// rather than being written out in each: two copies of a match over every
+/// payload type is two chances for them to disagree about one.
+/// A decoded payload, with the challenge a parallel referral must be checked
+/// against where the payload carried one.
+pub(crate) type OpenedPayload<'a> = (
+    Payload<'a, &'a [u8], &'a mut [u8]>,
+    Option<ParallelSignatureInfo<'a>>,
+);
+
+pub(crate) fn open_payload<'a>(
+    payload: crate::cesr::Payload<'a, &'a mut [u8], &'a [u8]>,
+    sender_identity: Option<&'a [u8]>,
+) -> Result<OpenedPayload<'a>, CryptoError> {
+    Ok(match payload {
+        crate::cesr::Payload::GenericMessage(data) => (Payload::Content(data as _), None),
+        crate::cesr::Payload::ControlMessage(data) => (Payload::ControlMessage(data as _), None),
+        // a padding message carries nothing but its own nonce; the receiver
+        // discards it, and the nonce is not surfaced because nothing above can
+        // act on it (spec 7.5)
+        crate::cesr::Payload::Padding { .. } => (Payload::Padding, None),
+        crate::cesr::Payload::RelationProposal {
+            request_digest,
+            nonce,
+            reply_path,
+            referral,
+        } => match referral {
+            None => (
+                open_relationship_request(
+                    *request_digest.as_bytes(),
+                    crate::definitions::RelationshipForm::Direct,
+                    reply_path,
+                ),
+                None,
+            ),
+            Some((new_vid, sig_new_vid)) => (
+                open_relationship_request(
+                    *request_digest.as_bytes(),
+                    crate::definitions::RelationshipForm::Parallel {
+                        new_vid,
+                        sig_new_vid,
+                    },
+                    reply_path.clone(),
+                ),
+                Some(ParallelSignatureInfo {
+                    new_vid,
+                    sig_new_vid,
+                    signed_data: crate::cesr::encode_parallel_relation_proposal_challenge(
+                        sender_identity,
+                        &nonce,
+                        request_digest,
+                        &reply_path,
+                        new_vid,
+                    )?,
+                }),
+            ),
+        },
+        crate::cesr::Payload::RelationAffirm {
+            request_digest,
+            reply_digest,
+        } => (
+            open_relationship_accept(
+                *request_digest.as_bytes(),
+                *reply_digest.as_bytes(),
+                crate::definitions::RelationshipForm::Direct,
+            ),
+            None,
+        ),
+        crate::cesr::Payload::RelationshipCancel { reply, .. } => (
+            Payload::CancelRelationship {
+                thread_id: *reply.as_bytes(),
+            },
+            None,
+        ),
+        crate::cesr::Payload::NestedMessage(data) => (Payload::NestedMessage(data), None),
+        crate::cesr::Payload::RoutedMessage(hops, data) => {
+            (Payload::RoutedMessage(hops, data as _), None)
+        }
+    })
+}
+
 pub(crate) fn open_relationship_request<'a>(
     thread_id: Digest,
     form: RelationshipForm<'a, &'a [u8]>,
@@ -511,6 +599,7 @@ pub fn seal_reproducibly(
             crypto_type,
             essr_sender: EssrSender::default(),
             confidentiality: PayloadConfidentiality::default(),
+            padding: None,
         },
         Some(seed),
     )
@@ -533,6 +622,7 @@ pub fn seal_and_hash_with_crypto_type(
             crypto_type,
             essr_sender: EssrSender::default(),
             confidentiality: PayloadConfidentiality::default(),
+            padding: None,
         },
     )
 }
@@ -598,6 +688,7 @@ pub(crate) fn seal_with_selection_seeded(
             digest,
             request_nonce_override,
             seed,
+            selection,
         ),
         CryptoType::HpkeBase => tsp_hpke::seal(
             sender,
