@@ -1,7 +1,9 @@
 use crate::{
     ExportVid, OwnedVid,
     cesr::EnvelopeType,
-    crypto::{CryptoError, OutboundCryptoSelection, RelationshipDigestAlgorithm},
+    crypto::{
+        CryptoError, OutboundCryptoSelection, PayloadConfidentiality, RelationshipDigestAlgorithm,
+    },
     definitions::{
         Digest, MessageType, Payload, PendingIncomingParallelRelationship,
         PendingNestedRelationship, PendingParallelRelationship, PrivateVid,
@@ -819,6 +821,61 @@ impl SecureStore {
             Some(OutboundCryptoSelection {
                 crypto_type,
                 essr_sender: Default::default(),
+                confidentiality: Default::default(),
+            }),
+        )
+    }
+
+    /// Seal a TSP message, choosing how the payload itself is protected.
+    ///
+    /// [`PayloadConfidentiality::Confidential`] is what [`Self::seal_message`]
+    /// does. [`PayloadConfidentiality::SignedOnly`] signs the payload without
+    /// encrypting it, which is only meaningful under nesting: the outer
+    /// envelope is confidential either way, so the payload is never in the
+    /// clear on the wire, but its confidentiality then rests on the outer
+    /// relationship's keys rather than the inner relationship's (spec 4).
+    ///
+    /// Without nesting this makes no difference — a direct message has no
+    /// outer envelope to hide behind, so it is always encrypted.
+    pub fn seal_message_with_confidentiality(
+        &self,
+        sender: &str,
+        receiver: &str,
+        message: &[u8],
+        confidentiality: PayloadConfidentiality,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.seal_message_with(sender, receiver, message, None, confidentiality)
+    }
+
+    /// Seal a TSP message, choosing both the cipher suite and how the payload
+    /// itself is protected. The two are independent: see
+    /// [`Self::seal_message_with_crypto_type`] and
+    /// [`Self::seal_message_with_confidentiality`], each of which is this with
+    /// the other left at its default.
+    pub fn seal_message_with(
+        &self,
+        sender: &str,
+        receiver: &str,
+        message: &[u8],
+        crypto_type: Option<crate::cesr::CryptoType>,
+        confidentiality: PayloadConfidentiality,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        let sender_vid = self.get_private_vid(sender)?;
+        let receiver_vid = self.get_verified_vid(receiver)?;
+        let selection = crate::crypto::default_outbound_crypto_selection(
+            &*sender_vid as &dyn crate::definitions::VerifiedVid,
+            &*receiver_vid,
+        );
+
+        self.seal_message_payload_and_hash_with_selection(
+            sender,
+            receiver,
+            Payload::Content(message),
+            None,
+            Some(OutboundCryptoSelection {
+                crypto_type: crypto_type.unwrap_or(selection.crypto_type),
+                confidentiality,
+                ..selection
             }),
         )
     }
@@ -916,8 +973,20 @@ impl SecureStore {
 
             let inner_sender = self.get_private_vid(inner_sender)?;
 
+            // Only an upper layer's own payload may be signed-only, and only
+            // when the caller asks: TSP's control messages are always
+            // encrypted. Section 4 permits a signed-only inner message, since
+            // the outer envelope conceals it in transit, but its confidentiality
+            // then rests on the outer relationship's keys rather than the inner
+            // relationship's — so encrypting is the default.
             let content_payload = matches!(&payload, Payload::Content(_));
-            let inner_message = if content_payload {
+            let signed_only = content_payload
+                && matches!(
+                    selection.map(|s| s.confidentiality).unwrap_or_default(),
+                    PayloadConfidentiality::SignedOnly
+                );
+
+            let inner_message = if signed_only {
                 crate::crypto::sign(
                     &*inner_sender,
                     Some(&*receiver_context.vid),
@@ -1339,6 +1408,7 @@ impl SecureStore {
                             message_type: MessageType {
                                 crypto_type,
                                 signature_type,
+                                enclosing_crypto_type: None,
                             },
                         })
                     }
@@ -1389,20 +1459,24 @@ impl SecureStore {
 
                         let mut received_message = self.open_message(inner)?;
 
-                        // if inner message was not encrypted, but outer message was encrypted by the same sender,
-                        // then inner message was also sufficiently encrypted
+                        // Record how the enclosing message was encrypted, so an
+                        // application can tell a signed-only inner message from
+                        // an encrypted one and still know it was confidential on
+                        // the wire. Reporting the enclosing type *as* the inner
+                        // one would hide exactly the distinction section 4 asks
+                        // applications to notice.
+                        //
+                        // This is a fact about how the message arrived — it came
+                        // out of an envelope just decrypted here — so it does not
+                        // depend on what the wallet records about the sender. Who
+                        // sent that envelope is a separate question, and the
+                        // caller has the sender to answer it with.
                         if let ReceivedTspMessage::GenericMessage {
-                            message_type:
-                                ref mut message_type @ MessageType {
-                                    crypto_type: crate::cesr::CryptoType::Plaintext,
-                                    signature_type: _,
-                                },
-                            sender: ref inner_sender,
+                            ref mut message_type,
                             ..
                         } = received_message
-                            && self.get_vid(inner_sender)?.get_parent_vid() == Some(&sender)
                         {
-                            message_type.crypto_type = crypto_type;
+                            message_type.enclosing_crypto_type = Some(crypto_type);
                         }
 
                         Ok(received_message)
@@ -1559,6 +1633,17 @@ impl SecureStore {
                     return Err(Error::UnverifiedVid(sender.to_string()));
                 };
 
+                // an addressed application message is only accepted within an
+                // established relationship (spec 7.2.2). The rule is about a
+                // message "destined to one of its legitimate VIDs" and says
+                // nothing about confidentiality, so it applies to a signed-only
+                // message as much as to an encrypted one. An anycast broadcast
+                // names no receiver, so there is no destination VID for the rule
+                // to be about, and it is not gated.
+                if let Some(intended_receiver) = &intended_receiver {
+                    self.check_relationship_gate(intended_receiver, &sender)?;
+                }
+
                 let (message, message_type) = crate::crypto::verify(&*sender_vid, message)?;
 
                 Ok(ReceivedTspMessage::GenericMessage {
@@ -1595,6 +1680,7 @@ impl SecureStore {
             Some(OutboundCryptoSelection {
                 crypto_type,
                 essr_sender: Default::default(),
+                confidentiality: Default::default(),
             }),
         )
     }
@@ -2405,7 +2491,9 @@ mod test {
     use crate::{
         Error, Payload, PendingParallelRelationship, ReceivedRelationshipDelivery,
         ReceivedRelationshipForm, ReceivedTspMessage, RelationshipForm, RelationshipStatus,
-        SecureStore, VerifiedVid, crypto::CryptoError, store::RelationshipPolicy,
+        SecureStore, VerifiedVid,
+        crypto::{CryptoError, PayloadConfidentiality},
+        store::RelationshipPolicy,
     };
 
     fn assert_url_matches(url: &url::Url, expected_receiver: &dyn VerifiedVid) {
@@ -4308,6 +4396,20 @@ mod test {
             .set_parent_for_vid(nested_a.identifier(), Some(a.identifier()))
             .unwrap();
 
+        // the nested relationship exists on both sides, as the control-message
+        // handshake leaves it. The inner message is encrypted, so it passes
+        // through the relationship gate of spec 7.2.2 like any other
+        // application message.
+        b_store
+            .set_relation_and_status_for_vid(
+                nested_a.identifier(),
+                RelationshipStatus::Unidirectional {
+                    thread_id: Default::default(),
+                },
+                nested_b.identifier(),
+            )
+            .unwrap();
+
         let hello_world = b"hello world";
 
         let (_url, mut sealed) = a_store
@@ -4333,6 +4435,96 @@ mod test {
         assert_ne!(
             message_type.signature_type,
             crate::cesr::SignatureType::NoSignature
+        );
+        assert!(
+            message_type.enclosing_crypto_type.is_some(),
+            "a nested message must report how its enclosing message was encrypted"
+        );
+
+        // the same exchange with a signed-only inner message: the receiver must
+        // be told that the inner message was not itself encrypted, and that it
+        // nonetheless arrived inside a confidential envelope (spec 4)
+        let (_url, mut sealed) = a_store
+            .seal_message_with_confidentiality(
+                nested_a.identifier(),
+                nested_b.identifier(),
+                hello_world,
+                PayloadConfidentiality::SignedOnly,
+            )
+            .unwrap();
+
+        let ReceivedTspMessage::GenericMessage {
+            message,
+            message_type,
+            ..
+        } = b_store.open_message(&mut sealed).unwrap()
+        else {
+            panic!()
+        };
+
+        assert_eq!(message, hello_world);
+        assert_eq!(
+            message_type.crypto_type,
+            crate::cesr::CryptoType::Plaintext,
+            "a signed-only inner message must be reported as such, not as the enclosing type"
+        );
+        assert_ne!(
+            message_type.enclosing_crypto_type,
+            Some(crate::cesr::CryptoType::Plaintext),
+            "and the enclosing message it arrived in was encrypted"
+        );
+    }
+
+    /// An addressed application message is dropped outside a relationship
+    /// (spec 7.2.2), whether or not it was encrypted. An anycast broadcast
+    /// names no receiver, so the rule does not reach it.
+    #[test]
+    #[wasm_bindgen_test]
+    fn signed_only_messages_are_gated_on_a_relationship_but_anycast_is_not() {
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+
+        let a = create_test_vid();
+        let b = create_test_vid();
+
+        a_store.add_private_vid(a.clone(), None).unwrap();
+        a_store.add_verified_vid(b.clone(), None).unwrap();
+        b_store.add_private_vid(b.clone(), None).unwrap();
+        b_store.add_verified_vid(a.clone(), None).unwrap();
+
+        // addressed, signed only, with no relationship: dropped
+        let mut addressed = crate::crypto::sign(&a, Some(b.vid()), b"hello world").unwrap();
+        assert!(
+            matches!(
+                b_store.open_message(&mut addressed),
+                Err(Error::UnestablishedRelationship(..))
+            ),
+            "an addressed signed-only message outside a relationship must be dropped"
+        );
+
+        // the same message once the relationship exists: accepted
+        b_store
+            .set_relation_and_status_for_vid(
+                a.identifier(),
+                RelationshipStatus::Unidirectional {
+                    thread_id: Default::default(),
+                },
+                b.identifier(),
+            )
+            .unwrap();
+        let mut addressed = crate::crypto::sign(&a, Some(b.vid()), b"hello world").unwrap();
+        assert!(b_store.open_message(&mut addressed).is_ok());
+
+        // a broadcast names no receiver, so there is no destination VID for the
+        // rule to be about
+        let c_store = create_test_store();
+        c_store.add_verified_vid(a.clone(), None).unwrap();
+        let mut broadcast = a_store
+            .sign_anycast(a.identifier(), b"hello world")
+            .unwrap();
+        assert!(
+            c_store.open_message(&mut broadcast).is_ok(),
+            "an anycast broadcast is not gated on a relationship"
         );
     }
 

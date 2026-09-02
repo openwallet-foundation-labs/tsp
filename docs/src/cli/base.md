@@ -59,7 +59,7 @@ The `tsp show local` command will print all the local VIDs stored in the wallet,
 including their alias, transport, and parent.
 
 ```
-did:peer:2.Vz6MurhTjqX5uhQ5bJbAaoEwSDFcKDwVJTvoii51JBtSPpKzX.Ez6LbvBvy92yWENk8xKYmaX9X9nzMtQCQ2EqgdLKv2YkcpHo7.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0
+did:peer:4zQmSf8cCgkfPZUrGZpkPkcwsHaubEmwduGzmBPXuq7HK2sN
 	 Alias: None
 	 Transport: did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:b
 	 DID doc: None
@@ -171,19 +171,30 @@ and `did:web:did.teaspoon.world:endpoint:bob`.
 On the receiving side you should see:
 
 ```
- INFO tsp: received relationship request from did:web:did.teaspoon.world:endpoint:alice3, thread-id 'lrQoJ1qYIK6HEHZKvpq3p+it6djYE2YIe++5mqhASnE'
-did:web:did.teaspoon.world:endpoint:alice3      lrQoJ1qYIK6HEHZKvpq3p+it6djYE2YIe++5mqhASnE
- INFO tsp: received confidential message (11 bytes) from did:web:did.teaspoon.world:endpoint:alice3 (HPKE ESSR, Ed25519 signature)
+ INFO tsp: received relationship request from did:web:did.teaspoon.world:endpoint:alice, thread-id 'lrQoJ1qYIK6HEHZKvpq3p+it6djYE2YIe++5mqhASnE'
+did:web:did.teaspoon.world:endpoint:alice      lrQoJ1qYIK6HEHZKvpq3p+it6djYE2YIe++5mqhASnE
+ INFO tsp: received confidential message (11 bytes) from did:web:did.teaspoon.world:endpoint:alice (HPKE-Base, Ed25519 signature)
 Hello Bob!
 ```
 
 ### Supported DID types
 
-The TSP CLI example application supports two types of decentralized identifiers:
+The TSP CLI example application supports three types of decentralized identifiers:
 
-- `did:web`, created using `tsp create --type web`. These are resolved by finding a `.json` file on a server and checking its contents.
-- `did:webvh`, created using `tsp create --type webvh`. These are resolved by finding a `.json` file on a server and checking its contents.
-- `did:peer`, created using `tsp create --type peer`. These are essentially self-signed identifiers.
+- `did:peer`, created using `tsp create --type peer`. These are self-certifying: the
+  identifier is a hash of the document that holds its keys, so a change of keys is a
+  change of identifier and nothing has to be fetched to check it.
+- `did:webvh`, created using `tsp create --type webvh`. These are resolved by fetching a
+  document from a server, and carry a verifiable history, so a key rotation can be
+  followed from the key state you already hold.
+- `did:web`, created using `tsp create --type web`. These are resolved by fetching a
+  `.json` file from a server and checking its contents.
+
+The order matters. `did:web` carries no provenance: a document served under the same
+identifier with different keys is indistinguishable from a substitution, so a `did:web`
+rotation cannot be adopted — a change of keys ends the relationship rather than
+continuing it. Prefer `did:peer` or `did:webvh` for anything that needs to survive a
+key rotation.
 
 The TSP CLI can use two types of transport:
 
@@ -238,17 +249,40 @@ Output:
 ```
  INFO tsp::async_store: sending message to https://demo.teaspoon.world/endpoint/did:web:did.teaspoon.world:endpoint:bob
 CESR-encoded message:
--EABXAAA9VIDAAALAAAZGlkOndlYjp0c3AtdGVzdC5vcmc6dXNlcjphbGljZQ8VIDAAAKAAZGlkOndlYjp0c3AtdGVzdC5vcmc6dXNlcjpib2I4CAX7ngr3YHl2z91L-anFBYxbQhM48CT_wqrCCRNdsN5fm-oshqvwqnKDK5rLkn_kvVI8aWZ7SEhiaiB8N6e-bjInrBbhNII0BAceo-mZoSvG3MY_UEqrgzP4kpeLJJK9MdQx53c4nxKh6_jvB2DuXJ6TBNjj-lXszyTH8yDAMSioDRluucSBpPAg
+-EA6YTSP-AAB5BAOAGRpZDp3ZWI6ZGlkLnRlYXNwb29uLndvcmxkOmVuZHBvaW50OmFsaWNl4BANZGlkOndlYjpkaWQudGVhc3Bvb24ud29ybGQ6ZW5kcG9pbnQ6Ym9i4FAaQRT2HfDzxpOGX3AmXl2ANZ8rCrKTiuGP-S8GEwfcOFZaqkCMBQ6W4spG19KnwRdKY52VTX5uo3u89_t5r4z8osc9kPbsAG6BPcSPmy7E-CAX-KAWBACuJP_dM8ox9aOO6wzQkeq6e5pDhz3ywJujPPlwt9yc6eFYITR6yjb0CXrDrYI8gQzudKf3v8YUEmUqIgjWeuAM
  INFO tsp: sent message (11 bytes) from did:web:did.teaspoon.world:endpoint:alice to did:web:did.teaspoon.world:endpoint:bob
 ```
 
 In a terminal window supporting colors, this will look like the following:
 
 <code style="display: block; line-break: anywhere; padding: 1rem;">
-<strong style="color: #F66151;">-EABXAAA</strong><span style="color: #C061CB;"><strong>9VIDAAALAAA</strong>ZGlkOndlYjp0c3AtdGVzdC5vcmc6dXNlcjphbGljZQ</span><span style="color: #2A7BDE;"><strong>8VIDAAAKAA</strong>ZGlkOndlYjp0c3AtdGVzdC5vcmc6dXNlcjpib2I</span><span style="color: #E9AD0C;"><strong>4CAX</strong>5I7ozAGaFVqTxz8PJve0Tscor80fvds6hCf3yDUtOnHpXZ84uXFGXM-PcfLDWsRWvH7SoOG4UwQU8H-zEfBFs0skhjtk</span><span style="color: #33C7DE;"><strong>0BA</strong>trMgdWXM9Mfdgiq2awx6VAWCUUYCfjv1tdQqnjNc4eB-IOdBVA459uAFX2EGfdWWGp2OxxwbAutneudE9zYUBg</span>
+<span style="color: #F66151;"><strong>-EA6</strong></span><span style="color: #F66151;"><strong>YTSP</strong>-AAB</span><span style="color: #C061CB;"><strong>5BAO</strong>AGRpZDp3ZWI6ZGlkLnRlYXNwb29uLndvcmxkOmVuZHBvaW50OmFsaWNl</span><span style="color: #2A7BDE;"><strong>4BAN</strong>ZGlkOndlYjpkaWQudGVhc3Bvb24ud29ybGQ6ZW5kcG9pbnQ6Ym9i</span><span style="color: #E9AD0C;"><strong>4FAa</strong>QRT2HfDzxpOGX3AmXl2ANZ8rCrKTiuGP-S8GEwfcOFZaqkCMBQ6W4spG19KnwRdKY52VTX5uo3u89_t5r4z8osc9kPbsAG6BPcSPmy7E</span><span style="color: #33C7DE;"><strong>-CAX-KAWBA</strong>CuJP_dM8ox9aOO6wzQkeq6e5pDhz3ywJujPPlwt9yc6eFYITR6yjb0CXrDrYI8gQzudKf3v8YUEmUqIgjWeuAM</span>
 </code>
 
-The first red part is the TSP prefix. The purple part is the sender VID, the blue
-part the receiver VID, the yellow is the ciphertext, and the cyan part is the signature.
+Bold characters are CESR codes; the characters after them are the data that code
+introduces. Reading left to right:
 
-The bold characters note the CESR selector of the part.
+| Text                | Field                                                        |
+|---------------------|--------------------------------------------------------------|
+| `-EA6`              | the frame, counting the 174 bytes the signature covers       |
+| `YTSP-AAB`          | the TSP genus and version, `0.0.1`                           |
+| `5BAO` + 41 bytes   | `VID_sndr`, the sender                                       |
+| `4BAN` + 39 bytes   | `VID_rcvr`, the receiver                                     |
+| `4FAa` + 78 bytes   | the ciphertext, sealed with HPKE-Base                        |
+| `-CAX-KAWBA` + 64 bytes | an attachment group holding an indexed Ed25519 signature |
+
+The ciphertext code names the cipher suite: `4F/5F/6F` is HPKE-Base and
+`4C/5C/6C` is the libsodium sealed box. There is no separate field saying which
+was used. HPKE-Base is the default for every receiver; pass `--crypto sealed-box`
+to `send` to see the other, which the specification keeps only for the sake of
+existing implementations.
+
+The two are not the same length for the same message. Under the sealed box the
+sender's VID has to be repeated inside the ciphertext, because that construction
+is anonymous; under HPKE-Base the envelope already binds the sender through the
+associated data, so that field defaults to the NULL VID and the ciphertext is
+some forty bytes shorter.
+
+`tsp_sdk::cesr::segments` produces exactly this breakdown, with the field name and
+decoded value of every code and every run of data; see
+[CESR encoding](../cesr.md) for the full code tables.

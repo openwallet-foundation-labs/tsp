@@ -132,29 +132,28 @@ echo "Hi b" | tsp --verbose -w a send -s a -r b
 Output:
 
 ```
- INFO tsp::async_store: sending message to https://p.teaspoon.world/transport/did:
- web:p.teaspoon.world
+ INFO tsp_sdk::async_store: sending message to https://p.teaspoon.world/transport/did:web:p.teaspoon.world
 CESR-encoded message:
--EABXAAAXAEB9VIDAAAdAAAZGlkOndlYjpyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tOm9wZW53YWxsZXQ
-tZm91bmRhdGlvbi1sYWJzOnRzcDptYWluOmV4YW1wbGVzOnRlc3Q6YQ7VIDAAAIZGlkOndlYjpwLnRlYXN
-wb29uLndvcmxk4CDBRPjQTLqVsN-QrMR5eVGgSO0Q6V491-GKJP7imcKJheAT1_madw21FHK49oJvINRYt
-1GZX4dtZGCC5gB1EZCLZpqQJjzeuwQavXYUFBY3z3ygNw-780r4fltOtjVG0hybe8Y5YOf4rv1U_xD-Ajm
-xbw7rOlJq7AWojJq2FbWQ6Ho2z90KUwQ8ki-hyYCE1woCDM1TAQu3Pvt8XsrRqr5TpeExIlh1Jx_vlt-rW
-Dny4nbBv7SWHEovVBT7XXtVPWpEnBiBzm2mBsJ5CZsDy-EjXVONCEadUwDwwYaU8djEYt8pBHag8IGlpVZ
-IUN2dtZyFhRKmvq7FsEcqSCpiSZR7jXiHNjghqUCBFwAIqwnAr1npW15fg7lREpiLTkcs8oSSZvmEhLaFT
-BvhnhFvCzTP-CckvhFXOsUpK7Q5u3KBRFReEQYb32CfEq44yaKRVUAVknXJmS_HBOWv-VbnbgR-8q8TL5z
-h2rOH2pGM8sQVlweWBg32JmACWzdOw2jCF17Ey4AYFQkYbiz8extJuAxg22aoE30azL-RU0I0bGW-ZCqLx
-mK8jLH_zoYZ35nTQfwZYlFfe-cbempzw9gS685RloYBSKq9kdPIsV7h3DW-vBwEP6_ttaS024F2ZW90KMq
-vQ3pRNr5pjmxWshlerIBjRcpTO7IjIYN6jU1Vg8-akcukC0J8vu8GJYZhu5n16DYAAcqQkmKmsTBD8OirJ
-FldrEVWc1F5Bu0zd3FJuYq7K5OdQgw4JFrRPUgeVNIRCsdElnQP0BAYPtmDPJDfhx_-ab02_y2yD1FrhXE
-SrBAkd6evt2M2Z2ugVyVwxTU-pVVXlcTa5p_-N05lWEZ0bdUBdR4upMUDA
- INFO tsp: sent message (5 bytes) fromdid:web:raw.githubusercontent.com:openwallet
- -foundation-labs:tsp:main:examples:test:a to did:web:raw.githubusercontent.com:
- openwallet-foundation-labs:tsp:main:examples:test:b
+-ECIYTSP-AAB6BANAABkaWQ6d2ViOmRpZC50ZWFzcG9vbi53b3JsZDplbmRwb2ludDph4BAIZGlkOndl
+YjpwLnRlYXNwb29uLndvcmxk4FBuoQRiTEvL1DaoFfLjZ-UOqFM2XVYyDE3IvGfv-Ml2oxwPAY0PB_-4
+ZQafKaUyGteU1suFAw3YrZE7SIF1q59xB1JHFIeAc23FI7xywSk6fDl0NTCrhbAehAZKTKsg3GmdU9y7
+oeR4AdBO8YY7CpiL_ZpHpkhjzzXi9Y199UBDJ0LvmLIYRUowpF-J_AwbnJnhK-nQy8LXRfvWAWkmHbJ8
+Wjz0A0tue-v8dgxiGTG0ejMR9yhJ7sn0nThVh3xeUyakTPPB4X4PVAzlunAZMawjdJ4-v4R6hdAhpe4J
+u9SugbeIIW7GiIg2hRXhOCpu8elDtaIIz7dbweA9sYuKXdxpzQqiGuXjH4DBZK_8VfbCNWcoiwmzEJrw
+f0eyt9dVT0i2WARKSCzHZMSva1_VhxdjsE2IRTyJnfestKAGEOO69uyRC5fgqGAzyYON-CAX-KAWBAA4
+lytia8FkfsJQvgrFP8rwpePB8HfH0TwLUTxmPd0gG_fkSMWYaCYAHBycysb9x6FRNuXv49yByORohTvr
+twUC
+ INFO tsp: sent message (5 bytes) from did:web:did.teaspoon.world:endpoint:a to did:web:did.teaspoon.world:endpoint:b
 ```
 
 Note that the message is longer than a direct mode message, since the ciphertext contains another
 TSP message.
+
+Note also who the envelope names. `VID_sndr` is `a` and `VID_rcvr` is the *first intermediary*,
+`did:web:p.teaspoon.world` — not `b`. The rest of the route and the message for `b` are inside the
+ciphertext, which `p` decrypts to learn only the next hop and an opaque blob to forward. No
+intermediary sees the message, and none of them sees the whole route. See
+[CESR encoding](../cesr.md) for the codes.
 
 The `cli-demo-routed-external.sh` script in the `examples/` folder performs all the previously described steps automatically. One small difference is that in the script `a` and `b` use <https://demo.teaspoon.world/> for transport, while the identities from the step-by-step tutorial above are configured to use intermediaries directly.
 

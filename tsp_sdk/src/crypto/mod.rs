@@ -38,6 +38,9 @@ pub(crate) struct OutboundCryptoSelection {
     /// (spec 3.2). The sealed box is anonymous and always carries it,
     /// whatever this says.
     pub essr_sender: EssrSender,
+    /// How an upper layer's own payload is protected. TSP's control messages
+    /// ignore this and are always encrypted.
+    pub confidentiality: PayloadConfidentiality,
 }
 
 impl OutboundCryptoSelection {
@@ -70,6 +73,27 @@ pub enum EssrSender {
     #[default]
     NullUnderHpkeBase,
     Always,
+}
+
+/// How an upper layer's own payload is protected.
+///
+/// This applies only to a caller's payload. TSP's own control messages are
+/// always encrypted and signed, whatever this says.
+///
+/// It matters most under nesting. Section 4 permits the inner message to be
+/// signed only, since the outer envelope already conceals it in transit — but
+/// notes that the inner payload's confidentiality then derives entirely from
+/// the outer relationship, under the outer relationship's keys rather than the
+/// inner one's. That is a choice for the caller to make deliberately, so the
+/// default here is to encrypt.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum PayloadConfidentiality {
+    /// Encrypt and sign.
+    #[default]
+    Confidential,
+    /// Sign only. Anyone who can open the enclosing envelope can read the
+    /// payload; when nested, that is the outer relationship, not the inner.
+    SignedOnly,
 }
 
 #[allow(dead_code)]
@@ -110,23 +134,27 @@ impl RelationshipDigestAlgorithm {
     }
 }
 
+/// HPKE-Base is the default for every receiver.
+///
+/// The specification keeps the libsodium sealed box only for the sake of
+/// existing implementations: it is not a standardised construction, the
+/// libsodium project is implementing HPKE in parallel, implementors SHOULD
+/// consider migrating, and the option MAY be removed in a later revision
+/// (spec 8). Post-quantum support is HPKE-Base with a different KEM and has no
+/// sealed-box counterpart at all. A caller that still needs the sealed box asks
+/// for it explicitly; nothing defaults to it.
 pub(crate) fn default_outbound_crypto_selection(
     sender: &dyn VerifiedVid,
     receiver: &dyn VerifiedVid,
 ) -> OutboundCryptoSelection {
-    let receiver_key_type = receiver.encryption_key_type();
-    let _ = sender;
-    let crypto_type = if matches!(receiver_key_type, VidEncryptionKeyType::X25519MlKem768) {
-        CryptoType::HpkeBase
-    } else if cfg!(feature = "nacl") {
-        CryptoType::SealedBox
-    } else {
-        CryptoType::HpkeBase
-    };
+    let _ = (sender, receiver);
 
     OutboundCryptoSelection {
-        crypto_type,
+        // the KEM follows the receiver's encryption key type, so this one
+        // choice covers X25519 and the post-quantum hybrid alike
+        crypto_type: CryptoType::HpkeBase,
         essr_sender: EssrSender::default(),
+        confidentiality: PayloadConfidentiality::default(),
     }
 }
 
@@ -482,6 +510,7 @@ pub fn seal_reproducibly(
         OutboundCryptoSelection {
             crypto_type,
             essr_sender: EssrSender::default(),
+            confidentiality: PayloadConfidentiality::default(),
         },
         Some(seed),
     )
@@ -503,6 +532,7 @@ pub fn seal_and_hash_with_crypto_type(
         OutboundCryptoSelection {
             crypto_type,
             essr_sender: EssrSender::default(),
+            confidentiality: PayloadConfidentiality::default(),
         },
     )
 }
@@ -953,19 +983,13 @@ mod tests {
             VidEncryptionKeyType::X25519,
         );
 
-        // the anonymous sealed box does not use the sender's encryption keys,
-        // so a PQ-keyed sender can seal to an X25519 receiver with either suite;
-        // the default follows the feature configuration
+        // the default is HPKE-Base whatever the features and whatever the
+        // receiver's key type; the sealed box is only ever chosen explicitly
         let mut message = seal(&alice, &bob, Payload::Content(b"default suite")).unwrap();
         let (payload, opened_crypto_type, _) = open(&bob, &alice, &mut message).unwrap();
 
         assert_eq!(payload, Payload::Content(b"default suite" as &[u8]));
-        let expected = if cfg!(feature = "nacl") {
-            CryptoType::SealedBox
-        } else {
-            CryptoType::HpkeBase
-        };
-        assert_eq!(opened_crypto_type, expected);
+        assert_eq!(opened_crypto_type, CryptoType::HpkeBase);
     }
 
     #[test]
@@ -1068,7 +1092,12 @@ mod tests {
 
         let result = open(&wrong_alice, &bob, &mut message);
 
-        assert!(matches!(result, Err(CryptoError::CryptographicNacl(_))))
+        // which variant this is depends on the suite that sealed it, which is
+        // not what this test is about: the wrong key must fail to decrypt
+        assert!(matches!(
+            result,
+            Err(CryptoError::CryptographicHpke(_) | CryptoError::CryptographicNacl(_))
+        ))
     }
 
     #[test]

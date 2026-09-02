@@ -93,7 +93,7 @@ transport layers (such as HTTPS or QUIC) for applications that don't need this f
 
 | _  | Description                                             | Rationale                                                                                                                                       | Consequence                                                                                                                                                                                                                                  |
 |----|---------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| C1 | Encryption primitives chosen have to be IND-CCA2 secure | This is the strongest notion of security: under an adaptive chosen ciphertext attack, the attacker cannot recognize correct ciphertext.         | We use `HPKE-Auth` for encryption, a modern asymmetric "weakly authenticated" encryption standard                                                                                                                                            |
+| C1 | Encryption primitives chosen have to be IND-CCA2 secure | This is the strongest notion of security: under an adaptive chosen ciphertext attack, the attacker cannot recognize correct ciphertext.         | We use `HPKE-Base` for encryption, a modern asymmetric encryption standard; sender authentication comes from the outer signature and ESSR rather than from the encryption                                                                                                                                            |
 | C2 | Signature schemes have to be SUF-CMA secure             | This is the strongest notion of unforgeability, meaning an attacker cannot create valid signatures themselves even if given a "signing oracle". | Ed25519 will be used for creating non-repudiation signatures in TSP messages.                                                                                                                                                                |
 | C3 | Cryptographic code has to be reliable                   | TSP relies heavily on cryptography being reliable, and we should not write these ourselves.                                                     | For crypto "back-ends", code will come from the [`RustCrypto`](https://github.com/RustCrypto/) and `DALEK` projects. We avoid `ring` due to maintenance issues and `libsodium` since its Rust binding has been deprecated by its maintainer. |
 | C4 | TSP must be resilient against key compromise events     | If a private key is leaked, the goal of TSP is compromised                                                                                      | The SDK will not have an API for providing the private key of a VID to an application. Furthermore, HPKE is used that offers more protection against KCI.                                                                                    |
@@ -155,26 +155,31 @@ primitives [^1]. It combined a "Key encapsulation Mechanism", with a "Key Deriva
 "Authenticated encryption with associated data" to combine asymmetric with symmetric cryptography, to obtain certain
 security and performance characteristics. HPKE offers the highest notion of confidentiality, namely IN-CCA2.
 
-HPKE offers the possibility to create authenticated plaintext and authenticated ciphertext in one signcryption
-operation.
-In TSP a header (containing the sender and receiver VID's) must be authenticated but not encrypted.
+In TSP a header (containing the sender and receiver VID's) must be authenticated but not encrypted, which HPKE
+supports directly: the header is passed as associated data.
 
-Although HPKE offers authentication and confidentiality between two parties, there are two characteristics that are not
-desirable for TSP:
+HPKE also offers an `Auth` mode, in which the sender's private key takes part in the key schedule and the receiver is
+assured of the sender's identity by the encryption itself. TSP does **not** use it, for two reasons:
 
-- HPKE is vulnerable to key compromise impersonation (KCI). Which means that if Bob's private key is leaked to Eve, Eve
-  can impersonate Alice toward bob.
-- Although two parties communicating can verify the authenticity of messages, an outsider cannot verify that, for
-  instance, the sender as specified in the header of the message really sends the message. Thereby a receiver can also
-  not prove a message was sent by a particular sender to them. This is called receiver unforgeability (RUF).
+- `Auth` mode is vulnerable to key compromise impersonation (KCI): if Bob's private key is leaked to Eve, Eve can
+  impersonate Alice toward Bob.
+- Even between two parties who can verify each other's messages, an outsider cannot verify that the sender named in the
+  header really sent the message, so a receiver cannot prove a message was sent by a particular sender to them. This is
+  called receiver unforgeability (RUF).
 
-The overcome to above, an additional signature is created over both the header and the (HPKE) ciphertext of a TSP
-message. Since both the sender and receiver's VID are present in the header of a message, one can always verify the
-message was created by the specified sender and that it was intended for the specified receiver. This is a method first
-proposed in [^2].
+TSP therefore uses HPKE in `Base` mode and obtains sender authentication in two other ways, neither of which depends on
+the encryption:
 
-The additional "outer" signature over the message header (or envelope) plus the ciphertext makes TSP secure against KCI
-and RUF secure.
+- **ESSR.** The sender's VID is repeated *inside* the encryption, in the payload, so it is bound to the plaintext and
+  not only to the header. This is a method first proposed in [^2].
+- **An outer signature** over the header and the ciphertext together. Since both the sender's and the receiver's VID are
+  in the header, anyone can verify that the message was created by the named sender and intended for the named receiver.
+
+Together these make TSP secure against KCI and RUF secure, and — unlike `Auth` mode — they hold for a suite that has no
+sender authentication of its own. The libsodium anonymous sealed box is such a suite, and TSP supports it on the same
+terms: because it is anonymous, its payload MUST carry the sender's VID. Under HPKE-Base the header is already bound
+through the associated data, so the field defaults to the NULL VID; a sender MAY include it, and a receiver MUST accept
+either.
 
 A modern and secure public-key signature scheme is used to construct the "outer" signature, namely
 `Ed25519` [^3], based in the same elliptic-curve cryptography as HPKE. Ed25519 satisfies properties such as EUF-CMA or
@@ -197,7 +202,8 @@ unidirectional message.
 The following underlying cryptographic primitives are chosen for the TSP.
 
 Key Encapsulation Method:
-`DHKEM(X25519, HKDF-SHA256)`
+`DHKEM(X25519, HKDF-SHA256)`, or `X25519MLKEM768` where the receiver's VID declares a post-quantum encryption key. The
+KEM is selected by the receiver's encryption key type; there is no code point of its own on the wire.
 
 Key Derivation Function:
 `HKDF-SHA256`
@@ -206,10 +212,20 @@ Authenticated Encryption with Associated Data (AEAD) Function:
 `ChaCha20Poly1305`
 
 Signature scheme:
-`Ed25519 SHA512`
+`Ed25519 SHA512`, or `ML-DSA-65` where the sender's VID declares a post-quantum signing key.
 
 HPKE operation mode:
-`Auth`
+`Base` (see above for why not `Auth`)
+
+TSP additionally supports the libsodium anonymous sealed box as an alternative to HPKE. Which of the two produced a
+message is named by the ciphertext's own CESR code — `4C/5C/6C` for the sealed box, `4F/5F/6F` for HPKE-Base — rather
+than by a separate field. See [CESR encoding](./cesr.md).
+
+**HPKE-Base is the default for every receiver.** The specification keeps the sealed box only for the sake of existing
+implementations: it is not a standardised construction, the libsodium project is implementing HPKE in parallel,
+implementors SHOULD consider migrating, and the option MAY be removed in a later revision. Post-quantum support is
+HPKE-Base with a different KEM and has no sealed-box counterpart at all. The SDK therefore never selects the sealed box
+on its own — a caller that still needs it asks for it explicitly.
 
 ### Encoding
 
@@ -228,18 +244,28 @@ We create the message header:
 
 ```
 Envelope = ConcatCESR(
-    [VID sender, VID receiver, Additional header data]
+    [Version, VID sender, VID receiver]
 )
 ```
 
-We perform a HPKE Seal operation using the single-shot API in Auth mode:
+We build the payload, which repeats the sender inside the encryption (ESSR):
 
 ```
-Ciphertext = SealAuth(
-    skS = Sender private key,
+Payload = ConcatCESR(
+    [Payload type, VID sender, Padding field, Payload fields]
+)
+```
+
+Under HPKE-Base the envelope already binds the sender through the associated data, so `VID sender` here defaults to the
+NULL VID; under the anonymous sealed box it must be the sender's actual VID.
+
+We perform a HPKE Seal operation using the single-shot API in Base mode:
+
+```
+Ciphertext = SealBase(
     pkR = Receiver public key,
     aad = Envelope,
-    pt = Message plaintext
+    pt = Payload
 )
 ```
 
@@ -267,7 +293,7 @@ Parse the CESR encoded message:
 ```
 [Envelope, Ciphertext, Signature] = SplitCESR(Ciphertext Message)
 
-[VID sender, VID receiver, Additional header data] = SplitCESR(Envelope)
+[Version, VID sender, VID receiver] = SplitCESR(Envelope)
 ```
 
 Verify the outer signature:
@@ -279,16 +305,20 @@ Verify(
 )
 ```
 
-We perform a HPKE Open operation using the single-shot API in Auth mode:
+We perform a HPKE Open operation using the single-shot API in Base mode:
 
 ```
-Message plaintext = OpenAuth(
-    pkS = Sender public key,
+Payload = OpenBase(
     skR = Receiver private key,
     aad = Envelope,
     ct = Ciphertext
 )
 ```
+
+Finally, check the sender inside the payload against the one in the envelope. Where the payload names a sender, it must
+be the same VID; a mismatch means the message is rejected, not merely reported. Under HPKE-Base the payload may instead
+carry the NULL VID, which is accepted because the associated data has already bound the envelope's sender to the
+ciphertext.
 
 ### Streaming mode
 

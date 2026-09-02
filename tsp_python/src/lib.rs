@@ -8,6 +8,7 @@ fn tsp_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<OwnedVid>()?;
 
     m.add_class::<CryptoType>()?;
+    m.add_class::<PayloadConfidentiality>()?;
     m.add_class::<SignatureType>()?;
     m.add_class::<RelationshipForm>()?;
     m.add_class::<RelationshipDelivery>()?;
@@ -180,22 +181,42 @@ impl Store {
             .map_err(py_exception)
     }
 
+    #[pyo3(signature = (sender, receiver, message, confidentiality = None))]
     fn seal_message(
         &self,
         sender: String,
         receiver: String,
         message: Vec<u8>,
+        confidentiality: Option<PayloadConfidentiality>,
     ) -> PyResult<(String, Vec<u8>)> {
         let (url, bytes) = self
             .inner
-            .seal_message(&sender, &receiver, &message)
+            .seal_message_with_confidentiality(
+                &sender,
+                &receiver,
+                &message,
+                confidentiality.unwrap_or_default().into(),
+            )
             .map_err(py_exception)?;
 
         Ok((url.to_string(), bytes))
     }
 
-    fn send(&self, sender: String, receiver: String, message: Vec<u8>) -> PyResult<()> {
-        wait_for(self.inner.send(&sender, &receiver, &message))?.map_err(py_exception)
+    #[pyo3(signature = (sender, receiver, message, confidentiality = None))]
+    fn send(
+        &self,
+        sender: String,
+        receiver: String,
+        message: Vec<u8>,
+        confidentiality: Option<PayloadConfidentiality>,
+    ) -> PyResult<()> {
+        wait_for(self.inner.send_with_confidentiality(
+            &sender,
+            &receiver,
+            &message,
+            confidentiality.unwrap_or_default().into(),
+        ))?
+        .map_err(py_exception)
     }
 
     fn receive(&mut self, vid: String) -> PyResult<Option<FlatReceivedTspMessage>> {
@@ -423,6 +444,29 @@ pub enum CryptoType {
     SealedBox = 2,
 }
 
+/// How an upper layer's own payload is protected. TSP's control messages are
+/// always encrypted, whatever this says.
+///
+/// `SignedOnly` is only meaningful under nesting: the enclosing envelope is
+/// confidential either way, but the payload's confidentiality then rests on the
+/// enclosing relationship's keys rather than its own (spec 4).
+#[pyclass(eq, eq_int, from_py_object)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum PayloadConfidentiality {
+    #[default]
+    Confidential = 0,
+    SignedOnly = 1,
+}
+
+impl From<PayloadConfidentiality> for tsp_sdk::crypto::PayloadConfidentiality {
+    fn from(value: PayloadConfidentiality) -> Self {
+        match value {
+            PayloadConfidentiality::Confidential => Self::Confidential,
+            PayloadConfidentiality::SignedOnly => Self::SignedOnly,
+        }
+    }
+}
+
 #[pyclass(eq, eq_int, from_py_object)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SignatureType {
@@ -446,6 +490,12 @@ struct FlatReceivedTspMessage {
     crypto_type: Option<CryptoType>,
     #[pyo3(get, set)]
     signature_type: Option<SignatureType>,
+    /// How the message this one arrived inside was encrypted, when it was
+    /// nested; `None` otherwise. A message whose `crypto_type` is `Plaintext`
+    /// but which has an enclosing type was still confidential on the wire, under
+    /// the enclosing relationship's keys rather than its own (spec 4).
+    #[pyo3(get, set)]
+    enclosing_crypto_type: Option<CryptoType>,
     #[pyo3(get, set)]
     form: Option<RelationshipForm>,
     #[pyo3(get, set)]
@@ -502,6 +552,14 @@ fn flatten_relationship_delivery(
     }
 }
 
+fn crypto_type(crypto_type: tsp_sdk::cesr::CryptoType) -> CryptoType {
+    match crypto_type {
+        tsp_sdk::cesr::CryptoType::Plaintext => CryptoType::Plaintext,
+        tsp_sdk::cesr::CryptoType::HpkeBase => CryptoType::HpkeBase,
+        tsp_sdk::cesr::CryptoType::SealedBox => CryptoType::SealedBox,
+    }
+}
+
 impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
     fn from(value: tsp_sdk::ReceivedTspMessage) -> Self {
         let variant = ReceivedTspMessageVariant::from(&value);
@@ -513,6 +571,7 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             message: None,
             crypto_type: None,
             signature_type: None,
+            enclosing_crypto_type: None,
             form: None,
             delivery: None,
             route: None,
@@ -537,11 +596,8 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
                 this.sender = Some(sender);
                 this.receiver = receiver;
                 this.message = Some(message.into());
-                this.crypto_type = match message_type.crypto_type {
-                    tsp_sdk::cesr::CryptoType::Plaintext => Some(CryptoType::Plaintext),
-                    tsp_sdk::cesr::CryptoType::HpkeBase => Some(CryptoType::HpkeBase),
-                    tsp_sdk::cesr::CryptoType::SealedBox => Some(CryptoType::SealedBox),
-                };
+                this.crypto_type = Some(crypto_type(message_type.crypto_type));
+                this.enclosing_crypto_type = message_type.enclosing_crypto_type.map(crypto_type);
                 this.signature_type = match message_type.signature_type {
                     tsp_sdk::cesr::SignatureType::NoSignature => Some(SignatureType::NoSignature),
                     tsp_sdk::cesr::SignatureType::Ed25519 => Some(SignatureType::Ed25519),

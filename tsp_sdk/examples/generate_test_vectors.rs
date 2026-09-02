@@ -1,7 +1,7 @@
 //! Generate the Rev 3 test vectors.
 //!
 //! ```sh
-//! cargo run -p tsp_sdk --example generate_test_vectors --features "pq" > tsp_sdk/test_vectors/rev3.json
+//! cargo run -p tsp_sdk --example generate_test_vectors > tsp_sdk/test_vectors/rev3.json
 //! ```
 //!
 //! Running this twice produces identical output: every random value is drawn
@@ -35,56 +35,42 @@ fn peer_vid(n: u8) -> OwnedVid {
     OwnedVid::new_did_peer_from_seed("tsp://".parse().unwrap(), seed)
 }
 
-/// The message split into its CESR parts by the SDK's own decoder, so the
-/// boundaries shown are the ones a receiver actually parses rather than a
-/// hand annotation that can drift.
-fn segments(message: &[u8]) -> serde_json::Value {
-    let parts = cesr::open_message_into_parts(message).expect("message parses");
-    let mut out = Vec::new();
+/// The same, with post-quantum key types. ML-DSA generates deterministically
+/// from a seed by FIPS 204, and the hybrid KEM by HPKE's `DeriveKeyPair`, so a
+/// post-quantum VID is as reproducible as a classical one.
+fn pq_peer_vid(n: u8) -> OwnedVid {
+    let mut seed = [0_u8; 32];
+    seed[0] = 0xB0 | n;
 
-    let mut push = |label: &str, part: &cesr::Part<'_>, note: &str| {
-        let mut whole = part.prefix.to_vec();
-        whole.extend_from_slice(part.data);
-        out.push(json!({
-            "field": label,
-            "code": b64(part.prefix),
-            "bytes": whole.len(),
-            "text": b64(&whole),
-            "note": note,
-        }));
-    };
+    OwnedVid::new_did_peer_from_seed_with_key_types(
+        "tsp://".parse().unwrap(),
+        seed,
+        tsp_sdk::definitions::VidSignatureKeyType::MlDsa65,
+        tsp_sdk::definitions::VidEncryptionKeyType::X25519MlKem768,
+    )
+}
 
-    push(
-        "frame + version",
-        &parts.prefix,
-        "-E## counts the signable content that follows, then TSP_Version",
-    );
-    push(
-        "VID_sndr",
-        &parts.sender,
-        "the sending VID, in the envelope and so in the aad",
-    );
-    if let Some(receiver) = &parts.receiver {
-        push(
-            "VID_rcvr",
-            receiver,
-            "the receiving VID; 4BAA when there is none",
-        );
-    }
-    if let Some(ciphertext) = &parts.ciphertext {
-        push(
-            "ciphertext",
-            ciphertext,
-            "the sealed payload; for HPKE-Base this is enc followed by ct",
-        );
-    }
-    push(
-        "signature",
-        &parts.signature,
-        "-C## attachment group holding an indexed -K## signature",
-    );
-
-    json!(out)
+/// A stream walked into its CESR primitives by [`cesr::segments`], so the
+/// breakdown a reader sees is the SDK's own rather than a hand annotation, or a
+/// second walker outside the repository, that can drift.
+fn segments(stream: &[u8]) -> serde_json::Value {
+    json!(
+        cesr::segments(stream)
+            .into_iter()
+            .map(|s| json!({
+                "kind": match s.kind {
+                    cesr::SegmentKind::Code => "code",
+                    cesr::SegmentKind::Data => "data",
+                    cesr::SegmentKind::Unparsed => "unparsed",
+                },
+                "field": s.label,
+                "chars": s.text.len(),
+                "text": s.text,
+                "note": s.note,
+                "value": s.value,
+            }))
+            .collect::<Vec<_>>()
+    )
 }
 
 /// The payload as it stands inside the ciphertext, which is what a receiver
@@ -177,8 +163,17 @@ fn ephemeral_key(seed: [u8; 32], message: &[u8]) -> Option<serde_json::Value> {
                 })
             })
         }
-        // HPKE draws keying material and derives the keypair from it, which is
-        // the ikmE that RFC 9180 publishes for its own vectors
+        // HPKE over X25519 draws keying material and derives the keypair from
+        // it, which is the ikmE that RFC 9180 publishes for its own vectors.
+        //
+        // The post-quantum hybrid KEM works differently: it derives no
+        // ephemeral keypair at all, drawing 64 bytes of encapsulation
+        // randomness and feeding them to a deterministic encapsulation whose
+        // entry point the hpke crate does not expose. Nothing here can then be
+        // checked against the wire, and an unverified value is not worth
+        // publishing — so that vector carries its seed alone, and
+        // `every_vector_regenerates_from_what_the_file_records` is what
+        // establishes that its bytes reproduce.
         cesr::CryptoType::HpkeBase => {
             let (_, public) = hpke::kem::X25519HkdfSha256::derive_keypair(&drawn);
             (public.to_bytes()[..] == on_the_wire[..]).then(|| {
@@ -202,6 +197,9 @@ fn main() {
     // the intermediaries a routed message traverses
     let p = peer_vid(5);
     let q = peer_vid(6);
+    // post-quantum endpoints: the same HPKE-Base mode, a different KEM
+    let pq_alice = pq_peer_vid(1);
+    let pq_bob = pq_peer_vid(2);
 
     // one fixed seed per vector, so the file records every random value the
     // message drew and a verifier can regenerate the bytes exactly
@@ -225,24 +223,33 @@ fn main() {
                    nonce_used: Option<&str>,
                    layout: Vec<&str>,
                    expect: serde_json::Value| {
-        // the sealed box adds a 32-byte ephemeral key and a 16-byte tag; HPKE
-        // adds a 32-byte encapsulation and a 16-byte tag. Either way the
-        // ciphertext is 48 bytes longer than the plaintext, so a wrong
-        // reconstruction shows up here rather than silently on the page.
+        // A ciphertext is the encoded payload plus the scheme's encapsulation
+        // and a 16-byte AEAD tag. The sealed box and HPKE over X25519 both
+        // prepend 32 bytes; the post-quantum hybrid KEM prepends 1120. Checking
+        // the length here means a wrong reconstruction shows up now rather than
+        // silently on the page.
+        const X25519_OVERHEAD: usize = 32 + 16;
+        const HYBRID_KEM_OVERHEAD: usize = 1120 + 16;
         let parts = cesr::open_message_into_parts(message).expect("message parses");
         if let Some(ct) = parts.ciphertext {
-            let (found, expected) = match parts.crypto_type {
+            match parts.crypto_type {
                 // a signed-only message carries its payload in the clear, and
                 // the -Z## code is the part's own prefix rather than data
-                cesr::CryptoType::Plaintext => (ct.prefix.len() + ct.data.len(), plaintext.len()),
-                // the ciphertext is the whole encoded payload plus a 32-byte
-                // ephemeral or encapsulated key and a 16-byte tag
-                _ => (ct.data.len(), plaintext.len() + 48),
-            };
-            assert_eq!(
-                found, expected,
-                "{name}: reconstructed plaintext does not match the payload on the wire"
-            );
+                cesr::CryptoType::Plaintext => assert_eq!(
+                    ct.prefix.len() + ct.data.len(),
+                    plaintext.len(),
+                    "{name}: reconstructed plaintext does not match the payload on the wire"
+                ),
+                _ => {
+                    let overhead = ct.data.len() - plaintext.len();
+                    assert!(
+                        overhead == X25519_OVERHEAD || overhead == HYBRID_KEM_OVERHEAD,
+                        "{name}: reconstructed plaintext does not match the payload on the wire \
+                         (ciphertext is {overhead} bytes longer, expected {X25519_OVERHEAD} or \
+                         {HYBRID_KEM_OVERHEAD})"
+                    );
+                }
+            }
         }
 
         vectors.push(json!({
@@ -254,6 +261,7 @@ fn main() {
             "message": b64(message),
             "segments": segments(message),
             "payload_plaintext": b64(&plaintext),
+            "payload_segments": segments(&plaintext),
             // for a nested or routed message, the payload of the message
             // carried inside: without it the inner ciphertext stays opaque and
             // the content the vector actually conveys cannot be seen
@@ -266,7 +274,10 @@ fn main() {
                         "{name}: reconstructed inner plaintext does not match its ciphertext"
                     );
                 }
-                json!({"payload_plaintext": b64(&plaintext)})
+                json!({
+                    "payload_plaintext": b64(&plaintext),
+                    "payload_segments": segments(&plaintext),
+                })
             }),
             "seed": seed_used.map(|n| b64(&seed(n))),
             "ephemeral": seed_used.and_then(|n| ephemeral_key(seed(n), message)),
@@ -394,7 +405,7 @@ fn main() {
             form: RelationshipForm::Direct,
         },
         Some(&mut request_digest),
-        cesr::CryptoType::SealedBox,
+        cesr::CryptoType::HpkeBase,
         seed(8),
         Some(NONCE),
     )
@@ -411,12 +422,12 @@ fn main() {
         &m,
         payload_plaintext(
             &cesr::Payload::RelationProposal {
-                request_digest: digest_of(&request_digest, cesr::CryptoType::SealedBox),
+                request_digest: digest_of(&request_digest, cesr::CryptoType::HpkeBase),
                 nonce: cesr::Nonce::generate(|dst| *dst = NONCE),
                 reply_path: vec![],
                 referral: None,
             },
-            Some(alice.identifier().as_bytes()),
+            None,
         ),
         None,
         Some(8),
@@ -432,7 +443,7 @@ fn main() {
             "Padding_Field",
         ],
         json!({
-            "crypto": "SealedBox",
+            "crypto": "HpkeBase",
             "payload": {"request_relationship": {"thread_id": b64(&request_digest), "reply_path": [], "referral": null}}
         }),
     );
@@ -448,7 +459,7 @@ fn main() {
             form: RelationshipForm::Direct,
         },
         Some(&mut reply_digest),
-        cesr::CryptoType::SealedBox,
+        cesr::CryptoType::HpkeBase,
         seed(9),
         Some(NONCE),
     )
@@ -464,10 +475,10 @@ fn main() {
         &m,
         payload_plaintext(
             &cesr::Payload::RelationAffirm {
-                request_digest: digest_of(&request_digest, cesr::CryptoType::SealedBox),
-                reply_digest: digest_of(&reply_digest, cesr::CryptoType::SealedBox),
+                request_digest: digest_of(&request_digest, cesr::CryptoType::HpkeBase),
+                reply_digest: digest_of(&reply_digest, cesr::CryptoType::HpkeBase),
             },
-            Some(bob.identifier().as_bytes()),
+            None,
         ),
         None,
         Some(9),
@@ -481,7 +492,7 @@ fn main() {
             "Padding_Field",
         ],
         json!({
-            "crypto": "SealedBox",
+            "crypto": "HpkeBase",
             "payload": {"accept_relationship": {"thread_id": b64(&request_digest), "reply_thread_id": b64(&reply_digest)}}
         }),
     );
@@ -494,7 +505,7 @@ fn main() {
             thread_id: request_digest,
         },
         None,
-        cesr::CryptoType::SealedBox,
+        cesr::CryptoType::HpkeBase,
         seed(3),
         None,
     )
@@ -510,15 +521,73 @@ fn main() {
         &m,
         payload_plaintext(
             &cesr::Payload::RelationshipCancel {
-                reply: digest_of(&request_digest, cesr::CryptoType::SealedBox),
+                reply: digest_of(&request_digest, cesr::CryptoType::HpkeBase),
             },
-            Some(alice.identifier().as_bytes()),
+            None,
         ),
         None,
         Some(3),
         None,
         vec!["-Z##", "XRFD", "VID_sndr | 4BAA", "Digest", "Padding_Field"],
-        json!({"crypto": "SealedBox", "payload": {"cancel_relationship": {"thread_id": b64(&request_digest)}}}),
+        json!({"crypto": "HpkeBase", "payload": {"cancel_relationship": {"thread_id": b64(&request_digest)}}}),
+    );
+
+    // 6b. the same invite under the sealed box, which the specification keeps
+    // for existing implementations. Its payload rules differ from HPKE-Base in
+    // two ways that nothing else in these vectors exercises: the digest is
+    // Blake2b-256 rather than SHA2-256, and VID_sndr MUST be carried in the
+    // payload because the construction is anonymous.
+    let mut sealed_request_digest = [0_u8; 32];
+    let m = tsp_sdk::crypto::seal_reproducibly(
+        &alice,
+        &bob,
+        Payload::RequestRelationship {
+            thread_id: Default::default(),
+            reply_path: vec![],
+            form: RelationshipForm::Direct,
+        },
+        Some(&mut sealed_request_digest),
+        cesr::CryptoType::SealedBox,
+        seed(10),
+        Some(NONCE),
+    )
+    .unwrap();
+    add(
+        "control-rfi-sealed-box",
+        "7.2.1, 8, 9.4.1",
+        "A TSP_RFI under the libsodium sealed box, the suite the specification keeps only for \
+         existing implementations. Two payload rules differ from HPKE-Base: the Digest is \
+         Blake2b-256, whose CESR code is F rather than I, and VID_sndr MUST carry the sender \
+         because the sealed box is anonymous, where HPKE-Base defaults it to the NULL VID.",
+        "alice",
+        Some("bob"),
+        &m,
+        payload_plaintext(
+            &cesr::Payload::RelationProposal {
+                request_digest: digest_of(&sealed_request_digest, cesr::CryptoType::SealedBox),
+                nonce: cesr::Nonce::generate(|dst| *dst = NONCE),
+                reply_path: vec![],
+                referral: None,
+            },
+            Some(alice.identifier().as_bytes()),
+        ),
+        None,
+        Some(10),
+        Some(&b64(&NONCE)),
+        vec![
+            "-Z##",
+            "XRFI",
+            "VID_sndr",
+            "Digest",
+            "Nonce",
+            "Reply_Path",
+            "Referral_Field",
+            "Padding_Field",
+        ],
+        json!({
+            "crypto": "SealedBox",
+            "payload": {"request_relationship": {"thread_id": b64(&sealed_request_digest), "reply_path": [], "referral": null}}
+        }),
     );
 
     // 7. nested message: an XHOP payload wrapping a complete inner TSP message
@@ -527,7 +596,7 @@ fn main() {
         nested_bob.vid(),
         Payload::Content(b"hello world"),
         None,
-        cesr::CryptoType::SealedBox,
+        cesr::CryptoType::HpkeBase,
         seed(4),
         None,
     )
@@ -537,7 +606,7 @@ fn main() {
         &bob,
         Payload::NestedMessage(&inner),
         None,
-        cesr::CryptoType::SealedBox,
+        cesr::CryptoType::HpkeBase,
         seed(5),
         None,
     )
@@ -553,16 +622,10 @@ fn main() {
         "alice",
         Some("bob"),
         &m,
-        payload_plaintext(
-            &cesr::Payload::NestedMessage(&inner[..]),
-            Some(alice.identifier().as_bytes()),
-        ),
+        payload_plaintext(&cesr::Payload::NestedMessage(&inner[..]), None),
         Some((
             &inner,
-            payload_plaintext(
-                &cesr::Payload::GenericMessage(&b"hello world"[..]),
-                Some(nested_alice.identifier().as_bytes()),
-            ),
+            payload_plaintext(&cesr::Payload::GenericMessage(&b"hello world"[..]), None),
         )),
         Some(5),
         None,
@@ -575,7 +638,7 @@ fn main() {
             "Encoded_TSP_Message",
         ],
         json!({
-            "crypto": "SealedBox",
+            "crypto": "HpkeBase",
             "payload": {"nested": {"inner_sender": nested_alice.identifier(), "inner_receiver": nested_bob.identifier(), "inner_content": "hello world"}}
         }),
     );
@@ -587,7 +650,7 @@ fn main() {
         nested_bob.vid(),
         Payload::Content(b"hello world"),
         None,
-        cesr::CryptoType::SealedBox,
+        cesr::CryptoType::HpkeBase,
         seed(6),
         None,
     )
@@ -601,7 +664,7 @@ fn main() {
         p.vid(),
         Payload::RoutedMessage(hops, &e2e),
         None,
-        cesr::CryptoType::SealedBox,
+        cesr::CryptoType::HpkeBase,
         seed(7),
         None,
     )
@@ -626,14 +689,11 @@ fn main() {
                 ],
                 &e2e[..],
             ),
-            Some(alice.identifier().as_bytes()),
+            None,
         ),
         Some((
             &e2e,
-            payload_plaintext(
-                &cesr::Payload::GenericMessage(&b"hello world"[..]),
-                Some(nested_alice.identifier().as_bytes()),
-            ),
+            payload_plaintext(&cesr::Payload::GenericMessage(&b"hello world"[..]), None),
         )),
         Some(7),
         None,
@@ -648,7 +708,7 @@ fn main() {
             "Encoded_TSP_Message",
         ],
         json!({
-            "crypto": "SealedBox",
+            "crypto": "HpkeBase",
             "payload": {"routed": {
                 "hops": [q.identifier(), nested_bob.identifier()],
                 "inner_sender": nested_alice.identifier(),
@@ -656,6 +716,50 @@ fn main() {
                 "inner_content": "hello world"
             }}
         }),
+    );
+
+    // 9. the same HPKE-Base message with post-quantum keys. Last, so that
+    // a reader meets every classical vector before the one whose keys and
+    // signature are an order of magnitude larger.
+    let m = tsp_sdk::crypto::seal_reproducibly(
+        &pq_alice,
+        &pq_bob,
+        Payload::Content(b"hello world"),
+        None,
+        cesr::CryptoType::HpkeBase,
+        seed(11),
+        None,
+    )
+    .unwrap();
+    add(
+        "direct-hpke-base-pq",
+        "8.2, 8.3, 9.2.8",
+        "The same message as direct-hpke-base, to endpoints whose VIDs declare post-quantum \
+         key types. Post-quantum support is not a separate mode: this is HPKE-Base with the \
+         X25519MLKEM768 hybrid KEM, selected by the recipient VID's encryption key type, and \
+         the ciphertext code is the same 4F as any other HPKE-Base message. What changes is \
+         size — the encapsulation is 1120 bytes rather than 32 — and the signature, which is \
+         ML-DSA-65 under the code 1AAQ rather than an indexed Ed25519 signature. There is no \
+         sealed-box counterpart to this vector; that suite has no post-quantum option. This is \
+         the one vector with no published ephemeral value: the hybrid KEM derives no ephemeral \
+         keypair, drawing encapsulation randomness instead, so there is nothing of that shape to \
+         publish and check. Its bytes reproduce from the recorded seed.",
+        "pq_alice",
+        Some("pq_bob"),
+        &m,
+        payload_plaintext(&cesr::Payload::GenericMessage(&b"hello world"[..]), None),
+        None,
+        Some(11),
+        None,
+        vec![
+            "-Z##",
+            "XSCS",
+            "VID_sndr | 4BAA",
+            "Padding_Field",
+            "-A##",
+            "Bytes",
+        ],
+        json!({"crypto": "HpkeBase", "signature": "MlDsa65", "payload": {"content": "hello world"}}),
     );
 
     let doc = json!({
@@ -673,6 +777,8 @@ fn main() {
             "nested_bob": described(&nested_bob),
             "p": described(&p),
             "q": described(&q),
+            "pq_alice": described(&pq_alice),
+            "pq_bob": described(&pq_bob),
         },
         "vectors": vectors,
     });

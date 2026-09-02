@@ -1,7 +1,7 @@
 # Nested mode
 
-Over time, sustained message exchanges enable external observers to gather and analyze significant data. 
-To counter this threat, TSP prvoides a technique to encapsulate a specific conversation within an additional TSP envelope.
+Over time, sustained message exchanges enable external observers to gather and analyze significant data.
+To counter this threat, TSP provides a technique to encapsulate a specific conversation within an additional TSP envelope.
 
 To try out TSP in nested mode, the command line interface can be used. A nested relationship can be set up by
 exchanging relationship messages (the preferred way), but it can also be tested by manually
@@ -9,6 +9,25 @@ setting up identifiers, having both sides explicitly verify each other’s ident
 and establishing a relationship between those identifiers.
 
 If you want to create a second independent relationship via referral instead of a private inner relationship, see [Parallel relationships](./parallel.md).
+
+Everything in this chapter runs on one machine and talks to no server: the identifiers are
+`did:peer`, which are self-certifying, and the transport is TCP on localhost. Every line of
+output below is from a real run, so you can follow along and compare — your identifiers will
+differ, since each one is a hash of freshly generated keys.
+
+## A note on the two forms of a `did:peer`
+
+A `did:peer` has a **short form**, which is the identifier itself, and a **long form**, which is
+the short form followed by the document holding its keys. The short form is a hash of that
+document, so the long form can be checked against it and nothing has to be fetched.
+
+Which form appears where matters when following the commands below:
+
+- `tsp print` emits the **long form** — that is what you hand to someone who does not know the
+  identifier yet, and it is what travels on the wire when a nested identity is introduced.
+- `tsp verify` takes the long form, checks it, and stores the **short form**.
+- Everything the CLI logs, and everything you pass to `accept` or `set-alias` afterwards, is the
+  **short form**.
 
 ## Nested mode (using relationship control messages)
 
@@ -18,42 +37,66 @@ To send a nested TSP message, both sender and receiver should first establish a
 direct relationship. This can be initiated by one party verifying the VID of the other
 and sending a relationship request.
 
-We use the same **alice** and **bob** aliases as in the previous chapter.
-
-First, **alice** will have to learn about **bob**'s existence:
+First create the two identities, each with its own wallet and its own TCP port:
 
 ```sh
-> tsp -w alice verify --alias bob did:web:did.teaspoon.world:endpoint:bob
- INFO tsp: did:web:did.teaspoon.world:endpoint:bob is verified and added to the wallet alice
+> tsp -w alice create --type peer --tcp 127.0.0.1:5601 alice --alias alice
+ INFO tsp: created peer identity did:peer:4zQmSf8cCgkfPZUrGZpkPkcwsHaubEmwduGzmBPXuq7HK2sN
+ INFO tsp: created VID did:peer:4zQmSf8cCgkfPZUrGZpkPkcwsHaubEmwduGzmBPXuq7HK2sN
 ```
 
-Then she can send a relationship request message. This requires **bob** to be listening as
-shown in the previous chapter (i.e., running `tsp -w bob receive bob --one` in a separate window):
+```sh
+> tsp -w bob create --type peer --tcp 127.0.0.1:5602 bob --alias bob
+ INFO tsp: created peer identity did:peer:4zQmdRKSG825qsPm24E7wxQKw3sD5e6oXwgGWsV9nRh9RUY7
+ INFO tsp: created VID did:peer:4zQmdRKSG825qsPm24E7wxQKw3sD5e6oXwgGWsV9nRh9RUY7
+```
+
+Each has to learn about the other. `print` emits the long form, and `xargs` feeds it to `verify`:
 
 ```sh
-> tsp -w alice request --sender-vid alice --receiver-vid bob --wait
- INFO tsp::async_store: sending message to https://did.teaspoon.world/endpoint/bob
- INFO tsp: sent relationship request from did:web:did.teaspoon.world:endpoint:alice to did:web:did.teaspoon.world:endpoint:bob, waiting for response...
+> tsp -w bob print bob | xargs tsp -w alice verify --alias bob
+ INFO tsp: did:peer:4zQmdRKSG825qsPm24E7wxQKw3sD5e6oXwgGWsV9nRh9RUY7:z2kCqs4oURbyPVxWvLGsQbAdjk8rSFaHh3WrHx3BhMyxctozJVLhk8RTXhxMySbJbzBktUG1A5NFknC4vtqSuS2XsU7uvAcHCqu8RpQ5xcQNHieTHAj6rN745QAfnjjzY4YTPBBiPJ8M2HDdPV8AWFuuYXXrAFvymCLkWgoVujXuqk2yTWeEGEat1fVaZioyT1YYQwxXZv3UzZeixFswr9x7dc313uzotpodPSyp8mvMnJcQTvftd2wn59LHjHyPoYPBTFbDQFNHWoemGmd1g9sUNC8jxgFBT4wwrGhwM8AKSDGQ6aZT2VtiNU7FPM4owCr1hVkC72h215SrpFLpsyKW5xL1S2LDmM6uogwVkLFMWxcnNscTy5FRxpKvKha1L7amGCCu5enw7QJtU1tdjdCkgJzKacsNJnBfZ8uQ5Uxb7W8z527ghRoSJHLnjkEydtwdNTrWVPSkiQbYnZmki2wofNEWiMDYmq4RkK2p1sRHp4a2dVS5kjTxuNBsfow8JwEoVcbB3NxfuZbZrymkom3EXXFQ2GFFqg1YpWqVbe1W9gt9NERaG1M3N8nbZm2pgc is verified and added to the wallet alice
+```
+
+```sh
+> tsp -w alice print alice | xargs tsp -w bob verify --alias alice
+ INFO tsp: did:peer:4zQmSf8cCgkfPZUrGZpkPkcwsHaubEmwduGzmBPXuq7HK2sN:z2kCqs4oURbyPVxWvLGsQbAdjk8rSFaHh3... is verified and added to the wallet bob
+```
+
+Then **alice** can send a relationship request. This requires **bob** to be listening, in a
+separate window:
+
+```sh
+> tsp -w bob receive --one bob
+ INFO tsp: listening for messages...
+```
+
+```sh
+> tsp -w alice request --sender-vid alice --receiver-vid bob
+ INFO tsp_sdk::async_store: sending message to tcp://127.0.0.1:5602
+ INFO tsp: sent relationship request from alice to bob
 ```
 
 On **bob**'s side, we will see:
 
 ```sh
-> tsp -w bob receive --one bob
- INFO tsp: listening for messages...
- INFO tsp: received relationship request from did:web:did.teaspoon.world:endpoint:alice, thread-id 'JZla6+N6FP/In7ywOp8yQD2GfXemCn1e4b6tFVWaLxg'
+ INFO tsp: received relationship request from did:peer:4zQmSf8cCgkfPZUrGZpkPkcwsHaubEmwduGzmBPXuq7HK2sN, thread-id 'TSWHY0oFR9pzecenLncuYgEoE6yfqctjO/GN1zOUCqk'
+did:peer:4zQmSf8cCgkfPZUrGZpkPkcwsHaubEmwduGzmBPXuq7HK2sN	TSWHY0oFR9pzecenLncuYgEoE6yfqctjO/GN1zOUCqk
 ```
 
-Notice how a thread-id was generated; we need this to confirm the relationship. This can be done by sending a relationship acceptance message (this requires **alice** to be listening, which the CLI does automatically after sending a relationship request):
+Notice how a thread-id was generated; we need this to confirm the relationship. This can be done
+by sending a relationship acceptance message, which requires **alice** to be listening:
 
 ```sh
-> tsp -w bob accept --sender-vid bob --receiver-vid alice --thread-id 'JZla6+N6FP/In7ywOp8yQD2GfXemCn1e4b6tFVWaLxg'
+> tsp -w bob accept --sender-vid bob --receiver-vid alice --thread-id 'TSWHY0oFR9pzecenLncuYgEoE6yfqctjO/GN1zOUCqk'
+ INFO tsp_sdk::async_store: sending message to tcp://127.0.0.1:5601
+ INFO tsp: sent control message from bob to alice
 ```
 
 On **alice**'s side, this will look like:
 
 ```sh
- INFO tsp: received accept relationship from did:web:did.teaspoon.world:endpoint:bob
+ INFO tsp: received accept relationship from did:peer:4zQmdRKSG825qsPm24E7wxQKw3sD5e6oXwgGWsV9nRh9RUY7
 ```
 
 **alice** and **bob** now have a bidirectional relationship.
@@ -66,44 +109,56 @@ have to be passed the `--nested` parameter.
 Let's say that **alice** again takes the initiative to nest the relationship, which starts the same as before:
 
 ```sh
-> tsp -w alice request --nested --sender-vid alice --receiver-vid bob --wait
- INFO tsp: sent a nested relationship request to did:web:did.teaspoon.world:endpoint:bob with new identity 'did:peer:2.Vz6Mv3HRDr8nQ28LZxXHrU1zaUdXVJVjQzhuVcFB4pyF5rweQ.Ez6Lc6URPHMVN1vswnk32ND5zNcAb5o2QA1Hs4NThH2YzAuVL.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0'
+> tsp -w alice request --nested --sender-vid alice --receiver-vid bob
+ INFO tsp_sdk::async_store: sending message to tcp://127.0.0.1:5602
+ INFO tsp: sent a nested relationship request to bob with new identity 'did:peer:4zQmQSZCofJmxYT4zZcR2fr46iKP1P2Dwx1UHdipC8Mv6T2t'
+did:peer:4zQmQSZCofJmxYT4zZcR2fr46iKP1P2Dwx1UHdipC8Mv6T2t
+ INFO tsp: sent relationship request from alice to bob
 ```
 
-Notice that a new `did:peer` identifier was created. This will have a transport set to `tsp://`. Let's create an alias for it:
+Notice that a new `did:peer` identifier was created, with its transport set to `tsp://`. The
+identifier the CLI prints is the short form; the long form is what travelled inside the message,
+so **bob** can check the keys without fetching anything.
 
 On **bob**'s side, this message will appear:
 
 ```sh
-> tsp -w bob receive bob --one
- INFO tsp: received nested relationship request from 'did:peer:2.Vz6Mv3HRDr8nQ28LZxXHrU1zaUdXVJVjQzhuVcFB4pyF5rweQ.Ez6Lc6URPHMVN1vswnk32ND5zNcAb5o2QA1Hs4NThH2YzAuVL.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0' (new identity for did:web:did.teaspoon.world:endpoint:alice), thread-id 'cR9RznAELgbp9XZ+VFFjq7vYv4v+ITaGrxa7L2ddCPw'
+> tsp -w bob receive --one bob
+ INFO tsp: received nested relationship request from 'did:peer:4zQmQSZCofJmxYT4zZcR2fr46iKP1P2Dwx1UHdipC8Mv6T2t' (new identity for did:peer:4zQmSf8cCgkfPZUrGZpkPkcwsHaubEmwduGzmBPXuq7HK2sN), thread-id 'MJmu6JAfvGgFCp/2IpMYFKBJmKJI/GIuvlaJITAhudc'
+did:peer:4zQmQSZCofJmxYT4zZcR2fr46iKP1P2Dwx1UHdipC8Mv6T2t	MJmu6JAfvGgFCp/2IpMYFKBJmKJI/GIuvlaJITAhudc
 ```
 
 As before, **bob** can accept this using `tsp accept`:
 
 ```sh
-> tsp -w bob accept --nested --sender-vid bob --receiver-vid did:peer:2.Vz6Mv3HRDr8nQ28LZxXHrU1zaUdXVJVjQzhuVcFB4pyF5rweQ.Ez6Lc6URPHMVN1vswnk32ND5zNcAb5o2QA1Hs4NThH2YzAuVL.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0 --thread-id 'cR9RznAELgbp9XZ+VFFjq7vYv4v+ITaGrxa7L2ddCPw'
- INFO tsp: formed a nested relationship with did:peer:2.Vz6Mv3HRDr8nQ28LZxXHrU1zaUdXVJVjQzhuVcFB4pyF5rweQ.Ez6Lc6URPHMVN1vswnk32ND5zNcAb5o2QA1Hs4NThH2YzAuVL.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0 with new identity 'did:peer:2.Vz6MuvAXTdNjiSV4DkbMUXAzShqiL2wvFNf2Dg4mr34JkQqk6.Ez6LbyVXwzoVNbRVm7X1Bpa4BqM5Aa5QYXyT4j6iRCxJAo4Fc.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0'
+> tsp -w bob accept --nested --sender-vid bob --receiver-vid did:peer:4zQmQSZCofJmxYT4zZcR2fr46iKP1P2Dwx1UHdipC8Mv6T2t --thread-id 'MJmu6JAfvGgFCp/2IpMYFKBJmKJI/GIuvlaJITAhudc'
+ INFO tsp_sdk::async_store: sending message to tcp://127.0.0.1:5601
+ INFO tsp: formed a nested relationship with did:peer:4zQmQSZCofJmxYT4zZcR2fr46iKP1P2Dwx1UHdipC8Mv6T2t with new identity 'did:peer:4zQmWtoqWaHFBJaZ5mY6oJczMTKfg7xtuTvo1Au5Nqt8iLff'
 ```
 
 Instead of the `did:peer`, **bob** could also have used **alice**'s outer VID here. The TSP SDK will know which VID to use. Notice
 how a new VID was also generated for **bob**. On **alice**'s side, this will look as follows:
 
 ```sh
- INFO tsp: received accept nested relationship from 'did:peer:2.Vz6MuvAXTdNjiSV4DkbMUXAzShqiL2wvFNf2Dg4mr34JkQqk6.Ez6LbyVXwzoVNbRVm7X1Bpa4BqM5Aa5QYXyT4j6iRCxJAo4Fc.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0' (new identity for did:web:did.teaspoon.world:endpoint:bob)
+ INFO tsp: received accept nested relationship from 'did:peer:4zQmWtoqWaHFBJaZ5mY6oJczMTKfg7xtuTvo1Au5Nqt8iLff' (new identity for did:peer:4zQmdRKSG825qsPm24E7wxQKw3sD5e6oXwgGWsV9nRh9RUY7)
+did:peer:4zQmWtoqWaHFBJaZ5mY6oJczMTKfg7xtuTvo1Au5Nqt8iLff
 ```
 
 Note that to make operation easier, we recommend using the alias mechanism to create better names for these essentially random inner identifiers:
 
 ```sh
-> tsp -w alice set-alias inner_alice did:peer:2.Vz6Mv3HRDr8nQ28LZxXHrU1zaUdXVJVjQzhuVcFB4pyF5rweQ.Ez6Lc6URPHMVN1vswnk32ND5zNcAb5o2QA1Hs4NThH2YzAuVL.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0
-> tsp -w alice set-alias inner_bob did:peer:2.Vz6MuvAXTdNjiSV4DkbMUXAzShqiL2wvFNf2Dg4mr34JkQqk6.Ez6LbyVXwzoVNbRVm7X1Bpa4BqM5Aa5QYXyT4j6iRCxJAo4Fc.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0
+> tsp -w alice set-alias inner_alice did:peer:4zQmQSZCofJmxYT4zZcR2fr46iKP1P2Dwx1UHdipC8Mv6T2t
+ INFO tsp: added alias inner_alice -> did:peer:4zQmQSZCofJmxYT4zZcR2fr46iKP1P2Dwx1UHdipC8Mv6T2t
+> tsp -w alice set-alias inner_bob did:peer:4zQmWtoqWaHFBJaZ5mY6oJczMTKfg7xtuTvo1Au5Nqt8iLff
+ INFO tsp: added alias inner_bob -> did:peer:4zQmWtoqWaHFBJaZ5mY6oJczMTKfg7xtuTvo1Au5Nqt8iLff
 ```
 
 And similarly for **bob**. Using these aliases, nested messages can simply be sent as for any other VID:
 
 ```sh
-echo "Hello Bob" | tsp -w alice send --sender-vid inner_alice --receiver-vid inner_bob
+> echo "Hello Bob" | tsp -w alice send --sender-vid inner_alice --receiver-vid inner_bob
+ INFO tsp_sdk::async_store: sending message to tcp://127.0.0.1:5602
+ INFO tsp: sent message (10 bytes) from inner_alice to did:peer:4zQmWtoqWaHFBJaZ5mY6oJczMTKfg7xtuTvo1Au5Nqt8iLff
 ```
 
 ## Nested mode (manual setup)
@@ -111,112 +166,87 @@ echo "Hello Bob" | tsp -w alice send --sender-vid inner_alice --receiver-vid inn
 To send a nested TSP message, both sender and receiver should
 establish a pair of VIDs. One VID is used for the inner message and one for the outer.
 
-We use the same **alice** and **bob** example as in the previous chapter.
+This section starts over with fresh wallets, again `did:peer` over TCP on localhost:
+
+```sh
+> tsp -w alice create --type peer --tcp 127.0.0.1:6101 alice --alias alice
+ INFO tsp: created peer identity did:peer:4zQme6haHzaq9px9yW1ZJ4R2XBLQMPSHxTHGTxCiUwGes1ih
+> tsp -w bob create --type peer --tcp 127.0.0.1:6102 bob --alias bob
+ INFO tsp: created peer identity did:peer:4zQmSHsbhkPa8EaHuJKvq9maPrny4DBb33WZ5Yo3rD1FocLE
+> tsp -w bob print bob | xargs tsp -w alice verify --alias bob
+> tsp -w alice print alice | xargs tsp -w bob verify --alias alice
+```
 
 First, we create an inner or nested VID for **alice**:
 
 ```sh
-tsp -w alice create --type peer alice-inner
-```
-
-Output:
-
-```
- INFO tsp: created peer identity did:peer:2.Vz6Mv1MHPrewz2y6ntLZwbWdMc2C3Ny6Tk
- hA8mQouGsvNEgDK.Ez6Lbs5PeCs6VCbCjnPFV412nS3SDqjnHYB8sLB69XFQwUUkF.SeyJzIjp7In
- VyaSI6Imh0dHBzOi8vdHNwLXRlc3Qub3JnL3VzZXIvYWxpY2UtaW5uZXIifSwidCI6InRzcCJ9
+> tsp -w alice create --type peer --tcp 127.0.0.1:6103 alice-inner
+ INFO tsp: created peer identity did:peer:4zQmZxraE9VfraPd5HygKsPyFV8xpXjsDvrzB7PjAYyq4BEd
+ INFO tsp: created VID did:peer:4zQmZxraE9VfraPd5HygKsPyFV8xpXjsDvrzB7PjAYyq4BEd
 ```
 
 This command creates a new identity and key material in the `did:peer` format.
 
+The inner VID needs a transport of its own here, unlike in the control-message flow
+above. In this manual setup the relationship between the inner VIDs is established
+before either side knows they are nested, so that first `request` is delivered to the
+inner VID directly. Once the parents are set, everything after it travels inside the
+outer relationship and the inner transport is no longer used.
+
 Next, we configure the newly created did:peer as a child of our main identity:
 
 ```sh
-tsp -w alice set-parent alice-inner alice
-```
-
-Output:
-
-```
- INFO tsp: did:peer:2.Vz6MutdCU73wbCRc4Uypzg1a3gU5vAfwsLjHWbgArHzjqWzpw.Ez6Lbwx
- U56UYuE9EwTPgVJFX2nB3UcssbLk7nnrEF8qQNEZQv.SeyJzIjp7InVyaSI6Imh0dHBzOi8vdHNwLX
- Rlc3Qub3JnL3VzZXIvYWxpY2UtaW5uZXIifSwidCI6InRzcCJ9
- is now a child of did:web:did.teaspoon.world:endpoint:alice
+> tsp -w alice set-parent alice-inner alice
+ INFO tsp: alice-inner is now a child of alice
 ```
 
 We do the same for **bob**:
 
 ```sh
-tsp -w bob create --type peer bob-inner
-```
-
-Output:
-
-```
- INFO tsp: created peer identity did:peer:2.Vz6Mv49Sf4ui8iG5C7VTjMS2bXq7EZDhyK
- SDNbcQhcvUmGLLW.Ez6Lc2RywGrd9ARMmfLBGL3QFsoijt1PmYMMFrPRk6QMfwTEr.SeyJzIjp7In
- VyaSI6Imh0dHBzOi8vdHNwLXRlc3Qub3JnL3VzZXIvYm9iLWlubmVyIn0sInQiOiJ0c3AifQ
+> tsp -w bob create --type peer --tcp 127.0.0.1:6104 bob-inner
+ INFO tsp: created peer identity did:peer:4zQmRgud6TD55KTmw9zzoTECzq4c1HWMV8Qm6mB3W7Cu6BQi
+ INFO tsp: created VID did:peer:4zQmRgud6TD55KTmw9zzoTECzq4c1HWMV8Qm6mB3W7Cu6BQi
 ```
 
 ```sh
-tsp -w bob set-parent bob-inner bob
-```
-
-Output:
-
-```
- INFO tsp: did:peer:2.Vz6Mv49Sf4ui8iG5C7VTjMS2bXq7EZDhyKSDNbcQhcvUmGLLW.Ez6Lc2R
- ywGrd9ARMmfLBGL3QFsoijt1PmYMMFrPRk6QMfwTEr.SeyJzIjp7InVyaSI6Imh0dHBzOi8vdHNwLX
- Rlc3Qub3JnL3VzZXIvYm9iLWlubmVyIn0sInQiOiJ0c3AifQ
- is now a child of did:web:did.teaspoon.world:endpoint:bob
+> tsp -w bob set-parent bob-inner bob
+ INFO tsp: bob-inner is now a child of bob
 ```
 
 Next we resolve and verify **bob**'s inner VID. We use the `print` command to print
-the full VID and use `xargs` to feed the output as input for the `verify` command:
+the long form of the VID and use `xargs` to feed the output as input for the `verify` command:
 
 ```sh
-tsp -w bob print bob-inner | xargs tsp -w alice verify --alias bob-inner
-```
-
-Output:
-
-```
- INFO tsp: did:peer:2.Vz6Mv49Sf4ui8iG5C7VTjMS2bXq7EZDhyKSDNbcQhcvUmGLLW.Ez6Lc2
- RywGrd9ARMmfLBGL3QFsoijt1PmYMMFrPRk6QMfwTEr.SeyJzIjp7InVyaSI6Imh0dHBzOi8vdHNw
- LXRlc3Qub3JnL3VzZXIvYm9iLWlubmVyIn0sInQiOiJ0c3AifQ
- is verified and added to the wallet alice
+> tsp -w bob print bob-inner | xargs tsp -w alice verify --alias bob-inner
+ INFO tsp: did:peer:4zQmRgud6TD55KTmw9zzoTECzq4c1HWMV8Qm6mB3W7Cu6BQi:z2kCqs4oURbyPVxWvLGsQbAdjk8rSFaHh3WrHx3BhMyxctozJVLhk8RTXhxMyS... is verified and added to the wallet alice
 ```
 
 We do the same for the inner VID of **alice**:
 
 ```sh
-tsp -w alice print alice-inner | xargs tsp -w bob verify --alias alice-inner
-```
-
-Output:
-
-```
- INFO tsp: did:peer:2.Vz6MutdCU73wbCRc4Uypzg1a3gU5vAfwsLjHWbgArHzjqWzpw.Ez6Lbw
- xU56UYuE9EwTPgVJFX2nB3UcssbLk7nnrEF8qQNEZQv.SeyJzIjp7InVyaSI6Imh0dHBzOi8vdHNw
- LXRlc3Qub3JnL3VzZXIvYWxpY2UtaW5uZXIifSwidCI6InRzcCJ9
- is verified and added to the wallet bob
+> tsp -w alice print alice-inner | xargs tsp -w bob verify --alias alice-inner
+ INFO tsp: did:peer:4zQmZxraE9VfraPd5HygKsPyFV8xpXjsDvrzB7PjAYyq4BEd:z2kCqs4oURbyPVxWvLGsQbAdjk8rSFaHh3WrHx3BhMyxctozJVLhk8RTXhxMyS... is verified and added to the wallet bob
 ```
 
 We need to configure the association between **alice** and **bob**'s inner VIDs.
 Use the `request` command to specify which VID should be used to send messages
-a certain VID:
+a certain VID. **bob** should be listening on `bob-inner` for this one:
 
 ```sh
-tsp -w alice request --sender-vid alice-inner --receiver-vid bob-inner
+> tsp -w alice request --sender-vid alice-inner --receiver-vid bob-inner
+ INFO tsp_sdk::async_store: sending message to tcp://127.0.0.1:6104
+ INFO tsp: sent relationship request from alice-inner to bob-inner
 ```
 
 Then set the parent/child relationship of **bob**'s VIDs in **alice**'s wallet:
 
 ```sh
-tsp -w alice set-parent bob-inner bob
+> tsp -w alice set-parent bob-inner bob
+ INFO tsp: bob-inner is now a child of bob
 ```
 
-Now we are ready to send a nested message. First start listening for messages from **bob**'s side:
+Now we are ready to send a nested message. From here on **bob** listens on his
+*outer* VID, since that is what carries the traffic:
 
 ```sh
 tsp -w bob receive --one bob
@@ -231,35 +261,55 @@ echo "Hi Bob!" | tsp --verbose -w alice send -s alice-inner -r bob-inner
 Output:
 
 ```
- INFO tsp::async_store: sending message to https://demo.teaspoon.world/endpoint/did:web:did.teaspoon.world:endpoint:bob
+ INFO tsp_sdk::async_store: sending message to tcp://127.0.0.1:6102
 CESR-encoded message:
--EABXAAA9VIDAAALAAAZGlkOndlYjp0c3AtdGVzdC5vcmc6dXNlcjphbGljZQ8VIDAAAKAAZGlkOnd
-lYjp0c3AtdGVzdC5vcmc6dXNlcjpib2I4CC2TF93f5Igkjgp4feBYOas18w-GhN_Q7oCRNStEbbdVK
-aN7Uqr2DK3-A3xf7b9px6KchftsEsIx7AM2fVO1V4KJ8OixmVPoPK59q9TpoioCiL2XmmZLT3Gj4X0
-MIbYCIyJWSBQNwVyH3h434Ja86xSx8rR87H48sX9MtKSgRwkP_iU4FiJOzg27vIUVtzLZacp2Bwvti
-p_WATvkQm4uecQwb-0dCpC8x_TjDyyARLglahjQrz2DPImn-_UzJKZqv1kqLKTED0dD-7WqOtY-1Ll
-gasteOVKQlH6DtcvNPqUCWnZJtT0vJvpVpogeQ_5Ky_WdPRflUOyic4lE93lbDgPWxGdZ5Qnu8lTG3
-XntZMCLh95r89hr6oTMJwQoWdlS0NEH-UEQt2NLxeYwXH_rG0uoZW2k4YC1PvmJ5zdAhW721IkSuKg
-y0STK0eDk4q0EZagBn4iFUnye1m34TZb5F7hmzVmNolhgojXmPmT9PdC8a90Z6c-AS9xYHVZHkUjF2
-gYPuYHu6RdKJ8fT2OZJ_hbfBXeYHA6-hloFBHqLMShCGFZKrY6uw6dWZ6DB96WRa0ubakV3fDDNyLu
-Rol52q133vSkgspyN7hYEtUEojnOyrOVsX8yrVoONHxCZ-3g1oe6LJNnLC8CxmF2n1-WQgvaQBwj3Q
-a8EQDX0n2VWnhG0xWZeclCG54qJSC6YEiNS1XGfe6m2ZFEWqmLZDmr1PbxhO4m0BA9BEqEHLumN0cx
-ip0iXo-yHjrA5EP_ka8Y4pkQdTpr5yJZJqHjyThVwgvbbQX9ORRND-qV6Tl0MRcJ8lTWAhbDw
- INFO tsp: sent message (8 bytes) from did:peer:2.Vz6MutdCU73wbCRc4Uypzg1a3gU5
- vAfwsLjHWbgArHzjqWzpw.Ez6LbwxU56UYuE9EwTPgVJFX2nB3UcssbLk7nnrEF8qQNEZQv.SeyJz
- Ijp7InVyaSI6Imh0dHBzOi8vdHNwLXRlc3Qub3JnL3VzZXIvYWxpY2UtaW5uZXIifSwidCI6InRzc
- CJ9 to did:peer:2.Vz6Mv49Sf4ui8iG5C7VTjMS2bXq7EZDhyKSDNbcQhcvUmGLLW.Ez6Lc2Ryw
- Grd9ARMmfLBGL3QFsoijt1PmYMMFrPRk6QMfwTEr.SeyJzIjp7InVyaSI6Imh0dHBzOi8vdHNwLXR
- lc3Qub3JnL3VzZXIvYm9iLWlubmVyIn0sInQiOiJ0c3AifQ
+-ECdYTSP-AAB4BATZGlkOnBlZXI6NHpRbWU2aGFIemFxOXB4OXlXMVpKNFIyWEJMUU1QU0h4VEhH
+VHhDaVV3R2VzMWlo4BATZGlkOnBlZXI6NHpRbVNIc2Joa1BhOEVhSHVKS3ZxOW1hUHJueTREQmIz
+M1daNVlvM3JEMUZvY0xF4FByXuVrZC37T_fCfTnFA59J2vhSVEe1IKr_cw4KV04sZ2rvK9yggA1O
+R1IHOgfEapwo2JUy7PLiMTGErtMs-YrxmlmSsRz6yE2vhxx6vzIllO-cQW7x2dEiWxp2w3bGVVmq
+LzBikuL3jCwXySd2V8edi_IaB1hg6yFRvde0s1U4FKp85cfhcDzVgc0LCsqtStffKcWyr1UKXzoc
+NZZWokbSSgCutQUgkuHKgtzmHrifXCTCNGcmbSWS5_8-EvAcRfQbmG-WLg5_IUjNvhQoDRPm8YxN
+hCsOKFSoPeg5D3VEIJMQRQzQAcbawqJoLkIWC54JVMFTp1n5Q_6K5mrfPCOpF1IgVz99m6W8wuYt
+Jy_L-3BBM9mukFVaPowEYUNyLJPMjwxfk_dozVJwF9wdSyR-
+Nu6VRlspEPEg1gAHVcYUWxJgauXdXUBlYoUAs-Yjqrm_TLzLiPsz-CAX-KAWBABNJGplbPbdjA-
+yhlgtpcp3e503l7kiweAzoxUiT7CgR0CF4b6Pu7gYRzr_GX1LDcwJ-kUkymPl9icehlYPgXoK
+ INFO tsp: sent message (8 bytes) from alice-inner to did:peer:4zQmRgud6TD55KTmw9zzoTECzq4c1HWMV8Qm6mB3W7Cu6BQi
 ```
+
+The outer envelope names the *outer* VIDs — `4zQme6ha…` sending to `4zQmSHsb…` — and the
+whole nested message sits inside its ciphertext. An observer sees only that the two outer
+identities exchanged something; the inner identities are not on the wire.
 
 The output on **bob**'s end:
 
 ```
  INFO tsp: listening for messages...
- INFO tsp: received message (8 bytes) from did:peer:2.Vz6MutdCU73wbCRc4Uypzg1a3
- gU5vAfwsLjHWbgArHzjqWzpw.Ez6LbwxU56UYuE9EwTPgVJFX2nB3UcssbLk7nnrEF8qQNEZQv.Sey
- JzIjp7InVyaSI6Imh0dHBzOi8vdHNwLXRlc3Qub3JnL3VzZXIvYWxpY2UtaW5uZXIifSwidCI6InRz
- cCJ9
+ INFO tsp: received confidential message (8 bytes) from did:peer:4zQmZxraE9VfraPd5HygKsPyFV8xpXjsDvrzB7PjAYyq4BEd (HPKE-Base, Ed25519 signature)
 Hi Bob!
 ```
+
+Both envelopes are encrypted: the outer one to **bob**, the inner one to `bob-inner`.
+Section 4 does permit a signed-only inner message, since the outer envelope already
+conceals it in transit — but then the inner payload's confidentiality rests on the
+*outer* relationship's keys rather than the inner relationship's, so the SDK encrypts
+by default.
+
+A caller that wants the other behaviour asks for it explicitly. From the CLI:
+
+```sh
+> echo "Hi Bob!" | tsp -w alice send -s alice-inner -r bob-inner --confidentiality sign-only
+```
+
+which **bob** reports for what it is:
+
+```
+ INFO tsp: received confidential only within its enclosing message (8 bytes) from did:peer:4zQmZxraE9VfraPd5HygKsPyFV8xpXjsDvrzB7PjAYyq4BEd (signed only, enclosed in HPKE-Base, Ed25519 signature)
+Hi Bob!
+```
+
+Nothing went over the wire in the clear either way — the difference is *whose keys*
+protect it. In Rust the same choice is `AsyncSecureStore::send_with_confidentiality`;
+the Python and JavaScript bindings take an optional `confidentiality` argument on
+`send`/`seal_message`, and report the enclosing type back as `enclosing_crypto_type`.
+
+See [CESR encoding](../cesr.md) for what each code in the dump above means.

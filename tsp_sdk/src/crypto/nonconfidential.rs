@@ -136,6 +136,7 @@ pub fn verify_payload<'a>(
     Ok((
         crate::cesr::decode_payload(payload)?,
         MessageType {
+            enclosing_crypto_type: None,
             crypto_type,
             signature_type,
         },

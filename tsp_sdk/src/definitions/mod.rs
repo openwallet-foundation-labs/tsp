@@ -35,8 +35,20 @@ pub type TSPStream<D, E> = std::pin::Pin<Box<dyn Stream<Item = Result<D, E>> + S
 
 #[derive(Debug)]
 pub struct MessageType {
+    /// How this message itself was encrypted. For a nested message this is the
+    /// *inner* message's own encoding, which may be `Plaintext`: section 4
+    /// permits a signed-only inner message, since the enclosing envelope
+    /// conceals it in transit. See [`Self::enclosing_crypto_type`].
     pub crypto_type: crate::cesr::CryptoType,
     pub signature_type: crate::cesr::SignatureType,
+    /// When this message arrived inside another message's ciphertext, how that
+    /// enclosing message was encrypted; `None` when it was not nested.
+    ///
+    /// A message with `crypto_type: Plaintext` and an enclosing type was still
+    /// confidential on the wire — but under the enclosing relationship's keys,
+    /// not its own. Section 4 asks applications to notice that difference,
+    /// which is why the two are reported separately rather than merged.
+    pub enclosing_crypto_type: Option<crate::cesr::CryptoType>,
 }
 
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
