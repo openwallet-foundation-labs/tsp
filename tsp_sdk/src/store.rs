@@ -351,6 +351,26 @@ pub struct SecureStore {
 }
 
 /// This wallet is used to store and resolve VIDs
+/// The transport to use when sending to `vid`.
+///
+/// A transport may carry a placeholder where the identifier belongs. For identifier methods whose
+/// identifier is derived from the document that holds the transport, the transport cannot name
+/// that identifier without defining it circularly, so it is filled in at the point of use. The
+/// identifier is inserted verbatim: it is one path segment, and a receiver keying anything by it
+/// has to see exactly the text the identifier is written with.
+fn sending_endpoint(vid: &dyn VerifiedVid) -> url::Url {
+    let mut endpoint = vid.endpoint().clone();
+
+    if endpoint.path().contains("[vid_placeholder]") {
+        let path = endpoint
+            .path()
+            .replace("[vid_placeholder]", vid.identifier());
+        endpoint.set_path(&path);
+    }
+
+    endpoint
+}
+
 impl SecureStore {
     /// Create a new, empty VID wallet
     pub fn new() -> Self {
@@ -1096,7 +1116,7 @@ impl SecureStore {
             selection,
         )?;
 
-        Ok((receiver_context.vid.endpoint().clone(), tsp_message))
+        Ok((sending_endpoint(&*receiver_context.vid), tsp_message))
     }
 
     /// Sign a unencrypted message, without a specified recipient
@@ -1933,7 +1953,7 @@ impl SecureStore {
             sender_new_vid.identifier(),
         )?;
 
-        Ok((receiver.endpoint().clone(), tsp_message.to_owned()))
+        Ok((sending_endpoint(&*receiver), tsp_message.to_owned()))
     }
 
     /// Accept a direct relationship between the resolved VIDs identifier by `sender` and `receiver`.
@@ -2012,7 +2032,7 @@ impl SecureStore {
         )?;
         self.remove_pending_incoming_parallel_request(receiver_new_vid.identifier(), thread_id)?;
 
-        Ok((receiver_new_vid.endpoint().clone(), tsp_message.to_owned()))
+        Ok((sending_endpoint(&*receiver_new_vid), tsp_message.to_owned()))
     }
 
     /// Cancels a direct relationship between the resolved `sender` and `receiver` VIDs.
