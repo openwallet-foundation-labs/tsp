@@ -100,7 +100,13 @@ A TSP message is a frame, its signable content, and an attached signature:
 
 `YTSP` is the genus, and `VERSION` is the count code that follows it: its identifier
 character carries MAJOR, and its count carries MINOR and PATCH, six bits each. The
-current version is `0.0.1`, encoded `YTSP-AAB`.
+current version is `0.1.0`, encoded `YTSP-ABA`.
+
+Rev 3 is `0.1.0` rather than `0.0.1` because implementations of Rev 2 emit
+`0.0.1` and the two are not interoperable: the wire changed throughout. Note
+that a receiver only rejects on a MAJOR it does not know (spec 3.2.1), so the
+bump makes the two revisions *distinguishable* — it does not by itself make a
+Rev 2 message fail early.
 
 `VID_rcvr` is present in every envelope. Where there is no receiver it is the NULL
 VID — the empty bytes primitive, `4BAA`.

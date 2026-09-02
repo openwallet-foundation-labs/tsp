@@ -249,14 +249,14 @@ Output:
 ```
  INFO tsp::async_store: sending message to https://demo.teaspoon.world/endpoint/did:web:did.teaspoon.world:endpoint:bob
 CESR-encoded message:
--EA6YTSP-AAB5BAOAGRpZDp3ZWI6ZGlkLnRlYXNwb29uLndvcmxkOmVuZHBvaW50OmFsaWNl4BANZGlkOndlYjpkaWQudGVhc3Bvb24ud29ybGQ6ZW5kcG9pbnQ6Ym9i4FAaQRT2HfDzxpOGX3AmXl2ANZ8rCrKTiuGP-S8GEwfcOFZaqkCMBQ6W4spG19KnwRdKY52VTX5uo3u89_t5r4z8osc9kPbsAG6BPcSPmy7E-CAX-KAWBACuJP_dM8ox9aOO6wzQkeq6e5pDhz3ywJujPPlwt9yc6eFYITR6yjb0CXrDrYI8gQzudKf3v8YUEmUqIgjWeuAM
+-EA6YTSP-ABA5BAOAGRpZDp3ZWI6ZGlkLnRlYXNwb29uLndvcmxkOmVuZHBvaW50OmFsaWNl4BANZGlkOndlYjpkaWQudGVhc3Bvb24ud29ybGQ6ZW5kcG9pbnQ6Ym9i4FAa-IZzNQQ9-ppUklvCABuy9EN-bLel24gg5MJcozLcdS0ZEniQCxb_jkLOBggo_-hxzA4sRU708OoTUlKEY8r_iH-jJEDv28frBi9B9dS0-CAX-KAWBAAIBpEq1kg2t-Uva_8idJJmWAn0BBvrj9msA3pJ2A0cqSrH6kqJoC7MjuOMVphjviW759O7TfqcBhgSHK8CCDEK
  INFO tsp: sent message (11 bytes) from did:web:did.teaspoon.world:endpoint:alice to did:web:did.teaspoon.world:endpoint:bob
 ```
 
 In a terminal window supporting colors, this will look like the following:
 
 <code style="display: block; line-break: anywhere; padding: 1rem;">
-<span style="color: #F66151;"><strong>-EA6</strong></span><span style="color: #F66151;"><strong>YTSP</strong>-AAB</span><span style="color: #C061CB;"><strong>5BAO</strong>AGRpZDp3ZWI6ZGlkLnRlYXNwb29uLndvcmxkOmVuZHBvaW50OmFsaWNl</span><span style="color: #2A7BDE;"><strong>4BAN</strong>ZGlkOndlYjpkaWQudGVhc3Bvb24ud29ybGQ6ZW5kcG9pbnQ6Ym9i</span><span style="color: #E9AD0C;"><strong>4FAa</strong>QRT2HfDzxpOGX3AmXl2ANZ8rCrKTiuGP-S8GEwfcOFZaqkCMBQ6W4spG19KnwRdKY52VTX5uo3u89_t5r4z8osc9kPbsAG6BPcSPmy7E</span><span style="color: #33C7DE;"><strong>-CAX-KAWBA</strong>CuJP_dM8ox9aOO6wzQkeq6e5pDhz3ywJujPPlwt9yc6eFYITR6yjb0CXrDrYI8gQzudKf3v8YUEmUqIgjWeuAM</span>
+<span style="color: #F66151;"><strong>-EA6</strong></span><span style="color: #F66151;"><strong>YTSP</strong>-ABA</span><span style="color: #C061CB;"><strong>5BAO</strong>AGRpZDp3ZWI6ZGlkLnRlYXNwb29uLndvcmxkOmVuZHBvaW50OmFsaWNl</span><span style="color: #2A7BDE;"><strong>4BAN</strong>ZGlkOndlYjpkaWQudGVhc3Bvb24ud29ybGQ6ZW5kcG9pbnQ6Ym9i</span><span style="color: #E9AD0C;"><strong>4FAa</strong>-IZzNQQ9-ppUklvCABuy9EN-bLel24gg5MJcozLcdS0ZEniQCxb_jkLOBggo_-hxzA4sRU708OoTUlKEY8r_iH-jJEDv28frBi9B9dS0</span><span style="color: #33C7DE;"><strong>-CAX-KAWBA</strong>AIBpEq1kg2t-Uva_8idJJmWAn0BBvrj9msA3pJ2A0cqSrH6kqJoC7MjuOMVphjviW759O7TfqcBhgSHK8CCDEK</span>
 </code>
 
 Bold characters are CESR codes; the characters after them are the data that code
@@ -265,7 +265,7 @@ introduces. Reading left to right:
 | Text                | Field                                                        |
 |---------------------|--------------------------------------------------------------|
 | `-EA6`              | the frame, counting the 174 bytes the signature covers       |
-| `YTSP-AAB`          | the TSP genus and version, `0.0.1`                           |
+| `YTSP-ABA`          | the TSP genus and version, `0.1.0`                           |
 | `5BAO` + 41 bytes   | `VID_sndr`, the sender                                       |
 | `4BAN` + 39 bytes   | `VID_rcvr`, the receiver                                     |
 | `4FAa` + 78 bytes   | the ciphertext, sealed with HPKE-Base                        |
