@@ -337,6 +337,21 @@ async fn write_wallet(vault: &AskarSecureStorage, db: &AsyncSecureStore) -> Resu
     Ok(())
 }
 
+/// Build a URL for the DID server.
+///
+/// A local DID server is reached over plain HTTP, which is also how a local identifier is
+/// resolved. Publishing has to agree with resolution, or an identifier is written to one place
+/// and read from another.
+fn did_server_url(did_server: &str, path: &str) -> String {
+    let scheme = if did_server.starts_with("localhost") || did_server.starts_with("127.0.0.1") {
+        "http"
+    } else {
+        "https"
+    };
+
+    format!("{scheme}://{did_server}/{path}")
+}
+
 async fn read_wallet(
     wallet_name: &str,
     password: &str,
@@ -550,9 +565,9 @@ async fn publish_scid_source(
     replace: bool,
 ) -> Result<(), Error> {
     let request = if replace {
-        client.put(format!("https://{did_server}/add-vid"))
+        client.put(did_server_url(did_server, "add-vid"))
     } else {
-        client.post(format!("https://{did_server}/add-vid"))
+        client.post(did_server_url(did_server, "add-vid"))
     };
 
     let _: Vid = request
@@ -574,14 +589,14 @@ async fn publish_scid_source(
 
     if let Some(source_history) = source_history {
         let request = if replace {
-            client.put(format!(
-                "https://{did_server}/add-history/{}",
-                source_vid.identifier()
+            client.put(did_server_url(
+                did_server,
+                &format!("add-history/{}", source_vid.identifier()),
             ))
         } else {
-            client.post(format!(
-                "https://{did_server}/add-history/{}",
-                source_vid.identifier()
+            client.post(did_server_url(
+                did_server,
+                &format!("add-history/{}", source_vid.identifier()),
             ))
         };
 
@@ -788,7 +803,7 @@ async fn run() -> Result<(), Error> {
                         .expect("Cannot store next update key reference");
 
                     let _: Vid = match client
-                        .post(format!("https://{did_server}/add-vid"))
+                        .post(did_server_url(&did_server, "add-vid"))
                         .json(&private_vid.vid())
                         .send()
                         .await
@@ -814,9 +829,9 @@ async fn run() -> Result<(), Error> {
                     );
 
                     match client
-                        .post(format!(
-                            "https://{did_server}/add-history/{}",
-                            private_vid.vid().identifier()
+                        .post(did_server_url(
+                            &did_server,
+                            &format!("add-history/{}", private_vid.vid().identifier()),
                         ))
                         .json(&history)
                         .send()
@@ -1021,9 +1036,9 @@ async fn run() -> Result<(), Error> {
                     .expect("Cannot update next update key reference");
 
                 client
-                    .put(format!(
-                        "https://{did_server}/add-history/{}",
-                        new_vid.identifier()
+                    .put(did_server_url(
+                        &did_server,
+                        &format!("add-history/{}", new_vid.identifier()),
                     ))
                     .json(&update_result.log_entry)
                     .send()
@@ -1031,7 +1046,7 @@ async fn run() -> Result<(), Error> {
                     .expect("Could not append history");
 
                 let update_response = client
-                    .put(format!("https://{did_server}/add-vid"))
+                    .put(did_server_url(&did_server, "add-vid"))
                     .json(new_vid.vid())
                     .send()
                     .await
@@ -1061,7 +1076,7 @@ async fn run() -> Result<(), Error> {
             info!("created identity from file {}", private_vid.identifier());
         }
         Commands::Discover => {
-            let url = format!("https://{did_server}/.well-known/endpoints.json");
+            let url = did_server_url(&did_server, ".well-known/endpoints.json");
             info!("discovering DIDs from {}", url);
 
             let dids = match client
@@ -1793,7 +1808,7 @@ async fn create_did_web(
     info!("created identity {}", private_vid.identifier());
 
     let response = client
-        .post(format!("https://{did_server}/add-vid"))
+        .post(did_server_url(did_server, "add-vid"))
         .json(&private_vid.vid())
         .send()
         .await
