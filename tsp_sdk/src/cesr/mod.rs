@@ -4,7 +4,7 @@ mod detect;
 mod encode;
 pub mod error;
 mod packet;
-pub mod segments;
+mod segments;
 use error::DecodeError;
 mod consts;
 pub use packet::*;
@@ -123,7 +123,7 @@ fn field_color(label: &str) -> u8 {
 /// Format a TSP message using ANSI escape codes to color the different parts.
 ///
 /// Codes are drawn bold and the data they introduce normally, so every field of
-/// the message is visible as its own run. [`segments`] names the same fields.
+/// the message is visible as its own run. [`segments()`] names the same fields.
 pub fn color_format(message: &[u8]) -> Result<String, DecodeError> {
     // reject what is not a TSP message before drawing it
     open_message_into_parts(message)?;

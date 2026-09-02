@@ -2,7 +2,7 @@
 //!
 //! This is a presentation aid, not a parser: it names every code and every run
 //! of data in a message so a reader can check the bytes against section 9 of
-//! the specification. Decoding a message for use goes through [`super::packet`],
+//! the specification. Decoding a message for use goes through the packet decoder,
 //! which rejects what this walker will happily describe.
 //!
 //! The walk happens in the text domain. That domain is the base64url of the
