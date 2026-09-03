@@ -45,11 +45,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned to the minimum supported version in the workspace manifest, and not `stable`.
+      # Every other job here runs the newest compiler, so nothing establishes that the version
+      # the workspace claims to support can build this at all.
+      - uses: dtolnay/rust-toolchain@1.88
       - uses: Swatinem/rust-cache@v2
       # The container image builds these three with no default features. Nothing else here does,
-      # so code that only compiles with the defaults passes every check and then fails when the
-      # image is built, after the merge that was supposed to deploy it.
+      # so code that only compiles with the defaults, or only on a newer compiler, passes every
+      # check and then fails when the image is built, after the merge meant to deploy it.
       - name: Build the deployed binaries the way the image does
         run: cargo build --bin demo-intermediary --bin demo-server --bin did-server --no-default-features
 
