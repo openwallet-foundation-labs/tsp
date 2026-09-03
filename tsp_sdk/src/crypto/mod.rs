@@ -234,7 +234,7 @@ pub(crate) fn build_parallel_request_signed_data(
 ) -> Result<Vec<u8>, CryptoError> {
     // the digest is derived first (its own slot dummied, the new-VID signature
     // not yet present); the signature is then made over the final digest
-    let payload = crate::cesr::Payload::<&[u8], &[u8]>::RelationProposal {
+    let payload: crate::cesr::Payload<'_, &[u8], &[u8]> = crate::cesr::Payload::RelationProposal {
         request_digest: digest_algorithm.field(&*request_digest),
         nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
         reply_path: reply_path.to_vec(),
@@ -946,7 +946,7 @@ mod tests {
         let algorithm = super::RelationshipDigestAlgorithm::Sha2_256;
         let nonce_bytes = [7_u8; 16];
         let mut digest = [0_u8; 32];
-        let payload = crate::cesr::Payload::<&[u8], &[u8]>::RelationProposal {
+        let payload = crate::cesr::Payload::<'_, &[u8], &[u8]>::RelationProposal {
             request_digest: algorithm.field(&digest),
             nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
             reply_path: vec![],
@@ -957,7 +957,7 @@ mod tests {
             .unwrap();
         digest = algorithm.hash(&input);
 
-        let good = crate::cesr::Payload::<&[u8], &[u8]>::RelationProposal {
+        let good = crate::cesr::Payload::<'_, &[u8], &[u8]>::RelationProposal {
             request_digest: algorithm.field(&digest),
             nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
             reply_path: vec![],
@@ -967,7 +967,7 @@ mod tests {
 
         let mut tampered_digest = digest;
         tampered_digest[0] ^= 0x01;
-        let tampered = crate::cesr::Payload::<&[u8], &[u8]>::RelationProposal {
+        let tampered = crate::cesr::Payload::<'_, &[u8], &[u8]>::RelationProposal {
             request_digest: algorithm.field(&tampered_digest),
             nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
             reply_path: vec![],
