@@ -54,9 +54,14 @@ describe('tsp node tests', function() {
         store.add_private_vid(alice);
         store.add_private_vid(bob);
 
+        // an application message is only accepted inside a relationship, and a
+        // sender forms one with its first message (spec 3.6, 7.2.2)
+        let { sealed: request } = store.make_relationship_request(alice_identifier, bob_identifier, null);
+        store.open_message(request);
+
         let message = "hello world";
 
-        let { url, sealed } = store.seal_message(alice_identifier, bob_identifier, null, message);
+        let { url, sealed } = store.seal_message(alice_identifier, bob_identifier, message);
 
         assert.strictEqual(url, "tcp://127.0.0.1:1337");
 
@@ -158,13 +163,14 @@ describe('tsp node tests', function() {
         received = store.open_message(sealed);
 
         if (received instanceof AcceptRelationship) {
-            assert.strictEqual(received.sender, bob.identifier());
+            // the accept travels the new relationship, so bob's new VID is the
+            // sender rather than a payload field
+            assert.strictEqual(received.sender, bobParallel.identifier());
             assert.strictEqual(received.receiver, aliceParallel.identifier());
             assert.deepStrictEqual(received.thread_id, requestThreadId);
-            assert.strictEqual(received.form, RelationshipForm.Parallel);
+            assert.strictEqual(received.form, RelationshipForm.Direct);
             assert.strictEqual(received.delivery, RelationshipDelivery.Direct);
             assert.strictEqual(received.nested_vid, null);
-            assert.strictEqual(received.new_vid, bobParallel.identifier());
         } else {
             assert.fail(`Unexpected message type: ${received}`);
         }
@@ -213,8 +219,13 @@ describe('tsp node tests', function() {
         received = store.open_message(sealed);
 
         if (received instanceof CancelRelationship ) {
-            const { sender } = received;
+            const { sender, thread_id } = received;
             assert.strictEqual(sender, bob.identifier());
+
+            // the cancellation can be replied to, echoing its digest
+            ({ url, sealed } = store.make_relationship_cancel_reply(
+                alice.identifier(), bob.identifier(), thread_id));
+            assert.strictEqual(url, "tcp://127.0.0.1:1337");
         } else {
             assert.fail(`Unexpected message type: ${received}`);
         }
@@ -261,17 +272,21 @@ describe('tsp node tests', function() {
         // Set relations and routes
         a_store.make_relationship_request(nette_a.identifier(), b.identifier());
         a_store.make_relationship_request(sneaky_a.identifier(), sneaky_d.identifier());
-        a_store.set_route_for_vid(sneaky_d.identifier(), [b.identifier(), c.identifier(), mailbox_c.identifier()]);
+        // the exit entry is the destination's own VID at its intermediary
+        a_store.set_route_for_vid(sneaky_d.identifier(), [b.identifier(), c.identifier(), nette_d.identifier()]);
 
         b_store.make_relationship_request(b.identifier(), c.identifier());
 
         c_store.make_relationship_request(mailbox_c.identifier(), nette_d.identifier());
 
+        // the destination has an endpoint-to-endpoint relationship with the source
+        d_store.make_relationship_request(sneaky_d.identifier(), sneaky_a.identifier());
+
         // Prepare a message to be sent from a_store
         let hello_world = "hello world";
 
         // Seal the message from a_store
-        let { url, sealed } = a_store.seal_message(sneaky_a.identifier(), sneaky_d.identifier(), null, Buffer.from(hello_world));
+        let { url, sealed } = a_store.seal_message(sneaky_a.identifier(), sneaky_d.identifier(), Buffer.from(hello_world));
 
         // Open the sealed message in b_store
         let received = b_store.open_message(sealed);
@@ -300,7 +315,7 @@ describe('tsp node tests', function() {
 
                 // Check the final received message in d_store
                 if (received instanceof GenericMessage) {
-                    const { sender, nonconfidential_data: _, message: messageBytes, crypto_type, signature_type } = received;
+                    const { sender, message: messageBytes, crypto_type, signature_type } = received;
                     assert.strictEqual(sender, sneaky_a.identifier());
                     message = String.fromCharCode.apply(null, messageBytes);
                     assert.strictEqual(message, hello_world, "Received message does not match");
@@ -367,7 +382,6 @@ describe('tsp node tests', function() {
                         ({ url: _, sealed: sealed_hello_world } = a_store.seal_message(
                             nested_vid_1,
                             nested_vid_2,
-                            null,
                             hello_world,
                         ));
 
@@ -375,11 +389,10 @@ describe('tsp node tests', function() {
 
                         // Pattern match for GenericMessage in received message
                         if (received_3 instanceof GenericMessage) {
-                            let { sender, nonconfidential_data, message: messageBytes, crypto_type, signature_type } = received_3;
+                            let { sender, message: messageBytes, crypto_type, signature_type } = received_3;
 
                             // Assertions for GenericMessage
                             assert.strictEqual(sender, nested_vid_1);
-                            assert.strictEqual(nonconfidential_data, null);
                             message = String.fromCharCode.apply(null, messageBytes);
                             assert.strictEqual(message, hello_world, "Received message does not match");
                             assert.notStrictEqual(crypto_type, CryptoType.Plaintext, "Crypto type should not be Plaintext");

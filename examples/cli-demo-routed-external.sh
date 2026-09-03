@@ -23,8 +23,15 @@ for entity in a b; do
 	tsp --wallet "${entity%%[0-9]*}" create --type web --alias $entity `randuser`
 done
 DID_A=$(tsp --wallet a print a)
-DID_P="did:web:p.teaspoon.world"
-DID_Q="did:web:q.teaspoon.world"
+# The intermediaries publish their own identifiers, so read them rather than hard-coding them:
+# a did:webvh identifier is derived from its genesis log entry and is not predictable from the
+# domain, and it changes if an intermediary is ever re-created.
+did_of() {
+	curl -s "https://did.teaspoon.world/endpoint/$1/did.json" \
+		| grep -o '"id":"did:webvh:[^"]*"' | head -1 | cut -d'"' -f4
+}
+DID_P=$(did_of p)
+DID_Q=$(did_of q)
 DID_B=$(tsp --wallet b print b)
 
 wait
@@ -50,7 +57,8 @@ echo "DID_B2=$DID_B2"
 echo "DID_Q2=$DID_Q2"
 
 echo "---- setup the route"
-tsp --wallet a set-route b "p,$DID_Q,$DID_Q2"
+# the exit entry of the hop list is b's own VID at q (spec 5.3.3)
+tsp --wallet a set-route b "p,$DID_Q,$DID_B2"
 
 wait
 sleep 5

@@ -65,12 +65,11 @@ fn guardrail_crypto_seal_open_hpke(case: SealOpenCase) -> usize {
     let mut sealed = tsp_sdk::crypto::seal(
         black_box(&case.alice),
         black_box(&case.bob),
-        None,
         Payload::Content(case.payload.as_slice()),
     )
     .unwrap();
 
-    let (_ncd, opened, _crypto_type, _sig_type) = tsp_sdk::crypto::open(
+    let (opened, _crypto_type, _sig_type) = tsp_sdk::crypto::open(
         black_box(&case.bob),
         black_box(&case.alice),
         sealed.as_mut_slice(),

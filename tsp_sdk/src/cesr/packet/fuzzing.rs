@@ -19,12 +19,12 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
         #[derive(arbitrary::Arbitrary)]
         enum Variants {
             GenericMessage,
+            ControlMessage,
+            Padding,
             NestedMessage,
             RoutedMessage,
-            DirectRelationProposal,
-            DirectRelationAffirm,
-            ParallelRelationProposal,
-            ParallelRelationAffirm,
+            RelationProposal,
+            RelationAffirm,
             RelationshipCancel,
         }
 
@@ -32,12 +32,12 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
         fn check_exhaustive(payload: Payload<Vec<u8>, Vec<u8>>) -> Variants {
             match payload {
                 Payload::GenericMessage(_) => Variants::GenericMessage,
+                Payload::ControlMessage(_) => Variants::ControlMessage,
+                Payload::Padding { .. } => Variants::Padding,
                 Payload::NestedMessage(_) => Variants::NestedMessage,
                 Payload::RoutedMessage(_, _) => Variants::RoutedMessage,
-                Payload::DirectRelationProposal { .. } => Variants::DirectRelationProposal,
-                Payload::DirectRelationAffirm { .. } => Variants::DirectRelationAffirm,
-                Payload::ParallelRelationProposal { .. } => Variants::ParallelRelationProposal,
-                Payload::ParallelRelationAffirm { .. } => Variants::ParallelRelationAffirm,
+                Payload::RelationProposal { .. } => Variants::RelationProposal,
+                Payload::RelationAffirm { .. } => Variants::RelationAffirm,
                 Payload::RelationshipCancel { .. } => Variants::RelationshipCancel,
             }
         }
@@ -53,29 +53,27 @@ impl<'a> arbitrary::Arbitrary<'a> for Wrapper {
         use arbitrary::Arbitrary;
         let payload = match variant {
             Variants::GenericMessage => Payload::GenericMessage(Arbitrary::arbitrary(u)?),
+            Variants::ControlMessage => Payload::ControlMessage(Arbitrary::arbitrary(u)?),
+            Variants::Padding => Payload::Padding {
+                nonce: Nonce(Arbitrary::arbitrary(u)?),
+            },
             Variants::NestedMessage => Payload::NestedMessage(Arbitrary::arbitrary(u)?),
             Variants::RoutedMessage => {
                 Payload::RoutedMessage(Arbitrary::arbitrary(u)?, Arbitrary::arbitrary(u)?)
             }
-            Variants::DirectRelationProposal => Payload::DirectRelationProposal {
-                nonce: Nonce(Arbitrary::arbitrary(u)?),
+            Variants::RelationProposal => Payload::RelationProposal {
                 request_digest: digest(&DIGEST),
+                nonce: Nonce(Arbitrary::arbitrary(u)?),
+                reply_path: Arbitrary::arbitrary(u)?,
+                referral: if Arbitrary::arbitrary(u)? {
+                    Some((Arbitrary::arbitrary(u)?, &[42; 64]))
+                } else {
+                    None
+                },
             },
-            Variants::DirectRelationAffirm => Payload::DirectRelationAffirm {
+            Variants::RelationAffirm => Payload::RelationAffirm {
                 request_digest: digest(&DIGEST),
                 reply_digest: digest(&DIGEST),
-            },
-            Variants::ParallelRelationProposal => Payload::ParallelRelationProposal {
-                nonce: Nonce(Arbitrary::arbitrary(u)?),
-                request_digest: digest(&DIGEST),
-                new_vid: Arbitrary::arbitrary(u)?,
-                sig_new_vid: &[42; 64],
-            },
-            Variants::ParallelRelationAffirm => Payload::ParallelRelationAffirm {
-                request_digest: digest(&DIGEST),
-                reply_digest: digest(&DIGEST),
-                new_vid: Arbitrary::arbitrary(u)?,
-                sig_new_vid: &[24; 64],
             },
             Variants::RelationshipCancel => Payload::RelationshipCancel {
                 reply: digest(&DIGEST),
@@ -90,58 +88,45 @@ impl<'a> PartialEq<Payload<'a, &'a mut [u8], &'a [u8]>> for Wrapper {
     fn eq(&self, other: &Payload<'a, &'a mut [u8], &'a [u8]>) -> bool {
         match (&self.0, other) {
             (Payload::GenericMessage(l0), Payload::GenericMessage(r0)) => l0 == r0,
+            (Payload::ControlMessage(l0), Payload::ControlMessage(r0)) => l0 == r0,
+            (Payload::Padding { nonce: l_nonce }, Payload::Padding { nonce: r_nonce }) => {
+                l_nonce.0 == r_nonce.0
+            }
             (Payload::NestedMessage(l0), Payload::NestedMessage(r0)) => l0 == r0,
             (Payload::RoutedMessage(l0, l1), Payload::RoutedMessage(r0, r1)) => {
                 l0 == r0 && l1 == r1
             }
             (
-                Payload::DirectRelationProposal {
+                Payload::RelationProposal {
+                    request_digest: l_request,
                     nonce: l_nonce,
-                    request_digest: l_request_digest,
+                    reply_path: l_path,
+                    referral: l_referral,
                 },
-                Payload::DirectRelationProposal {
+                Payload::RelationProposal {
+                    request_digest: r_request,
                     nonce: r_nonce,
-                    request_digest: r_request_digest,
+                    reply_path: r_path,
+                    referral: r_referral,
                 },
-            ) => l_nonce.0 == r_nonce.0 && l_request_digest == r_request_digest,
+            ) => {
+                l_request == r_request
+                    && l_nonce.0 == r_nonce.0
+                    && l_path == r_path
+                    // the signature bytes are not carried through the wrapper
+                    && l_referral.as_ref().map(|(vid, _)| vid.as_slice())
+                        == r_referral.as_ref().map(|(vid, _)| *vid)
+            }
             (
-                Payload::DirectRelationAffirm {
+                Payload::RelationAffirm {
                     request_digest: l_request,
                     reply_digest: l_reply,
                 },
-                Payload::DirectRelationAffirm {
+                Payload::RelationAffirm {
                     request_digest: r_request,
                     reply_digest: r_reply,
                 },
             ) => l_request == r_request && l_reply == r_reply,
-            (
-                Payload::ParallelRelationProposal {
-                    new_vid: l_vid,
-                    request_digest: l_request,
-                    sig_new_vid: _l_sig,
-                    nonce: l_nonce,
-                },
-                Payload::ParallelRelationProposal {
-                    new_vid: r_vid,
-                    request_digest: r_request,
-                    sig_new_vid: _r_sig,
-                    nonce: r_nonce,
-                },
-            ) => l_vid == r_vid && l_request == r_request && l_nonce == r_nonce,
-            (
-                Payload::ParallelRelationAffirm {
-                    request_digest: l_request,
-                    reply_digest: l_reply,
-                    new_vid: l_vid,
-                    sig_new_vid: _l_sig,
-                },
-                Payload::ParallelRelationAffirm {
-                    request_digest: r_request,
-                    reply_digest: r_reply,
-                    new_vid: r_vid,
-                    sig_new_vid: _r_sig,
-                },
-            ) => l_request == r_request && l_reply == r_reply && l_vid == r_vid,
             (
                 Payload::RelationshipCancel { reply: l_reply },
                 Payload::RelationshipCancel { reply: r_reply },
@@ -158,6 +143,5 @@ pub struct FuzzInput {
     pub sender_enc_key: [u8; 32],
     pub receiver_sign_key: [u8; 32],
     pub receiver_enc_key: [u8; 32],
-    pub nonconfidential_data: Option<Vec<u8>>,
     pub payload: Vec<u8>,
 }

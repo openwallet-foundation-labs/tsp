@@ -1,3 +1,18 @@
+//! `did:web`, retained for testing and demonstration.
+//!
+//! **This is not a VID type the specification considers suitable.** Spec 2.2
+//! lists KERI AIDs, `did:webs`, `did:webvh`, `did:peer` and `urn:said`, and
+//! spec 2 requires a VID's key state to be verifiable. A `did:web` publishes a
+//! document with no history, so a verifier has no way to tell a rotation from a
+//! substitution — it is classified [`Unprovenanced`] for exactly that reason,
+//! and an endpoint will not confirm a change to one.
+//!
+//! It stays because it is the simplest illustration of what resolving a VID
+//! means, one request for one document, and because the demo servers use it.
+//! New deployments should use `did:webvh`.
+//!
+//! [`Unprovenanced`]: crate::vid::KeyStateProvenance::Unprovenanced
+
 use crate::definitions::{VerifiedVid, VidEncryptionKeyType, VidSignatureKeyType};
 use base64ct::{Base64UrlUnpadded, Encoding};
 use serde::{Deserialize, Serialize};
@@ -81,7 +96,7 @@ impl From<VidEncryptionKeyType> for KeyType {
     fn from(value: VidEncryptionKeyType) -> Self {
         match value {
             VidEncryptionKeyType::X25519 => KeyType::OKP,
-            VidEncryptionKeyType::X25519Kyber768Draft00 => KeyType::X25519Kyber768Draft00,
+            VidEncryptionKeyType::X25519MlKem768 => KeyType::X25519MlKem768,
         }
     }
 }
@@ -101,14 +116,14 @@ pub enum KeyType {
     APK,
 
     // Unofficial placeholder as nothing is official is assigned yet
-    X25519Kyber768Draft00,
+    X25519MlKem768,
 }
 
 impl From<VidEncryptionKeyType> for Curve {
     fn from(value: VidEncryptionKeyType) -> Self {
         match value {
             VidEncryptionKeyType::X25519 => Curve::X25519,
-            VidEncryptionKeyType::X25519Kyber768Draft00 => Curve::X25519,
+            VidEncryptionKeyType::X25519MlKem768 => Curve::X25519,
         }
     }
 }
@@ -242,7 +257,7 @@ fn find_first_key(
         .and_then(|method| {
             if method.public_key_jwk.usage == usage {
                 match method.public_key_jwk.kty {
-                    KeyType::OKP | KeyType::X25519Kyber768Draft00 => {
+                    KeyType::OKP | KeyType::X25519MlKem768 => {
                         if let Some(x) = &method.public_key_jwk.x {
                             Base64UrlUnpadded::decode_vec(x)
                                 .map(|b| {
@@ -318,8 +333,8 @@ pub fn resolve_document(did_document: DidDocument, target_id: &str) -> Result<Vi
 
     let enc_key_type = match (enc_key_type, enc_curve, enc_alg) {
         (KeyType::OKP, Some(Curve::X25519), None) => VidEncryptionKeyType::X25519,
-        (KeyType::X25519Kyber768Draft00, Some(Curve::X25519), None) => {
-            VidEncryptionKeyType::X25519Kyber768Draft00
+        (KeyType::X25519MlKem768, Some(Curve::X25519), None) => {
+            VidEncryptionKeyType::X25519MlKem768
         }
         _ => return Err(VidError::ResolveVid("Unsupported key type or curve")),
     };

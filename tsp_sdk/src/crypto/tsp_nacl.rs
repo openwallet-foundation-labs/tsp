@@ -2,43 +2,40 @@ use crate::{
     cesr::{CryptoType, DecodedPayload, Envelope},
     definitions::{Payload, PrivateVid, VerifiedVid},
 };
-use crypto_box::{ChaChaBox, PublicKey, SecretKey, aead::AeadInPlace};
+use crypto_box::{PublicKey, SecretKey};
 
-use super::{
-    CryptoError, MessageContents, ParallelSignatureInfo, open_relationship_accept,
-    open_relationship_request,
-};
+use super::{CryptoError, MessageContents, ParallelSignatureInfo};
 use super::{
     RelationshipDigestAlgorithm, append_signature, build_relationship_accept_payload,
     build_relationship_request_payload, signature_type,
 };
-use crate::definitions::{NonConfidentialData, TSPMessage};
-use crypto_box::aead::{AeadCore, OsRng};
+use crate::definitions::TSPMessage;
 use rand::{RngCore, SeedableRng, rngs::StdRng};
 
 pub(crate) fn seal(
     sender: &dyn PrivateVid,
     receiver: &dyn VerifiedVid,
-    nonconfidential_data: Option<NonConfidentialData>,
     secret_payload: Payload<&[u8]>,
     digest: Option<&mut super::Digest>,
-    request_nonce_override: Option<[u8; 32]>,
-    crypto_type: CryptoType,
+    request_nonce_override: Option<[u8; 16]>,
+    seed: Option<[u8; 32]>,
+    selection: super::OutboundCryptoSelection<'_>,
 ) -> Result<TSPMessage, CryptoError> {
-    if !matches!(crypto_type, CryptoType::NaclAuth | CryptoType::NaclEssr) {
-        return Err(CryptoError::InvalidCryptoSelection(crypto_type));
-    }
-
-    let mut csprng = StdRng::from_entropy();
+    let crypto_type = CryptoType::SealedBox;
+    // a seed makes the message reproducible, which is what a published test
+    // vector needs; production callers pass None and draw from the OS
+    let mut csprng = match seed {
+        Some(seed) => StdRng::from_seed(seed),
+        None => StdRng::from_entropy(),
+    };
 
     let mut data = Vec::with_capacity(64);
-    crate::cesr::encode_ets_envelope(
+    crate::cesr::encode_envelope(
         crate::cesr::Envelope {
             crypto_type,
             signature_type: signature_type(sender),
             sender: sender.identifier(),
             receiver: Some(receiver.identifier()),
-            nonconfidential_data,
         },
         &mut data,
     )?;
@@ -52,12 +49,19 @@ pub(crate) fn seal(
 
     let secret_payload = match secret_payload {
         Payload::Content(data) => crate::cesr::Payload::GenericMessage(data),
+        Payload::ControlMessage(data) => crate::cesr::Payload::ControlMessage(data),
+        // a padding message is nothing but a fresh nonce: it exists to be
+        // indistinguishable from traffic that means something (spec 7.5)
+        Payload::Padding => crate::cesr::Payload::Padding {
+            nonce: crate::cesr::Nonce::generate(|dst| csprng.fill_bytes(dst)),
+        },
         Payload::RequestRelationship {
             thread_id: _ignored,
             form,
+            reply_path,
         } => {
             let nonce_bytes = request_nonce_override.unwrap_or_else(|| {
-                let mut nonce_bytes = [0_u8; 32];
+                let mut nonce_bytes = [0_u8; 16];
                 csprng.fill_bytes(&mut nonce_bytes);
                 nonce_bytes
             });
@@ -67,6 +71,8 @@ pub(crate) fn seal(
                 sender_in_payload,
                 digest_algorithm,
                 nonce_bytes,
+                &reply_path,
+                &data,
                 &mut request_digest_storage,
             )?;
             payload_digest_override = Some(payload_digest);
@@ -82,6 +88,7 @@ pub(crate) fn seal(
                 &form,
                 sender_in_payload,
                 digest_algorithm,
+                &data,
                 &mut reply_digest_storage,
             )?;
             payload_digest_override = Some(payload_digest);
@@ -97,29 +104,28 @@ pub(crate) fn seal(
     // prepare CESR-encoded ciphertext
     let mut cesr_message = Vec::new();
 
-    crate::cesr::encode_payload(&secret_payload, sender_in_payload, &mut cesr_message)?;
+    crate::cesr::encode_payload(
+        &secret_payload,
+        sender_in_payload,
+        selection.padding,
+        &mut cesr_message,
+    )?;
 
     // hash the raw bytes of the plaintext before encryption
     if let Some(digest) = digest {
         *digest = payload_digest_override.unwrap_or_else(|| digest_algorithm.hash(&cesr_message));
     }
 
-    let sender_secret_key = SecretKey::from_slice(sender.decryption_key())?;
+    // the libsodium anonymous sealed box: an ephemeral key pair, the nonce
+    // derived from the ephemeral and recipient public keys, X25519 +
+    // XSalsa20-Poly1305 (spec 8.3). The sender's static keys are not used;
+    // sender authenticity comes from the ESSR sender-VID field and the signature.
     let receiver_public_key = PublicKey::from_slice(receiver.encryption_key())?;
-
-    let sender_box = ChaChaBox::new(&receiver_public_key, &sender_secret_key);
-
-    // Get a random nonce to encrypt the message under
-    let nonce = ChaChaBox::generate_nonce(&mut OsRng);
-
-    // aad not yet supported: https://github.com/RustCrypto/nacl-compat/blob/78b59261458923740724c84937459f0a6017a592/crypto_box/src/lib.rs#L227
-    let tag = sender_box.encrypt_in_place_detached(&nonce, &[], &mut cesr_message);
-
-    cesr_message.extend(tag?);
-    cesr_message.extend(nonce);
+    let ciphertext = receiver_public_key.seal(&mut csprng, &cesr_message)?;
 
     // encode and append the ciphertext to the envelope data
-    crate::cesr::encode_ciphertext(&cesr_message, crypto_type, &mut data)?;
+    crate::cesr::encode_ciphertext(&ciphertext, crypto_type, &mut data)?;
+    crate::cesr::finalize_envelope_frame(&mut data);
 
     append_signature(sender, &mut data)?;
 
@@ -128,126 +134,77 @@ pub(crate) fn seal(
 
 pub(crate) fn open<'a>(
     receiver: &dyn PrivateVid,
-    sender: &dyn VerifiedVid,
-    _raw_header: &'a [u8],
-    envelope: Envelope<'a, &[u8]>,
+    raw_header: &'a [u8],
+    envelope: Envelope<&[u8]>,
     ciphertext: &'a mut [u8],
 ) -> Result<(MessageContents<'a>, Option<ParallelSignatureInfo<'a>>), CryptoError> {
-    let (ciphertext, footer) = ciphertext.split_at_mut(ciphertext.len() - 16 - 24);
-    let (tag, nonce) = footer.split_at(16);
-
     let receiver_secret_key = SecretKey::from_slice(receiver.decryption_key().as_slice())?;
-    let sender_public_key = PublicKey::from_slice(sender.encryption_key().as_slice())?;
-    let receiver_box = ChaChaBox::new(&sender_public_key, &receiver_secret_key);
+    let plaintext = receiver_secret_key.unseal(ciphertext)?;
 
-    receiver_box.decrypt_in_place_detached(nonce.into(), &[], ciphertext, tag.into())?;
+    // the sealed box decrypts into a fresh buffer; copy back into the message
+    // buffer so the payload can borrow from it
+    let ciphertext = &mut ciphertext[..plaintext.len()];
+    ciphertext.copy_from_slice(&plaintext);
 
-    #[allow(unused_variables)]
     let DecodedPayload {
         payload,
         sender_identity,
     } = crate::cesr::decode_payload(ciphertext)?;
 
-    if envelope.crypto_type == CryptoType::NaclEssr {
-        match sender_identity {
-            Some(id) => {
-                if id != sender.identifier().as_bytes() {
-                    return Err(CryptoError::UnexpectedSender);
-                }
+    // verify the embedded self-referencing digest of relationship payloads
+    super::verify_relationship_digest(&payload, sender_identity, raw_header)?;
+
+    // the sealed box is anonymous: the ESSR sender-VID confidential field is
+    // required and MUST match the envelope (spec 8.3.2)
+    // as in HPKE-Base, the comparison is against the envelope rather than the
+    // resolved VID's identifier, which differ for a VID being introduced
+    match sender_identity {
+        Some(id) => {
+            if id != envelope.sender {
+                return Err(CryptoError::UnexpectedSender);
             }
-            None => return Err(CryptoError::MissingSender),
         }
+        None => return Err(CryptoError::MissingSender),
     }
 
-    let (secret_payload, parallel_signature_info) = match payload {
-        crate::cesr::Payload::GenericMessage(data) => (Payload::Content(data as _), None),
-        crate::cesr::Payload::DirectRelationProposal { request_digest, .. } => (
-            open_relationship_request(
-                *request_digest.as_bytes(),
-                crate::definitions::RelationshipForm::Direct,
-            ),
-            None,
-        ),
-        crate::cesr::Payload::DirectRelationAffirm {
-            request_digest,
-            reply_digest,
-        } => (
-            open_relationship_accept(
-                *request_digest.as_bytes(),
-                *reply_digest.as_bytes(),
-                crate::definitions::RelationshipForm::Direct,
-            ),
-            None,
-        ),
-        crate::cesr::Payload::ParallelRelationProposal {
-            nonce,
-            request_digest,
-            sig_new_vid,
-            new_vid,
-            ..
-        } => (
-            open_relationship_request(
-                *request_digest.as_bytes(),
-                crate::definitions::RelationshipForm::Parallel {
-                    new_vid,
-                    sig_new_vid,
-                },
-            ),
-            Some(ParallelSignatureInfo {
-                new_vid,
-                sig_new_vid,
-                signed_data: crate::cesr::encode_parallel_relation_proposal_challenge(
-                    sender_identity,
-                    &nonce,
-                    request_digest,
-                    new_vid,
-                )?,
-            }),
-        ),
-        crate::cesr::Payload::ParallelRelationAffirm {
-            request_digest,
-            reply_digest,
-            sig_new_vid,
-            new_vid,
-        } => (
-            open_relationship_accept(
-                *request_digest.as_bytes(),
-                *reply_digest.as_bytes(),
-                crate::definitions::RelationshipForm::Parallel {
-                    new_vid,
-                    sig_new_vid,
-                },
-            ),
-            Some(ParallelSignatureInfo {
-                new_vid,
-                sig_new_vid,
-                signed_data: crate::cesr::encode_parallel_relation_affirm_challenge(
-                    sender_identity,
-                    request_digest,
-                    reply_digest,
-                    new_vid,
-                )?,
-            }),
-        ),
-        crate::cesr::Payload::RelationshipCancel { reply, .. } => (
-            Payload::CancelRelationship {
-                thread_id: *reply.as_bytes(),
-            },
-            None,
-        ),
-        crate::cesr::Payload::NestedMessage(data) => (Payload::NestedMessage(data), None),
-        crate::cesr::Payload::RoutedMessage(hops, data) => {
-            (Payload::RoutedMessage(hops, data as _), None)
-        }
-    };
+    let (secret_payload, parallel_signature_info) = super::open_payload(payload, sender_identity)?;
 
     Ok((
         (
-            envelope.nonconfidential_data,
             secret_payload,
             envelope.crypto_type,
             envelope.signature_type,
         ),
         parallel_signature_info,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use crypto_box::SecretKey;
+
+    fn hex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    /// Interoperability check against libsodium: this sealed box was produced
+    /// by libsodium's crypto_box_seal (via PyNaCl 1.6.1) for the X25519 secret
+    /// key below; unsealing it verifies the ephemeral-key layout and the
+    /// BLAKE2b-derived nonce match libsodium's construction (spec 8.3)
+    #[test]
+    fn libsodium_sealed_box_interop() {
+        let secret_key = SecretKey::from_slice(&hex(
+            "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
+        ))
+        .unwrap();
+        let sealed = hex(
+            "0ab37c2bc1d0be4a9cf418c7bfb4471f0b0989074596b914d507ff8ce16f9546046abf7f210b312b91886842faff87ab6f3437a0865d87147b65ebbb748750b4421abcb8fd2db45dc4e17420",
+        );
+
+        let plaintext = secret_key.unseal(&sealed).unwrap();
+        assert_eq!(plaintext, b"TSP sealed box interop check");
+    }
 }

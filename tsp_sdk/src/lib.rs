@@ -53,7 +53,6 @@
 //!     alice_db.send(
 //!         "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
 //!         "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
-//!         Some(b"extra non-confidential data"),
 //!         b"hello world",
 //!     ).await?;
 //!
@@ -120,6 +119,11 @@ mod secure_storage;
 #[cfg(test)]
 mod test;
 
+// the vectors carry classical VIDs, so they are exercised on builds whose
+// default suites can open them
+#[cfg(not(feature = "pq"))]
+mod test_vectors;
+
 #[cfg(feature = "async")]
 #[cfg(test)]
 #[cfg(not(target_arch = "wasm32"))]
@@ -177,5 +181,5 @@ pub use definitions::{
     VerifiedVid,
 };
 pub use error::Error;
-pub use store::{Aliases, SecureStore, WalletMethodState};
+pub use store::{Aliases, SecureStore, SendOptions, WalletMethodState};
 pub use vid::{ExportVid, OwnedVid, ResolutionContext, VerifyVidOptions, Vid};

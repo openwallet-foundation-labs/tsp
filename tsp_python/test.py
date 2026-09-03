@@ -48,6 +48,13 @@ class AliceBob(unittest.TestCase):
     def test_open_seal(self):
         message = b"hello world"
 
+        # an application message is only accepted inside a relationship, and a
+        # sender forms one with its first message (spec 3.6, 7.2.2)
+        _url, request = self.store.make_relationship_request(
+            self.alice.identifier(), self.bob.identifier(), None
+        )
+        self.store.open_message(request)
+
         url, sealed = self.store.seal_message(
             self.alice.identifier(), self.bob.identifier(), message
         )
@@ -58,7 +65,7 @@ class AliceBob(unittest.TestCase):
 
         match received:
             case tsp.GenericMessage(
-                sender, receiver, _, received_message, crypto_type, signature_type
+                sender, receiver, received_message, crypto_type, signature_type
             ):
                 self.assertEqual(sender, self.alice.identifier())
                 self.assertEqual(receiver, self.bob.identifier())
@@ -146,14 +153,15 @@ class AliceBob(unittest.TestCase):
 
         received = self.store.open_message(sealed)
         match received:
-            case tsp.AcceptRelationship(sender, receiver, received_thread_id, _reply_thread_id, form, delivery, nested_vid, parallel_vid):
-                self.assertEqual(sender, self.bob.identifier())
+            case tsp.AcceptRelationship(sender, receiver, received_thread_id, _reply_thread_id, form, delivery, nested_vid, _parallel_vid):
+                # the accept travels the new relationship, so bob's new VID is
+                # the sender rather than a payload field
+                self.assertEqual(sender, bob_parallel.identifier())
                 self.assertEqual(receiver, alice_parallel.identifier())
                 self.assertEqual(received_thread_id, thread_id)
-                self.assertEqual(form, tsp.RelationshipForm.Parallel)
+                self.assertEqual(form, tsp.RelationshipForm.Direct)
                 self.assertEqual(delivery, tsp.RelationshipDelivery.Direct)
                 self.assertIsNone(nested_vid)
-                self.assertEqual(parallel_vid, bob_parallel.identifier())
 
             case other:
                 self.fail(f"unexpected message type {other}")
@@ -223,9 +231,15 @@ class AliceBob(unittest.TestCase):
 
         received = self.store.open_message(sealed)
         match received:
-            case tsp.CancelRelationship(sender, receiver):
+            case tsp.CancelRelationship(sender, receiver, thread_id):
                 self.assertEqual(sender, self.bob.identifier())
                 self.assertEqual(receiver, self.alice.identifier())
+
+                # the cancellation can be replied to, echoing its digest
+                url, sealed = self.store.make_relationship_cancel_reply(
+                    self.alice.identifier(), self.bob.identifier(), thread_id
+                )
+                self.assertEqual(url, "tcp://127.0.0.1:1337")
 
             case other:
                 self.fail(f"unexpected message type {other}")
@@ -262,8 +276,7 @@ class AliceBob(unittest.TestCase):
         b_store.add_verified_owned_vid(c)
 
         c_store.add_verified_owned_vid(b)
-        c_store.add_private_vid(nette_d)
-        # TODO: fix routed mode (should not require private vid for setting drop off)
+        c_store.add_verified_owned_vid(nette_d)
 
         d_store.add_verified_owned_vid(sneaky_a)
         d_store.add_verified_owned_vid(mailbox_c)
@@ -276,15 +289,21 @@ class AliceBob(unittest.TestCase):
             sneaky_a.identifier(), sneaky_d.identifier(), None
         )
 
+        # the exit entry is the destination's own VID at its intermediary
         a_store.set_route_for_vid(
             sneaky_d.identifier(),
-            [b.identifier(), c.identifier(), mailbox_c.identifier()],
+            [b.identifier(), c.identifier(), nette_d.identifier()],
         )
 
         b_store.make_relationship_request(b.identifier(), c.identifier(), None)
 
         c_store.make_relationship_request(
-            nette_d.identifier(), mailbox_c.identifier(), None
+            mailbox_c.identifier(), nette_d.identifier(), None
+        )
+
+        # the destination has an endpoint-to-endpoint relationship with the source
+        d_store.make_relationship_request(
+            sneaky_d.identifier(), sneaky_a.identifier(), None
         )
 
         # that was all the setup, now let's run some things
@@ -326,14 +345,12 @@ class AliceBob(unittest.TestCase):
             case tsp.GenericMessage(
                 sender,
                 receiver,
-                nonconfidential_data,
                 message,
                 crypto_type,
                 signature_type,
             ):
                 self.assertEqual(sender, sneaky_a.identifier())
                 self.assertEqual(receiver, sneaky_d.identifier())
-                self.assertEqual(nonconfidential_data, None)
                 self.assertEqual(message, hello_world)
                 self.assertNotEqual(crypto_type, tsp.CryptoType.Plaintext)
                 self.assertNotEqual(signature_type, tsp.SignatureType.NoSignature)
@@ -419,7 +436,7 @@ class AliceBob(unittest.TestCase):
 
         match received:
             case tsp.GenericMessage(
-                sender, receiver, _, received_message, crypto_type, signature_type
+                sender, receiver, received_message, crypto_type, signature_type
             ):
                 self.assertEqual(sender, nested_a.identifier())
                 self.assertEqual(receiver, nested_b.identifier())

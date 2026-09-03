@@ -82,16 +82,16 @@ impl Store {
         &self,
         sender: String,
         receiver: String,
-        nonconfidential_data: Option<Vec<u8>>,
         message: Vec<u8>,
+        confidentiality: Option<PayloadConfidentiality>,
     ) -> Result<SealedMessage, Error> {
         let (url, sealed) = self
             .0
-            .seal_message(
+            .seal_message_with_confidentiality(
                 &sender,
                 &receiver,
-                nonconfidential_data.as_deref(),
                 &message,
+                confidentiality.unwrap_or_default().into(),
             )
             .map_err(Error)?;
 
@@ -216,6 +216,26 @@ impl Store {
     }
 
     #[wasm_bindgen]
+    pub fn make_relationship_cancel_reply(
+        &self,
+        sender: String,
+        receiver: String,
+        thread_id: Vec<u8>,
+    ) -> Result<SealedMessage, Error> {
+        let thread_id = thread_id
+            .try_into()
+            .map_err(|_| Error(tsp_sdk::Error::Relationship("invalid thread id".into())))?;
+        let (url, sealed) = self
+            .0
+            .make_relationship_cancel_reply(&sender, &receiver, thread_id)
+            .map_err(Error)?;
+
+        Ok(SealedMessage {
+            url: url.to_string(),
+            sealed,
+        })
+    }
+
     pub fn make_nested_relationship_request(
         &self,
         parent_sender: String,
@@ -382,40 +402,24 @@ pub fn message_parts(message: &[u8]) -> Result<String, Error> {
         "prefix": format_part("Prefix", &parts.prefix, None),
         "sender": format_part("Sender", &parts.sender, None),
         "receiver": parts.receiver.map(|v| format_part("Receiver", &v, None)),
-        "nonconfidentialData": parts.nonconfidential_data.map(|v| format_part("Non-confidential data", &v, None)),
         "ciphertext": parts.ciphertext.map(|v| format_part("Ciphertext", &v, None)),
         "signature": format_part("Signature", &parts.signature, None),
-    })).unwrap())
+    }))
+    .unwrap())
 }
 
 #[wasm_bindgen]
 pub fn probe_message(mut message: Vec<u8>) -> Result<String, Error> {
     tsp_sdk::cesr::probe(&mut message)
         .map(|e: EnvelopeType| match e {
-            EnvelopeType::EncryptedMessage {
-                sender,
-                receiver,
-                nonconfidential_data,
-            } => serde_json::to_string(&json!({
+            EnvelopeType::EncryptedMessage { sender, receiver } => serde_json::to_string(&json!({
                 "sender": String::from_utf8_lossy(sender).to_string(),
                 "receiver": String::from_utf8_lossy(receiver).to_string(),
-                "nonconfidential_data": String::from_utf8_lossy(
-                    nonconfidential_data.unwrap_or_default(),
-                )
-                .to_string(),
             }))
             .unwrap(),
-            EnvelopeType::SignedMessage {
-                sender,
-                receiver,
-                nonconfidential_data,
-            } => serde_json::to_string(&json!({
+            EnvelopeType::SignedMessage { sender, receiver } => serde_json::to_string(&json!({
                 "sender": String::from_utf8_lossy(sender).to_string(),
                 "receiver": String::from_utf8_lossy(receiver.unwrap_or_default()).to_string(),
-                "nonconfidential_data": String::from_utf8_lossy(
-                    nonconfidential_data.unwrap_or_default(),
-                )
-                .to_string(),
             }))
             .unwrap(),
         })
@@ -431,6 +435,9 @@ pub enum ReceivedTspMessageVariant {
     CancelRelationship = 3,
     ForwardRequest = 4,
     PendingMessage = 5,
+    // appended: the numbers above are matched by value in tsp_node
+    ControlMessage = 6,
+    PaddingMessage = 7,
 }
 
 impl From<&tsp_sdk::ReceivedTspMessage> for ReceivedTspMessageVariant {
@@ -446,6 +453,8 @@ impl From<&tsp_sdk::ReceivedTspMessage> for ReceivedTspMessageVariant {
             tsp_sdk::ReceivedTspMessage::AcceptRelationship { .. } => Self::AcceptRelationship,
             tsp_sdk::ReceivedTspMessage::CancelRelationship { .. } => Self::CancelRelationship,
             tsp_sdk::ReceivedTspMessage::ForwardRequest { .. } => Self::ForwardRequest,
+            tsp_sdk::ReceivedTspMessage::ControlMessage { .. } => Self::ControlMessage,
+            tsp_sdk::ReceivedTspMessage::PaddingMessage { .. } => Self::PaddingMessage,
             _ => unreachable!("pending messages are handled before variant flattening"),
         }
     }
@@ -470,11 +479,31 @@ pub enum RelationshipDelivery {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum CryptoType {
     Plaintext = 0,
-    HpkeAuth = 1,
-    HpkeEssr = 2,
-    NaclAuth = 3,
-    NaclEssr = 4,
-    X25519Kyber768Draft00 = 5,
+    HpkeBase = 1,
+    SealedBox = 2,
+}
+
+/// How an upper layer's own payload is protected. TSP's control messages are
+/// always encrypted, whatever this says.
+///
+/// `SignedOnly` is only meaningful under nesting: the enclosing envelope is
+/// confidential either way, but the payload's confidentiality then rests on the
+/// enclosing relationship's keys rather than its own (spec 4).
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+pub enum PayloadConfidentiality {
+    #[default]
+    Confidential = 0,
+    SignedOnly = 1,
+}
+
+impl From<PayloadConfidentiality> for tsp_sdk::crypto::PayloadConfidentiality {
+    fn from(value: PayloadConfidentiality) -> Self {
+        match value {
+            PayloadConfidentiality::Confidential => Self::Confidential,
+            PayloadConfidentiality::SignedOnly => Self::SignedOnly,
+        }
+    }
 }
 
 #[wasm_bindgen]
@@ -492,16 +521,21 @@ pub struct FlatReceivedTspMessage {
     pub variant: ReceivedTspMessageVariant,
     sender: Option<String>,
     receiver: Option<String>,
-    nonconfidential_data: Option<Option<Vec<u8>>>,
     message: Option<Vec<u8>>,
     pub crypto_type: Option<CryptoType>,
     pub signature_type: Option<SignatureType>,
+    /// How the message this one arrived inside was encrypted, when it was
+    /// nested; `None` otherwise. A message whose `crypto_type` is `Plaintext`
+    /// but which has an enclosing type was still confidential on the wire, under
+    /// the enclosing relationship's keys rather than its own (spec 4).
+    pub enclosing_crypto_type: Option<CryptoType>,
     pub form: Option<RelationshipForm>,
     pub delivery: Option<RelationshipDelivery>,
     route: Option<Vec<Vec<u8>>>,
     nested_vid: Option<String>,
     thread_id: Option<Vec<u8>>,
     reply_thread_id: Option<Vec<u8>>,
+    pub reply_expected: Option<bool>,
     next_hop: Option<String>,
     payload: Option<Vec<u8>>,
     opaque_payload: Option<Vec<u8>>,
@@ -519,14 +553,6 @@ impl FlatReceivedTspMessage {
     #[wasm_bindgen(getter)]
     pub fn receiver(&self) -> Option<String> {
         self.receiver.clone()
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn nonconfidential_data(&self) -> JsValue {
-        match &self.nonconfidential_data {
-            Some(Some(data)) => serde_wasm_bindgen::to_value(data).unwrap(),
-            _ => JsValue::NULL,
-        }
     }
 
     #[wasm_bindgen(getter)]
@@ -633,6 +659,22 @@ fn flatten_relationship_delivery(
     }
 }
 
+fn signature_type(signature_type: tsp_sdk::cesr::SignatureType) -> SignatureType {
+    match signature_type {
+        tsp_sdk::cesr::SignatureType::NoSignature => SignatureType::NoSignature,
+        tsp_sdk::cesr::SignatureType::Ed25519 => SignatureType::Ed25519,
+        tsp_sdk::cesr::SignatureType::MlDsa65 => SignatureType::MlDsa65,
+    }
+}
+
+fn crypto_type(crypto_type: tsp_sdk::cesr::CryptoType) -> CryptoType {
+    match crypto_type {
+        tsp_sdk::cesr::CryptoType::Plaintext => CryptoType::Plaintext,
+        tsp_sdk::cesr::CryptoType::HpkeBase => CryptoType::HpkeBase,
+        tsp_sdk::cesr::CryptoType::SealedBox => CryptoType::SealedBox,
+    }
+}
+
 impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
     fn from(value: tsp_sdk::ReceivedTspMessage) -> Self {
         let variant = ReceivedTspMessageVariant::from(&value);
@@ -641,10 +683,10 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             variant,
             sender: None,
             receiver: None,
-            nonconfidential_data: None,
             message: None,
             crypto_type: None,
             signature_type: None,
+            enclosing_crypto_type: None,
             form: None,
             delivery: None,
             route: None,
@@ -656,6 +698,7 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             opaque_payload: None,
             unknown_vid: None,
             new_vid: None,
+            reply_expected: None,
         };
 
         if let Some((unknown_vid, payload)) = value.pending_message_parts() {
@@ -666,32 +709,35 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
 
         #[allow(unreachable_patterns)]
         match value {
-            tsp_sdk::ReceivedTspMessage::GenericMessage {
+            tsp_sdk::ReceivedTspMessage::ControlMessage {
                 sender,
                 receiver,
-                nonconfidential_data,
                 message,
                 message_type,
             } => {
                 this.sender = Some(sender);
                 this.receiver = receiver;
-                this.nonconfidential_data = Some(nonconfidential_data.map(Into::into));
                 this.message = Some(message.into());
-                this.crypto_type = match message_type.crypto_type {
-                    tsp_sdk::cesr::CryptoType::Plaintext => Some(CryptoType::Plaintext),
-                    tsp_sdk::cesr::CryptoType::HpkeAuth => Some(CryptoType::HpkeAuth),
-                    tsp_sdk::cesr::CryptoType::HpkeEssr => Some(CryptoType::HpkeEssr),
-                    tsp_sdk::cesr::CryptoType::NaclAuth => Some(CryptoType::NaclAuth),
-                    tsp_sdk::cesr::CryptoType::NaclEssr => Some(CryptoType::NaclEssr),
-                    tsp_sdk::cesr::CryptoType::X25519Kyber768Draft00 => {
-                        Some(CryptoType::X25519Kyber768Draft00)
-                    }
-                };
-                this.signature_type = match message_type.signature_type {
-                    tsp_sdk::cesr::SignatureType::NoSignature => Some(SignatureType::NoSignature),
-                    tsp_sdk::cesr::SignatureType::Ed25519 => Some(SignatureType::Ed25519),
-                    tsp_sdk::cesr::SignatureType::MlDsa65 => Some(SignatureType::MlDsa65),
-                };
+                this.crypto_type = Some(crypto_type(message_type.crypto_type));
+                this.enclosing_crypto_type = message_type.enclosing_crypto_type.map(crypto_type);
+                this.signature_type = Some(signature_type(message_type.signature_type));
+            }
+            tsp_sdk::ReceivedTspMessage::PaddingMessage { sender, receiver } => {
+                this.sender = Some(sender);
+                this.receiver = receiver;
+            }
+            tsp_sdk::ReceivedTspMessage::GenericMessage {
+                sender,
+                receiver,
+                message,
+                message_type,
+            } => {
+                this.sender = Some(sender);
+                this.receiver = receiver;
+                this.message = Some(message.into());
+                this.crypto_type = Some(crypto_type(message_type.crypto_type));
+                this.enclosing_crypto_type = message_type.enclosing_crypto_type.map(crypto_type);
+                this.signature_type = Some(signature_type(message_type.signature_type));
             }
             tsp_sdk::ReceivedTspMessage::RequestRelationship {
                 sender,
@@ -729,9 +775,16 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
                 this.reply_thread_id = Some(reply_thread_id.to_vec());
                 this.new_vid = new_vid;
             }
-            tsp_sdk::ReceivedTspMessage::CancelRelationship { sender, receiver } => {
+            tsp_sdk::ReceivedTspMessage::CancelRelationship {
+                sender,
+                receiver,
+                thread_id,
+                reply_expected,
+            } => {
                 this.sender = Some(sender);
                 this.receiver = Some(receiver);
+                this.thread_id = Some(thread_id.to_vec());
+                this.reply_expected = Some(reply_expected);
             }
             tsp_sdk::ReceivedTspMessage::ForwardRequest {
                 sender,

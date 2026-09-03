@@ -21,16 +21,26 @@ impl<T: AsRef<[u8]>> ReceivedTspMessage<T> {
             GenericMessage {
                 sender,
                 receiver,
-                nonconfidential_data,
                 message,
                 message_type,
             } => GenericMessage {
                 sender,
                 receiver,
-                nonconfidential_data: nonconfidential_data.map(&f),
                 message: f(message),
                 message_type,
             },
+            ControlMessage {
+                sender,
+                receiver,
+                message,
+                message_type,
+            } => ControlMessage {
+                sender,
+                receiver,
+                message: f(message),
+                message_type,
+            },
+            PaddingMessage { sender, receiver } => PaddingMessage { sender, receiver },
             RequestRelationship {
                 sender,
                 receiver,
@@ -89,7 +99,17 @@ impl<T: AsRef<[u8]>> ReceivedTspMessage<T> {
                     ReceivedRelationshipDelivery::Routed => ReceivedRelationshipDelivery::Routed,
                 },
             },
-            CancelRelationship { sender, receiver } => CancelRelationship { sender, receiver },
+            CancelRelationship {
+                sender,
+                receiver,
+                thread_id,
+                reply_expected,
+            } => CancelRelationship {
+                sender,
+                receiver,
+                thread_id,
+                reply_expected,
+            },
             ForwardRequest {
                 sender,
                 receiver,

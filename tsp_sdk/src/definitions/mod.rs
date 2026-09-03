@@ -28,7 +28,6 @@ pub struct PrivateSigningKeyData(Vec<u8>);
 pub struct PublicVerificationKeyData(Vec<u8>);
 
 pub type VidData<'a> = &'a [u8];
-pub type NonConfidentialData<'a> = &'a [u8];
 pub type TSPMessage = Vec<u8>;
 
 #[cfg(feature = "async")]
@@ -36,8 +35,20 @@ pub type TSPStream<D, E> = std::pin::Pin<Box<dyn Stream<Item = Result<D, E>> + S
 
 #[derive(Debug)]
 pub struct MessageType {
+    /// How this message itself was encrypted. For a nested message this is the
+    /// *inner* message's own encoding, which may be `Plaintext`: section 4
+    /// permits a signed-only inner message, since the enclosing envelope
+    /// conceals it in transit. See [`Self::enclosing_crypto_type`].
     pub crypto_type: crate::cesr::CryptoType,
     pub signature_type: crate::cesr::SignatureType,
+    /// When this message arrived inside another message's ciphertext, how that
+    /// enclosing message was encrypted; `None` when it was not nested.
+    ///
+    /// A message with `crypto_type: Plaintext` and an enclosing type was still
+    /// confidential on the wire — but under the enclosing relationship's keys,
+    /// not its own. Section 4 asks applications to notice that difference,
+    /// which is why the two are reported separately rather than merged.
+    pub enclosing_crypto_type: Option<crate::cesr::CryptoType>,
 }
 
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
@@ -65,7 +76,6 @@ pub struct PendingIncomingParallelRelationship {
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub enum RelationshipStatus {
-    _Controlled,
     Bidirectional {
         thread_id: Digest,
         remote_thread_id: Digest,
@@ -93,7 +103,6 @@ impl RelationshipStatus {
 impl Display for RelationshipStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RelationshipStatus::_Controlled => write!(f, "Controlled"),
             RelationshipStatus::Bidirectional { .. } => write!(f, "Bidirectional"),
             RelationshipStatus::Unidirectional { .. } => write!(f, "Unidirectional"),
             RelationshipStatus::ReverseUnidirectional { .. } => write!(f, "ReverseUnidirectional"),
@@ -120,9 +129,28 @@ pub enum ReceivedTspMessage<Data: AsRef<[u8]> = BytesMut> {
     GenericMessage {
         sender: String,
         receiver: Option<String>,
-        nonconfidential_data: Option<Data>,
         message: Data,
         message_type: MessageType,
+    },
+    /// An upper layer's own control payload (`XCTL`). Carried opaquely, exactly
+    /// as [`ReceivedTspMessage::GenericMessage`] is; it arrives as its own
+    /// variant so that an upper layer can route its control plane separately
+    /// from its data plane (spec 9.3).
+    ControlMessage {
+        sender: String,
+        receiver: Option<String>,
+        message: Data,
+        message_type: MessageType,
+    },
+    /// A padding message (`XPAD`). It carries nothing: it exists so that
+    /// traffic analysis sees messages that mean nothing. The specification says
+    /// the receiver SHOULD silently discard it — silence being about what goes
+    /// back on the wire, which is nothing. It is reported rather than swallowed
+    /// so that an application can account for what it received; there is simply
+    /// nothing in it to act on.
+    PaddingMessage {
+        sender: String,
+        receiver: Option<String>,
     },
     RequestRelationship {
         sender: String,
@@ -142,6 +170,15 @@ pub enum ReceivedTspMessage<Data: AsRef<[u8]> = BytesMut> {
     CancelRelationship {
         sender: String,
         receiver: String,
+        /// The digest the cancellation named, which is one of the two the
+        /// relationship was formed with. A reply echoes it (spec 7.3).
+        thread_id: Digest,
+        /// Whether the specification expects a `TSP_RFD` in reply: it does when
+        /// the cancelled relationship was bidirectional, and does not when it
+        /// was one-way (spec 7.3). The relationship has already been removed
+        /// either way, so the reply goes out with
+        /// [`crate::SecureStore::make_relationship_cancel_reply`].
+        reply_expected: bool,
     },
     ForwardRequest {
         sender: String,
@@ -155,6 +192,24 @@ pub enum ReceivedTspMessage<Data: AsRef<[u8]> = BytesMut> {
         unknown_vid: String,
         payload: BytesMut,
     },
+}
+
+impl<Data: AsRef<[u8]>> ReceivedTspMessage<Data> {
+    /// The VID that sent this message, where the message names one. A pending
+    /// message names a VID that could not be resolved, so it has no sender.
+    pub fn sender(&self) -> Option<&str> {
+        match self {
+            ReceivedTspMessage::GenericMessage { sender, .. }
+            | ReceivedTspMessage::ControlMessage { sender, .. }
+            | ReceivedTspMessage::PaddingMessage { sender, .. }
+            | ReceivedTspMessage::RequestRelationship { sender, .. }
+            | ReceivedTspMessage::AcceptRelationship { sender, .. }
+            | ReceivedTspMessage::CancelRelationship { sender, .. }
+            | ReceivedTspMessage::ForwardRequest { sender, .. } => Some(sender),
+            #[cfg(feature = "async")]
+            ReceivedTspMessage::PendingMessage { .. } => None,
+        }
+    }
 }
 
 impl<Data: AsRef<[u8]>> ReceivedTspMessage<Data> {
@@ -191,6 +246,15 @@ pub enum RelationshipForm<'a, Bytes: AsRef<[u8]>> {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Payload<'a, Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]> = Bytes> {
     Content(Bytes),
+    /// An upper layer's own control payload (`XCTL`). TSP carries it opaquely,
+    /// exactly as it carries [`Payload::Content`]; the separate type exists so
+    /// that an upper layer can tell its control plane from its data plane
+    /// without reserving part of its own format for the distinction (spec 9.3).
+    ControlMessage(Bytes),
+    /// A padding message (`XPAD`), which carries no information at all — it
+    /// exists so that traffic analysis sees messages that mean nothing. The
+    /// receiver discards it (spec 7.5).
+    Padding,
     NestedMessage(MaybeMutBytes),
     RoutedMessage(Vec<VidData<'a>>, Bytes),
     CancelRelationship {
@@ -199,6 +263,9 @@ pub enum Payload<'a, Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]> = Bytes> {
     RequestRelationship {
         thread_id: Digest,
         form: RelationshipForm<'a, Bytes>,
+        /// The route the replying endpoint is to use to reach this sender
+        /// (spec 7.2.4). Empty when the reply is to come back directly.
+        reply_path: Vec<VidData<'a>>,
     },
     AcceptRelationship {
         thread_id: Digest,
@@ -211,6 +278,8 @@ impl<Bytes: AsRef<[u8]>, MaybeMutBytes: AsRef<[u8]>> Payload<'_, Bytes, MaybeMut
     pub fn as_bytes(&self) -> &[u8] {
         match self {
             Payload::Content(bytes) => bytes.as_ref(),
+            Payload::ControlMessage(bytes) => bytes.as_ref(),
+            Payload::Padding => &[],
             Payload::NestedMessage(bytes) => bytes.as_ref(),
             Payload::RoutedMessage(_, bytes) => bytes.as_ref(),
             Payload::CancelRelationship { .. } => &[],
@@ -226,6 +295,10 @@ impl<Bytes: AsRef<[u8]>> fmt::Display for Payload<'_, Bytes> {
             Payload::Content(bytes) => {
                 write!(f, "Content: {}", String::from_utf8_lossy(bytes.as_ref()))
             }
+            Payload::ControlMessage(bytes) => {
+                write!(f, "Control: {}", String::from_utf8_lossy(bytes.as_ref()))
+            }
+            Payload::Padding => write!(f, "Padding"),
             Payload::NestedMessage(bytes) => write!(
                 f,
                 "Nested Message: {}",
@@ -254,7 +327,7 @@ impl<Bytes: AsRef<[u8]>> fmt::Display for Payload<'_, Bytes> {
 pub enum VidEncryptionKeyType {
     #[default]
     X25519,
-    X25519Kyber768Draft00,
+    X25519MlKem768,
 }
 
 #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
@@ -269,13 +342,13 @@ impl VidEncryptionKeyType {
     fn jwk_key_type(self) -> &'static str {
         match self {
             VidEncryptionKeyType::X25519 => "OKP",
-            VidEncryptionKeyType::X25519Kyber768Draft00 => "X25519Kyber768Draft00",
+            VidEncryptionKeyType::X25519MlKem768 => "X25519MlKem768",
         }
     }
 
     fn jwk_curve(self) -> &'static str {
         match self {
-            VidEncryptionKeyType::X25519 | VidEncryptionKeyType::X25519Kyber768Draft00 => "X25519",
+            VidEncryptionKeyType::X25519 | VidEncryptionKeyType::X25519MlKem768 => "X25519",
         }
     }
 }

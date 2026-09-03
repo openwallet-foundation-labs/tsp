@@ -74,11 +74,18 @@ jobs:
       - name: Create intermediary declarations
         run: |-
           export TAG="${{ env.tag }}"
+          export DID_SERVER="did.teaspoon.world"
           export SERVICE="demo-intermediary-p"
           export DOMAIN="p.teaspoon.world"
+          export NAME="p"
+          export BUCKET="intermediary-p-teaspoon-data"
+          export WALLET_SECRET="projects/797284806017/secrets/intermediary-p-wallet/versions/latest"
           envsubst < deploy/intermediary.template.yaml > intermediary-p.yaml
           export SERVICE="demo-intermediary-q"
           export DOMAIN="q.teaspoon.world"
+          export NAME="q"
+          export BUCKET="intermediary-q-teaspoon-data"
+          export WALLET_SECRET="projects/797284806017/secrets/intermediary-q-wallet/versions/latest"
           envsubst < deploy/intermediary.template.yaml > intermediary-q.yaml
       - name: Create server declaration
         run: |-

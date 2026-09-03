@@ -8,6 +8,7 @@ fn tsp_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<OwnedVid>()?;
 
     m.add_class::<CryptoType>()?;
+    m.add_class::<PayloadConfidentiality>()?;
     m.add_class::<SignatureType>()?;
     m.add_class::<RelationshipForm>()?;
     m.add_class::<RelationshipDelivery>()?;
@@ -180,40 +181,40 @@ impl Store {
             .map_err(py_exception)
     }
 
-    #[pyo3(signature = (sender, receiver, message, nonconfidential_data = None))]
+    #[pyo3(signature = (sender, receiver, message, confidentiality = None))]
     fn seal_message(
         &self,
         sender: String,
         receiver: String,
         message: Vec<u8>,
-        nonconfidential_data: Option<Vec<u8>>,
+        confidentiality: Option<PayloadConfidentiality>,
     ) -> PyResult<(String, Vec<u8>)> {
         let (url, bytes) = self
             .inner
-            .seal_message(
+            .seal_message_with_confidentiality(
                 &sender,
                 &receiver,
-                nonconfidential_data.as_deref(),
                 &message,
+                confidentiality.unwrap_or_default().into(),
             )
             .map_err(py_exception)?;
 
         Ok((url.to_string(), bytes))
     }
 
-    #[pyo3(signature = (sender, receiver, message, nonconfidential_data = None))]
+    #[pyo3(signature = (sender, receiver, message, confidentiality = None))]
     fn send(
         &self,
         sender: String,
         receiver: String,
         message: Vec<u8>,
-        nonconfidential_data: Option<Vec<u8>>,
+        confidentiality: Option<PayloadConfidentiality>,
     ) -> PyResult<()> {
-        wait_for(self.inner.send(
+        wait_for(self.inner.send_with_confidentiality(
             &sender,
             &receiver,
-            nonconfidential_data.as_deref(),
             &message,
+            confidentiality.unwrap_or_default().into(),
         ))?
         .map_err(py_exception)
     }
@@ -315,6 +316,20 @@ impl Store {
         Ok((url.to_string(), bytes))
     }
 
+    fn make_relationship_cancel_reply(
+        &self,
+        sender: String,
+        receiver: String,
+        thread_id: [u8; 32],
+    ) -> PyResult<(String, Vec<u8>)> {
+        let (url, bytes) = self
+            .inner
+            .make_relationship_cancel_reply(&sender, &receiver, thread_id)
+            .map_err(py_exception)?;
+
+        Ok((url.to_string(), bytes))
+    }
+
     fn make_nested_relationship_request(
         &self,
         parent_sender: String,
@@ -391,6 +406,9 @@ enum ReceivedTspMessageVariant {
     CancelRelationship,
     ForwardRequest,
     PendingMessage,
+    // appended: the discriminants above are matched by number in tsp_node
+    ControlMessage,
+    PaddingMessage,
 }
 
 impl From<&tsp_sdk::ReceivedTspMessage> for ReceivedTspMessageVariant {
@@ -402,6 +420,8 @@ impl From<&tsp_sdk::ReceivedTspMessage> for ReceivedTspMessageVariant {
             tsp_sdk::ReceivedTspMessage::CancelRelationship { .. } => Self::CancelRelationship,
             tsp_sdk::ReceivedTspMessage::ForwardRequest { .. } => Self::ForwardRequest,
             tsp_sdk::ReceivedTspMessage::PendingMessage { .. } => Self::PendingMessage,
+            tsp_sdk::ReceivedTspMessage::ControlMessage { .. } => Self::ControlMessage,
+            tsp_sdk::ReceivedTspMessage::PaddingMessage { .. } => Self::PaddingMessage,
         }
     }
 }
@@ -425,11 +445,31 @@ pub enum RelationshipDelivery {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CryptoType {
     Plaintext = 0,
-    HpkeAuth = 1,
-    HpkeEssr = 2,
-    NaclAuth = 3,
-    NaclEssr = 4,
-    X25519Kyber768Draft00 = 5,
+    HpkeBase = 1,
+    SealedBox = 2,
+}
+
+/// How an upper layer's own payload is protected. TSP's control messages are
+/// always encrypted, whatever this says.
+///
+/// `SignedOnly` is only meaningful under nesting: the enclosing envelope is
+/// confidential either way, but the payload's confidentiality then rests on the
+/// enclosing relationship's keys rather than its own (spec 4).
+#[pyclass(eq, eq_int, from_py_object)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum PayloadConfidentiality {
+    #[default]
+    Confidential = 0,
+    SignedOnly = 1,
+}
+
+impl From<PayloadConfidentiality> for tsp_sdk::crypto::PayloadConfidentiality {
+    fn from(value: PayloadConfidentiality) -> Self {
+        match value {
+            PayloadConfidentiality::Confidential => Self::Confidential,
+            PayloadConfidentiality::SignedOnly => Self::SignedOnly,
+        }
+    }
 }
 
 #[pyclass(eq, eq_int, from_py_object)]
@@ -450,13 +490,17 @@ struct FlatReceivedTspMessage {
     #[pyo3(get, set)]
     receiver: Option<String>,
     #[pyo3(get, set)]
-    nonconfidential_data: Option<Option<Vec<u8>>>,
-    #[pyo3(get, set)]
     message: Option<Vec<u8>>,
     #[pyo3(get, set)]
     crypto_type: Option<CryptoType>,
     #[pyo3(get, set)]
     signature_type: Option<SignatureType>,
+    /// How the message this one arrived inside was encrypted, when it was
+    /// nested; `None` otherwise. A message whose `crypto_type` is `Plaintext`
+    /// but which has an enclosing type was still confidential on the wire, under
+    /// the enclosing relationship's keys rather than its own (spec 4).
+    #[pyo3(get, set)]
+    enclosing_crypto_type: Option<CryptoType>,
     #[pyo3(get, set)]
     form: Option<RelationshipForm>,
     #[pyo3(get, set)]
@@ -469,6 +513,8 @@ struct FlatReceivedTspMessage {
     thread_id: Option<[u8; 32]>,
     #[pyo3(get, set)]
     reply_thread_id: Option<[u8; 32]>,
+    #[pyo3(get, set)]
+    reply_expected: Option<bool>,
     #[pyo3(get, set)]
     next_hop: Option<String>,
     #[pyo3(get, set)]
@@ -511,6 +557,22 @@ fn flatten_relationship_delivery(
     }
 }
 
+fn signature_type(signature_type: tsp_sdk::cesr::SignatureType) -> SignatureType {
+    match signature_type {
+        tsp_sdk::cesr::SignatureType::NoSignature => SignatureType::NoSignature,
+        tsp_sdk::cesr::SignatureType::Ed25519 => SignatureType::Ed25519,
+        tsp_sdk::cesr::SignatureType::MlDsa65 => SignatureType::MlDsa65,
+    }
+}
+
+fn crypto_type(crypto_type: tsp_sdk::cesr::CryptoType) -> CryptoType {
+    match crypto_type {
+        tsp_sdk::cesr::CryptoType::Plaintext => CryptoType::Plaintext,
+        tsp_sdk::cesr::CryptoType::HpkeBase => CryptoType::HpkeBase,
+        tsp_sdk::cesr::CryptoType::SealedBox => CryptoType::SealedBox,
+    }
+}
+
 impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
     fn from(value: tsp_sdk::ReceivedTspMessage) -> Self {
         let variant = ReceivedTspMessageVariant::from(&value);
@@ -519,10 +581,10 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             variant,
             sender: None,
             receiver: None,
-            nonconfidential_data: None,
             message: None,
             crypto_type: None,
             signature_type: None,
+            enclosing_crypto_type: None,
             form: None,
             delivery: None,
             route: None,
@@ -534,35 +596,39 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
             opaque_payload: None,
             unknown_vid: None,
             new_vid: None,
+            reply_expected: None,
         };
 
         match value {
-            tsp_sdk::ReceivedTspMessage::GenericMessage {
+            tsp_sdk::ReceivedTspMessage::ControlMessage {
                 sender,
                 receiver,
-                nonconfidential_data,
                 message,
                 message_type,
             } => {
                 this.sender = Some(sender);
                 this.receiver = receiver;
-                this.nonconfidential_data = Some(nonconfidential_data.map(Into::into));
                 this.message = Some(message.into());
-                this.crypto_type = match message_type.crypto_type {
-                    tsp_sdk::cesr::CryptoType::Plaintext => Some(CryptoType::Plaintext),
-                    tsp_sdk::cesr::CryptoType::HpkeAuth => Some(CryptoType::HpkeAuth),
-                    tsp_sdk::cesr::CryptoType::HpkeEssr => Some(CryptoType::HpkeEssr),
-                    tsp_sdk::cesr::CryptoType::NaclAuth => Some(CryptoType::NaclAuth),
-                    tsp_sdk::cesr::CryptoType::NaclEssr => Some(CryptoType::NaclEssr),
-                    tsp_sdk::cesr::CryptoType::X25519Kyber768Draft00 => {
-                        Some(CryptoType::X25519Kyber768Draft00)
-                    }
-                };
-                this.signature_type = match message_type.signature_type {
-                    tsp_sdk::cesr::SignatureType::NoSignature => Some(SignatureType::NoSignature),
-                    tsp_sdk::cesr::SignatureType::Ed25519 => Some(SignatureType::Ed25519),
-                    tsp_sdk::cesr::SignatureType::MlDsa65 => Some(SignatureType::MlDsa65),
-                };
+                this.crypto_type = Some(crypto_type(message_type.crypto_type));
+                this.enclosing_crypto_type = message_type.enclosing_crypto_type.map(crypto_type);
+                this.signature_type = Some(signature_type(message_type.signature_type));
+            }
+            tsp_sdk::ReceivedTspMessage::PaddingMessage { sender, receiver } => {
+                this.sender = Some(sender);
+                this.receiver = receiver;
+            }
+            tsp_sdk::ReceivedTspMessage::GenericMessage {
+                sender,
+                receiver,
+                message,
+                message_type,
+            } => {
+                this.sender = Some(sender);
+                this.receiver = receiver;
+                this.message = Some(message.into());
+                this.crypto_type = Some(crypto_type(message_type.crypto_type));
+                this.enclosing_crypto_type = message_type.enclosing_crypto_type.map(crypto_type);
+                this.signature_type = Some(signature_type(message_type.signature_type));
             }
             tsp_sdk::ReceivedTspMessage::RequestRelationship {
                 sender,
@@ -600,9 +666,16 @@ impl From<tsp_sdk::ReceivedTspMessage> for FlatReceivedTspMessage {
                 this.reply_thread_id = Some(reply_thread_id);
                 this.new_vid = new_vid;
             }
-            tsp_sdk::ReceivedTspMessage::CancelRelationship { sender, receiver } => {
+            tsp_sdk::ReceivedTspMessage::CancelRelationship {
+                sender,
+                receiver,
+                thread_id,
+                reply_expected,
+            } => {
                 this.sender = Some(sender);
                 this.receiver = Some(receiver);
+                this.thread_id = Some(thread_id);
+                this.reply_expected = Some(reply_expected);
             }
             tsp_sdk::ReceivedTspMessage::ForwardRequest {
                 sender,

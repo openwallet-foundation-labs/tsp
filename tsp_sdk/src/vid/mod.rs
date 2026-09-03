@@ -16,15 +16,22 @@ pub mod did;
 
 pub mod error;
 
+pub mod key_state;
+
 pub mod resolve;
 
 #[cfg(feature = "resolve")]
 pub use did::web::{create_did_web, vid_to_did_document};
 
 #[cfg(feature = "resolve")]
-pub use did::peer::{encode_did_peer, verify_did_peer};
+pub use did::peer::{
+    encode_did_peer, encode_did_peer_long_form, introduction_identifier, short_form,
+    verify_did_peer,
+};
 
 pub use error::VidError;
+
+pub use key_state::{KeyStateProvenance, extends_held_key_state, key_state_provenance};
 use url::Url;
 
 use crate::definitions::{VidEncryptionKeyType, VidSignatureKeyType};
@@ -232,6 +239,108 @@ impl OwnedVid {
         let enc_key_type = crate::crypto::default_encryption_key_type();
 
         Self::new_did_peer_with_key_types(transport, sig_key_type, enc_key_type)
+    }
+
+    /// A `did:peer` whose keys are derived from `seed` rather than drawn at
+    /// random, so the identifier it produces is the same every time.
+    ///
+    /// This exists for the published test vectors: a vector is only a test of
+    /// an encoder if a verifier can regenerate its bytes, and that requires
+    /// every value the message depends on — the keys included — to be recorded
+    /// or derivable. Classical keys only; a deterministic VID is not something
+    /// to use for a real identity.
+    pub fn new_did_peer_from_seed(transport: Url, seed: [u8; 32]) -> OwnedVid {
+        Self::new_did_peer_from_seed_with_key_types(
+            transport,
+            seed,
+            VidSignatureKeyType::Ed25519,
+            VidEncryptionKeyType::X25519,
+        )
+    }
+
+    /// As [`Self::new_did_peer_from_seed`], for an explicit pair of key types.
+    ///
+    /// Both the classical and the post-quantum schemes generate deterministically
+    /// from a seed — ML-DSA by FIPS 204's `KeyGen_internal`, and the KEM by HPKE's
+    /// `DeriveKeyPair` — so a post-quantum vector is as reproducible as any other.
+    pub fn new_did_peer_from_seed_with_key_types(
+        transport: Url,
+        seed: [u8; 32],
+        sig_key_type: VidSignatureKeyType,
+        enc_key_type: VidEncryptionKeyType,
+    ) -> OwnedVid {
+        use rand::{RngCore, SeedableRng};
+
+        let mut rng = rand::rngs::StdRng::from_seed(seed);
+
+        let mut sign_seed = [0_u8; 32];
+        rng.fill_bytes(&mut sign_seed);
+        let (sigkey, public_sigkey): (PrivateSigningKeyData, PublicVerificationKeyData) =
+            match sig_key_type {
+                VidSignatureKeyType::Ed25519 => {
+                    let signing_key = ed25519_dalek::SigningKey::from_bytes(&sign_seed);
+
+                    (
+                        sign_seed.to_vec().into(),
+                        signing_key.verifying_key().to_bytes().to_vec().into(),
+                    )
+                }
+                VidSignatureKeyType::MlDsa65 => {
+                    use ml_dsa::{B32, MlDsa65, SigningKey};
+
+                    let signing_key = SigningKey::<MlDsa65>::from_seed(&B32::from(sign_seed));
+                    let verifying_key = ml_dsa::Keypair::verifying_key(&signing_key);
+                    #[allow(deprecated)]
+                    let expanded = signing_key.expanded_key().to_expanded();
+
+                    (
+                        expanded.to_vec().into(),
+                        verifying_key.encode().to_vec().into(),
+                    )
+                }
+            };
+
+        let mut enc_seed = [0_u8; 32];
+        rng.fill_bytes(&mut enc_seed);
+        let (enckey, public_enckey): (PrivateKeyData, PublicKeyData) = match enc_key_type {
+            VidEncryptionKeyType::X25519 => {
+                let secret_key = crypto_box::SecretKey::from(enc_seed);
+
+                (
+                    secret_key.to_bytes().to_vec().into(),
+                    crypto_box::PublicKey::from(&secret_key)
+                        .to_bytes()
+                        .to_vec()
+                        .into(),
+                )
+            }
+            VidEncryptionKeyType::X25519MlKem768 => {
+                use hpke::{Kem, Serializable, kem::XWing};
+
+                let (private, public) = XWing::derive_keypair(&enc_seed);
+
+                (
+                    private.to_bytes().as_slice().to_vec().into(),
+                    public.to_bytes().as_slice().to_vec().into(),
+                )
+            }
+        };
+
+        let mut vid = Vid {
+            id: Default::default(),
+            transport,
+            sig_key_type,
+            enc_key_type,
+            public_sigkey,
+            public_enckey,
+        };
+        vid.id = crate::vid::did::peer::encode_did_peer(&vid);
+
+        OwnedVid {
+            vid,
+            sigkey,
+            enckey,
+        }
     }
 
     pub fn new_did_peer_with_key_types(

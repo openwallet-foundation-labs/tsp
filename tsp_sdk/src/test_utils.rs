@@ -151,10 +151,13 @@ fn relationship_status_for(index: usize) -> RelationshipStatus {
 }
 
 impl RelationshipStatus {
-    fn bi_default() -> Self {
+    /// A bidirectional relationship for tests. The two thread ids are distinct
+    /// and non-zero: the all-zero digest is the NULL digest of a `TSP_RFD`
+    /// (spec 7.3), not a thread id any relationship would hold.
+    fn bi_test(thread_id: u8, remote_thread_id: u8) -> Self {
         Self::Bidirectional {
-            thread_id: Default::default(),
-            remote_thread_id: Default::default(),
+            thread_id: [thread_id; 32],
+            remote_thread_id: [remote_thread_id; 32],
             outstanding_nested_requests: vec![],
         }
     }
@@ -259,7 +262,6 @@ pub type StoreExportSnapshot = (
 /// Return a stable string form for a relationship status.
 pub fn relationship_status_signature(status: RelationshipStatus) -> String {
     match status {
-        RelationshipStatus::_Controlled => "Controlled".to_string(),
         RelationshipStatus::Unrelated => "Unrelated".to_string(),
         RelationshipStatus::Unidirectional { thread_id } => format!("Uni:{thread_id:?}"),
         RelationshipStatus::ReverseUnidirectional { thread_id } => format!("RevUni:{thread_id:?}"),
@@ -420,7 +422,7 @@ pub fn create_high_entropy_dirty_store() -> (AsyncSecureStore, HighEntropyDirtyS
         store
             .set_relation_and_status_for_vid(
                 hop.identifier(),
-                RelationshipStatus::bi_default(),
+                RelationshipStatus::bi_test(0x11, 0x22),
                 local_vid.identifier(),
             )
             .unwrap();
@@ -568,21 +570,22 @@ pub fn create_routed_dirty_topology() -> RoutedDirtyTopology {
     sender
         .set_relation_and_status_for_vid(
             intermediary_vid.identifier(),
-            RelationshipStatus::bi_default(),
+            RelationshipStatus::bi_test(0x11, 0x22),
             sender_vid.identifier(),
         )
         .unwrap();
     sender
         .set_relation_and_status_for_vid(
             receiver_vid.identifier(),
-            RelationshipStatus::bi_default(),
+            RelationshipStatus::bi_test(0x11, 0x22),
             sender_vid.identifier(),
         )
         .unwrap();
+    // the exit entry is the receiver's own VID at the intermediary (spec 5.3.3)
     sender
         .set_route_for_vid(
             receiver_vid.identifier(),
-            &[intermediary_vid.identifier(), intermediary_vid.identifier()],
+            &[intermediary_vid.identifier(), receiver_vid.identifier()],
         )
         .unwrap();
 
@@ -595,14 +598,14 @@ pub fn create_routed_dirty_topology() -> RoutedDirtyTopology {
     intermediary
         .set_relation_and_status_for_vid(
             receiver_vid.identifier(),
-            RelationshipStatus::bi_default(),
+            RelationshipStatus::bi_test(0x11, 0x22),
             intermediary_vid.identifier(),
         )
         .unwrap();
     intermediary
         .set_relation_and_status_for_vid(
             intermediary_vid.identifier(),
-            RelationshipStatus::bi_default(),
+            RelationshipStatus::bi_test(0x11, 0x22),
             receiver_vid.identifier(),
         )
         .unwrap();
@@ -621,14 +624,14 @@ pub fn create_routed_dirty_topology() -> RoutedDirtyTopology {
     receiver
         .set_relation_and_status_for_vid(
             sender_vid.identifier(),
-            RelationshipStatus::bi_default(),
+            RelationshipStatus::bi_test(0x11, 0x22),
             receiver_vid.identifier(),
         )
         .unwrap();
     receiver
         .set_relation_and_status_for_vid(
             intermediary_vid.identifier(),
-            RelationshipStatus::bi_default(),
+            RelationshipStatus::bi_test(0x11, 0x22),
             receiver_vid.identifier(),
         )
         .unwrap();
@@ -949,7 +952,6 @@ mod tests {
             .seal_message(
                 &topology.sender_vid,
                 &topology.receiver_vid,
-                None,
                 b"direct-open-flow",
             )
             .unwrap();

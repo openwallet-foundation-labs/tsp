@@ -24,11 +24,15 @@ messages to the final recipient `b`. This can be achieved in two ways:
 When this set up is done, the only thing left to send a routed message from `a` to `b`, is to set up a route.
 
 ```sh
-tsp -w a set-route b VID-FOR-P,VID-FOR-Q,VID-FOR-Q2
+tsp -w a set-route b VID-FOR-P,VID-FOR-Q,VID-FOR-B2
 ```
 
-Note, this requires `a` to have verified the VID of `p`, but it does not need to have verified the VID's `q` or `q2`. In fact, if
-the VID `q2` is an inner vid for a nested relationship, `a` will not have a way to verify it at all.
+The last entry is the *exit* of the route: `b`'s own VID at its intermediary `q`, not a VID of `q` itself
+(spec 5.3.3). `q` delivers the message over the relationship it holds with that VID, which is how it knows
+where the last hop goes.
+
+Note, this requires `a` to have verified the VID of `p`, but it does not need to have verified the VID's `q` or `b2`. In fact, if
+the VID `b2` is an inner vid for a nested relationship, `a` will not have a way to verify it at all.
 
 When this route is set up properly, sending a message proceeds as normal:
 
@@ -81,8 +85,16 @@ tsp -w b print b | xargs tsp -w a verify --alias b
 
 The sender `a` also resolves and verifies the first intermediary `p`, and requests a relationship with this intermediary:
 
+Each intermediary publishes its own identifier on its home page, so read them from there rather
+than copying them from here:
+
 ```sh
-tsp -w a verify did:web:p.teaspoon.world --alias p
+DID_P=  # the identifier shown at https://p.teaspoon.world/
+DID_Q=  # the identifier shown at https://q.teaspoon.world/
+```
+
+```sh
+tsp -w a verify "$DID_P" --alias p
 tsp -w a request -s a -r p --wait
 ```
 
@@ -91,7 +103,7 @@ Our public demo intermediaries are configured to accept all incoming relationshi
 The receiver `b` resolves and verifies the second intermediary `q`, and requests a relationship with this second intermediary:
 
 ```sh
-tsp -w b verify did:web:q.teaspoon.world --alias q
+tsp -w b verify "$DID_Q" --alias q
 tsp -w b request -s b -r q --wait
 ```
 
@@ -105,10 +117,10 @@ echo "DID_Q2=$DID_Q2"
 
 ## Send a message
 
-Now that we have set up all the relations between the nodes, we can configure the route for messages that are to be delivered from `a` to `b`. We will route these messages via `p` to `q`, and then `q2` will drop it off at `b`:
+Now that we have set up all the relations between the nodes, we can configure the route for messages that are to be delivered from `a` to `b`. We will route these messages via `p` to `q`, which drops them off at `b`'s nested VID `b2`:
 
 ```sh
-tsp -w a set-route b "p,did:web:q.teaspoon.world,$DID_Q2"
+tsp -w a set-route b "p,$DID_Q,$DID_B2"
 ```
 
 Sending the routed message is trivial, now we have configured the relations and route.
@@ -128,29 +140,30 @@ echo "Hi b" | tsp --verbose -w a send -s a -r b
 Output:
 
 ```
- INFO tsp::async_store: sending message to https://p.teaspoon.world/transport/did:
- web:p.teaspoon.world
+ INFO tsp_sdk::async_store: sending message to https://p.teaspoon.world/transport/did:web:p.teaspoon.world
 CESR-encoded message:
--EABXAAAXAEB9VIDAAAdAAAZGlkOndlYjpyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tOm9wZW53YWxsZXQ
-tZm91bmRhdGlvbi1sYWJzOnRzcDptYWluOmV4YW1wbGVzOnRlc3Q6YQ7VIDAAAIZGlkOndlYjpwLnRlYXN
-wb29uLndvcmxk4CDBRPjQTLqVsN-QrMR5eVGgSO0Q6V491-GKJP7imcKJheAT1_madw21FHK49oJvINRYt
-1GZX4dtZGCC5gB1EZCLZpqQJjzeuwQavXYUFBY3z3ygNw-780r4fltOtjVG0hybe8Y5YOf4rv1U_xD-Ajm
-xbw7rOlJq7AWojJq2FbWQ6Ho2z90KUwQ8ki-hyYCE1woCDM1TAQu3Pvt8XsrRqr5TpeExIlh1Jx_vlt-rW
-Dny4nbBv7SWHEovVBT7XXtVPWpEnBiBzm2mBsJ5CZsDy-EjXVONCEadUwDwwYaU8djEYt8pBHag8IGlpVZ
-IUN2dtZyFhRKmvq7FsEcqSCpiSZR7jXiHNjghqUCBFwAIqwnAr1npW15fg7lREpiLTkcs8oSSZvmEhLaFT
-BvhnhFvCzTP-CckvhFXOsUpK7Q5u3KBRFReEQYb32CfEq44yaKRVUAVknXJmS_HBOWv-VbnbgR-8q8TL5z
-h2rOH2pGM8sQVlweWBg32JmACWzdOw2jCF17Ey4AYFQkYbiz8extJuAxg22aoE30azL-RU0I0bGW-ZCqLx
-mK8jLH_zoYZ35nTQfwZYlFfe-cbempzw9gS685RloYBSKq9kdPIsV7h3DW-vBwEP6_ttaS024F2ZW90KMq
-vQ3pRNr5pjmxWshlerIBjRcpTO7IjIYN6jU1Vg8-akcukC0J8vu8GJYZhu5n16DYAAcqQkmKmsTBD8OirJ
-FldrEVWc1F5Bu0zd3FJuYq7K5OdQgw4JFrRPUgeVNIRCsdElnQP0BAYPtmDPJDfhx_-ab02_y2yD1FrhXE
-SrBAkd6evt2M2Z2ugVyVwxTU-pVVXlcTa5p_-N05lWEZ0bdUBdR4upMUDA
- INFO tsp: sent message (5 bytes) fromdid:web:raw.githubusercontent.com:openwallet
- -foundation-labs:tsp:main:examples:test:a to did:web:raw.githubusercontent.com:
- openwallet-foundation-labs:tsp:main:examples:test:b
+-ECIYTSP-ABA6BANAABkaWQ6d2ViOmRpZC50ZWFzcG9vbi53b3JsZDplbmRwb2ludDph4BAIZGlk
+OndlYjpwLnRlYXNwb29uLndvcmxk4FBuPZAdi6qIWSbNfTGyivu7yQwt41JJrwKW7FltEEStjDY0
+cdKI1VtNjC3vV7w08a9kxKKNMBO92oyruf-
+bquXTDjKpYFPIMSOS7jX1P6xvmmES8qp7UXApBzhNw-
+yIReDBbICO6e12snSFuk2jfdz-1Y0RL0M4wVudlmpVvMgyH0M1qOzkVurlUBIlHFCb-vtw1G7wV-
+JUC8fe3Dtm-1IAPIIaB8W6F5xyKZybgq0eH5h90AUInKsADa7qI1ZmaKLgQKraFGmn5KiaSVI534
+s85wkj15gEPLN80sZ-
+EDTvIUWUodZVtoLVWG24SxeUQeEElyKhOfYUNBMyRxZQ28dl0ysbGxVjmB0LV1dZ_LfH-go-JMzg
+OfUxSph1RUh4mgyOwdgIh855Y4V8A59URG4-TH3s8wy2cSkwXwTnFIZVtgJ3_Xla9uA5E2o6-CAX
+-KAWBACkD2skOFVIiKrg8wCoOnzk2pLN0rwr5l8VW-4FikYFAcgge8YcJTyBw8bp4vyxugYuHfRb
+5Gf_Vi-6MY8z6KoE
+ INFO tsp: sent message (5 bytes) from did:web:did.teaspoon.world:endpoint:a to did:web:did.teaspoon.world:endpoint:b
 ```
 
 Note that the message is longer than a direct mode message, since the ciphertext contains another
 TSP message.
+
+Note also who the envelope names. `VID_sndr` is `a` and `VID_rcvr` is the *first intermediary* —
+not `b`. The rest of the route and the message for `b` are inside the
+ciphertext, which `p` decrypts to learn only the next hop and an opaque blob to forward. No
+intermediary sees the message, and none of them sees the whole route. See
+[CESR encoding](../cesr.md) for the codes.
 
 The `cli-demo-routed-external.sh` script in the `examples/` folder performs all the previously described steps automatically. One small difference is that in the script `a` and `b` use <https://demo.teaspoon.world/> for transport, while the identities from the step-by-step tutorial above are configured to use intermediaries directly.
 

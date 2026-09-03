@@ -8,16 +8,24 @@ const {
 
 const CryptoType = {
     Plaintext: 0,
-    HpkeAuth: 1,
-    HpkeEssr: 2,
-    NaclAuth: 3,
-    NaclEssr: 4,
+    HpkeBase: 1,
+    SealedBox: 2,
 };
 
 const SignatureType = {
     NoSignature: 0,
     Ed25519: 1,
 }
+
+// How an upper layer's own payload is protected. TSP's control messages are
+// always encrypted, whatever this says. SignedOnly is only meaningful under
+// nesting: the enclosing envelope is confidential either way, but the payload's
+// confidentiality then rests on the enclosing relationship's keys rather than
+// its own (spec 4).
+const PayloadConfidentiality = {
+    Confidential: 0,
+    SignedOnly: 1,
+};
 
 class Store {
     constructor() {
@@ -40,7 +48,11 @@ class Store {
         return this.inner.set_route_for_vid(...args);
     }
 
-    seal_message(sender, receiver, nonconfidential_data, message) {
+    // `confidentiality` is optional and defaults to encrypt-and-sign; pass
+    // PayloadConfidentiality.SignedOnly to sign a nested payload without
+    // encrypting it, which leaves its confidentiality resting on the enclosing
+    // relationship's keys rather than its own (spec 4).
+    seal_message(sender, receiver, message, confidentiality) {
         let byteArray;
         
         if (typeof message === 'string') {
@@ -52,7 +64,7 @@ class Store {
             throw new TypeError("Message must be a string or a Uint8Array");
         }
 
-        return this.inner.seal_message(sender, receiver, nonconfidential_data, byteArray);
+        return this.inner.seal_message(sender, receiver, byteArray, confidentiality);
     }
 
     make_relationship_request(...args) {
@@ -73,6 +85,10 @@ class Store {
 
     make_relationship_cancel(...args) {
         return this.inner.make_relationship_cancel(...args);
+    }
+
+    make_relationship_cancel_reply(...args) {
+        return this.inner.make_relationship_cancel_reply(...args);
     }
 
     make_nested_relationship_accept(...args) {
@@ -100,10 +116,10 @@ class ReceivedTspMessage {
                 return new GenericMessage(
                     msg.sender,
                     msg.receiver,
-                    msg.nonconfidential_data,
                     new Uint8Array(msg.message),
                     msg.crypto_type,
-                    msg.signature_type
+                    msg.signature_type,
+                    msg.enclosing_crypto_type
                 );
 
             case 1: 
@@ -133,6 +149,7 @@ class ReceivedTspMessage {
                 return new CancelRelationship(
                     msg.sender,
                     msg.receiver,
+                    msg.thread_id,
                 );
 
             case 4: 
@@ -144,6 +161,19 @@ class ReceivedTspMessage {
                     msg.opaque_payload,
                 );
 
+            case 6:
+                return new ControlMessage(
+                    msg.sender,
+                    msg.receiver,
+                    new Uint8Array(msg.message),
+                    msg.crypto_type,
+                    msg.signature_type,
+                    msg.enclosing_crypto_type
+                );
+
+            case 7:
+                return new PaddingMessage(msg.sender, msg.receiver);
+
             case 5: 
                 throw new Error("todo!");
 
@@ -154,14 +184,34 @@ class ReceivedTspMessage {
 }
 
 class GenericMessage extends ReceivedTspMessage {
-    constructor(sender, receiver, nonconfidential_data, message, crypto_type, signature_type) {
+    // `enclosing_crypto_type` is how the message this one arrived inside was
+    // encrypted, or undefined when it was not nested. A message whose
+    // crypto_type is Plaintext but which has an enclosing type was still
+    // confidential on the wire, under the enclosing relationship's keys rather
+    // than its own (spec 4).
+    constructor(sender, receiver, message, crypto_type, signature_type, enclosing_crypto_type) {
         super();
         this.sender = sender;
         this.receiver = receiver;
-        this.nonconfidential_data = nonconfidential_data;
         this.message = message;
         this.crypto_type = crypto_type;
         this.signature_type = signature_type;
+        this.enclosing_crypto_type = enclosing_crypto_type;
+    }
+}
+
+// An upper layer's own control payload (XCTL). Carried opaquely, exactly as a
+// GenericMessage is; the separate class exists so an upper layer can route its
+// control plane separately from its data plane.
+class ControlMessage extends GenericMessage {}
+
+// A padding message (XPAD). It carries nothing — it exists so that traffic
+// analysis sees messages that mean nothing. Discard it.
+class PaddingMessage extends ReceivedTspMessage {
+    constructor(sender, receiver) {
+        super();
+        this.sender = sender;
+        this.receiver = receiver;
     }
 }
 
@@ -193,10 +243,11 @@ class AcceptRelationship extends ReceivedTspMessage {
 }
 
 class CancelRelationship extends ReceivedTspMessage {
-    constructor(sender, receiver) {
+    constructor(sender, receiver, thread_id) {
         super();
         this.sender = sender;
         this.receiver = receiver;
+        this.thread_id = thread_id;
     }
 }
 
@@ -214,6 +265,7 @@ class ForwardRequest extends ReceivedTspMessage {
 module.exports = {
     CryptoType,
     SignatureType,
+    PayloadConfidentiality,
     RelationshipForm,
     RelationshipDelivery,
     Store,
@@ -221,6 +273,8 @@ module.exports = {
     Vid,
     ReceivedTspMessage,
     GenericMessage,
+    ControlMessage,
+    PaddingMessage,
     AcceptRelationship,
     CancelRelationship,
     RequestRelationship,

@@ -43,6 +43,16 @@ fn create_wallet(alias: &str, did_type: &str) -> String {
     random_name
 }
 
+/// The short form of a `did:peer:4`, which is how a VID is known once its
+/// document has been seen. `print` emits the long form, since that is what
+/// introduces a VID to someone who has never seen it.
+fn short_form(did: &str) -> String {
+    match did.split(':').collect::<Vec<_>>()[..] {
+        ["did", "peer", hash, _document] => format!("did:peer:{hash}"),
+        _ => did.to_string(),
+    }
+}
+
 fn create_peer_wallet(alias: &str, tcp_addr: &str) -> String {
     let mut cmd: Command = Command::new(cargo_bin!("tsp"));
     let wallet_name = format!("test_wallet_{}", random_string(8));
@@ -530,7 +540,7 @@ fn test_parallel_request_and_accept_roundtrip_over_cli() {
         String::from_utf8_lossy(&outer_receive.stderr)
     );
     let (outer_sender, outer_thread_id) = parse_relationship_stdout(&outer_receive.stdout);
-    assert_eq!(outer_sender, alice_did);
+    assert_eq!(outer_sender, short_form(&alice_did));
 
     let outer_accept_receive = {
         let tsp_bin = tsp_bin.to_path_buf();
@@ -628,7 +638,7 @@ fn test_parallel_request_and_accept_roundtrip_over_cli() {
     );
     let (received_new_vid, parallel_thread_id) =
         parse_relationship_stdout(&parallel_receive.stdout);
-    assert_eq!(received_new_vid, alice_alt_did);
+    assert_eq!(received_new_vid, short_form(&alice_alt_did));
 
     let parallel_accept = StdCommand::new(tsp_bin)
         .args([
@@ -660,7 +670,7 @@ fn test_parallel_request_and_accept_roundtrip_over_cli() {
         String::from_utf8_lossy(&parallel_request.stderr)
     );
     assert!(
-        String::from_utf8_lossy(&parallel_request.stdout).contains(&bob_alt_did),
+        String::from_utf8_lossy(&parallel_request.stdout).contains(&short_form(&bob_alt_did)),
         "parallel request output did not include bob-alt did: stdout={}, stderr={}",
         String::from_utf8_lossy(&parallel_request.stdout),
         String::from_utf8_lossy(&parallel_request.stderr)
@@ -669,7 +679,7 @@ fn test_parallel_request_and_accept_roundtrip_over_cli() {
     let alice_store = load_wallet(&alice_wallet);
     assert!(matches!(
         alice_store
-            .get_relation_status_for_vid_pair("alice-alt", &bob_alt_did)
+            .get_relation_status_for_vid_pair("alice-alt", &short_form(&bob_alt_did))
             .unwrap(),
         RelationshipStatus::Bidirectional { .. }
     ));
@@ -677,7 +687,7 @@ fn test_parallel_request_and_accept_roundtrip_over_cli() {
     let bob_store = load_wallet(&bob_wallet);
     assert!(matches!(
         bob_store
-            .get_relation_status_for_vid_pair("bob-alt", &alice_alt_did)
+            .get_relation_status_for_vid_pair("bob-alt", &short_form(&alice_alt_did))
             .unwrap(),
         RelationshipStatus::Bidirectional { .. }
     ));

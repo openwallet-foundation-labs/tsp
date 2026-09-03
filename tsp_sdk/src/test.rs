@@ -35,7 +35,6 @@ async fn test_direct_mode() {
         .send(
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
-            Some(b"extra non-confidential data"),
             b"hello world",
         )
         .await
@@ -100,7 +99,6 @@ async fn test_large_messages() {
             .send(
                 "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
                 "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
-                None,
                 sent_message.as_bytes(),
             )
             .await
@@ -230,8 +228,10 @@ async fn test_nested_mode() {
     alice_db
         .set_parent_for_vid(nested_alice_vid.identifier(), Some(alice_vid.identifier()))
         .unwrap();
+    // a nested VID is introduced by the form that carries its verification
+    // material; its short form is what both sides use once it is known
     alice_db
-        .verify_vid(nested_bob_vid.identifier(), None)
+        .verify_vid(&crate::vid::introduction_identifier(&nested_bob_vid), None)
         .await
         .unwrap();
     alice_db
@@ -246,7 +246,10 @@ async fn test_nested_mode() {
         .unwrap();
 
     bob_db
-        .verify_vid(nested_alice_vid.identifier(), None)
+        .verify_vid(
+            &crate::vid::introduction_identifier(&nested_alice_vid),
+            None,
+        )
         .await
         .unwrap();
     bob_db
@@ -258,7 +261,6 @@ async fn test_nested_mode() {
         .send(
             nested_alice_vid.identifier(),
             nested_bob_vid.identifier(),
-            Some(b"extra non-confidential data"),
             b"hello nested world",
         )
         .await
@@ -288,6 +290,91 @@ async fn test_nested_mode() {
     );
 
     assert_eq!(message.iter().as_slice(), b"hello nested world");
+}
+
+/// A nested message's inner envelope must be encrypted unless the caller asks
+/// otherwise.
+///
+/// This looks at the bytes rather than at what `receive` reports. The receive
+/// path rewrites a plaintext inner message's `crypto_type` to the outer one's
+/// when the inner sender is a child of the outer sender, so a test that reads
+/// `message_type` cannot tell an encrypted inner message from a signed-only
+/// one — which is how a signed-only default went unnoticed.
+#[tokio::test]
+#[serial_test::serial(clean_wallet)]
+async fn nested_inner_message_is_encrypted_unless_the_caller_asks_otherwise() {
+    use crate::crypto::PayloadConfidentiality;
+
+    let alice_db = crate::test_utils::create_test_store();
+    let alice_vid = create_vid_from_file("../examples/test/alice/piv.json").await;
+    alice_db.add_private_vid(alice_vid.clone(), None).unwrap();
+    let bob_vid = create_vid_from_file("../examples/test/bob/piv.json").await;
+    alice_db
+        .add_verified_vid(bob_vid.vid().clone(), None)
+        .unwrap();
+
+    let nested_alice = OwnedVid::new_did_peer(alice_vid.endpoint().clone());
+    alice_db
+        .add_private_vid(nested_alice.clone(), None)
+        .unwrap();
+    alice_db
+        .set_parent_for_vid(nested_alice.identifier(), Some(alice_vid.identifier()))
+        .unwrap();
+
+    let nested_bob = OwnedVid::new_did_peer(bob_vid.endpoint().clone());
+    alice_db
+        .add_verified_vid(nested_bob.vid().clone(), None)
+        .unwrap();
+    alice_db
+        .set_parent_for_vid(nested_bob.identifier(), Some(bob_vid.identifier()))
+        .unwrap();
+    alice_db
+        .set_relation_and_status_for_vid(
+            nested_bob.identifier(),
+            crate::RelationshipStatus::Unrelated,
+            nested_alice.identifier(),
+        )
+        .unwrap();
+
+    // the inner message is the payload of the outer one, so opening the outer
+    // message with bob's key is what puts the inner envelope in view
+    let inner_crypto_type = |message: &[u8]| {
+        let mut message = message.to_vec();
+        let (payload, ..) = crate::crypto::open(&bob_vid, &alice_vid, &mut message).unwrap();
+        let crate::definitions::Payload::NestedMessage(inner) = payload else {
+            panic!("the outer payload is not a nested message")
+        };
+        let parts = crate::cesr::open_message_into_parts(inner).unwrap();
+
+        parts.crypto_type
+    };
+
+    let (_, default) = alice_db
+        .seal_message(
+            nested_alice.identifier(),
+            nested_bob.identifier(),
+            b"hello nested world",
+        )
+        .unwrap();
+    assert_ne!(
+        inner_crypto_type(&default),
+        crate::cesr::CryptoType::Plaintext,
+        "the inner message must be encrypted by default"
+    );
+
+    let (_, signed_only) = alice_db
+        .seal_message_with_confidentiality(
+            nested_alice.identifier(),
+            nested_bob.identifier(),
+            b"hello nested world",
+            PayloadConfidentiality::SignedOnly,
+        )
+        .unwrap();
+    assert_eq!(
+        inner_crypto_type(&signed_only),
+        crate::cesr::CryptoType::Plaintext,
+        "a caller that asks for signed-only must still get it (spec 4)"
+    );
 }
 
 #[tokio::test]
@@ -356,7 +443,6 @@ async fn test_routed_mode() {
         .send(
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
-            None,
             b"hello self (via bob)",
         )
         .await
@@ -472,17 +558,19 @@ async fn test_routed_mode() {
     );
     assert!(route.is_empty());
 
-    // test3: alice is the recipient (using "bob" as the 'final hop')
+    // test3: alice is the recipient; the exit entry of the hop list is her own
+    // VID at this intermediary (spec 5.3.3), and bob delivers over the
+    // relationship he holds with it
     bob_db
         .set_relation_and_status_for_vid(
-            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
-            RelationshipStatus::Unrelated,
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
+            RelationshipStatus::Unrelated,
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
         )
         .unwrap();
     bob_db
         .forward_routed_message(
-            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
+            "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
             Vec::<&[u8]>::new(),
             &opaque_payload,
         )
@@ -537,7 +625,7 @@ async fn attack_failures() {
 
     for i in 0.. {
         let mut faulty_message =
-            crate::crypto::seal(&alice, &bob, None, super::Payload::Content(payload)).unwrap();
+            crate::crypto::seal(&alice, &bob, super::Payload::Content(payload)).unwrap();
 
         if i >= faulty_message.len() {
             break;
@@ -676,7 +764,6 @@ async fn test_unverified_receiver_in_direct_mode() {
         .send(
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
-            Some(b"extra non-confidential data"),
             b"hello world",
         )
         .await
@@ -724,7 +811,7 @@ async fn test_prepopulated_store_import_preserves_dirty_state() {
                 found_reverse_unidirectional += 1;
             }
             RelationshipStatus::Bidirectional { .. } => found_bidirectional += 1,
-            RelationshipStatus::_Controlled | RelationshipStatus::Unrelated => {}
+            RelationshipStatus::Unrelated => {}
         }
     }
 
@@ -786,7 +873,7 @@ async fn test_persisted_store_roundtrip_reopens_dirty_wallet() {
         .unwrap();
 
     let (_endpoint, sealed_message) = reopened_store
-        .seal_message(&local_vid, &receiver_vid, None, b"persisted-wallet-message")
+        .seal_message(&local_vid, &receiver_vid, b"persisted-wallet-message")
         .unwrap();
     assert!(!sealed_message.is_empty());
 }
@@ -962,7 +1049,6 @@ async fn test_routed_delivery_after_reopen_uses_persisted_route_metadata() {
         .send(
             &topology.sender_vid,
             &topology.receiver_vid,
-            None,
             b"dirty-routed-message",
         )
         .await
@@ -980,7 +1066,8 @@ async fn test_routed_delivery_after_reopen_uses_persisted_route_metadata() {
     };
     assert_eq!(forwarded_sender, topology.sender_vid);
     assert_eq!(forwarded_receiver, topology.intermediary_vid);
-    assert_eq!(next_hop, topology.intermediary_vid);
+    // the exit entry names the receiver's own VID at the intermediary (spec 5.3.3)
+    assert_eq!(next_hop, topology.receiver_vid);
     assert!(route.is_empty());
 
     let intermediary = persist_reopen_cycle(&intermediary, &fixture_intermediary, 1).await;
@@ -1023,7 +1110,6 @@ async fn test_routed_failure_path_after_reopen_keeps_snapshot_stable() {
         .send(
             &topology.sender_vid,
             &topology.receiver_vid,
-            None,
             b"dirty-routed-message",
         )
         .await
@@ -1086,7 +1172,6 @@ async fn test_high_entropy_dirty_store_multi_reopen_consistency() {
         .seal_message(
             &seed.local_vid,
             &seed.bidirectional_remote_vid,
-            None,
             b"high-entropy-persisted-message",
         )
         .unwrap();

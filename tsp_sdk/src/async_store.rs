@@ -1,4 +1,6 @@
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
 
 use crate::{
     ExportVid, OwnedVid, PrivateVid, RelationshipStatus,
@@ -37,20 +39,198 @@ use url::Url;
 ///     let result = db.send(
 ///         "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
 ///         "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
-///         Some(b"extra non-confidential data"),
 ///         b"hello world",
 ///     ).await;
 /// }
 /// ```
+/// Local policy for when a peer's VID is re-resolved to obtain its current key
+/// state (spec 7.4.2). It applies to VID types whose key state the endpoint
+/// resolves for itself; where the VID implementation tracks key state
+/// continuously, resolution returns current state and these bounds do no harm.
+///
+/// The thresholds are a local choice: endpoints need not agree on them, and
+/// they are not communicated.
+#[derive(Clone, Copy, Debug)]
+pub struct KeyStatePolicy {
+    /// Re-resolve a peer's VID before acting on a message that arrives after a
+    /// silence longer than this. A peer that has been silent may have rotated
+    /// its keys without the endpoint having had any occasion to observe it, and
+    /// this bounds how long such a change may remain unobserved. `None`
+    /// disables the check.
+    pub re_verification_threshold: Option<Duration>,
+    /// The shortest interval between two resolutions of the same peer's VID.
+    /// Re-resolution can be provoked by messages that have not been
+    /// authenticated, so the rate at which any one peer is resolved is bounded.
+    pub resolution_rate_limit: Duration,
+}
+
+impl Default for KeyStatePolicy {
+    fn default() -> Self {
+        Self {
+            re_verification_threshold: Some(Duration::from_secs(24 * 60 * 60)),
+            resolution_rate_limit: Duration::from_secs(60),
+        }
+    }
+}
+
+/// When each peer was last heard from and last resolved, which is what the
+/// thresholds in [KeyStatePolicy] are measured against.
+#[derive(Default)]
+struct KeyStateTracker {
+    last_seen: HashMap<String, Instant>,
+    last_resolved: HashMap<String, Instant>,
+    /// Peers whose key state this endpoint is not currently relying on, and
+    /// why. Spec 3.7: an endpoint suspends reliance when it cannot confirm a
+    /// peer's key state, or when what it obtains conflicts with what it holds
+    /// rather than extending it, and accepts no message under that key state —
+    /// including one that would otherwise verify — until it is confirmed.
+    unconfirmed: HashMap<String, KeyStateDoubt>,
+}
+
+/// Why an endpoint is not relying on a peer's key state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KeyStateDoubt {
+    /// The VID could not be resolved, so its current key state is unknown.
+    /// Spec 11.2 calls this common and usually transient.
+    Unconfirmed,
+    /// Resolution returned key state that replaces what was held rather than
+    /// continuing it. Spec 11.2 treats this as evidence of compromise.
+    Conflicting,
+}
+
+impl std::fmt::Display for KeyStateDoubt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeyStateDoubt::Unconfirmed => write!(f, "its key state could not be confirmed"),
+            KeyStateDoubt::Conflicting => {
+                write!(
+                    f,
+                    "the key state obtained conflicts with the key state held"
+                )
+            }
+        }
+    }
+}
+
 #[derive(Default, Clone)]
 pub struct AsyncSecureStore {
     inner: SecureStore,
+    key_state_policy: Arc<RwLock<KeyStatePolicy>>,
+    key_state: Arc<RwLock<KeyStateTracker>>,
 }
 
 impl AsyncSecureStore {
     /// Create a new and empty store
     pub fn new() -> Self {
         Default::default()
+    }
+
+    /// Set the policy for re-resolving peers' key state; see [KeyStatePolicy]
+    pub fn set_key_state_policy(&self, policy: KeyStatePolicy) -> Result<(), Error> {
+        *self.key_state_policy.write()? = policy;
+
+        Ok(())
+    }
+
+    /// The current key-state policy; see [KeyStatePolicy]
+    pub fn key_state_policy(&self) -> Result<KeyStatePolicy, Error> {
+        Ok(*self.key_state_policy.read()?)
+    }
+
+    /// Whether this peer may be resolved now, per the policy's rate limit. When
+    /// it may, the attempt is recorded, so a caller that asks must resolve.
+    fn claim_resolution_slot(&self, vid: &str) -> Result<bool, Error> {
+        let rate_limit = self.key_state_policy()?.resolution_rate_limit;
+        let mut key_state = self.key_state.write()?;
+
+        if let Some(last) = key_state.last_resolved.get(vid)
+            && last.elapsed() < rate_limit
+        {
+            return Ok(false);
+        }
+        key_state
+            .last_resolved
+            .insert(vid.to_string(), Instant::now());
+
+        Ok(true)
+    }
+
+    /// Whether this peer has been silent for longer than the re-verification
+    /// threshold, so its key state should be refreshed before we act on it.
+    fn silent_beyond_threshold(&self, vid: &str) -> Result<bool, Error> {
+        let Some(threshold) = self.key_state_policy()?.re_verification_threshold else {
+            return Ok(false);
+        };
+
+        Ok(match self.key_state.read()?.last_seen.get(vid) {
+            Some(last_seen) => last_seen.elapsed() > threshold,
+            // the rule is about acting after an observed silence; with no
+            // record of this peer there is no silence to measure, and
+            // resolving every peer on startup would make the cost of a restart
+            // grow with the size of the wallet. Verifying a VID records it, so
+            // this is the case of a wallet loaded from storage.
+            None => false,
+        })
+    }
+
+    /// Stop relying on this peer's key state until it can be confirmed
+    /// (spec 3.7). Returns the doubt, for reporting.
+    fn suspend_key_state(&self, vid: &str, doubt: KeyStateDoubt) -> Result<KeyStateDoubt, Error> {
+        debug!("suspending reliance on the key state of {vid}: {doubt}");
+        self.key_state
+            .write()?
+            .unconfirmed
+            .insert(vid.to_string(), doubt);
+
+        Ok(doubt)
+    }
+
+    /// Whether this endpoint is currently declining to rely on a peer's key
+    /// state; see [KeyStateDoubt]
+    pub fn key_state_doubt(&self, vid: &str) -> Result<Option<KeyStateDoubt>, Error> {
+        Ok(self.key_state.read()?.unconfirmed.get(vid).copied())
+    }
+
+    fn confirm_key_state(&self, vid: &str) -> Result<(), Error> {
+        self.key_state.write()?.unconfirmed.remove(vid);
+
+        Ok(())
+    }
+
+    fn record_seen(&self, vid: &str) -> Result<(), Error> {
+        self.key_state
+            .write()?
+            .last_seen
+            .insert(vid.to_string(), Instant::now());
+
+        Ok(())
+    }
+
+    /// Try to lift a suspension by resolving the peer again. Returns whether
+    /// the key state is now confirmed; a conflicting one leaves the suspension
+    /// in place, so this can only clear a suspension the peer has resolved.
+    async fn reconfirm_key_state(&self, vid: &str) -> Result<bool, Error> {
+        match self.refresh_key_state(vid).await {
+            Ok(true) => Ok(self.key_state_doubt(vid)?.is_none()),
+            // rate limited, or still unreachable
+            Ok(false) | Err(_) => Ok(false),
+        }
+    }
+
+    /// Re-resolve a peer's VID to refresh its key state, subject to the rate
+    /// limit. Returns whether a resolution actually happened.
+    async fn refresh_key_state(&self, vid: &str) -> Result<bool, Error> {
+        if !self.claim_resolution_slot(vid)? {
+            debug!("not re-resolving {vid}: rate limited");
+            return Ok(false);
+        }
+
+        let options = VerifyVidOptions {
+            resolution_context: self.get_resolution_context(vid)?,
+        };
+        self.verify_vid_with_options(vid, None, options).await?;
+
+        Ok(true)
     }
 
     /// Export the wallet to serializable default types
@@ -169,7 +349,34 @@ impl AsyncSecureStore {
         let (verified_vid, metadata) = crate::vid::verify_vid_with_options(vid, options).await?;
 
         let verified_vid_id = verified_vid.identifier().to_string();
+
+        // key state that replaces what is held rather than continuing it is
+        // evidence of compromise, not a rotation to adopt (spec 3.7, 11.2);
+        // the held state is kept and reliance on it suspended
+        if let Ok(held) = self.inner.get_verified_vid(&verified_vid_id) {
+            let held_metadata = self.inner.metadata_for_vid(&verified_vid_id)?;
+            if !crate::vid::extends_held_key_state(
+                &*held,
+                held_metadata.as_ref(),
+                &verified_vid,
+                metadata.as_ref(),
+            ) {
+                self.suspend_key_state(&verified_vid_id, KeyStateDoubt::Conflicting)?;
+
+                return Err(Error::ConflictingKeyState(verified_vid_id));
+            }
+        }
+
         self.inner.add_verified_vid(verified_vid, metadata)?;
+        self.confirm_key_state(&verified_vid_id)?;
+
+        // resolving is how key state is confirmed: this peer's state is fresh
+        // as of now, for both of the policy's thresholds
+        self.record_seen(&verified_vid_id)?;
+        self.key_state
+            .write()?
+            .last_resolved
+            .insert(verified_vid_id.clone(), Instant::now());
 
         if let Some(context) = resolution_context {
             self.register_resolution_context(verified_vid_id.clone(), context)?;
@@ -234,11 +441,23 @@ impl AsyncSecureStore {
         &self,
         sender: &str,
         receiver: &str,
-        nonconfidential_data: Option<&[u8]>,
         message: &[u8],
     ) -> Result<(Url, Vec<u8>), Error> {
+        self.inner.seal_message(sender, receiver, message)
+    }
+
+    /// Seal a TSP message, choosing how the payload itself is protected; see
+    /// [`crate::crypto::PayloadConfidentiality`] and
+    /// [`SecureStore::seal_message_with_confidentiality`].
+    pub fn seal_message_with_confidentiality(
+        &self,
+        sender: &str,
+        receiver: &str,
+        message: &[u8],
+        confidentiality: crate::crypto::PayloadConfidentiality,
+    ) -> Result<(Url, Vec<u8>), Error> {
         self.inner
-            .seal_message(sender, receiver, nonconfidential_data, message)
+            .seal_message_with_confidentiality(sender, receiver, message, confidentiality)
     }
 
     /// Send a TSP message given earlier resolved VIDs
@@ -248,7 +467,6 @@ impl AsyncSecureStore {
     ///
     /// * `sender`               - A sender VID
     /// * `receiver`             - A receiver VID
-    /// * `nonconfidential_data` - Optional extra non-confidential data
     /// * `payload`              - The raw message payload as byte slice
     ///
     /// # Example
@@ -267,16 +485,12 @@ impl AsyncSecureStore {
     ///     let sender = "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob";
     ///     let receiver = "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice";
     ///
-    ///     let result = db.send(sender, receiver, None, b"hello world").await;
+    ///     let result = db.send(sender, receiver, b"hello world").await;
     /// }
     /// ```
-    pub async fn send(
-        &self,
-        sender: &str,
-        receiver: &str,
-        nonconfidential_data: Option<&[u8]>,
-        message: &[u8],
-    ) -> Result<(), Error> {
+    pub async fn send(&self, sender: &str, receiver: &str, message: &[u8]) -> Result<(), Error> {
+        // the first message of a relationship must carry the relationship
+        // forming fields (spec 3.6), so form the relationship first
         match self.inner.relation_status_for_vid_pair(sender, receiver) {
             Ok(relation) => {
                 if matches!(relation, RelationshipStatus::Unrelated) {
@@ -291,9 +505,7 @@ impl AsyncSecureStore {
             Err(e) => return Err(e),
         };
 
-        let (endpoint, message) =
-            self.inner
-                .seal_message(sender, receiver, nonconfidential_data, message)?;
+        let (endpoint, message) = self.inner.seal_message(sender, receiver, message)?;
 
         tracing::info!("sending message to {endpoint}");
 
@@ -306,7 +518,6 @@ impl AsyncSecureStore {
         &self,
         sender: &str,
         receiver: &str,
-        nonconfidential_data: Option<&[u8]>,
         message: &[u8],
         crypto_type: CryptoType,
     ) -> Result<(), Error> {
@@ -329,17 +540,117 @@ impl AsyncSecureStore {
             Err(e) => return Err(e),
         };
 
-        let (endpoint, message) = self.inner.seal_message_with_crypto_type(
-            sender,
-            receiver,
-            nonconfidential_data,
-            message,
-            crypto_type,
-        )?;
+        let (endpoint, message) =
+            self.inner
+                .seal_message_with_crypto_type(sender, receiver, message, crypto_type)?;
 
         tracing::info!("sending message to {endpoint}");
 
         crate::transport::send_message(&endpoint, &message).await?;
+
+        Ok(())
+    }
+
+    /// Send a message, choosing how the payload itself is protected.
+    ///
+    /// [`crate::crypto::PayloadConfidentiality::Confidential`] is what
+    /// [`Self::send`] does. `SignedOnly` signs the payload without encrypting
+    /// it, which is only meaningful under nesting: the outer envelope is
+    /// confidential either way, so nothing goes over the wire in the clear, but
+    /// the payload's confidentiality then rests on the outer relationship's
+    /// keys rather than the inner relationship's (spec 4).
+    pub async fn send_with_confidentiality(
+        &self,
+        sender: &str,
+        receiver: &str,
+        message: &[u8],
+        confidentiality: crate::crypto::PayloadConfidentiality,
+    ) -> Result<(), Error> {
+        self.send_with(
+            sender,
+            receiver,
+            message,
+            crate::SendOptions {
+                confidentiality,
+                ..Default::default()
+            },
+        )
+        .await
+    }
+
+    /// Send a message, choosing both the cipher suite and how the payload
+    /// itself is protected. The two are independent.
+    pub async fn send_with(
+        &self,
+        sender: &str,
+        receiver: &str,
+        message: &[u8],
+        options: crate::SendOptions<'_>,
+    ) -> Result<(), Error> {
+        self.form_relationship_if_needed(sender, receiver).await?;
+        let (endpoint, message) = self
+            .inner
+            .seal_message_with(sender, receiver, message, options)?;
+
+        tracing::info!("sending message to {endpoint}");
+        crate::transport::send_message(&endpoint, &message).await?;
+
+        Ok(())
+    }
+
+    /// Send an upper layer's own control payload (`XCTL`); see
+    /// [`SecureStore::seal_control_message`].
+    pub async fn send_control_message(
+        &self,
+        sender: &str,
+        receiver: &str,
+        message: &[u8],
+        options: crate::SendOptions<'_>,
+    ) -> Result<(), Error> {
+        self.form_relationship_if_needed(sender, receiver).await?;
+        let (endpoint, message) = self
+            .inner
+            .seal_control_message(sender, receiver, message, options)?;
+
+        tracing::info!("sending control message to {endpoint}");
+        crate::transport::send_message(&endpoint, &message).await?;
+
+        Ok(())
+    }
+
+    /// Send a padding message (`XPAD`), which carries nothing; see
+    /// [`SecureStore::seal_padding_message`].
+    pub async fn send_padding_message(
+        &self,
+        sender: &str,
+        receiver: &str,
+        options: crate::SendOptions<'_>,
+    ) -> Result<(), Error> {
+        self.form_relationship_if_needed(sender, receiver).await?;
+        let (endpoint, message) = self.inner.seal_padding_message(sender, receiver, options)?;
+
+        tracing::info!("sending padding message to {endpoint}");
+        crate::transport::send_message(&endpoint, &message).await?;
+
+        Ok(())
+    }
+
+    /// The first message of a relationship must carry the relationship-forming
+    /// fields (spec 3.6), so form the relationship first when there is none.
+    async fn form_relationship_if_needed(&self, sender: &str, receiver: &str) -> Result<(), Error> {
+        match self.inner.relation_status_for_vid_pair(sender, receiver) {
+            Ok(relation) => {
+                if matches!(relation, RelationshipStatus::Unrelated) {
+                    self.send_relationship_request(sender, receiver, None)
+                        .await?
+                }
+            }
+            Err(Error::Relationship(_)) => {
+                self.send_relationship_request(sender, receiver, None)
+                    .await?
+            }
+            Err(e) => return Err(e),
+        }
 
         Ok(())
     }
@@ -564,6 +875,41 @@ impl AsyncSecureStore {
         Ok(())
     }
 
+    /// Build the reply to a cancellation without transmitting it.
+    ///
+    /// Returns `(endpoint, message)`. Use this instead of
+    /// [`AsyncSecureStore::send_relationship_cancel_reply`] when you need to
+    /// transmit over a custom transport.
+    pub fn make_relationship_cancel_reply(
+        &self,
+        sender: &str,
+        receiver: &str,
+        thread_id: Digest,
+    ) -> Result<(Url, Vec<u8>), Error> {
+        self.inner
+            .make_relationship_cancel_reply(sender, receiver, thread_id)
+    }
+
+    /// Reply to a cancellation of a bidirectional relationship with a `TSP_RFD`
+    /// of our own, echoing the digest the incoming one named (spec 7.3).
+    /// See [`SecureStore::make_relationship_cancel_reply`].
+    pub async fn send_relationship_cancel_reply(
+        &self,
+        sender: &str,
+        receiver: &str,
+        thread_id: Digest,
+    ) -> Result<(), Error> {
+        let (endpoint, message) = self
+            .inner
+            .make_relationship_cancel_reply(sender, receiver, thread_id)?;
+
+        tracing::info!("sending message to {endpoint}");
+
+        crate::transport::send_message(&endpoint, &message).await?;
+
+        Ok(())
+    }
+
     /// Build a nested relationship request message without transmitting it.
     ///
     /// Creates a new nested VID under `parent_sender` for private communication
@@ -721,43 +1067,7 @@ impl AsyncSecureStore {
             Box::pin(messages.then(move |message| {
                 let db_inner = db.clone();
                 let self_inner = self_clone.clone();
-                async move {
-                    let mut message = message?;
-
-                    if let Ok(colored) = crate::cesr::color_format(&message) {
-                        tracing::trace!("CESR-encoded message: {}", colored);
-                    }
-
-                    match db_inner.open_message(&mut message) {
-                        Err(Error::UnverifiedSource(unknown_vid, _)) => {
-                            debug!("Verifying VID: {}", unknown_vid);
-                            let options = VerifyVidOptions {
-                                resolution_context: self_inner
-                                    .get_resolution_context(&unknown_vid)?,
-                            };
-                            self_inner
-                                .verify_vid_with_options(&unknown_vid, None, options)
-                                .await?;
-                            db_inner.open_message(&mut message)
-                        }
-                        Err(Error::Crypto(CryptoError::Verify(vid, _))) => {
-                            debug!("Re-verifying VID: {}", vid);
-                            let options = VerifyVidOptions {
-                                resolution_context: self_inner.get_resolution_context(&vid)?,
-                            };
-                            self_inner
-                                .verify_vid_with_options(&vid, None, options)
-                                .await?;
-                            db_inner.open_message(&mut message)
-                        }
-                        maybe_message => maybe_message,
-                    }
-                    .map(|msg| msg.into_owned())
-                    .map_err(|e| {
-                        tracing::debug!("Message processing error (non-fatal): {}", e);
-                        e
-                    })
-                }
+                async move { self_inner.open_incoming(&db_inner, message?).await }
             }));
 
         Ok((stream, cursor))
@@ -796,51 +1106,116 @@ impl AsyncSecureStore {
 
         let db = self.inner.clone();
         let self_clone = self.clone();
+
         Ok(Box::pin(messages.then(move |message| {
             let db_inner = db.clone();
             let self_inner = self_clone.clone();
-            async move {
-                let mut message = message?;
-
-                if let Ok(colored) = crate::cesr::color_format(&message) {
-                    tracing::trace!("CESR-encoded message: {}", colored);
-                }
-
-                match db_inner.open_message(&mut message) {
-                    Err(Error::UnverifiedSource(unknown_vid, _)) => {
-                        debug!("Verifying VID: {}", unknown_vid);
-                        let options = VerifyVidOptions {
-                            resolution_context: self_inner.get_resolution_context(&unknown_vid)?,
-                        };
-                        self_inner
-                            .verify_vid_with_options(&unknown_vid, None, options)
-                            .await?;
-                        db_inner.open_message(&mut message)
-                    }
-                    Err(Error::UnverifiedVid(unknown_vid)) => {
-                        debug!("Verifying VID: {}", unknown_vid);
-                        self_inner.verify_vid(&unknown_vid, None).await?;
-                        db_inner.open_message(&mut message)
-                    }
-                    Err(Error::Crypto(CryptoError::Verify(vid, _))) => {
-                        debug!("Re-verifying VID: {}", vid);
-                        let options = VerifyVidOptions {
-                            resolution_context: self_inner.get_resolution_context(&vid)?,
-                        };
-                        self_inner
-                            .verify_vid_with_options(&vid, None, options)
-                            .await?;
-                        db_inner.open_message(&mut message)
-                    }
-                    maybe_message => maybe_message,
-                }
-                .map(|msg| msg.into_owned())
-                .map_err(|e| {
-                    tracing::error!("{}", e);
-                    e
-                })
-            }
+            async move { self_inner.open_incoming(&db_inner, message?).await }
         })))
+    }
+
+    /// Open one received message.
+    ///
+    /// A message that fails any verification or validation step is discarded
+    /// silently, which is a rule about the wire: nothing is sent in response,
+    /// since a response would disclose information to whoever sent it (spec
+    /// 3.7). It says nothing about the local caller, so the failure is returned
+    /// and what to make of it is the caller's to decide; it does not end the
+    /// stream, which `Error::ends_stream` lets the caller tell apart.
+    async fn open_incoming(
+        &self,
+        db: &SecureStore,
+        message: BytesMut,
+    ) -> Result<ReceivedTspMessage, Error> {
+        if let Ok(colored) = crate::cesr::color_format(&message) {
+            tracing::trace!("CESR-encoded message: {}", colored);
+        }
+
+        if let Ok((sender, _)) = crate::cesr::get_sender_receiver(&message)
+            && let Ok(sender) = std::str::from_utf8(sender)
+            && db.has_verified_vid(sender)?
+        {
+            // reliance on this peer's key state is suspended until it can be
+            // confirmed, and no message is accepted under it in the meantime —
+            // including one that would otherwise verify (spec 3.7)
+            if let Some(doubt) = self.key_state_doubt(sender)?
+                && !self.reconfirm_key_state(sender).await?
+            {
+                return Err(Error::UnconfirmedKeyState(
+                    sender.to_string(),
+                    doubt.to_string(),
+                ));
+            }
+
+            // a peer that has been silent longer than the re-verification
+            // threshold may have rotated its keys unobserved; refresh its key
+            // state before acting on this message (spec 7.4.2)
+            if self.silent_beyond_threshold(sender)? {
+                debug!("re-resolving {sender} after silence");
+                match self.refresh_key_state(sender).await {
+                    // acting on a message whose key state could not be
+                    // confirmed is exactly what the rule forbids, and a
+                    // resolution the rate limit declined is not a confirmation
+                    Ok(false) | Err(_) => {
+                        let doubt = self.suspend_key_state(sender, KeyStateDoubt::Unconfirmed)?;
+
+                        return Err(Error::UnconfirmedKeyState(
+                            sender.to_string(),
+                            doubt.to_string(),
+                        ));
+                    }
+                    Ok(true) => {}
+                }
+            }
+        }
+
+        // opening decrypts in place, so every attempt needs the message as it
+        // arrived rather than the buffer a previous attempt left behind
+        let mut attempt = message.clone();
+        let opened = match db.open_message(&mut attempt) {
+            // first contact: the sender is not in the wallet yet, so it has to
+            // be resolved before the message can be opened at all
+            Err(Error::UnverifiedSource(unknown_vid, _))
+            | Err(Error::UnverifiedVid(unknown_vid)) => {
+                debug!("verifying {unknown_vid}");
+                match self.refresh_key_state(&unknown_vid).await {
+                    Ok(true) => {
+                        attempt = message.clone();
+                        db.open_message(&mut attempt)
+                    }
+                    Ok(false) => Err(Error::UnverifiedVid(unknown_vid)),
+                    Err(e) => Err(e),
+                }
+            }
+            // a signature that does not verify may be the result of a rotation
+            // we have not observed: within an established relationship,
+            // re-resolve and retry once before discarding (spec 3.7, 7.4.2)
+            Err(Error::Crypto(CryptoError::Verify(vid, reason))) => {
+                if db.has_relationship_with(&vid)? && self.refresh_key_state(&vid).await.is_ok() {
+                    debug!("re-verifying {vid}");
+                    attempt = message.clone();
+                    db.open_message(&mut attempt)
+                } else {
+                    Err(Error::Crypto(CryptoError::Verify(vid, reason)))
+                }
+            }
+            maybe_message => maybe_message,
+        };
+
+        match opened {
+            Ok(message) => {
+                if let Some(sender) = message.sender() {
+                    self.record_seen(sender)?;
+                }
+
+                Ok(message.into_owned())
+            }
+            Err(e) => {
+                debug!("discarded a message that failed validation: {e}");
+
+                Err(e)
+            }
+        }
     }
 
     /// Send a TSP broadcast message to the specified VIDs
@@ -897,6 +1272,114 @@ fn verification_resolution_context(
 mod tests {
     use super::*;
     use crate::vid::did::scid::{ScidLocator, ScidMethod, ScidResolutionContext, ScidSourceMethod};
+
+    #[test]
+    fn resolution_is_rate_limited_per_peer() {
+        let store = AsyncSecureStore::new();
+        store
+            .set_key_state_policy(KeyStatePolicy {
+                re_verification_threshold: None,
+                resolution_rate_limit: Duration::from_millis(80),
+            })
+            .unwrap();
+
+        assert!(store.claim_resolution_slot("did:test:alice").unwrap());
+        // a second attempt within the interval is refused ...
+        assert!(!store.claim_resolution_slot("did:test:alice").unwrap());
+        // ... but the limit is per peer
+        assert!(store.claim_resolution_slot("did:test:bob").unwrap());
+
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(store.claim_resolution_slot("did:test:alice").unwrap());
+    }
+
+    #[test]
+    fn silence_beyond_the_threshold_is_detected() {
+        let store = AsyncSecureStore::new();
+        store
+            .set_key_state_policy(KeyStatePolicy {
+                re_verification_threshold: Some(Duration::from_millis(80)),
+                resolution_rate_limit: Duration::from_secs(60),
+            })
+            .unwrap();
+
+        // a peer we have no record of has no observed silence to measure
+        assert!(!store.silent_beyond_threshold("did:test:alice").unwrap());
+
+        store.record_seen("did:test:alice").unwrap();
+        assert!(!store.silent_beyond_threshold("did:test:alice").unwrap());
+
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(store.silent_beyond_threshold("did:test:alice").unwrap());
+
+        // the check is disabled when no threshold is set
+        store
+            .set_key_state_policy(KeyStatePolicy {
+                re_verification_threshold: None,
+                resolution_rate_limit: Duration::from_secs(60),
+            })
+            .unwrap();
+        assert!(!store.silent_beyond_threshold("did:test:alice").unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_message_is_not_acted_on_while_key_state_is_suspended() {
+        // Spec 3.7: while an endpoint cannot confirm a peer's key state it
+        // accepts no message under that key state, including one that would
+        // otherwise verify.
+        let alice = crate::OwnedVid::new_did_peer("tcp://127.0.0.1:1337".parse().unwrap());
+        let bob = crate::OwnedVid::new_did_peer("tcp://127.0.0.1:1338".parse().unwrap());
+
+        let a_store = AsyncSecureStore::new();
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.vid().clone(), None).unwrap();
+
+        let b_store = AsyncSecureStore::new();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.vid().clone(), None).unwrap();
+        for store in [&a_store, &b_store] {
+            store
+                .as_store()
+                .set_relationship_policy(crate::store::RelationshipPolicy::Ungated)
+                .unwrap();
+        }
+
+        let (_url, sealed) = a_store
+            .as_store()
+            .seal_message(alice.identifier(), bob.identifier(), b"hello")
+            .unwrap();
+
+        // it opens while the key state is not in doubt
+        let opened = b_store
+            .open_incoming(b_store.as_store(), BytesMut::from(&sealed[..]))
+            .await;
+        assert!(opened.is_ok(), "a message opens normally: {opened:?}");
+
+        // suspend, and the same message is no longer acted on
+        b_store
+            .suspend_key_state(alice.identifier(), KeyStateDoubt::Conflicting)
+            .unwrap();
+        assert_eq!(
+            b_store.key_state_doubt(alice.identifier()).unwrap(),
+            Some(KeyStateDoubt::Conflicting)
+        );
+        let refused = b_store
+            .open_incoming(b_store.as_store(), BytesMut::from(&sealed[..]))
+            .await;
+        assert!(
+            matches!(refused, Err(Error::UnconfirmedKeyState(..))),
+            "a suspended key state refuses a message that would verify: {refused:?}"
+        );
+
+        // and once confirmed it opens again
+        b_store.confirm_key_state(alice.identifier()).unwrap();
+        assert!(
+            b_store
+                .open_incoming(b_store.as_store(), BytesMut::from(&sealed[..]))
+                .await
+                .is_ok()
+        );
+    }
 
     #[test]
     fn verification_context_prefers_explicit_options() {

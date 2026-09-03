@@ -108,20 +108,6 @@ pub fn decode_variable_data_mut(
     Some((slice, stream))
 }
 
-pub fn opt_decode_variable_data_mut(
-    identifier: u32,
-    stream: &mut [u8],
-) -> (Option<&[u8]>, &mut [u8]) {
-    let Some(range) = decode_variable_data_index(identifier, stream, &mut 0) else {
-        return (None, stream);
-    };
-
-    let (prefix, stream) = stream.split_at_mut(range.end);
-    let slice = &mut prefix[range.start..];
-
-    (Some(slice), stream)
-}
-
 /// Decode indexed data with a known identifier
 #[allow(dead_code)]
 pub fn decode_indexed_data<'a, const N: usize>(
@@ -167,8 +153,9 @@ pub fn decode_count(identifier: u16, stream: &mut &[u8]) -> Option<u32> {
     let index = word & mask(12);
 
     let expected = (DASH << 18) | (bits(identifier, 6) << 12) | bits(index, 12);
+    // the long form is a double dash, `--X#####` (CESR master table for -_AAACAA)
     let expected_long =
-        (DASH << 18) | D0 << 12 | (bits(identifier, 6) << 6) | bits(index & 0x3F, 6);
+        (DASH << 18) | DASH << 12 | (bits(identifier, 6) << 6) | bits(index & 0x3F, 6);
     if word == expected {
         *stream = &stream[3..];
 

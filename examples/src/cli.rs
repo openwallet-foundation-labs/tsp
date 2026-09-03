@@ -10,7 +10,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{
     Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid,
     ReceivedRelationshipDelivery, ReceivedRelationshipForm, ReceivedTspMessage, RelationshipStatus,
-    SecureStorage, VerifiedVid, Vid, cesr,
+    SecureStorage, SendOptions, VerifiedVid, Vid, cesr,
+    crypto::PayloadConfidentiality,
     definitions::Digest,
     vid::{
         ResolutionContext, VerifyVidOptions, VidError,
@@ -51,14 +52,37 @@ impl FromStr for DidType {
     }
 }
 
+/// Which payload type `send` puts on the wire.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+enum PayloadKind {
+    #[default]
+    Message,
+    Control,
+    Padding,
+}
+
+fn parse_payload_kind(value: &str) -> Result<PayloadKind, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "message" | "generic" | "xscs" => Ok(PayloadKind::Message),
+        "control" | "ctl" | "xctl" => Ok(PayloadKind::Control),
+        "padding" | "pad" | "xpad" => Ok(PayloadKind::Padding),
+        _ => Err(format!("invalid payload kind: {value}")),
+    }
+}
+
+fn parse_confidentiality(value: &str) -> Result<PayloadConfidentiality, String> {
+    match value.to_ascii_lowercase().replace('_', "-").as_str() {
+        "encrypt-sign" | "confidential" => Ok(PayloadConfidentiality::Confidential),
+        "sign-only" | "signed-only" => Ok(PayloadConfidentiality::SignedOnly),
+        _ => Err(format!("invalid confidentiality: {value}")),
+    }
+}
+
 fn parse_crypto_type(value: &str) -> Result<cesr::CryptoType, String> {
     let normalized = value.to_ascii_lowercase().replace('_', "-");
     match normalized.as_str() {
-        "hpke-auth" => Ok(cesr::CryptoType::HpkeAuth),
-        "hpke-essr" => Ok(cesr::CryptoType::HpkeEssr),
-        "nacl-auth" => Ok(cesr::CryptoType::NaclAuth),
-        "nacl-essr" => Ok(cesr::CryptoType::NaclEssr),
-        "pq" | "x25519-kyber768-draft00" => Ok(cesr::CryptoType::X25519Kyber768Draft00),
+        "hpke" | "hpke-base" => Ok(cesr::CryptoType::HpkeBase),
+        "sealed-box" | "nacl" => Ok(cesr::CryptoType::SealedBox),
         "plaintext" => Err("plaintext is not valid for confidential send".to_string()),
         _ => Err(format!("invalid crypto type: {value}")),
     }
@@ -167,8 +191,6 @@ enum Commands {
         sender_vid: String,
         #[arg(short, long, required = true)]
         receiver_vid: String,
-        #[arg(short, long)]
-        non_confidential_data: Option<String>,
         #[arg(
             long,
             help = "Ask for confirmation before interacting with unknown end-points"
@@ -177,9 +199,32 @@ enum Commands {
         #[arg(
             long,
             value_parser = parse_crypto_type,
-            help = "Override outbound crypto: hpke-auth, hpke-essr, nacl-auth, nacl-essr, pq"
+            help = "Override outbound crypto: hpke (hpke-base), or sealed-box (nacl)"
         )]
         crypto: Option<cesr::CryptoType>,
+        #[arg(
+            long,
+            value_parser = parse_payload_kind,
+            help = "What kind of payload to send: message (XSCS, the default), control (XCTL, \
+                    the upper layer's own control plane), or padding (XPAD, which carries \
+                    nothing and exists to be counted by an observer)"
+        )]
+        kind: Option<PayloadKind>,
+        #[arg(
+            long,
+            help = "Bytes of padding to carry in the payload's padding field, for hiding how \
+                    long the real content is. Excluded from the message's thread id."
+        )]
+        padding: Option<usize>,
+        #[arg(
+            long,
+            value_parser = parse_confidentiality,
+            help = "How to protect the payload: encrypt-sign (default), or sign-only. \
+                    sign-only applies to a nested message, whose enclosing envelope is \
+                    encrypted either way; the payload is then readable by anyone who can \
+                    open that envelope"
+        )]
+        confidentiality: Option<PayloadConfidentiality>,
     },
     #[command(arg_required_else_help = true, about = "listen for messages")]
     Receive {
@@ -218,6 +263,13 @@ enum Commands {
         ask: bool,
         #[arg(long, help = "wait for a response")]
         wait: bool,
+        #[arg(
+            long,
+            value_delimiter = ',',
+            conflicts_with = "parallel",
+            help = "route the peer should use to reply, as a comma-separated VID list ending in this endpoint's VID at its intermediary"
+        )]
+        reply_path: Option<Vec<String>>,
     },
     #[command(arg_required_else_help = true, about = "accept a relationship")]
     Accept {
@@ -283,6 +335,21 @@ async fn write_wallet(vault: &AskarSecureStorage, db: &AsyncSecureStore) -> Resu
     trace!("persisted wallet");
 
     Ok(())
+}
+
+/// Build a URL for the DID server.
+///
+/// A local DID server is reached over plain HTTP, which is also how a local identifier is
+/// resolved. Publishing has to agree with resolution, or an identifier is written to one place
+/// and read from another.
+fn did_server_url(did_server: &str, path: &str) -> String {
+    let scheme = if did_server.starts_with("localhost") || did_server.starts_with("127.0.0.1") {
+        "http"
+    } else {
+        "https"
+    };
+
+    format!("{scheme}://{did_server}/{path}")
 }
 
 async fn read_wallet(
@@ -498,9 +565,9 @@ async fn publish_scid_source(
     replace: bool,
 ) -> Result<(), Error> {
     let request = if replace {
-        client.put(format!("https://{did_server}/add-vid"))
+        client.put(did_server_url(did_server, "add-vid"))
     } else {
-        client.post(format!("https://{did_server}/add-vid"))
+        client.post(did_server_url(did_server, "add-vid"))
     };
 
     let _: Vid = request
@@ -522,14 +589,14 @@ async fn publish_scid_source(
 
     if let Some(source_history) = source_history {
         let request = if replace {
-            client.put(format!(
-                "https://{did_server}/add-history/{}",
-                source_vid.identifier()
+            client.put(did_server_url(
+                did_server,
+                &format!("add-history/{}", source_vid.identifier()),
             ))
         } else {
-            client.post(format!(
-                "https://{did_server}/add-history/{}",
-                source_vid.identifier()
+            client.post(did_server_url(
+                did_server,
+                &format!("add-history/{}", source_vid.identifier()),
             ))
         };
 
@@ -670,7 +737,13 @@ async fn run() -> Result<(), Error> {
                 .resolve_alias(&alias)?
                 .ok_or(Error::MissingVid("Cannot find this alias".to_string()))?;
 
-            print!("{vid}");
+            // this hands the VID to someone out of band, so it prints the form
+            // they can verify: a did:peer's short form means nothing to an
+            // endpoint that has not seen its document
+            match vid_wallet.as_store().get_verified_vid(&vid) {
+                Ok(verified) => print!("{}", tsp_sdk::vid::introduction_identifier(&*verified)),
+                Err(_) => print!("{vid}"),
+            }
         }
         Commands::Create {
             r#type,
@@ -730,7 +803,7 @@ async fn run() -> Result<(), Error> {
                         .expect("Cannot store next update key reference");
 
                     let _: Vid = match client
-                        .post(format!("https://{did_server}/add-vid"))
+                        .post(did_server_url(&did_server, "add-vid"))
                         .json(&private_vid.vid())
                         .send()
                         .await
@@ -756,9 +829,9 @@ async fn run() -> Result<(), Error> {
                     );
 
                     match client
-                        .post(format!(
-                            "https://{did_server}/add-history/{}",
-                            private_vid.vid().identifier()
+                        .post(did_server_url(
+                            &did_server,
+                            &format!("add-history/{}", private_vid.vid().identifier()),
                         ))
                         .json(&history)
                         .send()
@@ -833,9 +906,12 @@ async fn run() -> Result<(), Error> {
             let metadata = match metadata {
                 Some(metadata) => Some(metadata),
                 None => {
-                    let (_, metadata) = verify_vid(private_vid.identifier())
-                        .await
-                        .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
+                    // resolve what a peer would be given, which for a did:peer
+                    // is its long form: the short form carries no document
+                    let (_, metadata) =
+                        verify_vid(&tsp_sdk::vid::introduction_identifier(private_vid.vid()))
+                            .await
+                            .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
                     metadata
                 }
             };
@@ -960,9 +1036,9 @@ async fn run() -> Result<(), Error> {
                     .expect("Cannot update next update key reference");
 
                 client
-                    .put(format!(
-                        "https://{did_server}/add-history/{}",
-                        new_vid.identifier()
+                    .put(did_server_url(
+                        &did_server,
+                        &format!("add-history/{}", new_vid.identifier()),
                     ))
                     .json(&update_result.log_entry)
                     .send()
@@ -970,7 +1046,7 @@ async fn run() -> Result<(), Error> {
                     .expect("Could not append history");
 
                 let update_response = client
-                    .put(format!("https://{did_server}/add-vid"))
+                    .put(did_server_url(&did_server, "add-vid"))
                     .json(new_vid.vid())
                     .send()
                     .await
@@ -1000,7 +1076,7 @@ async fn run() -> Result<(), Error> {
             info!("created identity from file {}", private_vid.identifier());
         }
         Commands::Discover => {
-            let url = format!("https://{did_server}/.well-known/endpoints.json");
+            let url = did_server_url(&did_server, ".well-known/endpoints.json");
             info!("discovering DIDs from {}", url);
 
             let dids = match client
@@ -1047,11 +1123,12 @@ async fn run() -> Result<(), Error> {
         Commands::Send {
             sender_vid,
             receiver_vid,
-            non_confidential_data,
             ask,
             crypto,
+            confidentiality,
+            kind,
+            padding,
         } => {
-            let non_confidential_data = non_confidential_data.as_deref().map(|s| s.as_bytes());
             let receiver_vid = vid_wallet.try_resolve_alias(&receiver_vid)?;
 
             ensure_vid_verified(&vid_wallet, &receiver_vid, &args.wallet, ask).await?;
@@ -1062,20 +1139,38 @@ async fn run() -> Result<(), Error> {
                 .await
                 .expect("Could not read message from stdin");
 
-            let send_result = if let Some(crypto_type) = crypto {
-                vid_wallet
-                    .send_with_crypto_type(
-                        &sender_vid,
-                        &receiver_vid,
-                        non_confidential_data,
-                        &message,
-                        crypto_type,
-                    )
-                    .await
-            } else {
-                vid_wallet
-                    .send(&sender_vid, &receiver_vid, non_confidential_data, &message)
-                    .await
+            // padding is given as a length; its content carries no meaning, so
+            // zeros are as good as anything and cost nothing to generate
+            let padding = padding.map(|len| vec![0_u8; len]);
+            let options = SendOptions {
+                crypto_type: crypto,
+                confidentiality: confidentiality.unwrap_or_default(),
+                padding: padding.as_deref(),
+            };
+
+            let send_result = match kind.unwrap_or_default() {
+                PayloadKind::Control => {
+                    vid_wallet
+                        .send_control_message(&sender_vid, &receiver_vid, &message, options)
+                        .await
+                }
+                PayloadKind::Padding => {
+                    vid_wallet
+                        .send_padding_message(&sender_vid, &receiver_vid, options)
+                        .await
+                }
+                // the plain path keeps the relationship-forming behaviour of
+                // `send`, which the explicit one reproduces
+                PayloadKind::Message
+                    if crypto.is_none() && confidentiality.is_none() && padding.is_none() =>
+                {
+                    vid_wallet.send(&sender_vid, &receiver_vid, &message).await
+                }
+                PayloadKind::Message => {
+                    vid_wallet
+                        .send_with(&sender_vid, &receiver_vid, &message, options)
+                        .await
+                }
             };
 
             match send_result {
@@ -1103,38 +1198,74 @@ async fn run() -> Result<(), Error> {
             // closures cannot be async, and async fn's don't easily do recursion
             enum Action {
                 Nothing,
-                Verify(String),
                 VerifyAndOpen(String, BytesMut),
                 Forward(String, Vec<BytesMut>, BytesMut),
                 AssignDefaultRelation(String, Digest),
+                ReplyCancel(String, Digest),
             }
 
             while let Some(message) = messages.next().await {
                 trace!("Received message: {message:?}");
                 let message = match message {
                     Ok(m) => m,
-                    Err(_) => break,
+                    // one message was discarded; the next one may be fine
+                    Err(e) if !e.ends_stream() => {
+                        debug!("discarded an incoming message: {e}");
+                        continue;
+                    }
+                    Err(e) => {
+                        info!("stopped listening: {e}");
+                        break;
+                    }
                 };
                 let handle_message = |message: ReceivedTspMessage| {
                     match message {
+                        ReceivedTspMessage::ControlMessage {
+                            sender, message, ..
+                        } => {
+                            info!(
+                                "received upper-layer control message ({} bytes) from {sender}",
+                                message.len()
+                            );
+                            println!("{}", String::from_utf8_lossy(&message));
+                        }
+                        // it carries nothing; saying so is the whole report
+                        ReceivedTspMessage::PaddingMessage { sender, .. } => {
+                            info!("received padding message from {sender}, discarding");
+                        }
                         ReceivedTspMessage::GenericMessage {
                             sender,
                             receiver: _,
-                            nonconfidential_data: _,
                             message,
                             message_type,
                         } => {
-                            let status = match message_type.crypto_type {
-                                cesr::CryptoType::Plaintext => "NON-CONFIDENTIAL",
+                            let describe = |crypto_type| match crypto_type {
+                                cesr::CryptoType::Plaintext => "Plain text",
+                                cesr::CryptoType::HpkeBase => "HPKE-Base",
+                                cesr::CryptoType::SealedBox => "Sealed Box",
+                            };
+                            // a signed-only message that arrived inside another
+                            // message's ciphertext was confidential on the wire,
+                            // but under the enclosing relationship's keys rather
+                            // than its own (spec 4) — so say which
+                            let status = match (
+                                message_type.crypto_type,
+                                message_type.enclosing_crypto_type,
+                            ) {
+                                (cesr::CryptoType::Plaintext, Some(_)) => {
+                                    "confidential only within its enclosing"
+                                }
+                                (cesr::CryptoType::Plaintext, None) => "NON-CONFIDENTIAL",
                                 _ => "confidential",
                             };
-                            let crypto_type = match message_type.crypto_type {
-                                cesr::CryptoType::Plaintext => "Plain text",
-                                cesr::CryptoType::HpkeAuth => "HPKE Auth",
-                                cesr::CryptoType::HpkeEssr => "HPKE ESSR",
-                                cesr::CryptoType::NaclAuth => "NaCl Auth",
-                                cesr::CryptoType::NaclEssr => "NaCl ESSR",
-                                cesr::CryptoType::X25519Kyber768Draft00 => "X25519Kyber768Draft00",
+                            let crypto_type = match (
+                                message_type.crypto_type,
+                                message_type.enclosing_crypto_type,
+                            ) {
+                                (cesr::CryptoType::Plaintext, Some(enclosing)) => {
+                                    format!("signed only, enclosed in {}", describe(enclosing))
+                                }
+                                (crypto_type, _) => describe(crypto_type).to_string(),
                             };
                             let signature_type = match message_type.signature_type {
                                 cesr::SignatureType::NoSignature => "no signature",
@@ -1185,7 +1316,10 @@ async fn run() -> Result<(), Error> {
                                         "received parallel relationship request for '{new_vid}' from {sender}"
                                     );
                                     println!("{new_vid}\t{thread_id_string}");
-                                    return Action::Verify(new_vid);
+                                    // the referral carried the new VID's own
+                                    // verification material, which the SDK has
+                                    // already checked and stored; there is
+                                    // nothing left to resolve
                                 }
                                 (
                                     ReceivedRelationshipDelivery::Nested { nested_vid },
@@ -1195,7 +1329,6 @@ async fn run() -> Result<(), Error> {
                                         "received nested parallel relationship request from '{nested_vid}' for '{new_vid}' from {sender}"
                                     );
                                     println!("{new_vid}\t{thread_id_string}");
-                                    return Action::Verify(new_vid);
                                 }
                                 (ReceivedRelationshipDelivery::Routed, _) => {
                                     error!(
@@ -1253,8 +1386,17 @@ async fn run() -> Result<(), Error> {
                         ReceivedTspMessage::CancelRelationship {
                             sender,
                             receiver: _,
+                            thread_id,
+                            reply_expected,
                         } => {
                             info!("received cancel relationship from {sender}");
+
+                            // a bidirectional relationship is cancelled in both
+                            // directions, and the specification expects the
+                            // cancellation to be echoed back (spec 7.3)
+                            if reply_expected {
+                                return Action::ReplyCancel(sender, thread_id);
+                            }
                         }
                         ReceivedTspMessage::ForwardRequest {
                             sender,
@@ -1303,16 +1445,21 @@ async fn run() -> Result<(), Error> {
 
                         let _ = handle_message(message);
                     }
-                    Action::Verify(vid) => {
-                        vid_wallet.verify_vid(&vid, None).await?;
-
-                        info!("{vid} is verified and added to the wallet {}", &args.wallet);
-                    }
                     Action::Forward(next_hop, route, payload) => {
                         vid_wallet
                             .forward_routed_message(&next_hop, route, &payload)
                             .await?;
                         info!("forwarding to next hop: {next_hop}");
+                    }
+                    Action::ReplyCancel(remote_vid, thread_id) => {
+                        if let Err(e) = vid_wallet
+                            .send_relationship_cancel_reply(&vid, &remote_vid, thread_id)
+                            .await
+                        {
+                            info!("could not reply to the cancellation from {remote_vid}: {e}");
+                        } else {
+                            info!("replied to the cancellation from {remote_vid}");
+                        }
                     }
                     Action::AssignDefaultRelation(remote_vid, thread_id) => {
                         // if we do not yet have a relationship with the remote VID, create a reverse unidirectional relationship
@@ -1361,6 +1508,7 @@ async fn run() -> Result<(), Error> {
             parent_vid,
             ask,
             wait,
+            reply_path,
         } => {
             ensure_vid_verified(&vid_wallet, &receiver_vid, &args.wallet, ask).await?;
 
@@ -1411,7 +1559,14 @@ async fn run() -> Result<(), Error> {
                     "sent a parallel relationship request from {sender_vid} to {receiver_vid} with new identity '{new_vid}'"
                 );
             } else if let Err(e) = vid_wallet
-                .send_relationship_request(&sender_vid, &receiver_vid, None)
+                .send_relationship_request(
+                    &sender_vid,
+                    &receiver_vid,
+                    reply_path
+                        .as_ref()
+                        .map(|hops| hops.iter().map(String::as_str).collect::<Vec<_>>())
+                        .as_deref(),
+                )
                 .await
             {
                 tracing::error!("error sending message from {sender_vid} to {receiver_vid}: {e}");
@@ -1430,6 +1585,12 @@ async fn run() -> Result<(), Error> {
                         ReceivedTspMessage::GenericMessage { sender, .. } => {
                             info!("received generic message from {sender}")
                         }
+                        ReceivedTspMessage::ControlMessage { sender, .. } => {
+                            info!("received upper-layer control message from {sender}")
+                        }
+                        ReceivedTspMessage::PaddingMessage { sender, .. } => {
+                            info!("received padding message from {sender}, discarding")
+                        }
                         ReceivedTspMessage::RequestRelationship { sender, .. } => {
                             info!("received relationship request from {sender}")
                         }
@@ -1445,8 +1606,13 @@ async fn run() -> Result<(), Error> {
                                 }
                                 _ => None,
                             };
+                            // a parallel accept arrives from the peer's new VID
+                            // over the new relationship, so the sender is it
                             let parallel_vid = match form {
                                 ReceivedRelationshipForm::Parallel { new_vid, .. } => Some(new_vid),
+                                ReceivedRelationshipForm::Direct if parallel => {
+                                    Some(sender.clone())
+                                }
                                 ReceivedRelationshipForm::Direct => None,
                             };
                             info!(
@@ -1642,7 +1808,7 @@ async fn create_did_web(
     info!("created identity {}", private_vid.identifier());
 
     let response = client
-        .post(format!("https://{did_server}/add-vid"))
+        .post(did_server_url(did_server, "add-vid"))
         .json(&private_vid.vid())
         .send()
         .await

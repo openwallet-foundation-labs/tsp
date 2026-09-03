@@ -50,8 +50,8 @@ pub fn deterministic_owned_vid_mldsa65_x25519kyber768(
     seed: u64,
 ) -> tsp_sdk::OwnedVid {
     use base64ct::{Base64UrlUnpadded, Encoding as _};
-    use hpke_pq::Kem as _;
-    use hpke_pq::Serializable as _;
+    use hpke::Kem as _;
+    use hpke::Serializable as _;
     use ml_dsa::MlDsa65;
 
     use rand::{RngCore as _, SeedableRng as _};
@@ -65,8 +65,7 @@ pub fn deterministic_owned_vid_mldsa65_x25519kyber768(
         <ml_dsa::SigningKey<MlDsa65> as ml_dsa::Keypair>::verifying_key(&sig).encode();
 
     let ikm = seeded_bytes(seed ^ 0x454E435F4B594245u64, 32);
-    let (enckey, public_enckey) =
-        hpke_pq::kem::X25519Kyber768Draft00::derive_keypair(ikm.as_slice());
+    let (enckey, public_enckey) = hpke::kem::XWing::derive_keypair(ikm.as_slice());
     let enckey = enckey.to_bytes();
     let public_enckey = public_enckey.to_bytes();
 
@@ -76,7 +75,7 @@ pub fn deterministic_owned_vid_mldsa65_x25519kyber768(
         "sigKeyType": "MlDsa65",
         "publicSigkey": Base64UrlUnpadded::encode_string(public_sigkey.as_slice()),
         "sigkey": Base64UrlUnpadded::encode_string(sigkey.as_slice()),
-        "encKeyType": "X25519Kyber768Draft00",
+        "encKeyType": "X25519MlKem768",
         "publicEnckey": Base64UrlUnpadded::encode_string(public_enckey.as_slice()),
         "enckey": Base64UrlUnpadded::encode_string(enckey.as_slice()),
     })

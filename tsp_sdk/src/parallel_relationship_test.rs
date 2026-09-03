@@ -142,26 +142,23 @@ async fn test_parallel_relationship_accept_bootstraps_unknown_sender_async() {
         .expect("parallel accept stream ended")
         .expect("failed to receive parallel accept");
 
+    // the accept arrives from bob's new VID over the new relationship, which
+    // alice has not verified before, so receiving it bootstraps that VID
     let crate::definitions::ReceivedTspMessage::AcceptRelationship {
         sender,
         receiver,
         thread_id: received_thread_id,
         reply_thread_id: _,
-        form:
-            ReceivedRelationshipForm::Parallel {
-                new_vid,
-                sig_new_vid: _,
-            },
+        form: ReceivedRelationshipForm::Direct,
         delivery: ReceivedRelationshipDelivery::Direct,
     } = accept
     else {
         panic!("alice did not receive a parallel relationship accept");
     };
 
-    assert_eq!(sender, bob.identifier());
+    assert_eq!(sender, bob_parallel.identifier());
     assert_eq!(receiver, alice_parallel.identifier());
     assert_eq!(received_thread_id, thread_id);
-    assert_eq!(new_vid, bob_parallel.identifier());
     assert!(
         alice_db
             .has_verified_vid(bob_parallel.identifier())

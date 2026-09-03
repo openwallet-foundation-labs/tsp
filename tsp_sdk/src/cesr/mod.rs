@@ -4,10 +4,11 @@ mod detect;
 mod encode;
 pub mod error;
 mod packet;
-use base64ct::{Base64UrlUnpadded, Encoding};
+mod segments;
 use error::DecodeError;
 mod consts;
 pub use packet::*;
+pub use segments::{Segment, SegmentKind, segments};
 
 #[cfg(feature = "cesr-t")]
 pub use detect::to_binary;
@@ -31,17 +32,12 @@ const fn extract_triplet(quadlet: &[u8; 3]) -> u32 {
     u32::from_be_bytes([0, quadlet[0], quadlet[1], quadlet[2]])
 }
 
-/// Checks if the header bytes in a CESR encoding line up;
-/// In strict mode, this has to be an exact match, i.e. padding bits have to be 0
+/// Checks if the header bytes in a CESR encoding line up.
+/// This is an exact match: TSP digests and signatures are computed over exact
+/// encoded bytes, so a primitive with non-zero padding bits must be rejected
+/// rather than normalized (canonical encoding, spec section 3.7).
 fn header_match(input: &[u8], target: &[u8]) -> bool {
-    if cfg!(feature = "strict") {
-        input == target
-    } else {
-        let mask = !mask(2 * (input.len() as u8 % 3)) as u8;
-
-        input[..input.len() - 1] == target[..target.len() - 1]
-            && input[input.len() - 1] & mask == target[target.len() - 1]
-    }
+    input == target
 }
 
 /// Constants for CESR selectors
@@ -69,12 +65,10 @@ pub enum EnvelopeType<'a> {
     EncryptedMessage {
         sender: &'a [u8],
         receiver: &'a [u8],
-        nonconfidential_data: Option<&'a [u8]>,
     },
     SignedMessage {
         sender: &'a [u8],
         receiver: Option<&'a [u8]>,
-        nonconfidential_data: Option<&'a [u8]>,
     },
 }
 
@@ -83,19 +77,6 @@ impl EnvelopeType<'_> {
         match self {
             EnvelopeType::EncryptedMessage { receiver, .. } => Some(*receiver),
             EnvelopeType::SignedMessage { receiver, .. } => *receiver,
-        }
-    }
-
-    pub fn get_nonconfidential_data(&self) -> Option<&[u8]> {
-        match self {
-            EnvelopeType::EncryptedMessage {
-                nonconfidential_data,
-                ..
-            } => *nonconfidential_data,
-            EnvelopeType::SignedMessage {
-                nonconfidential_data,
-                ..
-            } => *nonconfidential_data,
         }
     }
 }
@@ -114,47 +95,48 @@ pub fn probe(stream: &mut [u8]) -> Result<EnvelopeType<'_>, error::DecodeError> 
         EnvelopeType::EncryptedMessage {
             sender: envelope.sender,
             receiver: envelope.receiver.expect("Infallible"),
-            nonconfidential_data: envelope.nonconfidential_data,
         }
     } else {
         EnvelopeType::SignedMessage {
             sender: envelope.sender,
             receiver: envelope.receiver,
-            nonconfidential_data: envelope.nonconfidential_data,
         }
     })
 }
 
-/// Format a TSP message using ANSI escape codes to color the different parts
+/// The color a field is drawn in. Fields that belong together share one, so a
+/// reader tracks the message by color and the field names by [`segments`].
+fn field_color(label: &str) -> u8 {
+    match label {
+        l if l.starts_with("frame") || l.starts_with("TSP_Version") => 31,
+        l if l.starts_with("VID_sndr") => 35,
+        l if l.starts_with("VID_rcvr") || l.starts_with("VID_hop") || l.starts_with("hop list") => {
+            34
+        }
+        l if l.starts_with("ciphertext") => 33,
+        l if l.starts_with("signature") || l.starts_with("attachments") => 36,
+        "unparsed" => 41,
+        _ => 32,
+    }
+}
+
+/// Format a TSP message using ANSI escape codes to color the different parts.
+///
+/// Codes are drawn bold and the data they introduce normally, so every field of
+/// the message is visible as its own run. [`segments()`] names the same fields.
 pub fn color_format(message: &[u8]) -> Result<String, DecodeError> {
-    let parts = open_message_into_parts(message)?;
-    let parts = [
-        (Some(parts.prefix), 31),
-        (Some(parts.sender), 35),
-        (parts.receiver, 34),
-        (parts.nonconfidential_data, 32),
-        (parts.ciphertext, 33),
-        (Some(parts.signature), 36),
-    ];
+    // reject what is not a TSP message before drawing it
+    open_message_into_parts(message)?;
 
     let mut out = String::new();
-    for (part, color) in parts {
-        if let Some(part) = part {
-            let color_prefix = Base64UrlUnpadded::encode_string(part.prefix);
-            let mut contents = part.prefix.to_owned();
-            contents.extend_from_slice(part.data);
-            let color_contents = Base64UrlUnpadded::encode_string(&contents);
-            let split = if color_prefix.len().is_multiple_of(4) {
-                color_prefix.len()
-            } else {
-                color_prefix.len() - 1
-            };
-            out.push_str(&format!(
-                "\x1b[1;{color}m{}\x1b[0;{color}m{}\x1b[0m",
-                &color_contents[..split],
-                &color_contents[split..],
-            ));
-        }
+    for segment in segments(message) {
+        let color = field_color(&segment.label);
+        let weight = if segment.kind == SegmentKind::Code {
+            1
+        } else {
+            0
+        };
+        out.push_str(&format!("\x1b[{weight};{color}m{}\x1b[0m", segment.text));
     }
 
     Ok(out)
@@ -175,10 +157,9 @@ mod test {
         assert!(header_match(&[1, 2, 3], &[1, 2, 3]));
         assert!(header_match(&[0xFF, 0xF0], &[0xFF, 0xF0]));
         assert!(header_match(&[0xFC], &[0xFC]));
-        #[cfg(not(feature = "strict"))]
-        assert!(header_match(&[0xFF, 0xF3], &[0xFF, 0xF0]));
-        #[cfg(not(feature = "strict"))]
-        assert!(header_match(&[0xFF], &[0xFC]));
+        // non-canonical padding bits must be rejected
+        assert!(!header_match(&[0xFF, 0xF3], &[0xFF, 0xF0]));
+        assert!(!header_match(&[0xFF], &[0xFC]));
     }
 
     #[test]
@@ -392,7 +373,6 @@ mod test {
     //    ACDD7NDX93ZGTkZBBuSeSGsAQ7u0hngpNTZTK_Um7rUZGnLRNJvo5oOnnC1J2iBQHuxoq8PyjdT3BHS2LiPrs2Cg
     #[test]
     fn demo_example() {
-        #[cfg(feature = "strict")]
         let base64_data = "\
 -FAB\
 EPT2_p83_gRSuAYvGhqV3S0JzYEF2dIa-OCPLbIhBO7Y\
@@ -403,18 +383,6 @@ EAmQtlcszNoEIDfqD-Zih3N6o5B3humRKvBBln2juTEM\
 AAB267UlFg1jHee4Dauht77SzGl8WUC_0oimYG5If3SdIOSzWM8Qs9SFajAilQcozXJVnbkY5stG_K4NbKdNB4AQ\
 ABBgeqntZW3Gu4HL0h3odYz6LaZ_SMfmITL-Btoq_7OZFe3L16jmOe49Ur108wH7mnBaq2E_0U0N0c5vgrJtDpAQ\
 ACDD7NDX93ZGTkZBBuSeSGsAQ7u0hngpNTZTK_Um7rUZGnLRNJvo5oOnnC1J2iBQHuxoq8PyjdT3BHS2LiPrs2Cg\
-";
-        #[cfg(not(feature = "strict"))]
-        let base64_data = "\
--FAB\
-E_T2_p83_gRSuAYvGhqV3S0JzYEF2dIa-OCPLbIhBO7Y\
--EAB\
-0AAAAAAAAAAAAAAAAAAAAAAB\
-EwmQtlcszNoEIDfqD-Zih3N6o5B3humRKvBBln2juTEM\
--AAD\
-AA5267UlFg1jHee4Dauht77SzGl8WUC_0oimYG5If3SdIOSzWM8Qs9SFajAilQcozXJVnbkY5stG_K4NbKdNB4AQ\
-ABBgeqntZW3Gu4HL0h3odYz6LaZ_SMfmITL-Btoq_7OZFe3L16jmOe49Ur108wH7mnBaq2E_0U0N0c5vgrJtDpAQ\
-ACTD7NDX93ZGTkZBBuSeSGsAQ7u0hngpNTZTK_Um7rUZGnLRNJvo5oOnnC1J2iBQHuxoq8PyjdT3BHS2LiPrs2Cg\
 ";
 
         let data = Base64UrlUnpadded::decode_vec(base64_data).unwrap();
@@ -430,6 +398,27 @@ ACTD7NDX93ZGTkZBBuSeSGsAQ7u0hngpNTZTK_Um7rUZGnLRNJvo5oOnnC1J2iBQHuxoq8PyjdT3BHS2
         assert_eq!(decode_indexed_data::<64>(0, slice).unwrap().0, 0);
         assert_eq!(decode_indexed_data::<64>(0, slice).unwrap().0, 1);
         assert_eq!(decode_indexed_data::<64>(0, slice).unwrap().0, 2);
+    }
+
+    #[test]
+    fn long_form_count_code_is_double_dash() {
+        // In the CESR master table for genus -_AAACAA the long-form count codes
+        // are `--X#####`. The `-0X#####` of the earlier draft was replaced in
+        // 2025-05; a round-trip cannot tell the two apart, so pin the bytes.
+        let mut stream = Vec::new();
+        encode_count(4, 4096usize, &mut stream); // identifier 4 = "E"
+        assert_eq!(
+            stream.len(),
+            6,
+            "counts at or above 4096 take the long form"
+        );
+
+        let text = Base64UrlUnpadded::encode_string(&stream);
+        assert_eq!(
+            &text[..3],
+            "--E",
+            "long-form count code must be `--X#####`, got `{text}`"
+        );
     }
 
     #[test]

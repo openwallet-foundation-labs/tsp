@@ -34,6 +34,12 @@ struct Cli {
     transport: String,
     #[arg(index = 1, help = "e.g. \"did.teaspoon.world\" or \"localhost:3000\"")]
     domain: String,
+    #[arg(
+        long,
+        default_value = "data",
+        help = "Directory holding the published identities"
+    )]
+    data_dir: std::path::PathBuf,
 }
 
 struct AppState {
@@ -84,6 +90,18 @@ impl AppState {
 
 const MAX_LOG_LEN: usize = 20;
 
+/// Where identities are stored.
+///
+/// Process-wide rather than carried in the state: it is fixed for the life of the server, and
+/// the functions that read and write identities are not handlers and take no state.
+static DATA_DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+fn data_path(file: &str) -> std::path::PathBuf {
+    DATA_DIR
+        .get_or_init(|| std::path::PathBuf::from("data"))
+        .join(file)
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::registry()
@@ -100,13 +118,6 @@ async fn main() {
 
     let args = Cli::parse();
 
-    let cors = CorsLayer::new()
-        // allow `GET` and `POST` when accessing the resource
-        .allow_methods([Method::GET, Method::POST])
-        .allow_headers(Any)
-        // allow requests from any origin
-        .allow_origin(Any);
-
     let state = Arc::new(AppState {
         transport: args.transport,
         domain: args.domain,
@@ -114,8 +125,34 @@ async fn main() {
         log_tx: broadcast::channel(100).0,
     });
 
-    // Compose the routes
-    let app = Router::new()
+    DATA_DIR
+        .set(args.data_dir.clone())
+        .expect("the data directory is set once");
+
+    if let Err(e) = std::fs::create_dir_all(&args.data_dir) {
+        tracing::error!("could not create {}: {e}", args.data_dir.display());
+    }
+
+    let app = app(state.clone());
+
+    let addr = SocketAddrV4::new("0.0.0.0".parse().unwrap(), args.port);
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    tracing::debug!("listening on {}", listener.local_addr().unwrap());
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .unwrap();
+}
+
+/// Compose the routes.
+fn app(state: Arc<AppState>) -> Router {
+    let cors = CorsLayer::new()
+        .allow_methods([Method::GET, Method::POST])
+        .allow_headers(Any)
+        .allow_origin(Any);
+
+    Router::new()
         .route("/", get(index))
         .route("/logs", get(log_websocket_handler))
         .route("/create-identity", post(create_identity))
@@ -126,16 +163,7 @@ async fn main() {
         .route("/.well-known/endpoints.json", get(get_endpoints))
         .layer(DefaultBodyLimit::max(50 * 1024 * 1024))
         .layer(cors)
-        .with_state(state);
-
-    let addr = SocketAddrV4::new("0.0.0.0".parse().unwrap(), args.port);
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    tracing::debug!("listening on {}", listener.local_addr().unwrap());
-
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .unwrap();
+        .with_state(state)
 }
 
 async fn shutdown_signal() {
@@ -275,7 +303,7 @@ async fn add_history(Path(vid): Path<String>, history: String) -> Response {
             return (StatusCode::BAD_REQUEST, "Invalid VID").into_response();
         }
     };
-    let path = format!("data/{name}.jsonl");
+    let path = data_path(&format!("{name}.jsonl"));
 
     if std::path::Path::new(&path).exists() {
         tracing::error!("error writing identity '{name}': Name already exists");
@@ -298,7 +326,7 @@ async fn append_history(Path(vid): Path<String>, history: String) -> Response {
             return (StatusCode::BAD_REQUEST, "Invalid VID").into_response();
         }
     };
-    let path = format!("data/{name}.jsonl");
+    let path = data_path(&format!("{name}.jsonl"));
 
     match File::options().append(true).open(path).await {
         Err(err) => {
@@ -378,7 +406,7 @@ async fn add_vid(State(state): State<Arc<AppState>>, Json(vid): Json<Vid>) -> Re
 
 async fn read_id(vid: &str) -> Result<Identity, Box<dyn std::error::Error>> {
     let name = vid.split(':').next_back().ok_or("invalid name")?;
-    let path = format!("data/{name}.json");
+    let path = data_path(&format!("{name}.json"));
     let did = tokio::fs::read_to_string(path).await?;
     let id = serde_json::from_str(&did)?;
 
@@ -386,14 +414,14 @@ async fn read_id(vid: &str) -> Result<Identity, Box<dyn std::error::Error>> {
 }
 
 async fn read_history(name: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let path = format!("data/{name}.jsonl");
+    let path = data_path(&format!("{name}.jsonl"));
     let history = tokio::fs::read_to_string(path).await?;
 
     Ok(history)
 }
 
 async fn list_all_ids() -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    let mut dir = tokio::fs::read_dir("data").await?;
+    let mut dir = tokio::fs::read_dir(data_path("")).await?;
     let mut dids = Vec::new();
 
     while let Some(entry) = dir.next_entry().await?
@@ -441,7 +469,7 @@ async fn write_id(id: Identity, replace: bool) -> Result<(), Box<dyn std::error:
         .next_back()
         .ok_or("invalid name")?;
     let did = serde_json::to_string_pretty(&id)?;
-    let path = format!("data/{name}.json");
+    let path = data_path(&format!("{name}.json"));
 
     if !replace && std::path::Path::new(&path).exists() {
         return Err("identity already exists".into());
@@ -468,4 +496,236 @@ async fn log_websocket_handler(
             }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AppState, DATA_DIR, MAX_LOG_LEN, app};
+    use base64ct::{Base64UrlUnpadded, Encoding};
+    use std::{collections::VecDeque, sync::Arc};
+    use tokio::sync::{RwLock, broadcast};
+    use tsp_sdk::{OwnedVid, VerifiedVid, Vid};
+
+    /// Start a server on a port of the system's choosing and return its address.
+    ///
+    /// The identity directory is process-wide and set once, so every test shares it. Each test
+    /// therefore uses a name of its own rather than cleaning up, which also keeps them from
+    /// interfering when run at the same time.
+    async fn server() -> String {
+        let _ = DATA_DIR.set(std::env::temp_dir().join("tsp-did-server-tests"));
+        std::fs::create_dir_all(DATA_DIR.get().unwrap()).unwrap();
+
+        let state = Arc::new(AppState {
+            transport: "https://example.test/endpoint".to_string(),
+            domain: "example.test".to_string(),
+            log: RwLock::new(VecDeque::with_capacity(MAX_LOG_LEN)),
+            log_tx: broadcast::channel(100).0,
+        });
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+
+        tokio::spawn(async move { axum::serve(listener, app(state)).await.unwrap() });
+
+        format!("http://{address}")
+    }
+
+    /// A name no other test run has used, since published identities outlive the test.
+    fn a_name(test: &str) -> String {
+        format!("{test}-{:x}", rand::random::<u64>())
+    }
+
+    fn an_identity(name: &str) -> Vid {
+        let id = format!("did:web:example.test:endpoint:{name}");
+        let transport =
+            url::Url::parse("https://example.test/transport/[vid_placeholder]").unwrap();
+
+        OwnedVid::bind(id, transport).vid().clone()
+    }
+
+    #[tokio::test]
+    async fn an_identity_can_be_read_back_after_publishing() {
+        let base = server().await;
+        let name = a_name("readable");
+        let identity = an_identity(&name);
+
+        let published = reqwest::Client::new()
+            .post(format!("{base}/add-vid"))
+            .json(&identity)
+            .send()
+            .await
+            .unwrap();
+        assert!(published.status().is_success(), "{}", published.status());
+
+        let document: serde_json::Value = reqwest::get(format!("{base}/endpoint/{name}/did.json"))
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+
+        assert_eq!(document["id"], identity.identifier());
+    }
+
+    /// The intermediaries depend on this: a name that is already taken is how one of them
+    /// discovers that its wallet is missing rather than that it is starting for the first time.
+    #[tokio::test]
+    async fn a_name_that_is_taken_cannot_be_claimed_again() {
+        let base = server().await;
+        let name = a_name("taken");
+        let client = reqwest::Client::new();
+
+        let first = an_identity(&name);
+        assert!(
+            client
+                .post(format!("{base}/add-vid"))
+                .json(&first)
+                .send()
+                .await
+                .unwrap()
+                .status()
+                .is_success()
+        );
+
+        // A different identity, since the keys are generated afresh, under the same name.
+        let second = an_identity(&name);
+        assert_ne!(first.verifying_key(), second.verifying_key());
+
+        let refused = client
+            .post(format!("{base}/add-vid"))
+            .json(&second)
+            .send()
+            .await
+            .unwrap();
+        assert!(!refused.status().is_success(), "{}", refused.status());
+
+        // and the identity already published is untouched
+        let document: serde_json::Value = reqwest::get(format!("{base}/endpoint/{name}/did.json"))
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let key = document["verificationMethod"][0]["publicKeyJwk"]["x"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let expected = Base64UrlUnpadded::encode_string(first.verifying_key().as_ref());
+
+        assert_eq!(key, expected, "the published identity was overwritten");
+    }
+
+    #[tokio::test]
+    async fn a_name_that_is_taken_can_be_replaced_deliberately() {
+        let base = server().await;
+        let name = a_name("replaced");
+        let client = reqwest::Client::new();
+
+        client
+            .post(format!("{base}/add-vid"))
+            .json(&an_identity(&name))
+            .send()
+            .await
+            .unwrap();
+
+        let replacement = an_identity(&name);
+        let replaced = client
+            .put(format!("{base}/add-vid"))
+            .json(&replacement)
+            .send()
+            .await
+            .unwrap();
+
+        assert!(replaced.status().is_success(), "{}", replaced.status());
+
+        let document: serde_json::Value = reqwest::get(format!("{base}/endpoint/{name}/did.json"))
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let key = document["verificationMethod"][0]["publicKeyJwk"]["x"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let expected = Base64UrlUnpadded::encode_string(replacement.verifying_key().as_ref());
+
+        assert_eq!(key, expected);
+    }
+
+    #[tokio::test]
+    async fn an_unknown_name_is_not_found() {
+        let base = server().await;
+        let name = a_name("absent");
+
+        let response = reqwest::get(format!("{base}/endpoint/{name}/did.json"))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn a_name_that_is_not_allowed_is_refused() {
+        let base = server().await;
+        let identity = an_identity("not a valid name");
+
+        let response = reqwest::Client::new()
+            .post(format!("{base}/add-vid"))
+            .json(&identity)
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn a_history_can_be_published_and_read_back() {
+        let base = server().await;
+        let name = a_name("history");
+        let identity = an_identity(&name);
+        let client = reqwest::Client::new();
+
+        client
+            .post(format!("{base}/add-vid"))
+            .json(&identity)
+            .send()
+            .await
+            .unwrap();
+
+        let entry = r#"{"versionId":"1-first"}"#;
+        let published = client
+            .post(format!("{base}/add-history/{}", identity.identifier()))
+            .body(entry)
+            .send()
+            .await
+            .unwrap();
+        assert!(published.status().is_success(), "{}", published.status());
+
+        let history = reqwest::get(format!("{base}/endpoint/{name}/did.jsonl"))
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert_eq!(history, entry);
+
+        let next = r#"{"versionId":"2-second"}"#;
+        let appended = client
+            .put(format!("{base}/add-history/{}", identity.identifier()))
+            .body(next)
+            .send()
+            .await
+            .unwrap();
+        assert!(appended.status().is_success(), "{}", appended.status());
+
+        let history = reqwest::get(format!("{base}/endpoint/{name}/did.jsonl"))
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert_eq!(history, format!("{entry}\n{next}"));
+    }
 }

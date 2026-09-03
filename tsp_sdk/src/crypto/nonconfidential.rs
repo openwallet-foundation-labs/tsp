@@ -1,83 +1,117 @@
 use super::{CryptoError, append_signature, signature_type};
-use crate::crypto::CryptoError::Verify;
 use crate::{
-    cesr::{CryptoType, DecodedEnvelope, Envelope, SignatureType},
+    cesr::{CryptoType, DecodedEnvelope, DecodedPayload, Envelope},
     definitions::{MessageType, PrivateVid, TSPMessage, VerifiedVid},
 };
-use ml_dsa::{EncodedVerifyingKey, MlDsa65};
 
-/// Construct and sign a non-confidential TSP message
+/// Construct and sign a non-confidential TSP message carrying an application
+/// payload; it is carried as a cleartext `XSCS` payload in the payload position.
+///
+/// A message whose payload is a control message is built with
+/// [`sign_payload`] instead — wrapping one in `XSCS` would put a payload
+/// inside a payload.
 pub fn sign(
     sender: &dyn PrivateVid,
     receiver: Option<&dyn VerifiedVid>,
     payload: &[u8],
 ) -> Result<TSPMessage, CryptoError> {
+    sign_payload(
+        sender,
+        receiver,
+        &crate::cesr::Payload::<_, &[u8]>::GenericMessage(payload),
+        None,
+    )
+}
+
+/// Construct and sign a non-confidential TSP message whose payload is
+/// `payload`, encoded in the payload position as it stands.
+///
+/// This is what a signed-only control message needs: spec 9.4.13 and 9.4.14
+/// require the inner message of a nested `TSP_RFI`/`TSP_RFA` to carry that
+/// control payload itself, not an `XSCS` payload wrapping one.
+pub fn sign_payload(
+    sender: &dyn PrivateVid,
+    receiver: Option<&dyn VerifiedVid>,
+    payload: &crate::cesr::Payload<impl AsRef<[u8]>, impl AsRef<[u8]>>,
+    sender_identity: Option<&[u8]>,
+) -> Result<TSPMessage, CryptoError> {
+    sign_payload_as(
+        sender,
+        sender.identifier(),
+        receiver,
+        payload,
+        sender_identity,
+    )
+}
+
+/// As [`sign_payload`], but writing `sender_id` into the envelope rather than
+/// the sender's own identifier.
+///
+/// This exists for a VID that is being introduced: a `did:peer:4` is used by
+/// its short form, which a peer cannot resolve until it has seen the document,
+/// so the message that introduces it carries the long form instead. The keys
+/// are the same either way, and the peer resolves the long form back to the
+/// short form it will use thereafter.
+pub fn sign_payload_as(
+    sender: &dyn PrivateVid,
+    sender_id: &str,
+    receiver: Option<&dyn VerifiedVid>,
+    payload: &crate::cesr::Payload<impl AsRef<[u8]>, impl AsRef<[u8]>>,
+    sender_identity: Option<&[u8]>,
+) -> Result<TSPMessage, CryptoError> {
     let mut data = Vec::with_capacity(64);
 
-    crate::cesr::encode_s_envelope(
-        crate::cesr::Envelope {
+    crate::cesr::encode_envelope(
+        Envelope {
             crypto_type: CryptoType::Plaintext,
             signature_type: signature_type(sender),
-            sender: sender.identifier(),
+            sender: sender_id,
             receiver: receiver.map(|r| r.identifier()),
-            nonconfidential_data: Some(payload),
         },
         &mut data,
     )?;
+
+    crate::cesr::encode_payload(payload, sender_identity, None, &mut data)?;
+    crate::cesr::finalize_envelope_frame(&mut data);
 
     append_signature(sender, &mut data)?;
 
     Ok(data)
 }
 
-/// Decode a CESR Authentic Non-Confidential Message, verify the signature and return its contents
+/// Decode a CESR Authentic Non-Confidential Message, verify the signature and
+/// return its application payload. A message carrying anything other than an
+/// application payload is read with [`verify_payload`].
 pub fn verify<'a>(
     sender: &dyn VerifiedVid,
     tsp_message: &'a mut [u8],
 ) -> Result<(&'a [u8], MessageType), CryptoError> {
-    #[cfg(feature = "bench-network-timings")]
-    let open_core_started = std::time::Instant::now();
+    let (DecodedPayload { payload, .. }, message_type) = verify_payload(sender, tsp_message)?;
+
+    let crate::cesr::Payload::GenericMessage(message) = payload else {
+        return Err(CryptoError::UnsupportedPayload);
+    };
+
+    Ok((message, message_type))
+}
+
+/// Decode a CESR Authentic Non-Confidential Message, verify the signature and
+/// return its payload decoded, whatever its type.
+pub fn verify_payload<'a>(
+    sender: &dyn VerifiedVid,
+    tsp_message: &'a mut [u8],
+) -> Result<(DecodedPayload<'a>, MessageType), CryptoError> {
     let view = crate::cesr::decode_envelope(tsp_message)?;
-    #[cfg(feature = "bench-network-timings")]
-    crate::bench::record_open_core(open_core_started);
 
     // verify outer signature
     let verification_challenge = view.as_challenge();
-    #[cfg(feature = "bench-network-timings")]
-    let verify_started = std::time::Instant::now();
-    match view.signature_type() {
-        SignatureType::NoSignature => {}
-        SignatureType::Ed25519 => {
-            let signature = ed25519_dalek::Signature::from_slice(verification_challenge.signature)
-                .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
-            let verifying_key =
-                ed25519_dalek::VerifyingKey::try_from(sender.verifying_key().as_slice())
-                    .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
-            verifying_key
-                .verify_strict(verification_challenge.signed_data, &signature)
-                .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
-        }
-        SignatureType::MlDsa65 => {
-            let signature: ml_dsa::Signature<MlDsa65> =
-                ml_dsa::Signature::try_from(verification_challenge.signature)
-                    .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
-            let verifying_key = ml_dsa::VerifyingKey::decode(
-                &EncodedVerifyingKey::<MlDsa65>::try_from(sender.verifying_key().as_slice())?,
-            );
-            ml_dsa::Verifier::verify(
-                &verifying_key,
-                verification_challenge.signed_data,
-                &signature,
-            )
-            .map_err(|err| Verify(sender.identifier().to_string(), err.to_string()))?;
-        }
-    }
-    #[cfg(feature = "bench-network-timings")]
-    crate::bench::record_verify(verify_started);
+    super::verify_detached(
+        sender,
+        verification_challenge.signed_data,
+        verification_challenge.signature,
+    )?;
 
-    // decode envelope
-    #[cfg(feature = "bench-network-timings")]
-    let open_core_started = std::time::Instant::now();
+    // decode envelope; a non-confidential message has a cleartext payload
     let DecodedEnvelope {
         raw_header: _,
         envelope:
@@ -86,9 +120,8 @@ pub fn verify<'a>(
                 signature_type,
                 sender: _,
                 receiver: _,
-                nonconfidential_data: Some(nonconfidential_data),
             },
-        ciphertext: None,
+        payload_position: Some(payload),
     } = view
         .into_opened::<&[u8]>()
         .map_err(|_| crate::cesr::error::DecodeError::VidError)?
@@ -96,12 +129,14 @@ pub fn verify<'a>(
         return Err(CryptoError::MissingCiphertext);
     };
 
-    #[cfg(feature = "bench-network-timings")]
-    crate::bench::record_open_core(open_core_started);
+    if crypto_type != CryptoType::Plaintext {
+        return Err(CryptoError::MissingCiphertext);
+    }
 
     Ok((
-        nonconfidential_data,
+        crate::cesr::decode_payload(payload)?,
         MessageType {
+            enclosing_crypto_type: None,
             crypto_type,
             signature_type,
         },

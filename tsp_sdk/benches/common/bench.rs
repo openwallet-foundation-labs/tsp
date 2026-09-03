@@ -1,7 +1,7 @@
 use std::hint::black_box;
 
 use tsp_sdk::{
-    ReceivedTspMessage, SecureStore, VerifiedVid,
+    ReceivedTspMessage, RelationshipStatus, SecureStore, VerifiedVid,
     cesr::decode_envelope,
     crypto::{blake2b256, sha256},
     definitions::Payload,
@@ -40,6 +40,23 @@ pub fn setup_store(_benchmark_id: &'static str, payload_len: usize) -> StoreCase
     store.add_private_vid(alice.clone(), None).unwrap();
     store.add_private_vid(bob.clone(), None).unwrap();
 
+    // application messages are only accepted within an established
+    // relationship (spec 7.2.2); the benchmark measures the message path, not
+    // the relationship forming that precedes it
+    for (local, remote) in [(&alice, &bob), (&bob, &alice)] {
+        store
+            .set_relation_and_status_for_vid(
+                remote.identifier(),
+                RelationshipStatus::Bidirectional {
+                    thread_id: [0x11; 32],
+                    remote_thread_id: [0x22; 32],
+                    outstanding_nested_requests: vec![],
+                },
+                local.identifier(),
+            )
+            .unwrap();
+    }
+
     StoreCase {
         store,
         sender: alice.identifier().to_string(),
@@ -51,7 +68,7 @@ pub fn setup_store(_benchmark_id: &'static str, payload_len: usize) -> StoreCase
 pub fn store_seal_open(case: &StoreCase) -> usize {
     let (_endpoint, mut sealed) = case
         .store
-        .seal_message(&case.sender, &case.receiver, None, case.payload.as_slice())
+        .seal_message(&case.sender, &case.receiver, case.payload.as_slice())
         .unwrap();
 
     let opened = case.store.open_message(sealed.as_mut_slice()).unwrap();
@@ -79,12 +96,11 @@ pub fn crypto_seal_open(case: &CryptoCase) -> usize {
     let mut sealed = tsp_sdk::crypto::seal(
         black_box(&case.alice),
         black_box(&case.bob),
-        None,
         Payload::Content(case.payload.as_slice()),
     )
     .unwrap();
 
-    let (_ncd, opened, _crypto_type, _sig_type) = tsp_sdk::crypto::open(
+    let (opened, _crypto_type, _sig_type) = tsp_sdk::crypto::open(
         black_box(&case.bob),
         black_box(&case.alice),
         sealed.as_mut_slice(),
@@ -113,7 +129,7 @@ pub fn setup_cesr_fixture(_benchmark_id: &'static str, payload_len: usize) -> Ve
     let bob = fixture_owned_vid("bob");
     let payload = seeded_bytes(0x434553525F504C44u64 ^ payload_len as u64, payload_len);
 
-    tsp_sdk::crypto::seal(&alice, &bob, None, Payload::Content(payload.as_slice())).unwrap()
+    tsp_sdk::crypto::seal(&alice, &bob, Payload::Content(payload.as_slice())).unwrap()
 }
 
 pub fn cesr_decode_envelope(message: &mut [u8]) -> usize {
@@ -133,8 +149,11 @@ pub enum VidVerifyInput {
 }
 
 fn setup_did_peer() -> VidVerifyInput {
+    // the long form of a did:peer:4, which is what an endpoint resolves: the
+    // short form carries no document. Fixed rather than generated so the
+    // measured work is the same run to run.
     VidVerifyInput::Peer(
-        "did:peer:2.Vz6MurhTjqX5uhQ5bJbAaoEwSDFcKDwVJTvoii51JBtSPpKzX.Ez6LbvBvy92yWENk8xKYmaX9X9nzMtQCQ2EqgdLKv2YkcpHo7.SeyJzIjp7InVyaSI6InRzcDovLyJ9LCJ0IjoidHNwIn0"
+        "did:peer:4zQmRAVYmJfBEJQmwGrLSHBuhGPzfrrc3Stpy4PJ7A4prRqv:z2kCqs4oURbyPVxWvLGsQbAdjk8rSFaHh3WrHx3BhMyxctozJVLhk8RTXhxMySbJbzBktUG1A5NFknC4vtqSuS2XsU7uvAcHCqu8RpQ5xcQNHieTHAj6rN745QAfnjjzY4YTPBBiPJ8M2HDdPV8AWFuuYXXrAFvymCLkWgoVujXuqk3cccEfM7p7cWmpVetistjz76jmy5VMrGYtCPVkWabWc7bb9baLEASCmDyM2rwfmPQP6simivu5KXoaNjFK3id5Fg1cGk8NKquFDF6nE4k6FqnXRtcXGzKxn8zkLG8QxG3zHRYjfCuFjEou7y8MhBfmB1UTuGZ2Qh7wwp6hNXgewpw8PfZkLfxia4QaamwDEAGgZ44nq1ioGUCrA3KwSQCNycxbggBmGsacER2ki5iZKKmBLcW2pZTpThmQyigApG26uW7xB1EH9Mn2XHqZRS8ie7Uyh5iyBJ8gdzUyxEuVLpFAvaJf4Kmknr8G2Tyb5LtwHkjR9nW56QYXpUThqVjyZ4APL428pJxCRR5MrTepp5ahHbY7YjTGu5eUCS8kMfpEBtvzkxeAqsaN8a2C3e"
             .to_string(),
     )
 }
