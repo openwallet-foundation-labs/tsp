@@ -1,6 +1,8 @@
 /// Error originating from the TSP library
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
+    #[error("Unsupported signature key type for this operation")]
+    UnsupportedSignatureKeyType,
     #[error("Error: {0}")]
     Encode(#[from] crate::cesr::error::EncodeError),
     #[error("Error: {0}")]
