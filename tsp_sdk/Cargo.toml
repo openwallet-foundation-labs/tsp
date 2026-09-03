@@ -40,7 +40,7 @@ async = [
   "dep:quinn",
 ]
 resolve = ["serialize", "dep:reqwest", "dep:didwebvh-rs"]
-serialize = ["dep:serde", "dep:serde_with"]
+serialize = ["dep:serde_with"]
 use_local_certificate = []
 postgres = ["async", "aries-askar/postgres"]
 
@@ -80,7 +80,7 @@ quinn = { workspace = true, optional = true }
 # resolve
 reqwest = { workspace = true, optional = true }
 # serialize
-serde = { workspace = true, optional = true }
+serde = { workspace = true, optional = false }
 serde_json = { workspace = true, optional = false }
 serde_with = { workspace = true, optional = true }
 bs58 = { workspace = true, optional = false }
