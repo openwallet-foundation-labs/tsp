@@ -85,8 +85,16 @@ tsp -w b print b | xargs tsp -w a verify --alias b
 
 The sender `a` also resolves and verifies the first intermediary `p`, and requests a relationship with this intermediary:
 
+Each intermediary publishes its own identifier on its home page, so read them from there rather
+than copying them from here:
+
 ```sh
-tsp -w a verify did:web:p.teaspoon.world --alias p
+DID_P=  # the identifier shown at https://p.teaspoon.world/
+DID_Q=  # the identifier shown at https://q.teaspoon.world/
+```
+
+```sh
+tsp -w a verify "$DID_P" --alias p
 tsp -w a request -s a -r p --wait
 ```
 
@@ -95,7 +103,7 @@ Our public demo intermediaries are configured to accept all incoming relationshi
 The receiver `b` resolves and verifies the second intermediary `q`, and requests a relationship with this second intermediary:
 
 ```sh
-tsp -w b verify did:web:q.teaspoon.world --alias q
+tsp -w b verify "$DID_Q" --alias q
 tsp -w b request -s b -r q --wait
 ```
 
@@ -112,7 +120,7 @@ echo "DID_Q2=$DID_Q2"
 Now that we have set up all the relations between the nodes, we can configure the route for messages that are to be delivered from `a` to `b`. We will route these messages via `p` to `q`, which drops them off at `b`'s nested VID `b2`:
 
 ```sh
-tsp -w a set-route b "p,did:web:q.teaspoon.world,$DID_B2"
+tsp -w a set-route b "p,$DID_Q,$DID_B2"
 ```
 
 Sending the routed message is trivial, now we have configured the relations and route.
@@ -151,8 +159,8 @@ OfUxSph1RUh4mgyOwdgIh855Y4V8A59URG4-TH3s8wy2cSkwXwTnFIZVtgJ3_Xla9uA5E2o6-CAX
 Note that the message is longer than a direct mode message, since the ciphertext contains another
 TSP message.
 
-Note also who the envelope names. `VID_sndr` is `a` and `VID_rcvr` is the *first intermediary*,
-`did:web:p.teaspoon.world` — not `b`. The rest of the route and the message for `b` are inside the
+Note also who the envelope names. `VID_sndr` is `a` and `VID_rcvr` is the *first intermediary* —
+not `b`. The rest of the route and the message for `b` are inside the
 ciphertext, which `p` decrypts to learn only the next hop and an opaque blob to forward. No
 intermediary sees the message, and none of them sees the whole route. See
 [CESR encoding](../cesr.md) for the codes.
