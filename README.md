@@ -10,12 +10,17 @@ Prototype Rust SDK for the [Trust Spanning Protocol](https://trustoverip.github.
 
 ## Status
 
-This project is in its initial state. Development is ongoing and interfaces or
-structure of the repository are likely to change. Nothing in this repository at
-this moment represents a "final design" or to be overriding the Trust Spanning Protocol specification, or indicating a
+This implements revision 3 of the specification. Development is ongoing and interfaces or
+structure of the repository are likely to change. Nothing in this repository at this moment
+represents a "final design", overrides the Trust Spanning Protocol specification, or indicates a
 future direction of the Trust Spanning Protocol.
 
 In short, it is not the reference implementation _yet_.
+
+Messages produced by this revision do not interoperate with earlier ones: the wire version
+changed, the default encryption changed, and `did:peer` identifiers now use numalgo 4. Wallets
+created by earlier versions still open, and `did:web` and `did:webvh` identifiers created by them
+still resolve.
 
 ## How to build this project
 
@@ -58,12 +63,14 @@ The code is organized in various directories:
   - `cesr/` provides minimalist CESR encoding/decoding support that is sufficient for generating and parsing TSP
     messages; to keep complexity to a minimum, we explicitly do not provide a full CESR decoder/encoder.
   - `crypto/` contains the cryptographic core:
-    - generating non-confidential messages signed using Ed25519
-    - generating confidential messages encrypted using [HPKE-Auth](https://datatracker.ietf.org/doc/rfc9180/); using
-      DHKEM(X25519, HKDF-SHA256) as asymmetric primitives and ChaCha20/Poly1305 as underlying AEAD encrypting scheme,
-      and signed using Ed25519 to achieve **non-repudiation** (more precisely "strong receiver-unforgeability under
-      chosen ciphertext" or [RUF-CTXT](https://eprint.iacr.org/2001/079)
-      or [Insider-Auth](https://eprint.iacr.org/2020/1499.pdf)).
+    - signed-only messages, whose payload travels in the clear, signed with Ed25519 or ML-DSA-65
+    - confidential messages encrypted with [HPKE](https://datatracker.ietf.org/doc/rfc9180/) in Base mode, using
+      HKDF-SHA256 and ChaCha20/Poly1305, and signed. The key encapsulation follows the recipient's encryption key
+      type — X25519, or X25519MLKEM768 for post-quantum — so there is no separate post-quantum mode to select.
+    - the sender's own identifier travels *inside* the encrypted payload rather than beside it, which is what binds
+      a message to its sender. The properties this provides, and the argument for them, are in the security
+      considerations of the specification rather than restated here.
+    - the libsodium anonymous sealed box remains available for existing implementations.
   - `definitions/` defines several common data structures, traits and error types that are used throughout the project.
   - `transport/` code (built using [tokio](https://tokio.rs/) foundations) for actually sending and receiving data over
     a transport layer.
@@ -90,7 +97,7 @@ cargo install --path examples/ --bin tsp
 To create an identity:
 
 ```sh
-tsp create --type web --alias bob bob
+tsp create --type webvh --alias bob bob
 ```
 
 To verify a VID:
