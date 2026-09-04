@@ -72,11 +72,9 @@ did:webvh:Qmd6wgj9G7HaktNUPDS5JtsSLERCkzDA6Hqvo9QE8h4dSS:did.teaspoon.world:endp
 hello
 ```
 
-Ann had no relationship with Ben, so one is formed before the message. That request travels the
-same path the message will, which matters in routed mode: asking for a relationship must not
-disclose an address the route exists to conceal.
+Ann had no prior relationship with Ben, so one is formed before the "hello" message. Once a relationship is formed, future messages will not have the relationship forming step.
 
-## Using the library
+## Using the SDK library
 
 ```rust
 let mut alice = AsyncSecureStore::new();
@@ -123,7 +121,7 @@ protocol is meant to span them, not because this crate speaks them yet.
 
 ## Cryptography
 
-An authentic and confidential message is sign-encrypted one of two ways, and which one is recorded in the message:
+An authentic and confidential message is sign-encrypted one of two ways, and which one is encoded in the message itself (not a static selection). This SDK supports both in per message level, further improving interoperability.
 
 - **HPKE** in base mode ([HPKE](https://www.ietf.org/archive/id/draft-ietf-hpke-hpke-04.txt)), with HKDF-SHA256
   and ChaCha20/Poly1305. The key encapsulation follows the recipient's encryption key type —
@@ -174,5 +172,5 @@ Inside the library:
 
 ## Further reading
 
-- [the specification](https://trustoverip.github.io/tswg-tsp-specification/) — the protocol itself
+- [the specification](https://trustoverip.github.io/tswg-tsp-specification/) — the Trust Spanning Protocol specification
 - [docs.rs/tsp_sdk](https://docs.rs/tsp_sdk/) — API documentation
