@@ -143,7 +143,7 @@ enum Commands {
     Print { alias: String },
     #[command(
         arg_required_else_help = true,
-        about = "create and register a did:web identifier"
+        about = "create an identifier and register it, of the type given by --type"
     )]
     Create {
         #[arg(short, long)]
