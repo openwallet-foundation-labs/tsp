@@ -81,13 +81,20 @@
 pub mod cesr;
 
 /// Contains the cryptographic core of the TSP protocol
-///   - generating non-confidential messages signed using Ed25519
-///   - generating confidential messages encrypted using
-///     [HPKE-Auth](https://datatracker.ietf.org/doc/rfc9180/);
-///     using DHKEM(X25519, HKDF-SHA256) as asymmetric primitives and
-///     ChaCha20/Poly1305 as underlying AEAD encrypting scheme,
-///     and signed using Ed25519 to achieve **non-repudiation**
-///     (more precisely "strong receiver-unforgeability under chosen
+///   - signed-only messages, whose payload travels in the clear,
+///     signed with Ed25519 or ML-DSA-65
+///   - confidential messages encrypted with
+///     [HPKE](https://datatracker.ietf.org/doc/rfc9180/) in Base mode,
+///     using HKDF-SHA256 and ChaCha20/Poly1305, and signed. The key
+///     encapsulation follows the recipient's encryption key type —
+///     X25519, or X25519MLKEM768 for post-quantum — so there is no
+///     separate post-quantum mode to select.
+///   - the sender's own identifier travels inside the encrypted payload
+///     rather than beside it, which is what binds a message to its
+///     sender. The properties this provides are argued in the security
+///     considerations of the specification.
+///   - the libsodium anonymous sealed box remains available for existing
+///     implementations.
 pub mod crypto;
 
 #[cfg(feature = "bench-network-timings")]

@@ -6,112 +6,134 @@
 
 # TSP SDK
 
-Prototype Rust SDK for the [Trust Spanning Protocol](https://trustoverip.github.io/tswg-tsp-specification/)
+A Rust implementation of the [Trust Spanning Protocol](https://trustoverip.github.io/tswg-tsp-specification/).
+
+TSP lets two parties who each have a verifiable identifier — a `did:webvh`, a `did:peer`, or an
+identifier from some other system entirely — exchange messages that are authentic, confidential,
+and attributable to the identifier rather than to a key. It is a spanning layer: it does not
+replace the network you send over, and it does not care which identifier system either side uses,
+only that both can be resolved and verified.
+
+This crate gives you a wallet holding your own identifiers and the ones you have verified, and a
+small API for sending and receiving over that wallet. Where the message travels — HTTP, TCP, TLS,
+QUIC, or through an intermediary that holds it until you collect it — is a property of the
+identifier you are sending to, not something you choose at each call.
+
+## What using it looks like
+
+```rust
+let mut alice = AsyncSecureStore::new();
+alice.add_private_vid(OwnedVid::from_file("alice/piv.json").await?, None)?;
+alice.verify_vid("did:webvh:...:bob", Some("bob".into())).await?;
+
+alice.send(alice_vid, bob_vid, b"hello world").await?;
+```
+
+Bob receives a stream, because a message is not the only thing that can arrive — a first contact
+also brings a request to form a relationship:
+
+```rust
+while let Some(message) = bobs_messages.next().await {
+    match message? {
+        ReceivedTspMessage::GenericMessage { sender, message, .. } => { /* ... */ }
+        ReceivedTspMessage::RequestRelationship { sender, .. } => { /* ... */ }
+        _ => {}
+    }
+}
+```
+
+The complete, compiling version of this is in the [crate documentation](https://docs.rs/tsp_sdk/),
+where it runs as part of the test suite.
 
 ## Status
 
-This project is in its initial state. Development is ongoing and interfaces or
-structure of the repository are likely to change. Nothing in this repository at
-this moment represents a "final design" or to be overriding the Trust Spanning Protocol specification, or indicating a
-future direction of the Trust Spanning Protocol.
+This implements revision 3 of the specification. Development is ongoing, and interfaces or the
+structure of the repository are likely to change. Nothing here represents a "final design",
+overrides the specification, or indicates a future direction for it. It is not the reference
+implementation _yet_.
 
-In short, it is not the reference implementation _yet_.
+Messages produced by this revision do not interoperate with earlier ones: the wire version
+changed, the default encryption changed, and `did:peer` identifiers moved to numalgo 4. Wallets
+written by earlier versions still open, and `did:web` and `did:webvh` identifiers created by them
+still resolve.
 
-## How to build this project
+## Building and testing
 
-You will need to install the most recent Rust compiler, by following the
-[these instructions](https://www.rust-lang.org/tools/install).
-
-Then, you can use these commands to check out and test the repository:
+Install a recent Rust compiler by [following these instructions](https://www.rust-lang.org/tools/install),
+then:
 
 ```sh
 git clone https://github.com/openwallet-foundation-labs/tsp.git
-cd tsp/tsp_sdk
+cd tsp
 cargo test
 ```
 
-If you want to test the language bindings for Python and JavaScript as well, you can run `cargo test` in the top level
-directory of this repository. Please be aware that this requires a working Python installation on your system.
+Running `cargo test` from the top level also exercises the Python and JavaScript bindings, which
+needs a working Python installation. To test only the library, run it in `tsp_sdk/` instead.
 
-To build the documentation, run:
+To build the documentation:
 
 ```sh
 cargo doc --workspace --no-deps
 ```
 
-Apart from the library, there are a few example executables.
-The CLI is most useful, see below how to install and use the CLI.
+## The command line tool
 
-## Organization of the project folder
-
-At this point in time, this repository is organized
-using [Cargo workspaces](https://doc.rust-lang.org/book/ch14-03-cargo-workspaces.html).
-The workspace contains five crates, the TSP SDK crate, an examples crate, bindings for Python and JavaScript, and one
-for fuzzing.
-
-The code is organized in various directories:
-
-- `examples/` contains example programs
-- `tsp_python` contains the Python bindings
-- `tsp_javascript` contains the JavaScript bindings
-- `tsp_sdk/` contains the TSP library, the source code is divided in the following modules / folders:
-  - `cesr/` provides minimalist CESR encoding/decoding support that is sufficient for generating and parsing TSP
-    messages; to keep complexity to a minimum, we explicitly do not provide a full CESR decoder/encoder.
-  - `crypto/` contains the cryptographic core:
-    - generating non-confidential messages signed using Ed25519
-    - generating confidential messages encrypted using [HPKE-Auth](https://datatracker.ietf.org/doc/rfc9180/); using
-      DHKEM(X25519, HKDF-SHA256) as asymmetric primitives and ChaCha20/Poly1305 as underlying AEAD encrypting scheme,
-      and signed using Ed25519 to achieve **non-repudiation** (more precisely "strong receiver-unforgeability under
-      chosen ciphertext" or [RUF-CTXT](https://eprint.iacr.org/2001/079)
-      or [Insider-Auth](https://eprint.iacr.org/2020/1499.pdf)).
-  - `definitions/` defines several common data structures, traits and error types that are used throughout the project.
-  - `transport/` code (built using [tokio](https://tokio.rs/) foundations) for actually sending and receiving data over
-    a transport layer.
-  - `vid/` contains code for handling _verified identifiers_ and identities. Currently, `did:peer`, `did:web` and `did:webvh` are
-    supported.
-
-## Documentation
-
-Documentation on TSP and how to use our example projects (CLI / web interface)
-can be found on <https://docs.teaspoon.world>.
-
-The development documentation is available at [docs.rs](https://docs.rs/tsp_sdk/).
-
-## Test CLI
-
-The `examples` crate contains a test CLI interface for this library.
-
-Install it by running the following command in the project root:
+The `examples` crate contains a command line tool, which is the quickest way to see the protocol
+work end to end. Install it from the project root:
 
 ```sh
 cargo install --path examples/ --bin tsp
 ```
 
-To create an identity:
+Create an identity, and verify someone else's:
 
 ```sh
-tsp create --type web --alias bob bob
-```
-
-To verify a VID:
-
-```sh
+tsp create --type webvh --alias bob bob
 tsp verify --alias alice did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice
 ```
 
-See <https://docs.teaspoon.world> for the full documentation.
+The [documentation](https://docs.teaspoon.world) walks through sending directly, sending through
+an intermediary so that neither correspondent learns the other's address, and nesting one message
+inside another.
 
-## Implement custom VIDs
+## Cryptography
 
-See [the documentation](https://docs.teaspoon.world/custom-vids.html) on how to implement custom
-VIDs.
+Confidential messages are encrypted with [HPKE](https://datatracker.ietf.org/doc/rfc9180/) in Base
+mode, using HKDF-SHA256 and ChaCha20/Poly1305, and signed. The key encapsulation follows the
+recipient's encryption key type — X25519, or X25519MLKEM768 for post-quantum — so there is no
+separate post-quantum mode to select. Signatures are Ed25519 or ML-DSA-65. A message may also be
+signed without being encrypted, in which case its payload travels in the clear.
 
-## Intermediary server
+What binds a message to its sender is that the sender's own identifier travels *inside* the
+encrypted payload rather than beside it, where an attacker could change it. The properties this
+provides are argued in the security considerations of the specification rather than restated here.
 
-See [the documentation](https://docs.teaspoon.world/intermediary.html) on how to create / set up an
-intermediary server.
+The libsodium anonymous sealed box remains available for existing implementations.
 
-## Technical specification
+## Repository layout
 
-See [the documentation](https://docs.teaspoon.world/TSP-technical-specification.html) for the
-technical specification.
+The workspace holds five crates:
+
+- `tsp_sdk/` — the library
+- `examples/` — the command line tool, a demo server, an intermediary, and a DID server
+- `tsp_python/`, `tsp_javascript/` — bindings
+- `fuzz/` — fuzzing targets
+
+Inside the library:
+
+- `cesr/` — encoding and decoding of the wire format. Deliberately minimal: enough to produce and
+  parse TSP messages, not a general CESR implementation.
+- `crypto/` — the cryptographic core described above.
+- `vid/` — verified identifiers. `did:peer`, `did:web` and `did:webvh` are supported; see
+  [the documentation](https://docs.teaspoon.world/custom-vids.html) for adding your own.
+- `transport/` — sending and receiving over HTTP, TCP, TLS and QUIC, built on
+  [tokio](https://tokio.rs/).
+- `definitions/` — the data structures, traits and errors shared across the above.
+
+## Further reading
+
+- [docs.teaspoon.world](https://docs.teaspoon.world) — guides, the command line tool, and how to
+  [run an intermediary](https://docs.teaspoon.world/intermediary.html)
+- [docs.rs/tsp_sdk](https://docs.rs/tsp_sdk/) — API documentation
+- [the specification](https://trustoverip.github.io/tswg-tsp-specification/)
