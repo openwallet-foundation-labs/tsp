@@ -9,7 +9,8 @@ readme.workspace = true
 description.workspace = true
 rust-version.workspace = true
 
-publish = true
+# Belongs on npm, not crates.io: nothing consumes this as a Rust dependency.
+publish = false
 
 [features]
 pq = ["tsp_sdk/pq"]
