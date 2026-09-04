@@ -376,7 +376,6 @@ impl VidSignatureKeyType {
     }
 }
 
-// ANCHOR: custom-vid-mbBook
 pub trait VerifiedVid: Send + Sync {
     /// A identifier of the Vid as bytes (for inclusion in TSP packets)
     fn identifier(&self) -> &str;
@@ -444,7 +443,6 @@ pub trait PrivateVid: VerifiedVid + Send + Sync {
         })
     }
 }
-// ANCHOR_END: custom-vid-mbBook
 
 impl Debug for PrivateKeyData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

@@ -1,7 +1,6 @@
 # This files defines the Python types for the generated PyO3 classes that are exposed directly
 # without wrapping it in a Python class
 
-# ANCHOR: OwnedVid-mdBook
 class OwnedVid:
     """Class for managing VIDs for which we own the private keys"""
 
@@ -31,4 +30,3 @@ class OwnedVid:
     def endpoint(self) -> str:
         """Get the transport URL"""
         ...
-    # ANCHOR_END: OwnedVid-mdBook
