@@ -12,7 +12,6 @@ use aries_askar::{ErrorKind, StoreKeyMethod, entry::EntryOperation};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-// ANCHOR: custom-secure-storage-mbBook
 #[async_trait]
 pub trait SecureStorage: Sized {
     /// Create a new secure storage
@@ -36,7 +35,6 @@ pub trait SecureStorage: Sized {
     /// Destroy the secure storage
     async fn destroy(self) -> Result<(), Error>;
 }
-// ANCHOR_END: custom-secure-storage-mbBook
 
 /// An implementation of secure storage using Aries Askar
 pub struct AskarSecureStorage {

@@ -172,5 +172,7 @@ Inside the library:
 
 ## Further reading
 
+- [the manual](docs/manual.md) — using the protocol, embedding the library, operating the
+  services, and working on the SDK
 - [the specification](https://trustoverip.github.io/tswg-tsp-specification/) — the Trust Spanning Protocol specification
 - [docs.rs/tsp_sdk](https://docs.rs/tsp_sdk/) — API documentation
