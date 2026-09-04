@@ -69,8 +69,8 @@ Here's an overview of what this looks like:
 Let's create two identities `a` and `b` such that `a` talks through intermediary `p` and `b` talks through intermediary `q`. The `--server` determines which server the clients use for transport:
 
 ```sh
-tsp -w a --server p.teaspoon.world create a --type web --alias a
-tsp -w b --server q.teaspoon.world create b --type web --alias b
+tsp -w a --server p.teaspoon.world create a --type webvh --alias a
+tsp -w b --server q.teaspoon.world create b --type webvh --alias b
 ```
 
 You may need to use different usernames if `a` and/or `b` already exist on the DID server.
@@ -140,21 +140,49 @@ echo "Hi b" | tsp --verbose -w a send -s a -r b
 Output:
 
 ```
- INFO tsp_sdk::async_store: sending message to https://p.teaspoon.world/transport/did:web:p.teaspoon.world
+ INFO tsp_sdk::async_store: sending message to https://p.teaspoon.world/transport/did:webvh:QmX22wdsvULMiphZeHpZmdTJN82CobY7NJGWDpCCwyfjYw:did.teaspoon.world:endpoint:p
 CESR-encoded message:
--ECIYTSP-ABA6BANAABkaWQ6d2ViOmRpZC50ZWFzcG9vbi53b3JsZDplbmRwb2ludDph4BAIZGlk
-OndlYjpwLnRlYXNwb29uLndvcmxk4FBuPZAdi6qIWSbNfTGyivu7yQwt41JJrwKW7FltEEStjDY0
-cdKI1VtNjC3vV7w08a9kxKKNMBO92oyruf-
-bquXTDjKpYFPIMSOS7jX1P6xvmmES8qp7UXApBzhNw-
-yIReDBbICO6e12snSFuk2jfdz-1Y0RL0M4wVudlmpVvMgyH0M1qOzkVurlUBIlHFCb-vtw1G7wV-
-JUC8fe3Dtm-1IAPIIaB8W6F5xyKZybgq0eH5h90AUInKsADa7qI1ZmaKLgQKraFGmn5KiaSVI534
-s85wkj15gEPLN80sZ-
-EDTvIUWUodZVtoLVWG24SxeUQeEElyKhOfYUNBMyRxZQ28dl0ysbGxVjmB0LV1dZ_LfH-go-JMzg
-OfUxSph1RUh4mgyOwdgIh855Y4V8A59URG4-TH3s8wy2cSkwXwTnFIZVtgJ3_Xla9uA5E2o6-CAX
--KAWBACkD2skOFVIiKrg8wCoOnzk2pLN0rwr5l8VW-4FikYFAcgge8YcJTyBw8bp4vyxugYuHfRb
-5Gf_Vi-6MY8z6KoE
- INFO tsp: sent message (5 bytes) from did:web:did.teaspoon.world:endpoint:a to did:web:did.teaspoon.world:endpoint:b
+-EELYTSP-ABA6BAfAABkaWQ6d2Vidmg6UW1QYlc1QjlScE5QOGsyR0M0dkJzY2JkY3ZUVEJheFFS
+a0w5ZUI1Mm5vYXdxZDpkaWQudGVhc3Bvb24ud29ybGQ6ZW5kcG9pbnQ6YTI2NTA05BAdAGRpZDp3
+ZWJ2aDpRbVgyMndkc3ZVTE1pcGhaZUhwWm1kVEpOODJDb2JZN05KR1dEcENDd3lmall3OmRpZC50
+ZWFzcG9vbi53b3JsZDplbmRwb2ludDpw4FDKcwGDfgH_B13GJM1-ZojR0xhP1uJXlMHvvKMHdPQy
+bAP_I3cIC8wqKBZZRORNEnKNrecNPoCPw6rQlIO1_3Q0HSkCLYUj1Lj_OXMnSVJwaMnNEHnwfTw0
+rpEBztCXFHzu18jCUpNFFgeApI_V2wYfw9zzV8McH7HPIu6U94xdvr-
+kAwizSa9yZbOa99ibbRZwk1Bctd8Wv-5IqIaHgiYlNXROfXEJb6Q2pbhXTF11zF8SNcw-
+NtsfuL4OFL69xBN6zwNqyBppcRRYVkSoal47XcziAMXlVijCeI1ZIOokRFmTKyC9ci80yGM-OI78
+LQv2qxFOw631ZFbqLTA_O7xPGK-4IaTYFhWuMc6tpMK85Pyk1FO_9WON1WuYraegNkRjnOG8hYj_
+iZLH5XKkJ12zGYvTdHJXyWUuM3TsavUC3U5NxFXA52b34GaaMawwNbFhBjtMBeYvLcKbwFwm5AQZ
+b-H_dWs5sBIvm5cc_sdYyPfjOVnD-YXlbxwU0pSsSEGQ-sDBD9wcXXZdmJJ7zK944wMnaTf4QdLx
+iSDTOaxd6Qp7VG84OcJkXWdt32tFvGwDHguE1AXMUv3ZgieZupSJQ5cyyMl8dHhcXKI9sEjaLDOP
+-mBl473sIdlYU1ME-mYMugGaCZDr3SUohNSjucoawBSYjkiX9CzWG-4ahGjfAxnQn0taZQKyQLhC
+N4J-wpUc02XlBXccW2ha-7v42jHP7Z1ydCgGYMmZKFsk-
+Elgljie7-cQFCmQq30rSq1QFoizYo1XLSKwTblypAFDb3e_CmHgfgQQBwtgKunXv7c8-CAX-KAWB
+AAlI7CsBCHc88Q-LAXoRNK5v-oeZ8wrlCP14wKCinJRg29vn4mCdZROTyYy0390Lv5ORP6kS6NDH
+yZA6OMz-RkL
+ INFO tsp_sdk::async_store: sending message to https://p.teaspoon.world/transport/did:webvh:QmX22wdsvULMiphZeHpZmdTJN82CobY7NJGWDpCCwyfjYw:did.teaspoon.world:endpoint:p
+CESR-encoded message:
+-ED8YTSP-ABA6BAfAABkaWQ6d2Vidmg6UW1QYlc1QjlScE5QOGsyR0M0dkJzY2JkY3ZUVEJheFFS
+a0w5ZUI1Mm5vYXdxZDpkaWQudGVhc3Bvb24ud29ybGQ6ZW5kcG9pbnQ6YTI2NTA05BAdAGRpZDp3
+ZWJ2aDpRbVgyMndkc3ZVTE1pcGhaZUhwWm1kVEpOODJDb2JZN05KR1dEcENDd3lmall3OmRpZC50
+ZWFzcG9vbi53b3JsZDplbmRwb2ludDpw4FC7YRJ3CANvrxtL2ECeimpjhsAeAr75wT56O7PDR2CH
+hWhs7y_98vQAZ1MOfovWhjf7dbga9Dyoslf9txL9q7yL_SUjinoaNfbtJJQGLB35YJAfAbunjtE5
+aguBp43xj-p_kA_qkD0O9g9Oeo5bt-
+WDv_szkU3dES2-3V2drH8QfutvS1SYM7fW7MX0s7Yo_mIvWTjArqUKVtMag4AmIvg-b10Y58dd-
+aelx1GkDraIGxoNG5rjk7fFxeT8vl74ZDNQ0mQD8qlvldfhKao7S__A0YqJJwulZszK7vx_Q-Ruw
+chXMNn6hFdrbeSj8bm_yV_4YAW6Ei3rY53_i3wjE1iqt7MFwflTDL0S2znpvfsEk8R7GyuNIAJNR
+R2qsEXtjzp_yI9_kaI5JQRLSCxaS1ex272j2XPrskLTgU40xHiJPzh0xX675Pq_pBjzwYW3gcTtG
+mYJem_TWOTGfIMXb_7PlLXqofQMluY2PzFUMDc5vi7IgHeKSbB8sc2wGnGayDbtWNoVrixkjZ_7v
+ANRgxPAh3v7fJB0wYd6jHThLBcUCiUM2rnIcgpXTgwresE2JSgSiF29phD903HpUuTLxPIqyBofL
+KHjfAenxw86giaSeVVnFwApAyHTT78DFtX1PCTeCcxq2R6wjAj7wt16XcQuiarA4WHDXPQJbfiIr
+27EttugHQSxgQJVLMfWfJPRocPvfCQQgdeNYP2wC2u6zyNyzma24svBDGSPFYHsWBYPLWci-CAX-
+KAWBACDd8jOnlMxXSiC0I7uKho-DwPccSjE3aeC9v4vdRCD6i_e5ql-ol7WOnsHif3eEqFK-
+MJyY_zq4knF6-LTvIcD
+ INFO tsp: sent message (5 bytes) from a to did:webvh:QmcLEZ4R1BUCeE1B7XaStqeLDySeJXzc82AfvpHVkFFYYo:did.teaspoon.world:endpoint:b28527
 ```
+
+Two messages go out, not one. `a` has no relationship with `b` yet, so the first is a
+relationship request, routed through `p` like everything else — asking for a relationship does
+not disclose the endpoint the route exists to hide. The second is the message itself.
 
 Note that the message is longer than a direct mode message, since the ciphertext contains another
 TSP message.
