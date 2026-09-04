@@ -8,18 +8,75 @@
 
 A Rust implementation of the [Trust Spanning Protocol](https://trustoverip.github.io/tswg-tsp-specification/).
 
-TSP lets two parties who each have a verifiable identifier — a `did:webvh`, a `did:peer`, or an
-identifier from some other system entirely — exchange messages that are authentic, confidential,
-and attributable to the identifier rather than to a key. It is a spanning layer: it does not
-replace the network you send over, and it does not care which identifier system either side uses,
-only that both can be resolved and verified.
+TSP lets two endpoints communicate authentically, confidentially and more privately **even when they identify themselves in
+different but verifiable ways**. One may be a `did:webvh`, another a `did:peer`, another a KERI AID — among potentially others. Any identifier built on public key cryptography with a
+verifiable trust root may qualify. When public facing, these identifiers are often persistent, long term, supporting secure key rotations. TSP is the spanning layer between them: it makes messages
+authentic, confidential where wanted, and resistant to the metadata correlation that otherwise
+leaks who is talking to whom (meta-data privacy). The specification's own analogy is the one worth keeping — TSP
+connects identifier systems much as IP connected heterogeneous networks.
 
-This crate gives you a wallet holding your own identifiers and the ones you have verified, and a
-small API for sending and receiving over that wallet. Where the message travels — HTTP, TCP, TLS,
-QUIC, or through an intermediary that holds it until you collect it — is a property of the
-identifier you are sending to, not something you choose at each call.
+Endpoints form **relationships**, each side verifying the other's identifier independently, and
+those relationships are also persistent as the identifiers and can be the basis of trust or reputation. A virtual channel is established (transports) for a relationship only when the two parties need to communicate. A message can travel **directly** to its
+recipient, or be **routed** through intermediaries that may provide better message delivery services and also better meta-data privacy.
 
-## What using it looks like
+This crate gives you a wallet holding your own identifiers and the ones you have verified, and an
+API for sending and receiving over it. Which transport carries a message — HTTP, TCP, TLS, QUIC,
+or an intermediary holding it until you collect it — follows from the verifiable identifier you are sending
+to (its access point).
+
+## Try it
+
+You may get a sense of how TSP and its whole system work by using the command line tool included in this repo. This tool is for illustration and testing only, not intended for production use.
+
+Install the command line tool:
+
+```sh
+cargo install --path examples/ --bin tsp
+```
+
+Create an identity. Identities are published to a shared public test server, so
+`<your-endpoint-name>` has to be one nobody has taken — pick something unlikely. Creating an
+identity under a name already in use fails rather than overwriting it.
+
+```sh
+tsp --wallet ann create --type webvh --alias me <your-endpoint-name>
+```
+
+In a second terminal, make someone to talk to, and print their identifier:
+
+```sh
+tsp --wallet ben create --type webvh --alias me <another-endpoint-name>
+tsp --wallet ben print me
+```
+
+Leave Ben listening:
+
+```sh
+tsp --wallet ben receive me
+```
+
+Back in the first terminal, verify Ben's identifier and send to it:
+
+```sh
+tsp --wallet ann verify <ben's identifier> --alias ben
+echo -n "hello" | tsp --wallet ann send -s me -r ben
+```
+
+Ben's terminal, verbatim — your identifiers will differ:
+
+```
+ INFO tsp: listening for messages...
+ INFO tsp: received relationship request from did:webvh:Qmd6wgj9G7HaktNUPDS5JtsSLERCkzDA6Hqvo9QE8h4dSS:did.teaspoon.world:endpoint:ann12883, thread-id 'f/5OiwTEqk8suswgcCHks8KuYb0FT4K1d+KCNnF+u3Y'
+did:webvh:Qmd6wgj9G7HaktNUPDS5JtsSLERCkzDA6Hqvo9QE8h4dSS:did.teaspoon.world:endpoint:ann12883	f/5OiwTEqk8suswgcCHks8KuYb0FT4K1d+KCNnF+u3Y
+ INFO tsp: received confidential message (5 bytes) from did:webvh:Qmd6wgj9G7HaktNUPDS5JtsSLERCkzDA6Hqvo9QE8h4dSS:did.teaspoon.world:endpoint:ann12883 (HPKE-Base, Ed25519 signature)
+hello
+```
+
+Ann had no relationship with Ben, so one is formed before the message. That request travels the
+same path the message will, which matters in routed mode: asking for a relationship must not
+disclose an address the route exists to conceal.
+
+## Using the library
 
 ```rust
 let mut alice = AsyncSecureStore::new();
@@ -29,8 +86,7 @@ alice.verify_vid("did:webvh:...:bob", Some("bob".into())).await?;
 alice.send(alice_vid, bob_vid, b"hello world").await?;
 ```
 
-Bob receives a stream, because a message is not the only thing that can arrive — a first contact
-also brings a request to form a relationship:
+Receiving is a stream, because a message is not the only thing that can arrive:
 
 ```rust
 while let Some(message) = bobs_messages.next().await {
@@ -42,20 +98,40 @@ while let Some(message) = bobs_messages.next().await {
 }
 ```
 
-The complete, compiling version of this is in the [crate documentation](https://docs.rs/tsp_sdk/),
-where it runs as part of the test suite.
+The complete, compiling version is in the [crate documentation](https://docs.rs/tsp_sdk/), where
+it runs as part of the test suite.
+
+### From Python and JavaScript
+
+`tsp_python/` binds the library for Python through [PyO3](https://pyo3.rs/); its README shows
+running the examples with [uv](https://docs.astral.sh/uv/), or with maturin directly.
+`tsp_javascript/` builds to WebAssembly with `wasm-pack`, for Node and the browser. Both track the
+Rust library and are built by the same checks.
 
 ## Status
 
-This implements revision 3 of the specification. Development is ongoing, and interfaces or the
+This implements Revision 3 of the specification. Development is ongoing, and interfaces or the
 structure of the repository are likely to change. Nothing here represents a "final design",
 overrides the specification, or indicates a future direction for it. It is not the reference
 implementation _yet_.
 
 Messages produced by this revision do not interoperate with earlier ones: the wire version
-changed, the default encryption changed, and `did:peer` identifiers moved to numalgo 4. Wallets
-written by earlier versions still open, and `did:web` and `did:webvh` identifiers created by them
-still resolve.
+changed, the default encryption changed, and `did:peer` identifiers moved to numalgo 4.
+
+`did:webvh` and `did:peer` are implemented. KERI AIDs are in our roadmap; they are named above because the
+protocol is meant to span them, not because this crate speaks them yet.
+
+## Cryptography
+
+An authentic and confidential message is sign-encrypted one of two ways, and which one is recorded in the message:
+
+- **HPKE** in base mode ([HPKE](https://www.ietf.org/archive/id/draft-ietf-hpke-hpke-04.txt)), with HKDF-SHA256
+  and ChaCha20/Poly1305. The key encapsulation follows the recipient's encryption key type —
+  X25519, or X25519MLKEM768 for post-quantum — so there is no separate post-quantum mode to pick.
+- **The libsodium anonymous sealed box** ([libsodium](https://doc.libsodium.org/)), enhanced with a encrypted sender VID (aka ESSR).
+
+A message may instead be signed without being encrypted, in which case its payload travels in the
+clear. Signatures are Ed25519 or ML-DSA-65.
 
 ## Building and testing
 
@@ -77,40 +153,6 @@ To build the documentation:
 cargo doc --workspace --no-deps
 ```
 
-## The command line tool
-
-The `examples` crate contains a command line tool, which is the quickest way to see the protocol
-work end to end. Install it from the project root:
-
-```sh
-cargo install --path examples/ --bin tsp
-```
-
-Create an identity, and verify someone else's:
-
-```sh
-tsp create --type webvh --alias bob bob
-tsp verify --alias alice did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice
-```
-
-The [documentation](https://docs.teaspoon.world) walks through sending directly, sending through
-an intermediary so that neither correspondent learns the other's address, and nesting one message
-inside another.
-
-## Cryptography
-
-Confidential messages are encrypted with [HPKE](https://datatracker.ietf.org/doc/rfc9180/) in Base
-mode, using HKDF-SHA256 and ChaCha20/Poly1305, and signed. The key encapsulation follows the
-recipient's encryption key type — X25519, or X25519MLKEM768 for post-quantum — so there is no
-separate post-quantum mode to select. Signatures are Ed25519 or ML-DSA-65. A message may also be
-signed without being encrypted, in which case its payload travels in the clear.
-
-What binds a message to its sender is that the sender's own identifier travels *inside* the
-encrypted payload rather than beside it, where an attacker could change it. The properties this
-provides are argued in the security considerations of the specification rather than restated here.
-
-The libsodium anonymous sealed box remains available for existing implementations.
-
 ## Repository layout
 
 The workspace holds five crates:
@@ -125,15 +167,12 @@ Inside the library:
 - `cesr/` — encoding and decoding of the wire format. Deliberately minimal: enough to produce and
   parse TSP messages, not a general CESR implementation.
 - `crypto/` — the cryptographic core described above.
-- `vid/` — verified identifiers. `did:peer`, `did:web` and `did:webvh` are supported; see
-  [the documentation](https://docs.teaspoon.world/custom-vids.html) for adding your own.
+- `vid/` — verified identifiers, their resolution and verification.
 - `transport/` — sending and receiving over HTTP, TCP, TLS and QUIC, built on
   [tokio](https://tokio.rs/).
 - `definitions/` — the data structures, traits and errors shared across the above.
 
 ## Further reading
 
-- [docs.teaspoon.world](https://docs.teaspoon.world) — guides, the command line tool, and how to
-  [run an intermediary](https://docs.teaspoon.world/intermediary.html)
+- [the specification](https://trustoverip.github.io/tswg-tsp-specification/) — the protocol itself
 - [docs.rs/tsp_sdk](https://docs.rs/tsp_sdk/) — API documentation
-- [the specification](https://trustoverip.github.io/tswg-tsp-specification/)
