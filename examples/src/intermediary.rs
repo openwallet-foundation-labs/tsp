@@ -130,8 +130,42 @@ fn wallet_files(wallet: &str) -> [String; 2] {
 }
 
 /// The single object the wallet is kept in.
+///
+/// Only the last component of the wallet's name is used. The wallet itself may be named by a
+/// path, since it lives on local disk, but an object name is not a path: a slash in one has to be
+/// escaped or it addresses a different resource than intended, and reading it back then fails
+/// permanently while looking exactly like an empty bucket.
 fn wallet_object(wallet: &str) -> String {
-    format!("{wallet}.wallet")
+    let name = wallet.rsplit('/').next().unwrap_or(wallet);
+
+    format!("{name}.wallet")
+}
+
+/// Refuse to start if the bucket the wallet is kept in does not exist.
+///
+/// Object storage answers the same way for a missing object and a missing bucket, so without
+/// this a misconfigured bucket is indistinguishable from a first start. The intermediary would
+/// then create an identity, fail to save it, and publish it anyway — burning that name, since
+/// what is published can never be updated by anyone.
+async fn refuse_if_bucket_missing(bucket: &str) {
+    let Ok(token) = access_token().await else {
+        return;
+    };
+
+    let Ok(response) = http_client()
+        .get(format!(
+            "https://storage.googleapis.com/storage/v1/b/{bucket}"
+        ))
+        .bearer_auth(&token)
+        .send()
+        .await
+    else {
+        return;
+    };
+
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        panic!("the bucket {bucket} does not exist; the wallet would have nowhere to live");
+    }
 }
 
 /// Pack the wallet's files into one byte string, each preceded by its length.
@@ -823,10 +857,12 @@ async fn main() {
 
     // Starting without it would look like a first run and create a second identity, which the
     // startup checks would then refuse anyway. Failing here says why.
-    if let Some(bucket) = &args.bucket
-        && let Err(e) = wallet_download(bucket, &args.wallet).await
-    {
-        panic!("could not fetch the wallet from {bucket}: {e}");
+    if let Some(bucket) = &args.bucket {
+        refuse_if_bucket_missing(bucket).await;
+
+        if let Err(e) = wallet_download(bucket, &args.wallet).await {
+            panic!("could not fetch the wallet from {bucket}: {e}");
+        }
     }
 
     let wallet_url = format!("sqlite://{}.sqlite", args.wallet);
@@ -875,10 +911,12 @@ async fn main() {
         None => create_identity(&vault, &db, &args.did_server, &name, transport).await,
     };
 
-    // Publishing is checked on every start rather than only at creation, so that an identity
-    // created while the DID server was unreachable is published later without operator action.
-    ensure_published(&vault, &args.did_server, &did).await;
-
+    // The wallet is written before anything is published, and failing to write it is fatal.
+    //
+    // What is published cannot be withdrawn or updated by anyone without the keys, so publishing
+    // an identity whose keys are not yet saved anywhere burns that name permanently the moment
+    // this process ends. Saving first means the worst case is an unpublished identity, which the
+    // next start simply publishes.
     vault
         .persist(db.export().expect("could not export the wallet"))
         .await
@@ -889,6 +927,10 @@ async fn main() {
             .await
             .expect("could not write the wallet to the bucket");
     }
+
+    // Checked on every start rather than only at creation, so that an identity created while the
+    // DID server was unreachable is published later without operator action.
+    ensure_published(&vault, &args.did_server, &did).await;
 
     let buffer_ttl = Duration::from_secs(args.buffer_ttl);
     let buffer_max = args.buffer_max;
@@ -1503,6 +1545,16 @@ mod tests {
         let parts = vec![b"a database".to_vec(), Vec::new()];
 
         assert_eq!(wallet_unpack(&wallet_pack(parts.clone())), Some(parts));
+    }
+
+    #[test]
+    fn the_object_name_never_contains_a_path() {
+        // The deployment names the wallet by an absolute path. A slash reaching the object name
+        // addresses a different resource, and reading it back then fails forever while looking
+        // exactly like a bucket that has nothing in it yet.
+        assert_eq!(super::wallet_object("/tmp/wallet"), "wallet.wallet");
+        assert_eq!(super::wallet_object("wallet"), "wallet.wallet");
+        assert!(!super::wallet_object("/app/data/wallet").contains('/'));
     }
 
     #[test]
