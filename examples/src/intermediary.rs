@@ -313,7 +313,12 @@ fn did_server_url(did_server: &str, path: &str) -> String {
 /// An HTTP client that trusts the test certificate when built for local testing.
 fn http_client() -> reqwest::Client {
     let client = reqwest::ClientBuilder::new()
-        .user_agent(format!("TSP intermediary / {}", env!("CARGO_PKG_VERSION")));
+        .user_agent(format!("TSP intermediary / {}", env!("CARGO_PKG_VERSION")))
+        // Every one of these calls happens before the port is opened. Without a bound, one that
+        // hangs stops the service from ever starting, and the host kills it for not listening —
+        // reporting a timeout, with nothing in the log to say what was waiting.
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(20));
 
     #[cfg(feature = "use_local_certificate")]
     let client = client.add_root_certificate({
