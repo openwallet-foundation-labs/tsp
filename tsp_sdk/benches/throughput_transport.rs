@@ -55,6 +55,31 @@ fn url(scheme: &str, host: &str, port: u16) -> Url {
     Url::parse(&format!("{scheme}://{host}:{port}")).expect("failed to parse url")
 }
 
+/// Bind a receiver, retrying with a fresh port if the chosen one turns out to
+/// be taken.
+///
+/// The probe binds an IPv4 address while a transport may bind another family:
+/// `localhost` resolves to `::1` first, so a port that probes free on 127.0.0.1
+/// can still be in use on ::1. QUIC hit this often enough to abort the run.
+macro_rules! bind_receiver {
+    ($scheme:expr, $host:expr, $what:expr) => {{
+        let mut bound = None;
+        for _ in 0..32 {
+            let port = if $scheme == "quic" {
+                pick_unused_udp_port()
+            } else {
+                pick_unused_tcp_port()
+            };
+            let candidate = url($scheme, $host, port);
+            if let Ok(stream) = tsp_sdk::transport::receive_messages(&candidate).await {
+                bound = Some((candidate, stream));
+                break;
+            }
+        }
+        bound.unwrap_or_else(|| panic!("{} receive_messages failed after 32 attempts", $what))
+    }};
+}
+
 /// A genuine sealed TSP message carrying `payload_len` bytes of application
 /// payload.
 ///
@@ -128,15 +153,7 @@ fn bench_oneway(c: &mut Criterion, scheme: &'static str, host: &'static str, pay
 
         b.iter_custom(|iters| {
             runtime.block_on(async {
-                let server_port = if scheme == "quic" {
-                    pick_unused_udp_port()
-                } else {
-                    pick_unused_tcp_port()
-                };
-                let server = url(scheme, host, server_port);
-                let mut incoming = tsp_sdk::transport::receive_messages(&server)
-                    .await
-                    .expect("receive_messages failed");
+                let (server, mut incoming) = bind_receiver!(scheme, host, "server");
 
                 let payload = sealed_message(payload_len);
 
@@ -197,19 +214,8 @@ fn bench_roundtrip(
 
         b.iter_custom(|iters| {
             runtime.block_on(async {
-                let (server_port, client_port) = if scheme == "quic" {
-                    (pick_unused_udp_port(), pick_unused_udp_port())
-                } else {
-                    (pick_unused_tcp_port(), pick_unused_tcp_port())
-                };
-                let server = url(scheme, host, server_port);
-                let client = url(scheme, host, client_port);
-                let mut server_incoming = tsp_sdk::transport::receive_messages(&server)
-                    .await
-                    .expect("server receive_messages failed");
-                let mut client_incoming = tsp_sdk::transport::receive_messages(&client)
-                    .await
-                    .expect("client receive_messages failed");
+                let (server, mut server_incoming) = bind_receiver!(scheme, host, "server");
+                let (client, mut client_incoming) = bind_receiver!(scheme, host, "client");
 
                 let request = sealed_message(payload_len);
 
@@ -271,17 +277,38 @@ fn bench_roundtrip(
     });
 }
 
-fn size_label(payload_len: usize) -> &'static str {
-    match payload_len {
-        1 => "1B",
-        1024 => "1KiB",
-        16_384 => "16KiB",
-        _ => "custom",
+fn size_label(payload_len: usize) -> String {
+    const KIB: usize = 1024;
+    const MIB: usize = 1024 * KIB;
+    if payload_len >= MIB && payload_len % MIB == 0 {
+        format!("{}MiB", payload_len / MIB)
+    } else if payload_len >= KIB && payload_len % KIB == 0 {
+        format!("{}KiB", payload_len / KIB)
+    } else {
+        format!("{payload_len}B")
+    }
+}
+
+/// Payload sizes to sweep, overridable with TSP_BENCH_SIZES as a
+/// comma-separated list of byte counts.
+fn sweep_sizes(default: &[usize]) -> Vec<usize> {
+    match std::env::var("TSP_BENCH_SIZES") {
+        Ok(spec) => spec
+            .split(',')
+            .filter_map(|s| s.trim().parse::<usize>().ok())
+            .collect(),
+        Err(_) => default.to_vec(),
     }
 }
 
 fn benches(c: &mut Criterion) {
-    for payload_len in [1usize, 1024usize, 16 * 1024] {
+    const KIB: usize = 1024;
+    const MIB: usize = 1024 * KIB;
+
+    // The framed codec caps a message at 8 MiB, and a sealed message carries
+    // overhead on top of the application payload, so 4 MiB is the largest
+    // round size that fits.
+    for payload_len in sweep_sizes(&[1, KIB, 16 * KIB, 64 * KIB, 256 * KIB, MIB, 4 * MIB]) {
         bench_oneway(c, "tcp", "127.0.0.1", payload_len);
         bench_roundtrip(c, "tcp", "127.0.0.1", payload_len);
 
@@ -289,8 +316,7 @@ fn benches(c: &mut Criterion) {
         bench_roundtrip(c, "tls", "localhost", payload_len);
     }
 
-    // QUIC transport currently limits single-message size to 8KiB.
-    for payload_len in [1usize, 1024usize] {
+    for payload_len in sweep_sizes(&[1, KIB, 16 * KIB, 64 * KIB, 256 * KIB, MIB, 4 * MIB]) {
         bench_oneway(c, "quic", "localhost", payload_len);
         bench_roundtrip(c, "quic", "localhost", payload_len);
     }
