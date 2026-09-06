@@ -1,6 +1,6 @@
 use async_stream::stream;
 use bytes::{Bytes, BytesMut};
-use futures::{SinkExt, StreamExt};
+use futures::{FutureExt, SinkExt, StreamExt};
 use once_cell::sync::Lazy;
 use rustls::{ClientConfig, RootCertStore, crypto::CryptoProvider};
 use rustls_pki_types::{ServerName, pem::PemObject};
@@ -109,7 +109,7 @@ static TLS_CONNECTIONS: Lazy<TokioMutex<HashMap<String, TlsFramed>>> =
     Lazy::new(|| TokioMutex::new(HashMap::new()));
 
 /// Check whether the peer of a cached TLS connection has closed it. This
-/// probes at the TLS layer (a single zero-timeout read poll) rather than at
+/// probes at the TLS layer (a single non-blocking read poll) rather than at
 /// the TCP layer: post-handshake records such as TLS 1.3 session tickets sit
 /// unread in the socket buffer of a send-only connection, so raw-TCP
 /// readability does not distinguish a healthy connection from a closed one,
@@ -120,12 +120,14 @@ async fn tls_peer_closed(framed: &mut TlsFramed) -> bool {
     use tokio::io::AsyncReadExt;
 
     let mut buf = [0u8; 1];
-    match tokio::time::timeout(std::time::Duration::ZERO, framed.get_mut().read(&mut buf)).await {
-        // no application data pending: healthy connection
-        Err(_elapsed) => false,
-        // clean close, error, or application data on a send-only connection
-        Ok(_) => true,
-    }
+    // Poll the read exactly once. A timer must not be used here: tokio's timer
+    // wheel is millisecond-granular, so even a zero-duration timeout costs a
+    // tick per send — around 1.3 ms, which dominated every message.
+    //
+    // Pending means no application data is waiting: a healthy connection. Any
+    // ready result — clean close, error, or application data arriving on a
+    // send-only connection — means it must not be reused.
+    framed.get_mut().read(&mut buf).now_or_never().is_some()
 }
 
 /// Get an existing cached TLS connection or create a new one.

@@ -1164,7 +1164,11 @@ impl AsyncSecureStore {
         db: &SecureStore,
         message: BytesMut,
     ) -> Result<ReceivedTspMessage, Error> {
-        if let Ok(colored) = crate::cesr::color_format(&message) {
+        // Rendering the message only to discard it costs ~31 us/KiB on every
+        // message, so do not format unless TRACE is actually enabled.
+        if tracing::enabled!(tracing::Level::TRACE)
+            && let Ok(colored) = crate::cesr::color_format(&message)
+        {
             tracing::trace!("CESR-encoded message: {}", colored);
         }
 

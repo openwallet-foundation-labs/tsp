@@ -1,6 +1,6 @@
 use async_stream::stream;
 use bytes::{Bytes, BytesMut};
-use futures::{SinkExt, StreamExt};
+use futures::{FutureExt, SinkExt, StreamExt};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -44,13 +44,16 @@ pub(super) async fn connect_any(
 /// the message is lost, which would bypass the send retry path.
 pub(super) async fn peer_closed(stream: &TcpStream) -> bool {
     let mut buf = [0u8; 1];
-    match tokio::time::timeout(std::time::Duration::ZERO, stream.peek(&mut buf)).await {
+    // Poll the peek exactly once. A timer must not be used here: tokio's timer
+    // wheel is millisecond-granular, so even a zero-duration timeout costs a
+    // tick per send — around 1.5 ms, which dominated small messages.
+    match stream.peek(&mut buf).now_or_never() {
         // not readable: healthy idle connection
-        Err(_elapsed) => false,
+        None => false,
         // EOF or socket error: the peer is gone
-        Ok(Ok(0)) | Ok(Err(_)) => true,
+        Some(Ok(0)) | Some(Err(_)) => true,
         // inbound data with the connection still open
-        Ok(Ok(_)) => false,
+        Some(Ok(_)) => false,
     }
 }
 
