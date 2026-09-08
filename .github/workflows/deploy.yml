@@ -34,7 +34,9 @@ jobs:
         with:
           push: true
 #          build-args: "FEATURE_FLAGS=pq"
-          tags: "ghcr.io/openwallet-foundation-labs/tsp/demo-intermediary:${{ env.tag }}"
+          tags: |
+            ghcr.io/openwallet-foundation-labs/tsp/demo-intermediary:${{ env.tag }}
+            ghcr.io/openwallet-foundation-labs/tsp/demo-intermediary:latest
           target: intermediary
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -43,7 +45,9 @@ jobs:
         with:
           push: true
 #          build-args: "FEATURE_FLAGS=pq"
-          tags: "ghcr.io/openwallet-foundation-labs/tsp/demo-server:${{ env.tag }}"
+          tags: |
+            ghcr.io/openwallet-foundation-labs/tsp/demo-server:${{ env.tag }}
+            ghcr.io/openwallet-foundation-labs/tsp/demo-server:latest
           target: server
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -52,7 +56,9 @@ jobs:
         with:
           push: true
 #          build-args: "FEATURE_FLAGS=pq"
-          tags: "ghcr.io/openwallet-foundation-labs/tsp/did-server:${{ env.tag }}"
+          tags: |
+            ghcr.io/openwallet-foundation-labs/tsp/did-server:${{ env.tag }}
+            ghcr.io/openwallet-foundation-labs/tsp/did-server:latest
           target: did-server
           cache-from: type=gha
           cache-to: type=gha,mode=max
