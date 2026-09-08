@@ -27,13 +27,11 @@ class Wallet:
         self.inner.write_wallet()
 
 
-# ANCHOR: secure-store-init-mdBook
 class SecureStore:
     inner: tsp_python.Store
 
     def __init__(self, wallet_url="sqlite://wallet.sqlite", wallet_password="unsecure"):
         self.inner = tsp_python.Store(wallet_url, wallet_password)
-        # ANCHOR_END: secure-store-init-mdBook
 
     def store_kv(self, key: str, value: bytes):
         with Wallet(self):
@@ -47,7 +45,6 @@ class SecureStore:
         with Wallet(self):
             self.inner.remove_kv(key)
 
-    # ANCHOR: manage-vids-mdBook
     def verify_vid(self, did: str, alias: str | None = None) -> str:
         """Resolve DID document, verify it, add vid to the wallet, and its return endpoint"""
         with Wallet(self):
@@ -72,7 +69,6 @@ class SecureStore:
         """Resolve alias to its corresponding DID (if it exists in the wallet)"""
         with Wallet(self):
             return self.inner.resolve_alias(alias)
-        # ANCHOR_END: manage-vids-mdBook
 
     def add_verified_owned_vid(
             self,
@@ -89,7 +85,6 @@ class SecureStore:
         with Wallet(self):
             self.inner.set_route_for_vid(vid, route)
 
-    # ANCHOR: open-seal-mdBook
     def seal_message(
             self,
             sender: str,
@@ -110,9 +105,7 @@ class SecureStore:
         with Wallet(self):
             flat_message = self.inner.open_message(message)
             return ReceivedTspMessage.from_flat(flat_message)
-        # ANCHOR_END: open-seal-mdBook
 
-    # ANCHOR: send-receive-mdBook
     def send(
             self,
             sender: str,
@@ -132,7 +125,6 @@ class SecureStore:
         with Wallet(self):
             message = self.inner.receive(vid)
             return None if message is None else ReceivedTspMessage.from_flat(message)
-        # ANCHOR_END: send-receive-mdBook
 
     def get_sender_receiver(self, message: bytes) -> tuple[str, str]:
         """Get the sender and receiver DIDs for an encoded TSP message"""
