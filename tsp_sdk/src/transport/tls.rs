@@ -104,8 +104,13 @@ pub(super) static TLS_CONFIG: Lazy<Arc<ClientConfig>> = Lazy::new(|| Arc::new(cr
 
 type TlsFramed = Framed<TlsStream<tokio::net::TcpStream>, LengthDelimitedCodec>;
 
+/// One peer's cached connection, with the lock that serialises writes to it.
+/// The map is locked only to find or insert this handle, never while sending;
+/// see the equivalent type in the TCP transport for why.
+type Connection = Arc<TokioMutex<Option<TlsFramed>>>;
+
 /// Cached TLS connections keyed by URL string.
-static TLS_CONNECTIONS: Lazy<TokioMutex<HashMap<String, TlsFramed>>> =
+static TLS_CONNECTIONS: Lazy<TokioMutex<HashMap<String, Connection>>> =
     Lazy::new(|| TokioMutex::new(HashMap::new()));
 
 /// Check whether the peer of a cached TLS connection has closed it. This
@@ -130,93 +135,81 @@ async fn tls_peer_closed(framed: &mut TlsFramed) -> bool {
     framed.get_mut().read(&mut buf).now_or_never().is_some()
 }
 
-/// Get an existing cached TLS connection or create a new one.
-async fn get_or_create_connection(url: &Url) -> Result<(), TransportError> {
-    let key = url.to_string();
+/// The handle for a peer, empty if nothing is connected yet. Holds the map
+/// lock only long enough to look up or insert.
+async fn connection_for(url: &Url) -> Connection {
     let mut cache = TLS_CONNECTIONS.lock().await;
-
-    if let Some(framed) = cache.get_mut(&key)
-        && tls_peer_closed(framed).await
-    {
-        cache.remove(&key);
-    }
-
-    if let std::collections::hash_map::Entry::Vacant(entry) = cache.entry(key) {
-        let addresses = url
-            .socket_addrs(|| None)
-            .map_err(|_| TransportError::InvalidTransportAddress(url.to_string()))?;
-
-        let tcp_stream = super::tcp::connect_any(&addresses, url).await?;
-
-        let address = tcp_stream
-            .peer_addr()
-            .map_err(|e| TransportError::Connection(url.to_string(), e))?;
-
-        let domain = url
-            .domain()
-            .ok_or(TransportError::InvalidTransportAddress(format!(
-                "could not resolve {url} to a domain"
-            )))?
-            .to_owned();
-
-        let dns_name = ServerName::try_from(domain).map_err(|_| {
-            TransportError::InvalidTransportAddress(format!(
-                "could not resolve {url} to a server name"
-            ))
-        })?;
-
-        let connector = TlsConnector::from(TLS_CONFIG.clone());
-
-        let tls_stream = connector
-            .connect(dns_name, tcp_stream)
-            .await
-            .map_err(|e| TransportError::Connection(address.to_string(), e))?;
-
-        let framed = Framed::new(tls_stream, LengthDelimitedCodec::new());
-        entry.insert(framed);
-    }
-
-    Ok(())
+    cache.entry(url.to_string()).or_default().clone()
 }
 
-/// Evict a cached connection so the next send will reconnect.
-async fn invalidate_connection(url: &Url) {
-    let key = url.to_string();
-    let mut cache = TLS_CONNECTIONS.lock().await;
-    cache.remove(&key);
+/// Open a fresh TLS connection to `url`.
+async fn connect(url: &Url) -> Result<TlsFramed, TransportError> {
+    let addresses = url
+        .socket_addrs(|| None)
+        .map_err(|_| TransportError::InvalidTransportAddress(url.to_string()))?;
+
+    let tcp_stream = super::tcp::connect_any(&addresses, url).await?;
+
+    let address = tcp_stream
+        .peer_addr()
+        .map_err(|e| TransportError::Connection(url.to_string(), e))?;
+
+    let domain = url
+        .domain()
+        .ok_or(TransportError::InvalidTransportAddress(format!(
+            "could not resolve {url} to a domain"
+        )))?
+        .to_owned();
+
+    let dns_name = ServerName::try_from(domain).map_err(|_| {
+        TransportError::InvalidTransportAddress(format!("could not resolve {url} to a server name"))
+    })?;
+
+    let connector = TlsConnector::from(TLS_CONFIG.clone());
+
+    let tls_stream = connector
+        .connect(dns_name, tcp_stream)
+        .await
+        .map_err(|e| TransportError::Connection(address.to_string(), e))?;
+    Ok(Framed::new(tls_stream, LengthDelimitedCodec::new()))
 }
 
 /// Send a message over TLS.
 /// Reuses a cached connection with length-delimited framing.
 /// If the connection is stale, it reconnects automatically.
 pub(crate) async fn send_message(tsp_message: &[u8], url: &Url) -> Result<(), TransportError> {
-    let key = url.to_string();
+    let connection = connection_for(url).await;
+    let mut cached = connection.lock().await;
 
-    // First attempt
+    // Drop a connection whose peer has gone before writing to it.
+    if let Some(framed) = cached.as_mut()
+        && tls_peer_closed(framed).await
     {
-        get_or_create_connection(url).await?;
-        let mut cache = TLS_CONNECTIONS.lock().await;
-        if let Some(framed) = cache.get_mut(&key)
-            && framed
-                .send(Bytes::copy_from_slice(tsp_message))
-                .await
-                .is_ok()
-        {
-            return Ok(());
-        }
+        *cached = None;
     }
 
-    // Retry once on failure
-    invalidate_connection(url).await;
-    {
-        get_or_create_connection(url).await?;
-        let mut cache = TLS_CONNECTIONS.lock().await;
-        let framed = cache.get_mut(&key).ok_or(TransportError::Internal)?;
-        framed
-            .send(Bytes::copy_from_slice(tsp_message))
-            .await
-            .map_err(|e| TransportError::Connection(key, e))?;
+    if cached.is_none() {
+        *cached = Some(connect(url).await?);
     }
+
+    let framed = cached.as_mut().ok_or(TransportError::Internal)?;
+    if framed
+        .send(Bytes::copy_from_slice(tsp_message))
+        .await
+        .is_ok()
+    {
+        return Ok(());
+    }
+
+    // Retry once on a fresh connection, leaving nothing cached if that fails
+    // too, so the next send starts over.
+    *cached = None;
+    let mut framed = connect(url).await?;
+    framed
+        .send(Bytes::copy_from_slice(tsp_message))
+        .await
+        .map_err(|e| TransportError::Connection(url.to_string(), e))?;
+    *cached = Some(framed);
 
     Ok(())
 }
