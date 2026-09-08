@@ -310,9 +310,9 @@ fn bench_roundtrip(
 fn size_label(payload_len: usize) -> String {
     const KIB: usize = 1024;
     const MIB: usize = 1024 * KIB;
-    if payload_len >= MIB && payload_len % MIB == 0 {
+    if payload_len >= MIB && payload_len.is_multiple_of(MIB) {
         format!("{}MiB", payload_len / MIB)
-    } else if payload_len >= KIB && payload_len % KIB == 0 {
+    } else if payload_len >= KIB && payload_len.is_multiple_of(KIB) {
         format!("{}KiB", payload_len / KIB)
     } else {
         format!("{payload_len}B")
