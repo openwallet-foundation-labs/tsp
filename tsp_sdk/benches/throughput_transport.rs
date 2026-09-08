@@ -10,6 +10,8 @@ use url::Url;
 mod bench_utils;
 #[path = "common/failure.rs"]
 mod failure_common;
+#[path = "common/sse_endpoint.rs"]
+mod sse_endpoint;
 #[path = "common/tokio_rt.rs"]
 mod tokio_rt;
 
@@ -63,20 +65,48 @@ fn url(scheme: &str, host: &str, port: u16) -> Url {
 /// can still be in use on ::1. QUIC hit this often enough to abort the run.
 macro_rules! bind_receiver {
     ($scheme:expr, $host:expr, $what:expr) => {{
-        let mut bound = None;
-        for _ in 0..32 {
-            let port = if $scheme == "quic" {
-                pick_unused_udp_port()
-            } else {
-                pick_unused_tcp_port()
-            };
-            let candidate = url($scheme, $host, port);
-            if let Ok(stream) = tsp_sdk::transport::receive_messages(&candidate).await {
-                bound = Some((candidate, stream));
-                break;
+        // HTTP is a client-only transport: it subscribes to a server rather
+        // than binding, so the benchmark serves the endpoint itself.
+        if $scheme == "http" {
+            let (candidate, subscribers) = sse_endpoint::spawn().await;
+            let mut stream = tsp_sdk::transport::receive_messages(&candidate)
+                .await
+                .expect("http receive_messages failed");
+            // The event source connects on first poll, not when it is built, so
+            // the stream has to be driven before the server sees a subscriber.
+            // Until it does, a send would be broadcast to nobody and the
+            // benchmark would wait for a message that was already dropped.
+            for _ in 0..2000 {
+                if sse_endpoint::is_ready(&subscribers) {
+                    break;
+                }
+                let _ = tokio::time::timeout(
+                    std::time::Duration::from_millis(1),
+                    futures::StreamExt::next(&mut stream),
+                )
+                .await;
             }
+            assert!(
+                sse_endpoint::is_ready(&subscribers),
+                "the event stream never connected"
+            );
+            (candidate, stream)
+        } else {
+            let mut bound = None;
+            for _ in 0..32 {
+                let port = if $scheme == "quic" {
+                    pick_unused_udp_port()
+                } else {
+                    pick_unused_tcp_port()
+                };
+                let candidate = url($scheme, $host, port);
+                if let Ok(stream) = tsp_sdk::transport::receive_messages(&candidate).await {
+                    bound = Some((candidate, stream));
+                    break;
+                }
+            }
+            bound.unwrap_or_else(|| panic!("{} receive_messages failed after 32 attempts", $what))
         }
-        bound.unwrap_or_else(|| panic!("{} receive_messages failed after 32 attempts", $what))
     }};
 }
 
@@ -280,9 +310,9 @@ fn bench_roundtrip(
 fn size_label(payload_len: usize) -> String {
     const KIB: usize = 1024;
     const MIB: usize = 1024 * KIB;
-    if payload_len >= MIB && payload_len % MIB == 0 {
+    if payload_len >= MIB && payload_len.is_multiple_of(MIB) {
         format!("{}MiB", payload_len / MIB)
-    } else if payload_len >= KIB && payload_len % KIB == 0 {
+    } else if payload_len >= KIB && payload_len.is_multiple_of(KIB) {
         format!("{}KiB", payload_len / KIB)
     } else {
         format!("{payload_len}B")
@@ -314,6 +344,8 @@ fn benches(c: &mut Criterion) {
 
         bench_oneway(c, "tls", "localhost", payload_len);
         bench_roundtrip(c, "tls", "localhost", payload_len);
+
+        bench_oneway(c, "http", "127.0.0.1", payload_len);
     }
 
     for payload_len in sweep_sizes(&[1, KIB, 16 * KIB, 64 * KIB, 256 * KIB, MIB, 4 * MIB]) {
