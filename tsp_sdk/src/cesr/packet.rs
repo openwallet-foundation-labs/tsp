@@ -1,14 +1,17 @@
 use super::consts::{cesr, cesr_data};
 
-/// The TSP version supported by this spec.
+/// The TSP version supported by this spec: MAJOR and MINOR, no patch level.
 ///
-/// Rev 3 is 0.1.0, not 0.0.1: implementations of Rev 2 emit 0.0.1, and the two
-/// revisions are not interoperable — the wire changed throughout. Leaving the
-/// version alone would have made a Rev 3 message indistinguishable from a Rev 2
-/// one until it failed to decode, which is exactly what a version field exists
-/// to prevent. Encoded `YTSP-ABA`, where MAJOR is the count code's identifier
-/// and MINOR and PATCH are six bits each of its count.
-const TSP_VERSION: (u16, u8, u8) = (0, 1, 0);
+/// Rev 3 is 0.2 where Rev 2 is 0.1, and the two are not interoperable — the
+/// wire changed throughout. Leaving the version alone would have made a Rev 3
+/// message indistinguishable from a Rev 2 one until it failed to decode, which
+/// is exactly what a version field exists to prevent.
+///
+/// Encoded `YTSP-AAC`: MAJOR is the count code's identifier, and MINOR is the
+/// whole of its two-character count (spec 9.2.1). An earlier draft split that
+/// count into two six-bit halves for a patch level, which made Rev 3 read as
+/// 0.64 rather than 0.2.
+const TSP_VERSION: (u16, u16) = (0, 2);
 
 /// The CESR code table this implementation follows: genus `AAA`, version 2.00,
 /// identified by the genus/version code `-_AAACAA` (not emitted per message).
@@ -719,7 +722,7 @@ pub fn decode_payload(stream: &mut [u8]) -> Result<DecodedPayload<'_>, DecodeErr
 }
 
 const fn encoded_version() -> u16 {
-    (TSP_VERSION.1 as u16) << 6 | (TSP_VERSION.2 as u16)
+    TSP_VERSION.1
 }
 
 /// Encode a TSP version marker
@@ -741,9 +744,9 @@ fn decode_version(stream: &mut &[u8]) -> Result<(), DecodeError> {
     *stream = new_stream;
 
     // the count identifier is the MAJOR version: a different MAJOR fails to decode,
-    // and per semver a message with a different MAJOR cannot be assumed processable.
-    // The count value carries MINOR and PATCH, which do not affect processability.
-    let _minor_patch = decode_count(TSP_VERSION.0, stream).ok_or(DecodeError::VersionMismatch)?;
+    // since a message with a different MAJOR cannot be assumed processable. The
+    // count value carries MINOR, which does not affect processability.
+    let _minor = decode_count(TSP_VERSION.0, stream).ok_or(DecodeError::VersionMismatch)?;
 
     Ok(())
 }

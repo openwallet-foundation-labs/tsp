@@ -189,14 +189,14 @@ fn walk(text: &str) -> Vec<Segment> {
             continue;
         }
 
-        // the TSP genus, then a count code carrying MAJOR, MINOR and PATCH
+        // the TSP genus, then a count code carrying MAJOR and MINOR
         if h4 == "YTSP" {
             let version = at(i + 4, 4);
             let value = match (
                 version.as_bytes().get(1).copied().and_then(b64_index),
                 count(at(i + 6, 2)),
             ) {
-                (Some(major), Some(mp)) => Some(format!("{major}.{}.{}", mp >> 6, mp & 0x3F)),
+                (Some(major), Some(minor)) => Some(format!("{major}.{minor}")),
                 _ => None,
             };
             out.push(seg(
@@ -210,7 +210,7 @@ fn walk(text: &str) -> Vec<Segment> {
                 SegmentKind::Data,
                 "TSP_Version",
                 version,
-                "MAJOR in the count code's identifier, then MINOR and PATCH",
+                "MAJOR in the count code's identifier, MINOR in its count",
                 value,
             ));
             i += 8;
@@ -444,7 +444,7 @@ mod test {
         let labelled = |name: &str| segments.iter().find(|s| s.label == name).cloned();
         assert_eq!(
             labelled("TSP_Version").and_then(|s| s.value).as_deref(),
-            Some("0.1.0")
+            Some("0.2")
         );
         assert_eq!(
             labelled("VID_sndr").and_then(|s| s.value).as_deref(),
