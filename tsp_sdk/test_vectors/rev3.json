@@ -108,19 +108,19 @@
           "value": "88 quadlets = 264 bytes"
         },
         {
-          "chars": 4,
-          "field": "TSP_Version code",
+          "chars": 5,
+          "field": "TSP protocol code",
           "kind": "code",
-          "note": "the TSP genus",
-          "text": "YTSP",
+          "note": "unique in the CESR code; also the HPKE info",
+          "text": "YTSP-",
           "value": null
         },
         {
-          "chars": 4,
+          "chars": 3,
           "field": "TSP_Version",
           "kind": "data",
-          "note": "MAJOR in the count code's identifier, MINOR in its count",
-          "text": "-AAC",
+          "note": "MAJOR is the first character, MINOR the following two",
+          "text": "AAC",
           "value": "0.2"
         },
         {
@@ -304,19 +304,19 @@
           "value": "69 quadlets = 207 bytes"
         },
         {
-          "chars": 4,
-          "field": "TSP_Version code",
+          "chars": 5,
+          "field": "TSP protocol code",
           "kind": "code",
-          "note": "the TSP genus",
-          "text": "YTSP",
+          "note": "unique in the CESR code; also the HPKE info",
+          "text": "YTSP-",
           "value": null
         },
         {
-          "chars": 4,
+          "chars": 3,
           "field": "TSP_Version",
           "kind": "data",
-          "note": "MAJOR in the count code's identifier, MINOR in its count",
-          "text": "-AAC",
+          "note": "MAJOR is the first character, MINOR the following two",
+          "text": "AAC",
           "value": "0.2"
         },
         {
@@ -496,19 +496,19 @@
           "value": "55 quadlets = 165 bytes"
         },
         {
-          "chars": 4,
-          "field": "TSP_Version code",
+          "chars": 5,
+          "field": "TSP protocol code",
           "kind": "code",
-          "note": "the TSP genus",
-          "text": "YTSP",
+          "note": "unique in the CESR code; also the HPKE info",
+          "text": "YTSP-",
           "value": null
         },
         {
-          "chars": 4,
+          "chars": 3,
           "field": "TSP_Version",
           "kind": "data",
-          "note": "MAJOR in the count code's identifier, MINOR in its count",
-          "text": "-AAC",
+          "note": "MAJOR is the first character, MINOR the following two",
+          "text": "AAC",
           "value": "0.2"
         },
         {
@@ -761,19 +761,19 @@
           "value": "82 quadlets = 246 bytes"
         },
         {
-          "chars": 4,
-          "field": "TSP_Version code",
+          "chars": 5,
+          "field": "TSP protocol code",
           "kind": "code",
-          "note": "the TSP genus",
-          "text": "YTSP",
+          "note": "unique in the CESR code; also the HPKE info",
+          "text": "YTSP-",
           "value": null
         },
         {
-          "chars": 4,
+          "chars": 3,
           "field": "TSP_Version",
           "kind": "data",
-          "note": "MAJOR in the count code's identifier, MINOR in its count",
-          "text": "-AAC",
+          "note": "MAJOR is the first character, MINOR the following two",
+          "text": "AAC",
           "value": "0.2"
         },
         {
@@ -967,19 +967,19 @@
           "value": "85 quadlets = 255 bytes"
         },
         {
-          "chars": 4,
-          "field": "TSP_Version code",
+          "chars": 5,
+          "field": "TSP protocol code",
           "kind": "code",
-          "note": "the TSP genus",
-          "text": "YTSP",
+          "note": "unique in the CESR code; also the HPKE info",
+          "text": "YTSP-",
           "value": null
         },
         {
-          "chars": 4,
+          "chars": 3,
           "field": "TSP_Version",
           "kind": "data",
-          "note": "MAJOR in the count code's identifier, MINOR in its count",
-          "text": "-AAC",
+          "note": "MAJOR is the first character, MINOR the following two",
+          "text": "AAC",
           "value": "0.2"
         },
         {
@@ -1155,19 +1155,19 @@
           "value": "74 quadlets = 222 bytes"
         },
         {
-          "chars": 4,
-          "field": "TSP_Version code",
+          "chars": 5,
+          "field": "TSP protocol code",
           "kind": "code",
-          "note": "the TSP genus",
-          "text": "YTSP",
+          "note": "unique in the CESR code; also the HPKE info",
+          "text": "YTSP-",
           "value": null
         },
         {
-          "chars": 4,
+          "chars": 3,
           "field": "TSP_Version",
           "kind": "data",
-          "note": "MAJOR in the count code's identifier, MINOR in its count",
-          "text": "-AAC",
+          "note": "MAJOR is the first character, MINOR the following two",
+          "text": "AAC",
           "value": "0.2"
         },
         {
@@ -1388,19 +1388,19 @@
           "value": "101 quadlets = 303 bytes"
         },
         {
-          "chars": 4,
-          "field": "TSP_Version code",
+          "chars": 5,
+          "field": "TSP protocol code",
           "kind": "code",
-          "note": "the TSP genus",
-          "text": "YTSP",
+          "note": "unique in the CESR code; also the HPKE info",
+          "text": "YTSP-",
           "value": null
         },
         {
-          "chars": 4,
+          "chars": 3,
           "field": "TSP_Version",
           "kind": "data",
-          "note": "MAJOR in the count code's identifier, MINOR in its count",
-          "text": "-AAC",
+          "note": "MAJOR is the first character, MINOR the following two",
+          "text": "AAC",
           "value": "0.2"
         },
         {
@@ -1627,19 +1627,19 @@
           "value": "69 quadlets = 207 bytes"
         },
         {
-          "chars": 4,
-          "field": "TSP_Version code",
+          "chars": 5,
+          "field": "TSP protocol code",
           "kind": "code",
-          "note": "the TSP genus",
-          "text": "YTSP",
+          "note": "unique in the CESR code; also the HPKE info",
+          "text": "YTSP-",
           "value": null
         },
         {
-          "chars": 4,
+          "chars": 3,
           "field": "TSP_Version",
           "kind": "data",
-          "note": "MAJOR in the count code's identifier, MINOR in its count",
-          "text": "-AAC",
+          "note": "MAJOR is the first character, MINOR the following two",
+          "text": "AAC",
           "value": "0.2"
         },
         {
@@ -1735,19 +1735,19 @@
           "value": "158 quadlets = 474 bytes"
         },
         {
-          "chars": 4,
-          "field": "TSP_Version code",
+          "chars": 5,
+          "field": "TSP protocol code",
           "kind": "code",
-          "note": "the TSP genus",
-          "text": "YTSP",
+          "note": "unique in the CESR code; also the HPKE info",
+          "text": "YTSP-",
           "value": null
         },
         {
-          "chars": 4,
+          "chars": 3,
           "field": "TSP_Version",
           "kind": "data",
-          "note": "MAJOR in the count code's identifier, MINOR in its count",
-          "text": "-AAC",
+          "note": "MAJOR is the first character, MINOR the following two",
+          "text": "AAC",
           "value": "0.2"
         },
         {
@@ -2012,19 +2012,19 @@
           "value": "69 quadlets = 207 bytes"
         },
         {
-          "chars": 4,
-          "field": "TSP_Version code",
+          "chars": 5,
+          "field": "TSP protocol code",
           "kind": "code",
-          "note": "the TSP genus",
-          "text": "YTSP",
+          "note": "unique in the CESR code; also the HPKE info",
+          "text": "YTSP-",
           "value": null
         },
         {
-          "chars": 4,
+          "chars": 3,
           "field": "TSP_Version",
           "kind": "data",
-          "note": "MAJOR in the count code's identifier, MINOR in its count",
-          "text": "-AAC",
+          "note": "MAJOR is the first character, MINOR the following two",
+          "text": "AAC",
           "value": "0.2"
         },
         {
@@ -2120,19 +2120,19 @@
           "value": "198 quadlets = 594 bytes"
         },
         {
-          "chars": 4,
-          "field": "TSP_Version code",
+          "chars": 5,
+          "field": "TSP protocol code",
           "kind": "code",
-          "note": "the TSP genus",
-          "text": "YTSP",
+          "note": "unique in the CESR code; also the HPKE info",
+          "text": "YTSP-",
           "value": null
         },
         {
-          "chars": 4,
+          "chars": 3,
           "field": "TSP_Version",
           "kind": "data",
-          "note": "MAJOR in the count code's identifier, MINOR in its count",
-          "text": "-AAC",
+          "note": "MAJOR is the first character, MINOR the following two",
+          "text": "AAC",
           "value": "0.2"
         },
         {
@@ -2312,19 +2312,19 @@
           "value": "432 quadlets = 1296 bytes"
         },
         {
-          "chars": 4,
-          "field": "TSP_Version code",
+          "chars": 5,
+          "field": "TSP protocol code",
           "kind": "code",
-          "note": "the TSP genus",
-          "text": "YTSP",
+          "note": "unique in the CESR code; also the HPKE info",
+          "text": "YTSP-",
           "value": null
         },
         {
-          "chars": 4,
+          "chars": 3,
           "field": "TSP_Version",
           "kind": "data",
-          "note": "MAJOR in the count code's identifier, MINOR in its count",
-          "text": "-AAC",
+          "note": "MAJOR is the first character, MINOR the following two",
+          "text": "AAC",
           "value": "0.2"
         },
         {

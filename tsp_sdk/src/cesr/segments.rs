@@ -189,11 +189,14 @@ fn walk(text: &str) -> Vec<Segment> {
             continue;
         }
 
-        // the TSP genus, then a count code carrying MAJOR and MINOR
+        // the five-character protocol code, then the three-character version
+        // (spec 9.2.1). The bytes are produced by the count-code encoder, which
+        // puts the `-` with what follows, but the specification divides them
+        // here: `YTSP-` is the protocol code, and is also the HPKE `info`.
         if h4 == "YTSP" {
-            let version = at(i + 4, 4);
+            let version = at(i + 5, 3);
             let value = match (
-                version.as_bytes().get(1).copied().and_then(b64_index),
+                version.as_bytes().first().copied().and_then(b64_index),
                 count(at(i + 6, 2)),
             ) {
                 (Some(major), Some(minor)) => Some(format!("{major}.{minor}")),
@@ -201,16 +204,16 @@ fn walk(text: &str) -> Vec<Segment> {
             };
             out.push(seg(
                 SegmentKind::Code,
-                "TSP_Version code",
-                h4,
-                "the TSP genus",
+                "TSP protocol code",
+                at(i, 5),
+                "unique in the CESR code; also the HPKE info",
                 None,
             ));
             out.push(seg(
                 SegmentKind::Data,
                 "TSP_Version",
                 version,
-                "MAJOR in the count code's identifier, MINOR in its count",
+                "MAJOR is the first character, MINOR the following two",
                 value,
             ));
             i += 8;
