@@ -153,7 +153,7 @@ pub mod fuzzing;
 #[repr(u8)]
 pub enum CryptoType {
     Plaintext = 0,
-    /// HPKE-Base; the KEM (X25519 or X25519MLKEM768) is selected by the
+    /// HPKE-Base; the KEM (X25519 or MLKEM768-X25519) is selected by the
     /// recipient VID's encryption key type, with no separate code point
     HpkeBase = 1,
     /// The libsodium anonymous sealed box

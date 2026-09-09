@@ -17,7 +17,7 @@ use super::{
 type Aead = hpke::aead::ChaCha20Poly1305;
 type Kdf = hpke::kdf::HkdfSha256;
 type X25519Kem = hpke::kem::X25519HkdfSha256;
-/// The PQ/T hybrid KEM X25519MLKEM768 (HPKE KEM id 0x647a); there is no separate
+/// The PQ/T hybrid KEM MLKEM768-X25519 (HPKE KEM id 0x647a); there is no separate
 /// post-quantum ciphertext code or mode -- only the KEM differs (spec 8.2.3)
 type PqKem = hpke::kem::XWing;
 
@@ -120,7 +120,7 @@ pub(crate) fn seal(
             seed,
             selection,
         ),
-        VidEncryptionKeyType::X25519MlKem768 => seal_with_kem::<PqKem>(
+        VidEncryptionKeyType::MlKem768X25519 => seal_with_kem::<PqKem>(
             sender,
             receiver,
             secret_payload,
@@ -257,7 +257,7 @@ pub(crate) fn open<'a>(
         VidEncryptionKeyType::X25519 => {
             open_with_kem::<X25519Kem>(receiver, raw_header, envelope, ciphertext)
         }
-        VidEncryptionKeyType::X25519MlKem768 => {
+        VidEncryptionKeyType::MlKem768X25519 => {
             open_with_kem::<PqKem>(receiver, raw_header, envelope, ciphertext)
         }
     }
@@ -385,7 +385,7 @@ mod known_answer_tests {
         );
     }
 
-    /// draft-ietf-hpke-pq test vector (base mode, X25519MLKEM768 KEM 0x647a,
+    /// draft-ietf-hpke-pq test vector (base mode, MLKEM768-X25519 KEM 0x647a,
     /// HKDF-SHA256, ChaCha20Poly1305): the post-quantum TSP cipher suite.
     /// Source: test-vectors.json of the hpkewg/hpke-pq draft repository
     #[test]

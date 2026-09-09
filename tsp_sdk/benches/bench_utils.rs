@@ -75,7 +75,7 @@ pub fn deterministic_owned_vid_mldsa65_x25519kyber768(
         "sigKeyType": "MlDsa65",
         "publicSigkey": Base64UrlUnpadded::encode_string(public_sigkey.as_slice()),
         "sigkey": Base64UrlUnpadded::encode_string(sigkey.as_slice()),
-        "encKeyType": "X25519MlKem768",
+        "encKeyType": "MLKEM768-X25519",
         "publicEnckey": Base64UrlUnpadded::encode_string(public_enckey.as_slice()),
         "enckey": Base64UrlUnpadded::encode_string(enckey.as_slice()),
     })

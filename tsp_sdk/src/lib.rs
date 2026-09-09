@@ -87,7 +87,7 @@ pub mod cesr;
 ///     [HPKE](https://datatracker.ietf.org/doc/rfc9180/) in Base mode,
 ///     using HKDF-SHA256 and ChaCha20/Poly1305, and signed. The key
 ///     encapsulation follows the recipient's encryption key type —
-///     X25519, or X25519MLKEM768 for post-quantum — so there is no
+///     X25519, or MLKEM768-X25519 for post-quantum — so there is no
 ///     separate post-quantum mode to select.
 ///   - the sender's own identifier travels inside the encrypted payload
 ///     rather than beside it, which is what binds a message to its
