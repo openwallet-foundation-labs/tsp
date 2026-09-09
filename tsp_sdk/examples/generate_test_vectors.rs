@@ -46,7 +46,7 @@ fn pq_peer_vid(n: u8) -> OwnedVid {
         "tsp://".parse().unwrap(),
         seed,
         tsp_sdk::definitions::VidSignatureKeyType::MlDsa65,
-        tsp_sdk::definitions::VidEncryptionKeyType::X25519MlKem768,
+        tsp_sdk::definitions::VidEncryptionKeyType::MlKem768X25519,
     )
 }
 

@@ -327,7 +327,21 @@ impl<Bytes: AsRef<[u8]>> fmt::Display for Payload<'_, Bytes> {
 pub enum VidEncryptionKeyType {
     #[default]
     X25519,
-    X25519MlKem768,
+    /// The PQ/T hybrid registered as HPKE KEM `0x647a`. IANA names it
+    /// `MLKEM768-X25519` (draft-ietf-hpke-pq-03 section 8.2); the reversed
+    /// spelling `X25519MLKEM768` belongs to the TLS named group, which is a
+    /// different construction -- its shared secret is the 64-byte
+    /// concatenation of the two, where this one is a single 32 bytes from the
+    /// X-Wing combiner. Both have a 1216-byte public key, so confusing them
+    /// fails silently rather than loudly.
+    ///
+    /// The alias keeps wallets and identity files written before the rename
+    /// readable.
+    #[cfg_attr(
+        feature = "serialize",
+        serde(rename = "MLKEM768-X25519", alias = "X25519MlKem768")
+    )]
+    MlKem768X25519,
 }
 
 #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
@@ -342,13 +356,18 @@ impl VidEncryptionKeyType {
     fn jwk_key_type(self) -> &'static str {
         match self {
             VidEncryptionKeyType::X25519 => "OKP",
-            VidEncryptionKeyType::X25519MlKem768 => "X25519MlKem768",
+            // The JWK `kty` is deliberately left at the old spelling: it
+            // appears in published `did:web` documents, and no `kty` is
+            // registered for a hybrid KEM, so this is an unofficial
+            // placeholder either way. Renaming it would break resolution of
+            // identifiers already published.
+            VidEncryptionKeyType::MlKem768X25519 => "X25519MlKem768",
         }
     }
 
     fn jwk_curve(self) -> &'static str {
         match self {
-            VidEncryptionKeyType::X25519 | VidEncryptionKeyType::X25519MlKem768 => "X25519",
+            VidEncryptionKeyType::X25519 | VidEncryptionKeyType::MlKem768X25519 => "X25519",
         }
     }
 }
@@ -527,5 +546,27 @@ impl Deref for PrivateSigningKeyData {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+#[cfg(all(test, feature = "serialize"))]
+mod key_type_naming_test {
+    use super::VidEncryptionKeyType;
+
+    /// The hybrid KEM is written with the name IANA registers for HPKE KEM
+    /// `0x647a`. The reversed spelling is the TLS named group, a different
+    /// construction, so emitting it here would invite a silent interop
+    /// failure.
+    #[test]
+    fn the_hybrid_kem_serializes_under_its_registered_name() {
+        let json = serde_json::to_string(&VidEncryptionKeyType::MlKem768X25519).unwrap();
+        assert_eq!(json, "\"MLKEM768-X25519\"");
+    }
+
+    /// Wallets and identity files written before the rename must still load.
+    #[test]
+    fn the_previous_spelling_still_deserializes() {
+        let old: VidEncryptionKeyType = serde_json::from_str("\"X25519MlKem768\"").unwrap();
+        assert_eq!(old, VidEncryptionKeyType::MlKem768X25519);
     }
 }

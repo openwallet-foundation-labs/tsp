@@ -120,7 +120,7 @@ pub(crate) fn seal(
             seed,
             selection,
         ),
-        VidEncryptionKeyType::X25519MlKem768 => seal_with_kem::<PqKem>(
+        VidEncryptionKeyType::MlKem768X25519 => seal_with_kem::<PqKem>(
             sender,
             receiver,
             secret_payload,
@@ -257,7 +257,7 @@ pub(crate) fn open<'a>(
         VidEncryptionKeyType::X25519 => {
             open_with_kem::<X25519Kem>(receiver, raw_header, envelope, ciphertext)
         }
-        VidEncryptionKeyType::X25519MlKem768 => {
+        VidEncryptionKeyType::MlKem768X25519 => {
             open_with_kem::<PqKem>(receiver, raw_header, envelope, ciphertext)
         }
     }

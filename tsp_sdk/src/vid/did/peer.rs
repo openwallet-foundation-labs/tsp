@@ -96,7 +96,7 @@ fn encryption_key_multicodec(key_type: VidEncryptionKeyType) -> &'static [u8] {
         // x25519-pub
         VidEncryptionKeyType::X25519 => &[0xec, 0x01],
         // private use area (0x300000), as an unsigned varint
-        VidEncryptionKeyType::X25519MlKem768 => &[0x80, 0x80, 0xc0, 0x01],
+        VidEncryptionKeyType::MlKem768X25519 => &[0x80, 0x80, 0xc0, 0x01],
     }
 }
 
@@ -307,13 +307,13 @@ pub fn verify_did_peer(parts: &[&str]) -> Result<Vid, VidError> {
                 enc_key_type = Some(VidEncryptionKeyType::X25519);
             } else if let Some(key) = split_multikey(
                 &decoded,
-                encryption_key_multicodec(VidEncryptionKeyType::X25519MlKem768),
+                encryption_key_multicodec(VidEncryptionKeyType::MlKem768X25519),
                 1216,
             ) {
                 #[cfg(feature = "async")]
-                trace!("found X25519MlKem768 encryption key");
+                trace!("found MLKEM768-X25519 encryption key");
                 public_enckey = Some(key.to_vec());
-                enc_key_type = Some(VidEncryptionKeyType::X25519MlKem768);
+                enc_key_type = Some(VidEncryptionKeyType::MlKem768X25519);
             } else {
                 return Err(VidError::ResolveVid(
                     "invalid encryption key type in did:peer",
