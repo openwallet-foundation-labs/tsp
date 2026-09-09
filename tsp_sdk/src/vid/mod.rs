@@ -314,7 +314,7 @@ impl OwnedVid {
                         .into(),
                 )
             }
-            VidEncryptionKeyType::X25519MlKem768 => {
+            VidEncryptionKeyType::MlKem768X25519 => {
                 use hpke::{Kem, Serializable, kem::XWing};
 
                 let (private, public) = XWing::derive_keypair(&enc_seed);

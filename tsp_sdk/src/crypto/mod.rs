@@ -841,7 +841,7 @@ pub(crate) fn verify_payload<'a>(
 
 pub fn default_encryption_key_type() -> VidEncryptionKeyType {
     if cfg!(feature = "pq") {
-        VidEncryptionKeyType::X25519MlKem768
+        VidEncryptionKeyType::MlKem768X25519
     } else {
         VidEncryptionKeyType::X25519
     }
@@ -874,7 +874,7 @@ pub fn gen_encrypt_keypair_for(key_type: VidEncryptionKeyType) -> (PrivateKeyDat
                     .into(),
             )
         }
-        VidEncryptionKeyType::X25519MlKem768 => {
+        VidEncryptionKeyType::MlKem768X25519 => {
             use hpke::Serializable;
 
             let (private, public) = <hpke::kem::XWing as hpke::Kem>::gen_keypair();
@@ -1014,7 +1014,7 @@ mod tests {
             "did:test:bob-pq-explicit",
             Url::parse("tcp://127.0.0.1:13383").unwrap(),
             VidSignatureKeyType::Ed25519,
-            VidEncryptionKeyType::X25519MlKem768,
+            VidEncryptionKeyType::MlKem768X25519,
         );
 
         for (receiver, crypto_type) in [
@@ -1049,7 +1049,7 @@ mod tests {
             "did:test:bob-default-pq",
             Url::parse("tcp://127.0.0.1:13387").unwrap(),
             VidSignatureKeyType::Ed25519,
-            VidEncryptionKeyType::X25519MlKem768,
+            VidEncryptionKeyType::MlKem768X25519,
         );
 
         let mut message = seal(&alice, &bob, Payload::Content(b"default pq")).unwrap();
@@ -1065,7 +1065,7 @@ mod tests {
             "did:test:alice-pq-to-x25519-default",
             Url::parse("tcp://127.0.0.1:13388").unwrap(),
             VidSignatureKeyType::Ed25519,
-            VidEncryptionKeyType::X25519MlKem768,
+            VidEncryptionKeyType::MlKem768X25519,
         );
         let bob = OwnedVid::bind_with_key_types(
             "did:test:bob-x25519-from-pq-default",
@@ -1124,7 +1124,7 @@ mod tests {
             "did:test:bob-pq-sealedbox",
             Url::parse("tcp://127.0.0.1:13391").unwrap(),
             VidSignatureKeyType::Ed25519,
-            VidEncryptionKeyType::X25519MlKem768,
+            VidEncryptionKeyType::MlKem768X25519,
         );
 
         let err = seal_with_crypto_type(
@@ -1139,7 +1139,7 @@ mod tests {
             err,
             CryptoError::IncompatibleCryptoSelection {
                 crypto_type: CryptoType::SealedBox,
-                key_type: VidEncryptionKeyType::X25519MlKem768,
+                key_type: VidEncryptionKeyType::MlKem768X25519,
             }
         ));
     }

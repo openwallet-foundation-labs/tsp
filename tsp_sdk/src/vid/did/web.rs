@@ -96,7 +96,7 @@ impl From<VidEncryptionKeyType> for KeyType {
     fn from(value: VidEncryptionKeyType) -> Self {
         match value {
             VidEncryptionKeyType::X25519 => KeyType::OKP,
-            VidEncryptionKeyType::X25519MlKem768 => KeyType::X25519MlKem768,
+            VidEncryptionKeyType::MlKem768X25519 => KeyType::X25519MlKem768,
         }
     }
 }
@@ -123,7 +123,7 @@ impl From<VidEncryptionKeyType> for Curve {
     fn from(value: VidEncryptionKeyType) -> Self {
         match value {
             VidEncryptionKeyType::X25519 => Curve::X25519,
-            VidEncryptionKeyType::X25519MlKem768 => Curve::X25519,
+            VidEncryptionKeyType::MlKem768X25519 => Curve::X25519,
         }
     }
 }
@@ -334,7 +334,7 @@ pub fn resolve_document(did_document: DidDocument, target_id: &str) -> Result<Vi
     let enc_key_type = match (enc_key_type, enc_curve, enc_alg) {
         (KeyType::OKP, Some(Curve::X25519), None) => VidEncryptionKeyType::X25519,
         (KeyType::X25519MlKem768, Some(Curve::X25519), None) => {
-            VidEncryptionKeyType::X25519MlKem768
+            VidEncryptionKeyType::MlKem768X25519
         }
         _ => return Err(VidError::ResolveVid("Unsupported key type or curve")),
     };
