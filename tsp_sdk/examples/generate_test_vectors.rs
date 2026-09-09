@@ -736,7 +736,7 @@ fn main() {
         "8.2, 8.3, 9.2.8",
         "The same message as direct-hpke-base, to endpoints whose VIDs declare post-quantum \
          key types. Post-quantum support is not a separate mode: this is HPKE-Base with the \
-         X25519MLKEM768 hybrid KEM, selected by the recipient VID's encryption key type, and \
+         MLKEM768-X25519 hybrid KEM, selected by the recipient VID's encryption key type, and \
          the ciphertext code is the same 4F as any other HPKE-Base message. What changes is \
          size — the encapsulation is 1120 bytes rather than 32 — and the signature, which is \
          ML-DSA-65 under the code 1AAQ rather than an indexed Ed25519 signature. There is no \

@@ -125,7 +125,7 @@ An authentic and confidential message is sign-encrypted one of two ways, and whi
 
 - **HPKE** in base mode ([HPKE](https://www.ietf.org/archive/id/draft-ietf-hpke-hpke-04.txt)), with HKDF-SHA256
   and ChaCha20/Poly1305. The key encapsulation follows the recipient's encryption key type —
-  X25519, or X25519MLKEM768 for post-quantum — so there is no separate post-quantum mode to pick.
+  X25519, or MLKEM768-X25519 for post-quantum — so there is no separate post-quantum mode to pick.
 - **The libsodium anonymous sealed box** ([libsodium](https://doc.libsodium.org/)), enhanced with a encrypted sender VID (aka ESSR).
 
 A message may instead be signed without being encrypted, in which case its payload travels in the
