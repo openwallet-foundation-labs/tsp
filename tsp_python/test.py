@@ -455,6 +455,39 @@ class AliceBob(unittest.TestCase):
         self.assertIsNone(self.store.get_kv("test_key"))
 
 
+class TestTestVectors(unittest.TestCase):
+    def test_new_did_peer_from_seed(self):
+        seed = bytes([0xA0 | 1] + [0] * 31)
+        vid = tsp.OwnedVid.new_did_peer_from_seed("tsp://", seed)
+        self.assertEqual(
+            vid.identifier(),
+            "did:peer:4zQmUL61Nc1F7ioiKxHNqwnJXX4srhFsKKPo6TrCmhM3dfpq",
+        )
+        self.assertEqual(vid.endpoint(), "tsp://")
+
+    def test_rev3_json_vectors(self):
+        import base64
+        import json
+
+        vector_file = os.path.join(
+            os.path.dirname(__file__), "..", "tsp_sdk", "test_vectors", "rev3.json"
+        )
+        if os.path.exists(vector_file):
+            with open(vector_file, "r") as f:
+                data = json.load(f)
+            self.assertEqual(data.get("tsp_version"), "0.2")
+            vectors = data.get("vectors", [])
+            self.assertEqual(len(vectors), 10)
+            for v in vectors:
+                msg_b64 = v.get("message")
+                if msg_b64:
+                    padded = msg_b64 + "=" * (-len(msg_b64) % 4)
+                    raw_bytes = base64.urlsafe_b64decode(padded)
+                    formatted = tsp.color_print(raw_bytes)
+                    self.assertIsInstance(formatted, str)
+                    self.assertGreater(len(formatted), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
+
