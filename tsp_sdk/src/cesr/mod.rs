@@ -7,6 +7,8 @@ mod packet;
 mod segments;
 use error::DecodeError;
 mod consts;
+pub use decode::decode_count;
+pub use encode::encode_count;
 pub use packet::*;
 pub use segments::{Segment, SegmentKind, segments};
 
