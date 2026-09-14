@@ -106,5 +106,7 @@ clap = { version = "4.5", features = ["derive"] }
 # demo server
 axum = { version = "0.8.1", features = ["ws", "macros"] }
 tower-http = { version = "0.6.2", features = ["cors"] }
+# property-based testing
+proptest = "1.6"
 
 tsp_sdk = { path = "./tsp_sdk", version = "0.11.0" }
