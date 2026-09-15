@@ -5,7 +5,7 @@ use futures::StreamExt;
 use rustls::crypto::CryptoProvider;
 use std::{ops::Deref, path::PathBuf, str::FromStr};
 use tokio::io::AsyncReadExt;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{
     Aliases, AskarSecureStorage, AsyncSecureStore, Error, ExportVid, OwnedVid,
@@ -162,6 +162,16 @@ enum Commands {
         src: Option<String>,
         #[arg(long)]
         peer_src: Option<String>,
+        #[arg(
+            long,
+            help = "webvh only: an invite code for the DID server's admission witness. The identity is created under a random name, witnessed, and published with POST /publish"
+        )]
+        invite: Option<String>,
+        #[arg(
+            long,
+            help = "webvh only: a watcher URL to name in the DID and notify after publishing (repeatable)"
+        )]
+        watcher: Vec<String>,
     },
     #[command(about = "Update the DID:WEBVH. Currently, only a rotation of TSP keys is supported")]
     Update {
@@ -342,6 +352,143 @@ async fn write_wallet(vault: &AskarSecureStorage, db: &AsyncSecureStore) -> Resu
 /// A local DID server is reached over plain HTTP, which is also how a local identifier is
 /// resolved. Publishing has to agree with resolution, or an identifier is written to one place
 /// and read from another.
+/// Keep a webvh identity's update key and its pre-committed successor in the wallet.
+fn store_webvh_keys(
+    vid_wallet: &AsyncSecureStore,
+    private_vid: &OwnedVid,
+    keys: tsp_sdk::vid::did::webvh::WebvhKeys,
+) {
+    vid_wallet
+        .add_secret_key(keys.update_kid.clone(), keys.update_key)
+        .expect("Cannot store current update key");
+    vid_wallet
+        .add_secret_key(keys.next_update_kid.clone(), keys.next_update_key)
+        .expect("Cannot store next update key");
+    vid_wallet
+        .set_alias(
+            format!("__next_update_kid:{}", private_vid.identifier()),
+            keys.next_update_kid,
+        )
+        .expect("Cannot store next update key reference");
+}
+
+/// Create a `did:webvh` on a server that admits identities through a witness: read the
+/// server's witness directory, build the first entry under a random name with that witness,
+/// have it witnessed with the invite code, publish entry and proof together, notify watchers.
+async fn create_witnessed_webvh(
+    did_server: &str,
+    transport: Url,
+    invite: &str,
+    watchers: &[String],
+    client: &reqwest::Client,
+) -> Result<(OwnedVid, tsp_sdk::vid::did::webvh::WebvhKeys), Error> {
+    let bad = |m: String| Error::Vid(VidError::InvalidVid(m));
+
+    // the directory: a witness registered for /a/
+    let directory: serde_json::Value = client
+        .get(did_server_url(did_server, ".well-known/witnesses.json"))
+        .send()
+        .await
+        .map_err(|e| bad(format!("cannot read the witness directory: {e}")))?
+        .error_for_status()
+        .map_err(|e| bad(format!("witness directory: {e}")))?
+        .json()
+        .await
+        .map_err(|e| bad(format!("witness directory is not JSON: {e}")))?;
+    let row = directory["witnesses"]
+        .as_array()
+        .and_then(|rows| {
+            rows.iter().find(|w| {
+                w["retired"].is_null()
+                    && w["prefixes"]
+                        .as_array()
+                        .is_some_and(|p| p.iter().any(|x| x == "/a/"))
+            })
+        })
+        .ok_or_else(|| bad("the server registers no witness for /a/".into()))?;
+    let witness_id = row["id"].as_str().unwrap_or_default().to_string();
+    let contact = row["contact"].as_str().unwrap_or_default().to_string();
+    if witness_id.is_empty() || contact.is_empty() {
+        return Err(bad("witness directory row lacks id or contact".into()));
+    }
+
+    // a random name under /a/; the entry, witnessed, portable, with watchers
+    let name: String = uuid::Uuid::new_v4().as_bytes()[..8]
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let (private_vid, entry, keys) = tsp_sdk::vid::did::webvh::create_webvh_with(
+        &format!("{did_server}/a/{name}"),
+        transport,
+        tsp_sdk::vid::did::webvh::WebvhOptions {
+            witness: Some(witness_id),
+            watchers: watchers.to_vec(),
+            portable: true,
+        },
+    )
+    .await?;
+
+    // the witness
+    let response = client
+        .post(&contact)
+        .json(&serde_json::json!({
+            "type": "webvh.witness.apply",
+            "entry": entry,
+            "credentials": { "invite": invite },
+        }))
+        .send()
+        .await
+        .map_err(|e| bad(format!("witness unreachable: {e}")))?;
+    let status = response.status();
+    let mut proof: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| bad(format!("witness answer is not JSON: {e}")))?;
+    if !status.is_success() || proof["type"] != "webvh.witness.proof" {
+        return Err(bad(format!(
+            "witness refused: {} ({status})",
+            proof["reason"].as_str().unwrap_or("no reason")
+        )));
+    }
+    proof.as_object_mut().map(|p| p.remove("type"));
+    info!("witnessed by {}", contact);
+
+    // the server
+    let response = client
+        .post(did_server_url(did_server, "publish"))
+        .json(&serde_json::json!({ "entry": entry, "witness": proof }))
+        .send()
+        .await
+        .map_err(|e| bad(format!("DID server unreachable: {e}")))?;
+    let status = response.status();
+    if !status.is_success() {
+        let body: serde_json::Value = response.json().await.unwrap_or_default();
+        return Err(bad(format!(
+            "DID server refused: {} ({status})",
+            body["reason"].as_str().unwrap_or("no reason")
+        )));
+    }
+    info!(
+        "published {}",
+        tsp_sdk::vid::did::get_resolve_url(private_vid.vid().identifier())?
+    );
+
+    // the watchers
+    for w in watchers {
+        let url = format!(
+            "{}/log?did={}",
+            w.trim_end_matches('/'),
+            private_vid.identifier()
+        );
+        match client.post(&url).send().await {
+            Ok(r) if r.status().is_success() => info!("notified watcher {w}"),
+            Ok(r) => warn!("watcher {w} answered {}", r.status()),
+            Err(e) => warn!("watcher {w} unreachable: {e}"),
+        }
+    }
+    Ok((private_vid, keys))
+}
+
 fn did_server_url(did_server: &str, path: &str) -> String {
     let scheme = if did_server.starts_with("localhost") || did_server.starts_with("127.0.0.1") {
         "http"
@@ -753,6 +900,8 @@ async fn run() -> Result<(), Error> {
             source_method,
             src,
             peer_src,
+            invite,
+            watcher,
         } => {
             let transport = if let Some(address) = tcp {
                 Url::parse(&format!("tcp://{address}")).unwrap()
@@ -779,6 +928,21 @@ async fn run() -> Result<(), Error> {
                     vid_wallet.set_alias(username, private_vid.identifier().to_string())?;
 
                     info!("created peer identity {}", private_vid.identifier());
+                    (private_vid, None)
+                }
+                DidType::Webvh if invite.is_some() => {
+                    let (private_vid, keys) = create_witnessed_webvh(
+                        &did_server,
+                        transport,
+                        invite.as_deref().unwrap(),
+                        &watcher,
+                        &client,
+                    )
+                    .await?;
+                    store_webvh_keys(&vid_wallet, &private_vid, keys);
+                    if let Some(alias) = alias {
+                        vid_wallet.set_alias(alias, private_vid.identifier().to_string())?;
+                    }
                     (private_vid, None)
                 }
                 DidType::Webvh => {

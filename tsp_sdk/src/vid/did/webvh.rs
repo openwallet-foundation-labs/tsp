@@ -13,6 +13,7 @@ use didwebvh_rs::{
     log_entry::{LogEntry, LogEntryMethods, MetaData},
     parameters::Parameters,
     url::WebVHURL,
+    witness::{Witness, Witnesses},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -82,6 +83,19 @@ pub async fn resolve(id: &str) -> Result<(Vid, serde_json::Value), VidError> {
     ))
 }
 
+/// Options for the first log entry of a `did:webvh` beyond the keys: the parameters a host
+/// may require of an identity it admits.
+#[derive(Clone, Debug, Default)]
+pub struct WebvhOptions {
+    /// A witness whose proof the first entry must carry, as a `did:key`. Sets the `witness`
+    /// parameter to that single witness with threshold 1.
+    pub witness: Option<String>,
+    /// Watcher URLs for the `watchers` parameter.
+    pub watchers: Vec<String>,
+    /// The `portable` parameter: whether the DID may later move to another web location.
+    pub portable: bool,
+}
+
 /// Creates a default WebVH DID that can be used with TSP.
 /// did_path: Server path to use as the base for the DID ID (expects this to be server.name/path)
 /// transport: URL to use for the service record
@@ -93,6 +107,15 @@ pub async fn resolve(id: &str) -> Result<(Vid, serde_json::Value), VidError> {
 pub async fn create_webvh(
     did_path: &str,
     transport: Url,
+) -> Result<(OwnedVid, serde_json::Value, WebvhKeys), VidError> {
+    create_webvh_with(did_path, transport, WebvhOptions::default()).await
+}
+
+/// [`create_webvh`] with explicit [`WebvhOptions`].
+pub async fn create_webvh_with(
+    did_path: &str,
+    transport: Url,
+    options: WebvhOptions,
 ) -> Result<(OwnedVid, serde_json::Value, WebvhKeys), VidError> {
     // Create the initial DID ID
     let path_url = Url::parse(&["http://", did_path].concat())?;
@@ -157,10 +180,23 @@ pub async fn create_webvh(
     })?;
 
     // WebVH Parameters with precommit
-    let params = Parameters::new()
+    let mut builder = Parameters::new();
+    builder
         .with_update_keys(vec![current_key_public.clone()])
-        .with_next_key_hashes(vec![next_key_hash])
-        .build();
+        .with_next_key_hashes(vec![next_key_hash]);
+    if options.portable {
+        builder.with_portable(true);
+    }
+    if let Some(id) = options.witness {
+        builder.with_witnesses(Witnesses::Value {
+            threshold: 1,
+            witnesses: vec![Witness { id }],
+        });
+    }
+    if !options.watchers.is_empty() {
+        builder.with_watchers(options.watchers);
+    }
+    let params = builder.build();
 
     // Create the first WebVH Log Entry
     let mut webvh = DIDWebVHState::default();
