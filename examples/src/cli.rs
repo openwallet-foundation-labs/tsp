@@ -98,10 +98,11 @@ struct Cli {
     wallet: String,
     #[arg(
         long,
-        default_value = "unsecure",
-        help = "Password used to encrypt the wallet"
+        env = "TSP_WALLET_PASSWORD",
+        hide_env_values = true,
+        help = "Passphrase of the wallet. Prompted for, hidden, when not given; scripts set TSP_WALLET_PASSWORD"
     )]
-    password: String,
+    password: Option<String>,
     #[arg(
         short,
         long,
@@ -503,27 +504,65 @@ async fn read_wallet(
     wallet_name: &str,
     password: &str,
 ) -> Result<(AskarSecureStorage, AsyncSecureStore), Error> {
-    let url = format!("sqlite://{wallet_name}.sqlite");
-    match AskarSecureStorage::open(&url, password.as_bytes()).await {
-        Ok(vault) => {
-            let (vids, aliases, keys) = vault.read().await?;
+    let file = format!("{wallet_name}.sqlite");
+    let url = format!("sqlite://{file}");
+    if std::path::Path::new(&file).exists() {
+        // An existing wallet is only ever opened. A failure — a wrong passphrase above all —
+        // is reported, never papered over by creating an empty wallet in its place.
+        let vault = AskarSecureStorage::open(&url, password.as_bytes())
+            .await
+            .map_err(|e| {
+                Error::Vid(VidError::InternalError(format!(
+                    "cannot open wallet {file}: {e} (wrong passphrase?)"
+                )))
+            })?;
+        let (vids, aliases, keys) = vault.read().await?;
+        let db = AsyncSecureStore::new();
+        db.import(vids, aliases, keys)?;
+        trace!("opened wallet {wallet_name}");
+        Ok((vault, db))
+    } else {
+        let vault = AskarSecureStorage::new(&url, password.as_bytes()).await?;
+        let db = AsyncSecureStore::new();
+        info!("created new wallet {file}");
+        Ok((vault, db))
+    }
+}
 
-            let db = AsyncSecureStore::new();
-            db.import(vids, aliases, keys)?;
-
-            trace!("opened wallet {wallet_name}");
-
-            Ok((vault, db))
-        }
-        Err(_) => {
-            let vault = AskarSecureStorage::new(&url, password.as_bytes()).await?;
-
-            let db = AsyncSecureStore::new();
-            info!("created new wallet");
-
-            Ok((vault, db))
+/// The wallet passphrase: from `--password` or `TSP_WALLET_PASSWORD`, else a hidden prompt.
+fn wallet_password(given: Option<String>, wallet_name: &str) -> Result<String, Error> {
+    if let Some(p) = given {
+        return Ok(p);
+    }
+    let exists = std::path::Path::new(&format!("{wallet_name}.sqlite")).exists();
+    let prompt = if exists {
+        format!("Passphrase for wallet {wallet_name}: ")
+    } else {
+        format!("Passphrase for the new wallet {wallet_name}: ")
+    };
+    let p = rpassword::prompt_password(prompt).map_err(|e| {
+        Error::Vid(VidError::InternalError(format!(
+            "cannot read passphrase: {e}"
+        )))
+    })?;
+    if !exists {
+        let again = rpassword::prompt_password("Confirm passphrase: ").map_err(|e| {
+            Error::Vid(VidError::InternalError(format!(
+                "cannot read passphrase: {e}"
+            )))
+        })?;
+        if p != again {
+            return Err(Error::Vid(VidError::InternalError(
+                "passphrases differ".into(),
+            )));
         }
     }
+    if p.is_empty() {
+        return Err(Error::Vid(VidError::InternalError(
+            "empty passphrase".into(),
+        )));
+    }
+    Ok(p)
 }
 
 async fn ensure_vid_verified(
@@ -816,7 +855,8 @@ async fn run() -> Result<(), Error> {
     CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider())
         .expect("Failed to install crypto provider");
 
-    let (vault, vid_wallet) = read_wallet(&args.wallet, &args.password).await?;
+    let password = wallet_password(args.password.clone(), &args.wallet)?;
+    let (vault, vid_wallet) = read_wallet(&args.wallet, &password).await?;
     let server: String = args.server;
     let did_server = args.did_server;
 
