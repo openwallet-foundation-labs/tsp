@@ -165,9 +165,9 @@ enum Commands {
         peer_src: Option<String>,
         #[arg(
             long,
-            help = "webvh only: an invite code for the DID server's admission witness. The identity is created under a random name, witnessed, and published with POST /publish"
+            help = "webvh only: create on a server that admits through a witness — read its witness directory, create under a random name, get the entry witnessed, publish with POST /publish"
         )]
-        invite: Option<String>,
+        witnessed: bool,
         #[arg(
             long,
             help = "webvh only: a watcher URL to name in the DID and notify after publishing (repeatable)"
@@ -380,12 +380,11 @@ fn store_webvh_keys(
 }
 
 /// Create a `did:webvh` on a server that admits identities through a witness: read the
-/// server's witness directory, build the first entry under a random name with that witness,
-/// have it witnessed with the invite code, publish entry and proof together, notify watchers.
+/// server's witness directory, build the first entry under a random name naming that
+/// witness's keys, have it witnessed, publish entry and proof together, notify watchers.
 async fn create_witnessed_webvh(
     did_server: &str,
     transport: Url,
-    invite: &str,
     watchers: &[String],
     prefix: &str,
     client: &reqwest::Client,
@@ -460,7 +459,6 @@ async fn create_witnessed_webvh(
         .json(&serde_json::json!({
             "type": "webvh.witness.apply",
             "entry": entry,
-            "credentials": { "invite": invite },
         }))
         .send()
         .await
@@ -965,7 +963,7 @@ async fn run() -> Result<(), Error> {
             source_method,
             src,
             peer_src,
-            invite,
+            witnessed,
             watcher,
             prefix,
         } => {
@@ -996,16 +994,10 @@ async fn run() -> Result<(), Error> {
                     info!("created peer identity {}", private_vid.identifier());
                     (private_vid, None)
                 }
-                DidType::Webvh if invite.is_some() => {
-                    let (private_vid, keys) = create_witnessed_webvh(
-                        &did_server,
-                        transport,
-                        invite.as_deref().unwrap(),
-                        &watcher,
-                        &prefix,
-                        &client,
-                    )
-                    .await?;
+                DidType::Webvh if witnessed => {
+                    let (private_vid, keys) =
+                        create_witnessed_webvh(&did_server, transport, &watcher, &prefix, &client)
+                            .await?;
                     store_webvh_keys(&vid_wallet, &private_vid, keys);
                     if let Some(alias) = alias {
                         vid_wallet.set_alias(alias, private_vid.identifier().to_string())?;
