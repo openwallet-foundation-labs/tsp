@@ -87,9 +87,9 @@ pub async fn resolve(id: &str) -> Result<(Vid, serde_json::Value), VidError> {
 /// may require of an identity it admits.
 #[derive(Clone, Debug, Default)]
 pub struct WebvhOptions {
-    /// A witness whose proof the first entry must carry, as a `did:key`. Sets the `witness`
-    /// parameter to that single witness with threshold 1.
-    pub witness: Option<String>,
+    /// The witness keys the first entry names, as `did:key`s, any one of whose proof it must
+    /// carry: the `witness` parameter with these witnesses and threshold 1.
+    pub witnesses: Vec<String>,
     /// Watcher URLs for the `watchers` parameter.
     pub watchers: Vec<String>,
     /// The `portable` parameter: whether the DID may later move to another web location.
@@ -187,10 +187,14 @@ pub async fn create_webvh_with(
     if options.portable {
         builder.with_portable(true);
     }
-    if let Some(id) = options.witness {
+    if !options.witnesses.is_empty() {
         builder.with_witnesses(Witnesses::Value {
             threshold: 1,
-            witnesses: vec![Witness { id }],
+            witnesses: options
+                .witnesses
+                .into_iter()
+                .map(|id| Witness { id })
+                .collect(),
         });
     }
     if !options.watchers.is_empty() {

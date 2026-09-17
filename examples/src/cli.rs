@@ -396,21 +396,32 @@ async fn create_witnessed_webvh(
         .json()
         .await
         .map_err(|e| bad(format!("witness directory is not JSON: {e}")))?;
-    let row = directory["witnesses"]
+    // every active witness key for /a/, threshold one: a witness runs several keys so that
+    // the loss of one strands nobody who named them all
+    let rows: Vec<&serde_json::Value> = directory["witnesses"]
         .as_array()
-        .and_then(|rows| {
-            rows.iter().find(|w| {
-                w["retired"].is_null()
-                    && w["prefixes"]
-                        .as_array()
-                        .is_some_and(|p| p.iter().any(|x| x == "/a/"))
-            })
+        .map(|rows| {
+            rows.iter()
+                .filter(|w| {
+                    w["retired"].is_null()
+                        && w["prefixes"]
+                            .as_array()
+                            .is_some_and(|p| p.iter().any(|x| x == "/a/"))
+                })
+                .collect()
         })
-        .ok_or_else(|| bad("the server registers no witness for /a/".into()))?;
-    let witness_id = row["id"].as_str().unwrap_or_default().to_string();
-    let contact = row["contact"].as_str().unwrap_or_default().to_string();
-    if witness_id.is_empty() || contact.is_empty() {
-        return Err(bad("witness directory row lacks id or contact".into()));
+        .unwrap_or_default();
+    let witness_ids: Vec<String> = rows
+        .iter()
+        .filter_map(|w| w["id"].as_str().map(str::to_string))
+        .collect();
+    let contact = rows
+        .first()
+        .and_then(|w| w["contact"].as_str())
+        .unwrap_or_default()
+        .to_string();
+    if witness_ids.is_empty() || contact.is_empty() {
+        return Err(bad("the server registers no witness for /a/".into()));
     }
 
     // a random name under /a/; the entry, witnessed, portable, with watchers
@@ -422,7 +433,7 @@ async fn create_witnessed_webvh(
         &format!("{did_server}/a/{name}"),
         transport,
         tsp_sdk::vid::did::webvh::WebvhOptions {
-            witness: Some(witness_id),
+            witnesses: witness_ids,
             watchers: watchers.to_vec(),
             portable: true,
         },
