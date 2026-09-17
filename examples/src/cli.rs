@@ -173,6 +173,12 @@ enum Commands {
             help = "webvh only: a watcher URL to name in the DID and notify after publishing (repeatable)"
         )]
         watcher: Vec<String>,
+        #[arg(
+            long,
+            default_value = "/a/",
+            help = "webvh only: the path prefix to create under; a witness registered for it admits. /t/ is for tests"
+        )]
+        prefix: String,
     },
     #[command(about = "Update the DID:WEBVH. Currently, only a rotation of TSP keys is supported")]
     Update {
@@ -381,11 +387,19 @@ async fn create_witnessed_webvh(
     transport: Url,
     invite: &str,
     watchers: &[String],
+    prefix: &str,
     client: &reqwest::Client,
 ) -> Result<(OwnedVid, tsp_sdk::vid::did::webvh::WebvhKeys), Error> {
+    let segment = prefix.trim_matches('/');
+    if segment.is_empty() || segment.contains('/') {
+        return Err(Error::Vid(VidError::InvalidVid(format!(
+            "prefix must be one path segment like /a/, got {prefix:?}"
+        ))));
+    }
+    let prefix = format!("/{segment}/");
     let bad = |m: String| Error::Vid(VidError::InvalidVid(m));
 
-    // the directory: a witness registered for /a/
+    // the directory: the witnesses registered for the prefix
     let directory: serde_json::Value = client
         .get(did_server_url(did_server, ".well-known/witnesses.json"))
         .send()
@@ -396,8 +410,8 @@ async fn create_witnessed_webvh(
         .json()
         .await
         .map_err(|e| bad(format!("witness directory is not JSON: {e}")))?;
-    // every active witness key for /a/, threshold one: a witness runs several keys so that
-    // the loss of one strands nobody who named them all
+    // every active witness key for the prefix, threshold one: a witness runs several keys so
+    // that the loss of one strands nobody who named them all
     let rows: Vec<&serde_json::Value> = directory["witnesses"]
         .as_array()
         .map(|rows| {
@@ -406,7 +420,7 @@ async fn create_witnessed_webvh(
                     w["retired"].is_null()
                         && w["prefixes"]
                             .as_array()
-                            .is_some_and(|p| p.iter().any(|x| x == "/a/"))
+                            .is_some_and(|p| p.iter().any(|x| x == prefix.as_str()))
                 })
                 .collect()
         })
@@ -421,16 +435,16 @@ async fn create_witnessed_webvh(
         .unwrap_or_default()
         .to_string();
     if witness_ids.is_empty() || contact.is_empty() {
-        return Err(bad("the server registers no witness for /a/".into()));
+        return Err(bad(format!("the server registers no witness for {prefix}")));
     }
 
-    // a random name under /a/; the entry, witnessed, portable, with watchers
+    // a random name under the prefix; the entry, witnessed, portable, with watchers
     let name: String = uuid::Uuid::new_v4().as_bytes()[..8]
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
     let (private_vid, entry, keys) = tsp_sdk::vid::did::webvh::create_webvh_with(
-        &format!("{did_server}/a/{name}"),
+        &format!("{did_server}/{segment}/{name}"),
         transport,
         tsp_sdk::vid::did::webvh::WebvhOptions {
             witnesses: witness_ids,
@@ -953,6 +967,7 @@ async fn run() -> Result<(), Error> {
             peer_src,
             invite,
             watcher,
+            prefix,
         } => {
             let transport = if let Some(address) = tcp {
                 Url::parse(&format!("tcp://{address}")).unwrap()
@@ -987,6 +1002,7 @@ async fn run() -> Result<(), Error> {
                         transport,
                         invite.as_deref().unwrap(),
                         &watcher,
+                        &prefix,
                         &client,
                     )
                     .await?;
