@@ -62,6 +62,10 @@ sha2 = { workspace = true }
 blake2 = { workspace = true }
 typenum = { workspace = true }
 crypto_box = { workspace = true }
+x25519-dalek = { workspace = true }
+salsa20 = { workspace = true }
+subtle = { workspace = true }
+crypto_secretbox = { workspace = true }
 # async
 aries-askar = { workspace = true, optional = true }
 async-stream = { workspace = true, optional = true }

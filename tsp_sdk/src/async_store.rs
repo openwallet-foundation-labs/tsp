@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use crate::{
-    ExportVid, OwnedVid, PrivateVid, RelationshipStatus,
+    ExportVid, OwnedVid, RelationshipStatus,
     cesr::CryptoType,
     crypto::CryptoError,
     definitions::{Digest, ReceivedTspMessage, TSPStream, VerifiedVid},
@@ -292,7 +292,7 @@ impl AsyncSecureStore {
     /// Adds `private_vid` to the wallet
     pub fn add_private_vid(
         &self,
-        private_vid: impl PrivateVid + Clone + 'static,
+        private_vid: OwnedVid,
         metadata: Option<serde_json::Value>,
     ) -> Result<(), Error> {
         self.inner.add_private_vid(private_vid, metadata)
@@ -415,25 +415,6 @@ impl AsyncSecureStore {
     /// Retrieve a previously stored raw secret key by `kid`.
     ///
     /// Returns `None` if no key is stored under `kid`.
-    /// Return the raw 32-byte Ed25519 private signing key for `vid`.
-    ///
-    /// SECURITY: This surfaces private key material. Only use it when
-    /// interoperating with an external signing scheme that embeds the
-    /// signing step in its own construction (e.g. biscuit-auth token
-    /// building). For detached signatures over arbitrary bytes, prefer
-    /// `sign_raw` — it keeps the key inside the store.
-    ///
-    /// Errors if the VID is not present in the store, has no private
-    /// key material, or uses a non-Ed25519 signature key type.
-    pub fn ed25519_signing_key(&self, vid: &str) -> Result<[u8; 32], Error> {
-        let signer = self.inner.get_private_vid(vid)?;
-        if signer.signature_key_type() != crate::definitions::VidSignatureKeyType::Ed25519 {
-            return Err(Error::UnsupportedSignatureKeyType);
-        }
-        let slice = signer.signing_key().as_slice();
-        <[u8; 32]>::try_from(slice).map_err(|_| Error::UnsupportedSignatureKeyType)
-    }
-
     /// Produce a raw detached signature over `data` using the private
     /// signing key of the private VID identified by `vid`.
     ///

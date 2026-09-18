@@ -30,7 +30,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone)]
 pub(crate) struct VidContext {
     vid: Arc<dyn VerifiedVid>,
-    private: Option<Arc<dyn PrivateVid>>,
+    /// The VID's keys, behind the boundary, when this endpoint controls it.
+    private: Option<Arc<OwnedVid>>,
     relation_status: RelationshipStatus,
     relation_vid: Option<String>,
     parent_vid: Option<String>,
@@ -178,12 +179,16 @@ impl VerifiedVid for IntroducedVid<'_> {
 }
 
 impl PrivateVid for IntroducedVid<'_> {
-    fn decryption_key(&self) -> &crate::definitions::PrivateKeyData {
-        self.inner.decryption_key()
+    fn secure_area(&self) -> &dyn crate::SecureArea {
+        self.inner.secure_area()
     }
 
-    fn signing_key(&self) -> &crate::definitions::PrivateSigningKeyData {
-        self.inner.signing_key()
+    fn signing_key_alias(&self) -> &str {
+        self.inner.signing_key_alias()
+    }
+
+    fn decryption_key_alias(&self) -> &str {
+        self.inner.decryption_key_alias()
     }
 }
 
@@ -403,8 +408,18 @@ impl SecureStore {
                 sig_key_type: context.vid.signature_key_type(),
                 public_enckey: context.vid.encryption_key().clone(),
                 enc_key_type: context.vid.encryption_key_type(),
-                sigkey: context.private.as_ref().map(|x| x.signing_key().clone()),
-                enckey: context.private.as_ref().map(|x| x.decryption_key().clone()),
+                // the one place key material leaves the software secure area: to the
+                // wallet that persists it
+                sigkey: context
+                    .private
+                    .as_ref()
+                    .and_then(|x| x.key_material())
+                    .map(|(sig, _)| sig),
+                enckey: context
+                    .private
+                    .as_ref()
+                    .and_then(|x| x.key_material())
+                    .map(|(_, enc)| enc),
                 relation_status: context.relation_status.clone(),
                 relation_vid: context.relation_vid.clone(),
                 parent_vid: context.parent_vid.clone(),
@@ -436,9 +451,7 @@ impl SecureStore {
                 vid.id.to_string(),
                 VidContext {
                     vid: Arc::new(vid.verified_vid()),
-                    private: vid
-                        .private_vid()
-                        .map(|private| -> Arc<dyn PrivateVid> { Arc::new(private) }),
+                    private: vid.private_vid().map(Arc::new),
                     relation_status: vid.relation_status,
                     relation_vid: vid.relation_vid,
                     parent_vid: vid.parent_vid,
@@ -527,10 +540,10 @@ impl SecureStore {
         Ok(())
     }
 
-    /// Adds `private_vid` to the wallet
+    /// Adds `private_vid` to the wallet. Its keys stay in the secure area it came with.
     pub fn add_private_vid(
         &self,
-        private_vid: impl PrivateVid + 'static,
+        private_vid: OwnedVid,
         metadata: Option<serde_json::Value>,
     ) -> Result<(), Error> {
         let vid = Arc::new(private_vid);
@@ -699,24 +712,17 @@ impl SecureStore {
     }
 
     /// Retrieve the [PrivateVid] identified by `vid` from the wallet, if it exists.
-    pub(crate) fn get_private_vid(&self, vid: &str) -> Result<Arc<dyn PrivateVid>, Error> {
+    pub(crate) fn get_private_vid(&self, vid: &str) -> Result<Arc<OwnedVid>, Error> {
         match self.get_vid(vid)?.private {
             Some(private) => Ok(private),
             None => Err(Error::MissingPrivateVid(vid.to_string())),
         }
     }
 
+    /// The [OwnedVid] identified by `vid`: its public half and a handle on its keys,
+    /// which stay in the secure area.
     pub fn get_owned_private_vid(&self, vid: &str) -> Result<OwnedVid, Error> {
-        let context = self.get_vid(vid)?;
-        let Some(private) = context.private else {
-            return Err(Error::MissingPrivateVid(vid.to_string()));
-        };
-
-        Ok(OwnedVid::from_parts(
-            crate::vid::Vid::from_verified(context.vid.as_ref()),
-            private.signing_key().clone(),
-            private.decryption_key().clone(),
-        ))
+        Ok((*self.get_private_vid(vid)?).clone())
     }
 
     /// Check whether the [VerifiedVid] identified by `vid` exists in the wallet

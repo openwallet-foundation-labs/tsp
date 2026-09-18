@@ -34,6 +34,9 @@ pub use error::VidError;
 pub use key_state::{KeyStateProvenance, extends_held_key_state, key_state_provenance};
 use url::Url;
 
+use crate::secure_area::SoftwareSecureArea;
+use std::sync::Arc;
+
 use crate::definitions::{VidEncryptionKeyType, VidSignatureKeyType};
 #[cfg(feature = "resolve")]
 pub use resolve::{
@@ -83,15 +86,99 @@ pub struct Vid {
 /// A OwnedVid represents the 'owner' of a particular Vid
 #[cfg_attr(
     feature = "serialize",
-    derive(Serialize, Deserialize),
+    derive(Serialize),
     serde(rename_all = "camelCase")
 )]
 #[derive(Clone)]
 pub struct OwnedVid {
     #[cfg_attr(feature = "serialize", serde(flatten))]
     vid: Vid,
+    /// The keys, behind the boundary. Serialised only by the software wallet's own import
+    /// and export (a VID file, the JavaScript wallet); see `PrivateKeys`.
+    #[cfg_attr(feature = "serialize", serde(flatten))]
+    keys: PrivateKeys,
+}
+
+/// The two keys of an [`OwnedVid`] in a [`SoftwareSecureArea`], under the aliases
+/// `<id>#signing-key` and `<id>#decryption-key`. This is the import vehicle: bytes come in
+/// here from a file or a seed and are never read back by anything but the wallet that
+/// persists them.
+#[derive(Clone)]
+struct PrivateKeys {
+    area: Arc<SoftwareSecureArea>,
+    sig_alias: String,
+    enc_alias: String,
+}
+
+impl PrivateKeys {
+    fn from_material(
+        id: &str,
+        sig_key_type: VidSignatureKeyType,
+        sigkey: PrivateSigningKeyData,
+        enc_key_type: VidEncryptionKeyType,
+        enckey: PrivateKeyData,
+    ) -> Result<Self, crate::SecureAreaError> {
+        let area = SoftwareSecureArea::new();
+        let sig_alias = format!("{id}#signing-key");
+        let enc_alias = format!("{id}#decryption-key");
+        area.import(
+            &sig_alias,
+            sig_key_type.into(),
+            zeroize::Zeroizing::new(sigkey.as_slice().to_vec()),
+        )?;
+        area.import(
+            &enc_alias,
+            enc_key_type.into(),
+            zeroize::Zeroizing::new(enckey.as_slice().to_vec()),
+        )?;
+        Ok(Self {
+            area: Arc::new(area),
+            sig_alias,
+            enc_alias,
+        })
+    }
+
+    fn material(&self) -> Option<(PrivateSigningKeyData, PrivateKeyData)> {
+        let (_, sig) = self.area.material(&self.sig_alias)?;
+        let (_, enc) = self.area.material(&self.enc_alias)?;
+        Some((sig.to_vec().into(), enc.to_vec().into()))
+    }
+}
+
+#[cfg(feature = "serialize")]
+impl Serialize for PrivateKeys {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let (sigkey, enckey) = self
+            .material()
+            .ok_or_else(|| serde::ser::Error::custom("keys are not in the software area"))?;
+        let mut st = serializer.serialize_struct("PrivateKeys", 2)?;
+        st.serialize_field("sigkey", &sigkey)?;
+        st.serialize_field("enckey", &enckey)?;
+        st.end()
+    }
+}
+
+#[cfg(feature = "serialize")]
+#[derive(Deserialize)]
+struct PrivateKeysWire {
     sigkey: PrivateSigningKeyData,
     enckey: PrivateKeyData,
+}
+
+#[cfg(feature = "serialize")]
+impl<'de> Deserialize<'de> for OwnedVid {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Wire {
+            #[serde(flatten)]
+            vid: Vid,
+            #[serde(flatten)]
+            keys: PrivateKeysWire,
+        }
+        let w = Wire::deserialize(deserializer)?;
+        OwnedVid::from_parts(w.vid, w.keys.sigkey, w.keys.enckey).map_err(serde::de::Error::custom)
+    }
 }
 
 /// A custom implementation of Debug for PrivateVid to avoid key material from leaking during panics.
@@ -99,8 +186,7 @@ impl std::fmt::Debug for OwnedVid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         f.debug_struct("PrivateVid")
             .field("vid", &self.vid)
-            .field("sigkey", &"<secret>")
-            .field("enckey", &"<secret>")
+            .field("keys", &"<in the secure area>")
             .finish()
     }
 }
@@ -158,12 +244,16 @@ impl VerifiedVid for OwnedVid {
 }
 
 impl PrivateVid for OwnedVid {
-    fn signing_key(&self) -> &PrivateSigningKeyData {
-        &self.sigkey
+    fn secure_area(&self) -> &dyn crate::SecureArea {
+        self.keys.area.as_ref()
     }
 
-    fn decryption_key(&self) -> &PrivateKeyData {
-        &self.enckey
+    fn signing_key_alias(&self) -> &str {
+        &self.keys.sig_alias
+    }
+
+    fn decryption_key_alias(&self) -> &str {
+        &self.keys.enc_alias
     }
 }
 
@@ -190,8 +280,8 @@ impl OwnedVid {
         let (sigkey, public_sigkey) = crate::crypto::gen_sign_keypair_for(sig_key_type);
         let (enckey, public_enckey) = crate::crypto::gen_encrypt_keypair_for(enc_key_type);
 
-        Self {
-            vid: Vid {
+        Self::from_parts(
+            Vid {
                 id: id.into(),
                 transport,
                 sig_key_type,
@@ -201,7 +291,8 @@ impl OwnedVid {
             },
             sigkey,
             enckey,
-        }
+        )
+        .expect("freshly generated keys")
     }
     #[cfg(feature = "fuzzing")]
     pub fn from_bytes(
@@ -220,8 +311,8 @@ impl OwnedVid {
             .to_vec()
             .into();
 
-        Self {
-            vid: Vid {
+        Self::from_parts(
+            Vid {
                 id: id.into(),
                 transport,
                 sig_key_type: VidSignatureKeyType::Ed25519,
@@ -229,9 +320,10 @@ impl OwnedVid {
                 enc_key_type: VidEncryptionKeyType::X25519,
                 public_enckey,
             },
-            sigkey: sign_key.to_vec().into(),
-            enckey: enc_key.to_vec().into(),
-        }
+            sign_key.to_vec().into(),
+            enc_key.to_vec().into(),
+        )
+        .expect("32-byte keys")
     }
 
     pub fn new_did_peer(transport: Url) -> OwnedVid {
@@ -336,11 +428,7 @@ impl OwnedVid {
         };
         vid.id = crate::vid::did::peer::encode_did_peer(&vid);
 
-        OwnedVid {
-            vid,
-            sigkey,
-            enckey,
-        }
+        OwnedVid::from_parts(vid, sigkey, enckey).expect("keys derived from the seed")
     }
 
     pub fn new_did_peer_with_key_types(
@@ -362,11 +450,7 @@ impl OwnedVid {
 
         vid.id = crate::vid::did::peer::encode_did_peer(&vid);
 
-        Self {
-            vid,
-            sigkey,
-            enckey,
-        }
+        Self::from_parts(vid, sigkey, enckey).expect("freshly generated keys")
     }
 
     pub fn vid(&self) -> &Vid {
@@ -377,36 +461,54 @@ impl OwnedVid {
         self.vid
     }
 
+    /// A VID from its public half and its two keys as bytes: the one way key material
+    /// enters, from a file, a seed or the wallet's storage. The bytes go straight into a
+    /// software secure area; the error is material that is not a key of the VID's types.
     pub(crate) fn from_parts(
         vid: Vid,
         sigkey: PrivateSigningKeyData,
         enckey: PrivateKeyData,
-    ) -> Self {
-        Self {
-            vid,
+    ) -> Result<Self, crate::SecureAreaError> {
+        let keys = PrivateKeys::from_material(
+            &vid.id,
+            vid.sig_key_type,
             sigkey,
+            vid.enc_key_type,
             enckey,
-        }
+        )?;
+        Ok(Self { vid, keys })
     }
 
+    /// The keys as bytes, for the wallet that persists this VID and for nothing else.
+    pub(crate) fn key_material(&self) -> Option<(PrivateSigningKeyData, PrivateKeyData)> {
+        self.keys.material()
+    }
+
+    /// The same keys under another identifier: the aliases stay, the area is shared.
     pub(crate) fn with_identifier(&self, id: impl Into<String>) -> Self {
         Self {
             vid: self.vid.with_identifier(id),
-            sigkey: self.sigkey.clone(),
-            enckey: self.enckey.clone(),
+            keys: self.keys.clone(),
         }
     }
 }
 
 impl Vid {
-    pub(crate) fn from_verified(vid: &dyn VerifiedVid) -> Self {
+    #[cfg(test)]
+    pub(crate) fn test_vid(
+        id: &str,
+        sig_key_type: VidSignatureKeyType,
+        public_sigkey: PublicVerificationKeyData,
+        enc_key_type: VidEncryptionKeyType,
+        public_enckey: PublicKeyData,
+    ) -> Self {
         Self {
-            id: vid.identifier().to_string(),
-            transport: vid.endpoint().clone(),
-            sig_key_type: vid.signature_key_type(),
-            public_sigkey: vid.verifying_key().clone(),
-            enc_key_type: vid.encryption_key_type(),
-            public_enckey: vid.encryption_key().clone(),
+            id: id.to_string(),
+            transport: "https://example.com".parse().unwrap(),
+            sig_key_type,
+            public_sigkey,
+            enc_key_type,
+            public_enckey,
         }
     }
 
@@ -462,11 +564,9 @@ impl ExportVid {
 
     pub(crate) fn private_vid(&self) -> Option<OwnedVid> {
         match (&self.sigkey, &self.enckey) {
-            (Some(sigkey), Some(enckey)) => Some(OwnedVid {
-                vid: self.verified_vid(),
-                sigkey: sigkey.clone(),
-                enckey: enckey.clone(),
-            }),
+            (Some(sigkey), Some(enckey)) => {
+                OwnedVid::from_parts(self.verified_vid(), sigkey.clone(), enckey.clone()).ok()
+            }
             _ => None,
         }
     }

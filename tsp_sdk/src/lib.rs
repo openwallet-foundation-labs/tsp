@@ -101,9 +101,13 @@ pub mod crypto;
 mod bench;
 /// Defines several common data structures, traits and error types that are used throughout the project.
 pub mod definitions;
+
 mod error;
 #[cfg(feature = "resolve")]
 mod http_client;
+/// The boundary around private keys: keys by alias, three private operations, nothing that
+/// returns a key.
+pub mod secure_area;
 mod store;
 
 /// Contains code for handling *verified identifiers* and identities.
@@ -188,5 +192,6 @@ pub use definitions::{
     VerifiedVid,
 };
 pub use error::Error;
+pub use secure_area::{KeyType, SecureArea, SecureAreaError, SoftwareSecureArea};
 pub use store::{Aliases, SecureStore, SendOptions, WalletMethodState};
 pub use vid::{ExportVid, OwnedVid, ResolutionContext, VerifyVidOptions, Vid};
