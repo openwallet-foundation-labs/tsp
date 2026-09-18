@@ -104,6 +104,12 @@ struct Cli {
     )]
     password: Option<String>,
     #[arg(
+        long,
+        env = "TSP_KMS_KEYRING",
+        help = "A Google Cloud KMS key ring, projects/../locations/../keyRings/..: signing keys are made and used there, never on this host. The token comes from GCP_ACCESS_TOKEN or the VM's metadata server"
+    )]
+    kms_keyring: Option<String>,
+    #[arg(
         short,
         long,
         default_value = "p.teaspoon.world",
@@ -441,7 +447,7 @@ async fn create_witnessed_webvh(
         .collect();
     let hosting = tsp_sdk::vid::did::hosting::Hosting::new(client.clone(), did_server);
     let published = tsp_sdk::vid::did::hosting::create_witnessed(
-        vid_wallet.secure_area().as_ref(),
+        vid_wallet.secure_area(),
         &hosting,
         did_server,
         prefix,
@@ -831,6 +837,14 @@ async fn run() -> Result<(), Error> {
 
     let password = wallet_password(args.password.clone(), &args.wallet)?;
     let (vault, vid_wallet) = read_wallet(&args.wallet, &password).await?;
+
+    if let Some(ring) = &args.kms_keyring {
+        let kms = tsp_sdk::gcp_kms::GcpKms::from_env(ring);
+        vid_wallet.secure_area().attach_remote(std::sync::Arc::new(
+            tsp_sdk::gcp_kms::KmsSecureArea::new(kms),
+        ))?;
+        info!("signing keys live in the KMS key ring {ring}");
+    }
     let server: String = args.server;
     let did_server = args.did_server;
 
@@ -988,7 +1002,7 @@ async fn run() -> Result<(), Error> {
                 }
                 DidType::Webvh => {
                     let (private_vid, history, keys) = tsp_sdk::vid::did::webvh::create_webvh(
-                        vid_wallet.secure_area().as_ref(),
+                        vid_wallet.secure_area(),
                         &format!("{did_server}/endpoint/{username}"),
                         transport,
                     )
@@ -1063,7 +1077,7 @@ async fn run() -> Result<(), Error> {
                     let context =
                         build_create_scid_context(source_method, src, peer_src, Some(default_src))?;
                     let result = tsp_sdk::vid::did::scid::create(
-                        vid_wallet.secure_area().as_ref(),
+                        vid_wallet.secure_area(),
                         transport,
                         context.clone(),
                     )

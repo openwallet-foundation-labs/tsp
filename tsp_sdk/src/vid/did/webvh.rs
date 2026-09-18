@@ -20,6 +20,7 @@ use didwebvh_rs::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
+use std::sync::Arc;
 use url::Url;
 
 pub(crate) const SCHEME: &str = "webvh";
@@ -286,16 +287,17 @@ pub struct WebvhOptions {
 /// * The Genesis Log Entry record for WebVH DID's
 /// * WebvhKeys naming the current and next update keys
 pub async fn create_webvh(
-    area: &dyn SecureArea,
+    area: &Arc<crate::SoftwareSecureArea>,
     did_path: &str,
     transport: Url,
 ) -> Result<(OwnedVid, Value, WebvhKeys), VidError> {
     create_webvh_with(area, did_path, transport, WebvhOptions::default()).await
 }
 
-/// [`create_webvh`] with explicit [`WebvhOptions`].
+/// [`create_webvh`] with explicit [`WebvhOptions`]. The VID's keys and the update keys
+/// are made in `area`: in its KMS when one is attached.
 pub async fn create_webvh_with(
-    area: &dyn SecureArea,
+    area: &Arc<crate::SoftwareSecureArea>,
     did_path: &str,
     transport: Url,
     options: WebvhOptions,
@@ -305,7 +307,14 @@ pub async fn create_webvh_with(
     let webvh_url = WebVHURL::parse_url(&path_url)?;
     let placeholder_did = webvh_url.to_string();
 
-    let mut vid = OwnedVid::bind(placeholder_did.clone(), transport);
+    let mut vid = OwnedVid::new_in(
+        area.clone(),
+        placeholder_did.clone(),
+        transport,
+        crate::crypto::default_signature_key_type(),
+        crate::crypto::default_encryption_key_type(),
+    )?;
+    let area: &dyn SecureArea = area.as_ref();
 
     // the update key and its committed successor, made where they will live
     let update = area.create_key(None, crate::KeyType::Ed25519)?;
@@ -664,6 +673,7 @@ pub mod entry {
 mod tests {
     use super::*;
     use crate::{SecureArea, SoftwareSecureArea, definitions::VerifiedVid};
+    use std::sync::Arc;
 
     /// The log as `did.jsonl`, in a file the library's resolver reads.
     fn write_log(entries: &[&Value]) -> tempfile::NamedTempFile {
@@ -677,7 +687,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_first_entry_signed_behind_the_boundary_resolves() {
-        let area = SoftwareSecureArea::new();
+        let area = Arc::new(SoftwareSecureArea::new());
         let (vid, genesis, keys) = create_webvh(
             &area,
             "example.com/endpoint/alice",
@@ -715,7 +725,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_later_entry_hands_the_update_key_over_and_resolves() {
-        let area = SoftwareSecureArea::new();
+        let area = Arc::new(SoftwareSecureArea::new());
         let (vid, genesis, keys) = create_webvh(
             &area,
             "example.com/endpoint/bob",
@@ -767,7 +777,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_deactivation_ends_the_log_and_nothing_follows() {
-        let area = SoftwareSecureArea::new();
+        let area = Arc::new(SoftwareSecureArea::new());
         let (vid, genesis, keys) = create_webvh(
             &area,
             "example.com/endpoint/dave",
@@ -805,7 +815,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_witness_change_lands_in_the_entry_and_the_key_hands_over() {
-        let area = SoftwareSecureArea::new();
+        let area = Arc::new(SoftwareSecureArea::new());
         let (vid, genesis, keys) = create_webvh_with(
             &area,
             "example.com/t/erin",
@@ -871,7 +881,7 @@ mod tests {
 
     #[tokio::test]
     async fn options_land_in_the_parameters() {
-        let area = SoftwareSecureArea::new();
+        let area = Arc::new(SoftwareSecureArea::new());
         let (_, genesis, _) = create_webvh_with(
             &area,
             "example.com/t/carol",

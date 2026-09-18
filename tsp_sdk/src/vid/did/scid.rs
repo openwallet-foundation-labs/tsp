@@ -209,7 +209,7 @@ pub fn resolve_offline(id: &str, options: VerifyVidOptions) -> Result<crate::Vid
 }
 
 pub async fn create(
-    area: &dyn crate::SecureArea,
+    area: &std::sync::Arc<crate::SoftwareSecureArea>,
     transport: Url,
     context: ScidResolutionContext,
 ) -> Result<ScidCreateResult, VidError> {

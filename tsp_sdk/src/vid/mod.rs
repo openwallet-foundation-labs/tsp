@@ -463,6 +463,38 @@ impl OwnedVid {
         self.vid
     }
 
+    /// A VID whose keys are made inside `area`, under the aliases its identifier gives them:
+    /// the way an identity is created in a wallet whose signing keys live in a KMS, since
+    /// the area decides where an Ed25519 key is made. The handle points at `area`.
+    pub fn new_in(
+        area: Arc<SoftwareSecureArea>,
+        id: impl Into<String>,
+        transport: Url,
+        sig_key_type: VidSignatureKeyType,
+        enc_key_type: VidEncryptionKeyType,
+    ) -> Result<Self, crate::SecureAreaError> {
+        use crate::SecureArea as _;
+        let id: String = id.into();
+        let (sig_alias, enc_alias) = Self::key_aliases(&id);
+        let sig = area.create_key(Some(&sig_alias), sig_key_type.into())?;
+        let enc = area.create_key(Some(&enc_alias), enc_key_type.into())?;
+        Ok(Self {
+            vid: Vid {
+                id,
+                transport,
+                sig_key_type,
+                public_sigkey: sig.public.into(),
+                enc_key_type,
+                public_enckey: enc.public.into(),
+            },
+            keys: PrivateKeys {
+                area,
+                sig_alias,
+                enc_alias,
+            },
+        })
+    }
+
     /// A VID from its public half and its two keys as bytes: the one way key material
     /// enters, from a file, a seed or the wallet's storage. The bytes go straight into a
     /// software secure area; the error is material that is not a key of the VID's types.
@@ -512,6 +544,13 @@ impl OwnedVid {
         area: Arc<SoftwareSecureArea>,
     ) -> Result<Self, crate::SecureAreaError> {
         let (sig_alias, enc_alias) = Self::key_aliases(&self.vid.id);
+        if Arc::ptr_eq(&area, &self.keys.area)
+            && sig_alias == self.keys.sig_alias
+            && enc_alias == self.keys.enc_alias
+        {
+            // made in this area under these aliases already
+            return Ok(self.clone());
+        }
         area.adopt_key(&self.keys.area, &self.keys.sig_alias, &sig_alias)?;
         area.adopt_key(&self.keys.area, &self.keys.enc_alias, &enc_alias)?;
         Ok(Self {

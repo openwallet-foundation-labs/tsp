@@ -15,6 +15,7 @@ use crate::{
 };
 use didwebvh_rs::url::WebVHURL;
 use serde_json::{Value, json};
+use std::sync::Arc;
 use url::Url;
 
 /// A witness registered for a prefix: its `did:key` and where its `POST /apply` is.
@@ -217,7 +218,7 @@ pub struct Published {
 /// for the prefix with threshold one, portable, naming `watchers`; publish; notify the
 /// watchers; read the entry back from the server.
 pub async fn create_witnessed(
-    area: &dyn SecureArea,
+    area: &Arc<crate::SoftwareSecureArea>,
     hosting: &Hosting,
     server: &str,
     prefix: &str,

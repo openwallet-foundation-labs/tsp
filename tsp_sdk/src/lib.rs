@@ -108,6 +108,10 @@ mod http_client;
 /// The boundary around private keys: keys by alias, three private operations, nothing that
 /// returns a key.
 pub mod secure_area;
+
+/// A secure area over Google Cloud KMS for Ed25519 signing.
+#[cfg(feature = "gcp-kms")]
+pub mod gcp_kms;
 mod store;
 
 /// Contains code for handling *verified identifiers* and identities.
@@ -194,6 +198,8 @@ pub use definitions::{
     VerifiedVid,
 };
 pub use error::Error;
-pub use secure_area::{KeyInfo, KeyType, SecureArea, SecureAreaError, SoftwareSecureArea};
+pub use secure_area::{
+    KeyInfo, KeyType, RemoteKeys, SecureArea, SecureAreaError, SoftwareSecureArea,
+};
 pub use store::{Aliases, SecureStore, SendOptions, WalletMethodState, WalletState};
 pub use vid::{ExportVid, OwnedVid, ResolutionContext, VerifyVidOptions, Vid};

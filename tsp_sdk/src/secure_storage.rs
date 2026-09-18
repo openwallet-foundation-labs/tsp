@@ -298,6 +298,36 @@ impl SecureStorage for AskarSecureStorage {
                 conn.remove("secure_area_key", &alias).await?;
             }
         }
+
+        // keys that live in a remote secure area, a KMS: their handles, never a key; a
+        // VID's signing key among them, under the VID's alias
+        let mut kept_remote = std::collections::HashSet::new();
+        for (alias, key_type, handle) in keys.remote_handles() {
+            let tags = [EntryTag::Encrypted(
+                "type".to_string(),
+                key_type.as_str().to_string(),
+            )];
+            upsert(
+                &mut conn,
+                "secure_area_remote",
+                &alias,
+                handle.as_bytes(),
+                Some(&tags),
+            )
+            .await?;
+            kept_remote.insert(alias);
+        }
+        let stored: Vec<String> = conn
+            .fetch_all(Some("secure_area_remote"), None, None, None, false, false)
+            .await?
+            .iter()
+            .map(|e| e.name.clone())
+            .collect();
+        for alias in stored {
+            if !kept_remote.contains(&alias) {
+                conn.remove("secure_area_remote", &alias).await?;
+            }
+        }
         // the records that carried method keys as a blob before the secure area
         for (category, name) in [
             ("method_state", "secret_keys"),
@@ -343,6 +373,30 @@ impl SecureStorage for AskarSecureStorage {
         let keys = SoftwareSecureArea::new();
 
         let mut conn = self.inner.session(None).await?;
+
+        // the keys that live in a remote secure area, first: a VID whose signing key is one
+        // of them is private by that handle
+        for item in conn
+            .fetch_all(Some("secure_area_remote"), None, None, None, false, false)
+            .await?
+            .iter()
+        {
+            let key_type = item
+                .tags
+                .iter()
+                .find_map(|t| match t {
+                    EntryTag::Encrypted(name, value) | EntryTag::Plaintext(name, value)
+                        if name == "type" =>
+                    {
+                        KeyType::parse(value)
+                    }
+                    _ => None,
+                })
+                .unwrap_or(KeyType::Ed25519);
+            let handle = String::from_utf8_lossy(&item.value).into_owned();
+            keys.bind_remote(&item.name, key_type, &handle)?;
+        }
+
         let results = conn
             .fetch_all(Some("vid"), None, None, None, false, false)
             .await?;
@@ -368,26 +422,23 @@ impl SecureStorage for AskarSecureStorage {
                 continue;
             };
 
-            // the VID's keys, straight into the secure area
+            // the VID's keys, straight into the secure area; one may live remotely instead
             let (sig_alias, enc_alias) = OwnedVid::key_aliases(&id);
-            let signing_key = conn.fetch("key", &sig_alias, false).await?;
-            let decryption_key = conn.fetch("key", &enc_alias, false).await?;
-            let private = match (signing_key, decryption_key) {
-                (Some(sig), Some(enc)) => {
-                    keys.import(
-                        &sig_alias,
-                        data.sig_key_type.into(),
-                        zeroize::Zeroizing::new(sig.value.to_vec()),
-                    )?;
-                    keys.import(
-                        &enc_alias,
-                        data.enc_key_type.into(),
-                        zeroize::Zeroizing::new(enc.value.to_vec()),
-                    )?;
-                    true
-                }
-                _ => false,
-            };
+            if let Some(sig) = conn.fetch("key", &sig_alias, false).await? {
+                keys.import(
+                    &sig_alias,
+                    data.sig_key_type.into(),
+                    zeroize::Zeroizing::new(sig.value.to_vec()),
+                )?;
+            }
+            if let Some(enc) = conn.fetch("key", &enc_alias, false).await? {
+                keys.import(
+                    &enc_alias,
+                    data.enc_key_type.into(),
+                    zeroize::Zeroizing::new(enc.value.to_vec()),
+                )?;
+            }
+            let private = keys.has_key(&sig_alias) && keys.has_key(&enc_alias);
 
             vids.push(ExportVid {
                 id: data.id,

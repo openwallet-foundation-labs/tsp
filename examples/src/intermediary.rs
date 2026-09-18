@@ -475,7 +475,7 @@ async fn create_identity(
     refuse_if_name_taken(did_server, name).await;
 
     let (private_vid, history, keys) = tsp_sdk::vid::did::webvh::create_webvh(
-        db.secure_area().as_ref(),
+        db.secure_area(),
         &format!("{did_server}/endpoint/{name}"),
         transport,
     )

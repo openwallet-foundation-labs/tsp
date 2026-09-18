@@ -1423,3 +1423,51 @@ async fn a_key_deleted_from_the_secure_area_does_not_come_back_from_storage() {
         "the retired key came back"
     );
 }
+
+#[cfg(all(feature = "gcp-kms", not(target_arch = "wasm32")))]
+#[tokio::test]
+async fn a_wallet_whose_signing_keys_live_in_a_kms_reopens_and_signs_once_the_kms_is_attached() {
+    use crate::gcp_kms::{FakeKms, KmsSecureArea};
+    use std::sync::Arc;
+
+    let kms = Arc::new(FakeKms::default());
+    let store = create_async_test_store();
+    store
+        .secure_area()
+        .attach_remote(Arc::new(KmsSecureArea::new(kms.clone())))
+        .unwrap();
+
+    // an identity made in this wallet: its signing key in the KMS, its encryption key here
+    let vid = crate::OwnedVid::new_in(
+        store.secure_area().clone(),
+        "did:peer:test",
+        "tcp://127.0.0.1:1".parse().unwrap(),
+        crate::definitions::VidSignatureKeyType::Ed25519,
+        crate::definitions::VidEncryptionKeyType::X25519,
+    )
+    .unwrap();
+    store.add_private_vid(vid.clone(), None).unwrap();
+    let signed = store.sign_raw("did:peer:test", b"hello").unwrap();
+    assert_eq!(kms.signatures.lock().unwrap().len(), 1, "signed in the KMS");
+    let update = store.create_key(None, crate::KeyType::Ed25519).unwrap();
+    assert_eq!(store.secure_area().remote_handles().len(), 2);
+
+    let fixture = create_persisted_store().await;
+    fixture.persist_from(&store).await;
+    let reopened = fixture.reopen_into_store().await;
+
+    // known by handle, locked until the KMS is attached, then signing as before
+    assert!(reopened.has_private_vid("did:peer:test").unwrap());
+    assert!(matches!(
+        reopened.sign_raw("did:peer:test", b"hello"),
+        Err(crate::Error::Crypto(_))
+    ));
+    reopened
+        .secure_area()
+        .attach_remote(Arc::new(KmsSecureArea::new(kms.clone())))
+        .unwrap();
+    let again = reopened.sign_raw("did:peer:test", b"hello").unwrap();
+    assert_eq!(signed, again, "the same key, in the KMS, signs the same");
+    assert!(reopened.has_key(&update.alias));
+    assert!(reopened.sign_with_key(&update.alias, b"x").is_ok());
+}
