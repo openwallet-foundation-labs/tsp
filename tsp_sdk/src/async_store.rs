@@ -112,17 +112,88 @@ impl std::fmt::Display for KeyStateDoubt {
     }
 }
 
+/// What a resolution found (flow 5 of the flows note). Every outcome comes back to the
+/// application with its evidence; the store decides nothing beyond keeping or not keeping
+/// what it obtained.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ResolutionOutcome {
+    /// Nothing was held for this VID; it is now held with the tip that was verified.
+    FirstContact,
+    /// The served log contains the held tip and goes beyond it; keys may have changed,
+    /// the relationship has not.
+    Extension,
+    /// The served log ends at the held tip.
+    Unchanged,
+    /// The served log does not contain the held tip, or a watcher holds another log; the
+    /// held state is kept and reliance on it suspended. What to do with the VID is the
+    /// application's.
+    Contradiction(Contradiction),
+    /// The log ends in `deactivated: true`; the method returns no document. Whatever was
+    /// held is kept as it was.
+    Deactivated,
+    /// The VID's server serves nothing; the VID was resolved from a watcher's copy, which
+    /// verified.
+    Gone,
+}
+
+/// Why the copies disagree.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Contradiction {
+    /// The served log is shorter than what was held or what a watcher holds.
+    Rollback,
+    /// The served log shares a prefix with the held tip or a watcher's copy and differs
+    /// after it.
+    Fork,
+}
+
+/// What the watcher said, when one was asked.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WatcherCheck {
+    /// No watcher designated and none named in the log, or the VID is not a `did:webvh`.
+    NotAsked,
+    /// The watcher's copy is the served log, or a prefix of it.
+    Agrees(String),
+    /// The watcher holds no copy of this log yet.
+    HoldsNothing(String),
+    /// The watcher could not be read; the flow prescribes nothing.
+    Unreachable(String, String),
+}
+
+/// A resolution's result: the outcome and what the watcher said.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Resolution {
+    pub outcome: ResolutionOutcome,
+    pub watcher: WatcherCheck,
+}
+
 #[derive(Default, Clone)]
 pub struct AsyncSecureStore {
     inner: SecureStore,
     key_state_policy: Arc<RwLock<KeyStatePolicy>>,
     key_state: Arc<RwLock<KeyStateTracker>>,
+    /// The watcher this verifier asks, by the application's choice; a URL until watchers
+    /// are TSP endpoints. `None`: the watchers a log names.
+    watcher: Arc<RwLock<Option<String>>>,
 }
 
 impl AsyncSecureStore {
     /// Create a new and empty store
     pub fn new() -> Self {
         Default::default()
+    }
+
+    /// Designate the watcher this verifier asks on every resolution of a `did:webvh`; see
+    /// [`AsyncSecureStore::watcher`]. `None` falls back to the watchers a log names.
+    pub fn set_watcher(&self, watcher: Option<String>) -> Result<(), Error> {
+        *self.watcher.write()? = watcher;
+        Ok(())
+    }
+
+    /// The watcher this verifier asks, if the application designated one. The watcher is
+    /// the verifier's choice: anyone may run one and the verifier decides whom it trusts;
+    /// the watchers an endpoint names in its log are a default, never an obligation.
+    pub fn watcher(&self) -> Result<Option<String>, Error> {
+        Ok(self.watcher.read()?.clone())
     }
 
     /// Set the policy for re-resolving peers' key state; see [KeyStatePolicy]
@@ -342,34 +413,174 @@ impl AsyncSecureStore {
             .await
     }
 
-    /// Resolve and verify public key material for a VID identified by `vid` and add it to the wallet as a relationship
+    /// Resolve and verify public key material for a VID identified by `vid` and add it to
+    /// the wallet as a relationship. A contradiction or a deactivation is an error here;
+    /// [`AsyncSecureStore::resolve_vid`] returns them as outcomes instead.
     pub async fn verify_vid_with_options(
         &self,
         vid: &str,
         alias: Option<String>,
         options: VerifyVidOptions,
     ) -> Result<(), Error> {
-        let resolution_context = verification_resolution_context(vid, &options)?;
-        let (verified_vid, metadata) = crate::vid::verify_vid_with_options(vid, options).await?;
+        match self.resolve_vid(vid, alias, options).await?.outcome {
+            ResolutionOutcome::Contradiction(_) => Err(Error::ConflictingKeyState(
+                self.inner.try_resolve_alias(vid)?,
+            )),
+            ResolutionOutcome::Deactivated => Err(Error::Vid(crate::vid::VidError::Deactivated(
+                vid.to_string(),
+            ))),
+            _ => Ok(()),
+        }
+    }
 
+    /// Flow 5: resolve `vid`, compare what the server serves with the tip held and with
+    /// a watcher's copy, keep the result unless the copies contradict, and return the
+    /// outcome with what the watcher said. The reason to resolve is the caller's; the
+    /// rate limit and the silence threshold are applied where messages arrive.
+    pub async fn resolve_vid(
+        &self,
+        vid: &str,
+        alias: Option<String>,
+        options: VerifyVidOptions,
+    ) -> Result<Resolution, Error> {
+        let resolution_context = verification_resolution_context(vid, &options)?;
+        let held_before = self.inner.get_verified_vid(vid).ok();
+        let held_metadata = match &held_before {
+            Some(held) => self.inner.metadata_for_vid(held.identifier())?,
+            None => None,
+        };
+        let watcher_named = |metadata: Option<&serde_json::Value>| -> Option<String> {
+            metadata?["watchers"]
+                .as_array()?
+                .first()?
+                .as_str()
+                .map(str::to_string)
+        };
+
+        let (verified_vid, metadata, gone) =
+            match crate::vid::verify_vid_with_options(vid, options).await {
+                Ok((v, m)) => (v, m, false),
+                Err(crate::vid::VidError::Deactivated(_)) => {
+                    return Ok(Resolution {
+                        outcome: ResolutionOutcome::Deactivated,
+                        watcher: WatcherCheck::NotAsked,
+                    });
+                }
+                // the server serves nothing: a watcher's copy, if one holds it and it
+                // verifies, is what the method lets a verifier resolve from
+                Err(e) if vid.starts_with("did:webvh:") => {
+                    let watcher = self
+                        .watcher()?
+                        .or_else(|| watcher_named(held_metadata.as_ref()));
+                    let Some(watcher) = watcher else {
+                        return Err(e.into());
+                    };
+                    let (v, m) = crate::vid::did::webvh::resolve_from_watcher(vid, &watcher)
+                        .await
+                        .map_err(|_| e)?;
+                    (v, Some(m), true)
+                }
+                Err(e) => return Err(e.into()),
+            };
         let verified_vid_id = verified_vid.identifier().to_string();
 
-        // key state that replaces what is held rather than continuing it is
-        // evidence of compromise, not a rotation to adopt (spec 3.7, 11.2);
-        // the held state is kept and reliance on it suspended
-        if let Ok(held) = self.inner.get_verified_vid(&verified_vid_id) {
-            let held_metadata = self.inner.metadata_for_vid(&verified_vid_id)?;
-            if !crate::vid::extends_held_key_state(
-                &*held,
+        // the held tip: key state that replaces what is held rather than continuing it is
+        // evidence of compromise, not a rotation to adopt (spec 3.7, 11.2); the held state
+        // is kept and reliance on it suspended
+        if let Some(held) = &held_before
+            && !crate::vid::extends_held_key_state(
+                &**held,
                 held_metadata.as_ref(),
                 &verified_vid,
                 metadata.as_ref(),
+            )
+        {
+            self.suspend_key_state(&verified_vid_id, KeyStateDoubt::Conflicting)?;
+            let kind = match (
+                held_metadata
+                    .as_ref()
+                    .and_then(|m| m["served_versions"].as_array().map(Vec::len)),
+                metadata
+                    .as_ref()
+                    .and_then(|m| m["served_versions"].as_array().map(Vec::len)),
             ) {
-                self.suspend_key_state(&verified_vid_id, KeyStateDoubt::Conflicting)?;
-
-                return Err(Error::ConflictingKeyState(verified_vid_id));
-            }
+                (Some(before), Some(now)) if now < before => Contradiction::Rollback,
+                _ => Contradiction::Fork,
+            };
+            return Ok(Resolution {
+                outcome: ResolutionOutcome::Contradiction(kind),
+                watcher: WatcherCheck::NotAsked,
+            });
         }
+
+        // the watcher: the one designated, else the first the log names; read only, and
+        // compared by versionIds against what the server served
+        let mut watcher_check = WatcherCheck::NotAsked;
+        if !gone
+            && let Some(served) = metadata
+                .as_ref()
+                .and_then(|m| m["served_versions"].as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect::<Vec<_>>()
+                })
+            && let Some(watcher) = self.watcher()?.or_else(|| watcher_named(metadata.as_ref()))
+        {
+            let scid = metadata
+                .as_ref()
+                .and_then(|m| m["webvh_meta_data"]["scid"].as_str())
+                .unwrap_or_default()
+                .to_string();
+            watcher_check = match crate::vid::did::webvh::watcher_versions(&watcher, &scid).await {
+                Err(e) => WatcherCheck::Unreachable(watcher, e.to_string()),
+                Ok(None) => WatcherCheck::HoldsNothing(watcher),
+                Ok(Some(watched)) => {
+                    use crate::vid::did::webvh::WatcherComparison::*;
+                    match crate::vid::did::webvh::compare_with_watcher(&served, &watched) {
+                        Same | ServerAhead => WatcherCheck::Agrees(watcher),
+                        WatcherEmpty => WatcherCheck::HoldsNothing(watcher),
+                        WatcherAhead | Fork => {
+                            let kind = if matches!(
+                                crate::vid::did::webvh::compare_with_watcher(&served, &watched),
+                                WatcherAhead
+                            ) {
+                                Contradiction::Rollback
+                            } else {
+                                Contradiction::Fork
+                            };
+                            if held_before.is_some() {
+                                self.suspend_key_state(
+                                    &verified_vid_id,
+                                    KeyStateDoubt::Conflicting,
+                                )?;
+                            }
+                            return Ok(Resolution {
+                                outcome: ResolutionOutcome::Contradiction(kind),
+                                watcher: WatcherCheck::Agrees(watcher),
+                            });
+                        }
+                    }
+                }
+            };
+        }
+
+        let outcome = if gone {
+            ResolutionOutcome::Gone
+        } else if held_before.is_none() {
+            ResolutionOutcome::FirstContact
+        } else {
+            let held_tip = held_metadata
+                .as_ref()
+                .and_then(|m| m["webvh_meta_data"]["versionId"].as_str());
+            let now_tip = metadata
+                .as_ref()
+                .and_then(|m| m["webvh_meta_data"]["versionId"].as_str());
+            match (held_tip, now_tip) {
+                (Some(a), Some(b)) if a == b => ResolutionOutcome::Unchanged,
+                _ => ResolutionOutcome::Extension,
+            }
+        };
 
         self.inner.add_verified_vid(verified_vid, metadata)?;
         self.confirm_key_state(&verified_vid_id)?;
@@ -390,7 +601,10 @@ impl AsyncSecureStore {
             self.set_alias(alias, verified_vid_id)?;
         }
 
-        Ok(())
+        Ok(Resolution {
+            outcome,
+            watcher: watcher_check,
+        })
     }
 
     /// Resolve alias to its corresponding DID

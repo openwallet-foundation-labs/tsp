@@ -139,6 +139,11 @@ enum Commands {
         peer_src: Option<String>,
         #[arg(long)]
         source_method: Option<String>,
+        #[arg(
+            long,
+            help = "webvh only: the watcher to compare the served log with, instead of the ones the DID names"
+        )]
+        watcher: Option<String>,
     },
     #[command(arg_required_else_help = true)]
     Print { alias: String },
@@ -877,17 +882,41 @@ async fn run() -> Result<(), Error> {
             src,
             peer_src,
             source_method,
+            watcher,
         } => {
             let context = build_scid_resolution_context(&vid, source_method, src, peer_src)?;
             let options = VerifyVidOptions {
                 resolution_context: context.clone().map(ResolutionContext::Scid),
             };
+            vid_wallet.set_watcher(watcher)?;
 
-            vid_wallet
-                .verify_vid_with_options(&vid, alias, options)
-                .await?;
-
-            info!("{vid} is verified and added to the wallet {}", &args.wallet);
+            let resolution = vid_wallet.resolve_vid(&vid, alias, options).await?;
+            match &resolution.watcher {
+                tsp_sdk::WatcherCheck::NotAsked => {}
+                tsp_sdk::WatcherCheck::Agrees(w) => info!("watcher {w} agrees"),
+                tsp_sdk::WatcherCheck::HoldsNothing(w) => info!("watcher {w} holds nothing yet"),
+                tsp_sdk::WatcherCheck::Unreachable(w, e) => warn!("watcher {w} unreachable: {e}"),
+            }
+            match resolution.outcome {
+                tsp_sdk::ResolutionOutcome::FirstContact => {
+                    info!("{vid} is verified and added to the wallet {}", &args.wallet)
+                }
+                tsp_sdk::ResolutionOutcome::Unchanged => info!("{vid} is unchanged"),
+                tsp_sdk::ResolutionOutcome::Extension => {
+                    info!("{vid} has a new version; the wallet holds it")
+                }
+                tsp_sdk::ResolutionOutcome::Gone => {
+                    info!("{vid}: its server serves nothing; verified from the watcher's copy")
+                }
+                tsp_sdk::ResolutionOutcome::Deactivated => {
+                    info!("{vid} is deactivated; no document, the wallet keeps what it held")
+                }
+                tsp_sdk::ResolutionOutcome::Contradiction(kind) => {
+                    error!(
+                        "{vid}: contradiction, {kind:?}; the wallet keeps what it held and relies on it no longer"
+                    )
+                }
+            }
         }
         Commands::Print { alias } => {
             let vid = vid_wallet

@@ -148,7 +148,9 @@ mod parallel_relationship_test;
 pub mod test_utils;
 
 #[cfg(feature = "async")]
-pub use async_store::AsyncSecureStore;
+pub use async_store::{
+    AsyncSecureStore, Contradiction, Resolution, ResolutionOutcome, WatcherCheck,
+};
 
 #[cfg(feature = "async")]
 pub use secure_storage::AskarSecureStorage;

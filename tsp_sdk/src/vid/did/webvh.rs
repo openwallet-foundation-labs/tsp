@@ -30,6 +30,14 @@ pub struct WebvhMetadata {
     pub update_keys: Option<Vec<String>>,
     /// Hash of the next update key (if precommit is active)
     pub next_key_hashes: Option<Vec<String>>,
+    /// Every `versionId` of the log as the server served it, oldest first: the held tip of
+    /// an earlier resolution must be among them, and a watcher's copy is compared against
+    /// them (flow 5).
+    #[serde(default)]
+    pub served_versions: Vec<String>,
+    /// The watchers the log names, URLs: the default watchers a verifier asks.
+    #[serde(default)]
+    pub watchers: Vec<String>,
 }
 
 /// The update keys of an identity, by name. The keys themselves are in the secure area
@@ -61,11 +69,17 @@ pub async fn resolve(id: &str) -> Result<(Vid, serde_json::Value), VidError> {
     // valid entry with only a logged warning; the method requires an error. So the served
     // log's last entry must be the one resolved, or the log has an entry that does not
     // verify and the DID does not resolve.
-    served_tip_matches(id, &meta_data.version_id).await?;
+    let served_versions = served_versions(id).await?;
+    if served_versions.last().map(String::as_str) != Some(meta_data.version_id.as_str()) {
+        return Err(VidError::ResolveVid(
+            "the served log has an entry that does not verify",
+        ));
+    }
     if meta_data.deactivated {
         // the method returns no document for a deactivated DID; the outcome is the DID's state
         return Err(VidError::Deactivated(id.to_string()));
     }
+    let watchers = meta_data.watchers.clone().unwrap_or_default();
     let did_doc: DidDocument = serde_json::from_value(log_entry.get_state().to_owned())?;
 
     let params = log_entry.get_parameters();
@@ -81,6 +95,8 @@ pub async fn resolve(id: &str) -> Result<(Vid, serde_json::Value), VidError> {
         webvh_meta_data: meta_data,
         update_keys,
         next_key_hashes,
+        served_versions,
+        watchers,
     };
 
     Ok((
@@ -89,9 +105,8 @@ pub async fn resolve(id: &str) -> Result<(Vid, serde_json::Value), VidError> {
     ))
 }
 
-/// The `versionId` of the last line of the log as served at the DID's URL must be
-/// `resolved`; otherwise the resolver stopped short of an entry that does not verify.
-async fn served_tip_matches(id: &str, resolved: &str) -> Result<(), VidError> {
+/// Every `versionId` of the log as served at the DID's URL, oldest first.
+async fn served_versions(id: &str) -> Result<Vec<String>, VidError> {
     let url = WebVHURL::parse_did_url(id)?
         .get_http_url(Some("did.jsonl"))
         .map_err(|e| VidError::WebVHError(format!("log URL: {e}")))?;
@@ -101,23 +116,150 @@ async fn served_tip_matches(id: &str, resolved: &str) -> Result<(), VidError> {
         .text()
         .await
         .map_err(|e| VidError::Http(url.to_string(), e))?;
-    let tip =
-        served_tip(&log).ok_or_else(|| VidError::ResolveVid("the served log has no entry"))?;
-    if tip != resolved {
-        return Err(VidError::ResolveVid(
-            "the served log has an entry that does not verify",
-        ));
+    let versions = versions_of(&log);
+    if versions.is_empty() {
+        return Err(VidError::ResolveVid("the served log has no entry"));
     }
-    Ok(())
+    Ok(versions)
 }
 
-/// The `versionId` of the last entry of a `did.jsonl`.
-fn served_tip(log: &str) -> Option<String> {
+/// The `versionId`s of a `did.jsonl`, oldest first; a line that is not an entry ends the
+/// list.
+pub fn versions_of(log: &str) -> Vec<String> {
     log.lines()
-        .rev()
-        .find(|l| !l.trim().is_empty())
-        .and_then(|l| serde_json::from_str::<Value>(l).ok())
-        .and_then(|e| e["versionId"].as_str().map(str::to_string))
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| {
+            serde_json::from_str::<Value>(l)
+                .ok()
+                .and_then(|e| e["versionId"].as_str().map(str::to_string))
+        })
+        .take_while(Option::is_some)
+        .flatten()
+        .collect()
+}
+
+/// The log as a watcher holds it, `GET /log?scid=`, as its `versionId`s; `None` if the
+/// watcher holds no copy.
+pub async fn watcher_versions(watcher: &str, scid: &str) -> Result<Option<Vec<String>>, VidError> {
+    let url = format!("{}/log?scid={scid}", watcher.trim_end_matches('/'));
+    let response = reqwest::get(&url)
+        .await
+        .map_err(|e| VidError::Http(url.clone(), e))?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    let log = response
+        .error_for_status()
+        .map_err(|e| VidError::Http(url.clone(), e))?
+        .text()
+        .await
+        .map_err(|e| VidError::Http(url, e))?;
+    Ok(Some(versions_of(&log)))
+}
+
+/// How a watcher's copy stands to the log the server serves, by `versionId`s.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WatcherComparison {
+    /// The same log.
+    Same,
+    /// The served log extends the watcher's copy: the watcher has not caught up yet.
+    ServerAhead,
+    /// The watcher's copy extends the served log: the server serves less than it did, a
+    /// rollback.
+    WatcherAhead,
+    /// The two share a prefix and differ after it: a fork.
+    Fork,
+    /// The watcher holds nothing for this log.
+    WatcherEmpty,
+}
+
+pub fn compare_with_watcher(served: &[String], watched: &[String]) -> WatcherComparison {
+    if watched.is_empty() {
+        return WatcherComparison::WatcherEmpty;
+    }
+    let common = served
+        .iter()
+        .zip(watched.iter())
+        .take_while(|(a, b)| a == b)
+        .count();
+    match (common == served.len(), common == watched.len()) {
+        (true, true) => WatcherComparison::Same,
+        (false, true) => WatcherComparison::ServerAhead,
+        (true, false) => WatcherComparison::WatcherAhead,
+        (false, false) => WatcherComparison::Fork,
+    }
+}
+
+/// Resolve a DID from the copy a watcher holds, when the DID's own server serves nothing
+/// (flow 5, "gone"): the watcher's `did.jsonl` and `did-witness.json` are verified as the
+/// method's Read says, the watcher being a source, never an authority.
+pub async fn resolve_from_watcher(
+    id: &str,
+    watcher: &str,
+) -> Result<(Vid, serde_json::Value), VidError> {
+    let scid = WebVHURL::parse_did_url(id)?.scid.clone();
+    let base = watcher.trim_end_matches('/');
+    let fetch = |path: String| async move {
+        let r = reqwest::get(&path)
+            .await
+            .map_err(|e| VidError::Http(path.clone(), e))?;
+        if r.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok::<Option<String>, VidError>(None);
+        }
+        Ok(Some(
+            r.error_for_status()
+                .map_err(|e| VidError::Http(path.clone(), e))?
+                .text()
+                .await
+                .map_err(|e| VidError::Http(path, e))?,
+        ))
+    };
+    let Some(log) = fetch(format!("{base}/log?scid={scid}")).await? else {
+        return Err(VidError::ResolveVid("the watcher holds no copy of the log"));
+    };
+    let witness = fetch(format!("{base}/witness?scid={scid}")).await?;
+
+    // the library resolves from files; the copy goes through two of them, briefly
+    let dir = std::env::temp_dir().join(format!("tsp-watcher-{}-{scid}", std::process::id()));
+    std::fs::create_dir_all(&dir).map_err(|e| VidError::WebVHError(e.to_string()))?;
+    let log_path = dir.join("did.jsonl");
+    let witness_path = dir.join("did-witness.json");
+    std::fs::write(&log_path, &log).map_err(|e| VidError::WebVHError(e.to_string()))?;
+    if let Some(w) = &witness {
+        std::fs::write(&witness_path, w).map_err(|e| VidError::WebVHError(e.to_string()))?;
+    }
+    let mut webvh = DIDWebVHState::default();
+    let outcome = webvh
+        .resolve_file(
+            id,
+            log_path.to_str().unwrap_or_default(),
+            witness.as_ref().and(witness_path.to_str()),
+        )
+        .await;
+    let _ = std::fs::remove_dir_all(&dir);
+    let (log_entry, meta_data) = outcome?;
+    let served_versions = versions_of(&log);
+    if served_versions.last().map(String::as_str) != Some(meta_data.version_id.as_str()) {
+        return Err(VidError::ResolveVid(
+            "the watcher's copy has an entry that does not verify",
+        ));
+    }
+    if meta_data.deactivated {
+        return Err(VidError::Deactivated(id.to_string()));
+    }
+    let did_doc: DidDocument = serde_json::from_value(log_entry.get_state().to_owned())?;
+    let params = log_entry.get_parameters();
+    let metadata = WebvhMetadata {
+        watchers: meta_data.watchers.clone().unwrap_or_default(),
+        update_keys: params.update_keys.as_ref().map(|keys| (**keys).clone()),
+        next_key_hashes: params.next_key_hashes.as_ref().map(|h| (**h).clone()),
+        webvh_meta_data: meta_data,
+        served_versions,
+    };
+    Ok((
+        resolve_document(did_doc, id)?,
+        serde_json::to_value(&metadata)?,
+    ))
 }
 
 /// Options for the first log entry of a `did:webvh` beyond the keys: the parameters a host
@@ -697,11 +839,34 @@ mod tests {
     }
 
     #[test]
-    fn the_served_tip_is_the_last_entrys_version() {
+    fn the_served_versions_are_the_entries_in_order() {
         let log = "{\"versionId\":\"1-a\"}\n{\"versionId\":\"2-b\"}\n\n";
-        assert_eq!(served_tip(log).as_deref(), Some("2-b"));
-        assert_eq!(served_tip(""), None);
-        assert_eq!(served_tip("not json\n"), None);
+        assert_eq!(versions_of(log), vec!["1-a", "2-b"]);
+        assert!(versions_of("").is_empty());
+        assert!(versions_of("not json\n").is_empty());
+    }
+
+    #[test]
+    fn a_watchers_copy_is_the_same_behind_ahead_or_forked() {
+        let v = |s: &[&str]| s.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        use WatcherComparison::*;
+        assert_eq!(
+            compare_with_watcher(&v(&["1-a", "2-b"]), &v(&["1-a", "2-b"])),
+            Same
+        );
+        assert_eq!(
+            compare_with_watcher(&v(&["1-a", "2-b"]), &v(&["1-a"])),
+            ServerAhead
+        );
+        assert_eq!(
+            compare_with_watcher(&v(&["1-a"]), &v(&["1-a", "2-b"])),
+            WatcherAhead
+        );
+        assert_eq!(
+            compare_with_watcher(&v(&["1-a", "2-x"]), &v(&["1-a", "2-b"])),
+            Fork
+        );
+        assert_eq!(compare_with_watcher(&v(&["1-a"]), &v(&[])), WatcherEmpty);
     }
 
     #[tokio::test]
