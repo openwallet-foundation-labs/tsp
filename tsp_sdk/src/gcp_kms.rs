@@ -14,7 +14,7 @@
 //! exportable and every use is logged; what it lacks is the hardware. An HSM would need an
 //! ECDSA key, which TSP's VIDs do not use.
 //!
-//! [`KmsClient`] is the KMS as this module needs it, three calls; [`GcpKms`] is the real
+//! [`crate::gcp_kms::KmsClient`] is the KMS as this module needs it, three calls; [`crate::gcp_kms::GcpKms`] is the real
 //! one over REST, and tests use a fake.
 
 use std::{

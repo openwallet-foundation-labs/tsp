@@ -387,7 +387,7 @@ impl AsyncSecureStore {
         self.inner.add_verified_vid(verified_vid, metadata)
     }
 
-    /// Check whether the [PrivateVid] identified by `vid` exists in the wallet
+    /// Check whether the [crate::PrivateVid] identified by `vid` exists in the wallet
     pub fn has_private_vid(&self, vid: &str) -> Result<bool, Error> {
         self.inner.has_private_vid(vid)
     }
