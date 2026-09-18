@@ -57,6 +57,11 @@ pub async fn resolve(id: &str) -> Result<(Vid, serde_json::Value), VidError> {
     let mut webvh = DIDWebVHState::default();
 
     let (log_entry, meta_data) = webvh.resolve(id, None).await?;
+    // didwebvh-rs 0.1.10, on a later entry that fails verification, resolves to the last
+    // valid entry with only a logged warning; the method requires an error. So the served
+    // log's last entry must be the one resolved, or the log has an entry that does not
+    // verify and the DID does not resolve.
+    served_tip_matches(id, &meta_data.version_id).await?;
     if meta_data.deactivated {
         // the method returns no document for a deactivated DID; the outcome is the DID's state
         return Err(VidError::Deactivated(id.to_string()));
@@ -82,6 +87,37 @@ pub async fn resolve(id: &str) -> Result<(Vid, serde_json::Value), VidError> {
         resolve_document(did_doc, id)?,
         serde_json::to_value(&metadata)?,
     ))
+}
+
+/// The `versionId` of the last line of the log as served at the DID's URL must be
+/// `resolved`; otherwise the resolver stopped short of an entry that does not verify.
+async fn served_tip_matches(id: &str, resolved: &str) -> Result<(), VidError> {
+    let url = WebVHURL::parse_did_url(id)?
+        .get_http_url(Some("did.jsonl"))
+        .map_err(|e| VidError::WebVHError(format!("log URL: {e}")))?;
+    let log = reqwest::get(url.clone())
+        .await
+        .map_err(|e| VidError::Http(url.to_string(), e))?
+        .text()
+        .await
+        .map_err(|e| VidError::Http(url.to_string(), e))?;
+    let tip =
+        served_tip(&log).ok_or_else(|| VidError::ResolveVid("the served log has no entry"))?;
+    if tip != resolved {
+        return Err(VidError::ResolveVid(
+            "the served log has an entry that does not verify",
+        ));
+    }
+    Ok(())
+}
+
+/// The `versionId` of the last entry of a `did.jsonl`.
+fn served_tip(log: &str) -> Option<String> {
+    log.lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .and_then(|l| serde_json::from_str::<Value>(l).ok())
+        .and_then(|e| e["versionId"].as_str().map(str::to_string))
 }
 
 /// Options for the first log entry of a `did:webvh` beyond the keys: the parameters a host
@@ -612,6 +648,14 @@ mod tests {
             outcome.is_err() || outcome.unwrap().1.deactivated,
             "an entry after deactivation must not resolve"
         );
+    }
+
+    #[test]
+    fn the_served_tip_is_the_last_entrys_version() {
+        let log = "{\"versionId\":\"1-a\"}\n{\"versionId\":\"2-b\"}\n\n";
+        assert_eq!(served_tip(log).as_deref(), Some("2-b"));
+        assert_eq!(served_tip(""), None);
+        assert_eq!(served_tip("not json\n"), None);
     }
 
     #[tokio::test]
