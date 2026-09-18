@@ -279,11 +279,21 @@ pub async fn create_witnessed(
     })
 }
 
-/// What a later entry changes: a new transport, new VID keys, or both.
+/// What a later entry changes: a new transport, new VID keys, a new witness set, any of
+/// them together.
 #[derive(Clone, Debug, Default)]
 pub struct Change {
     pub transport: Option<Url>,
     pub rotate_keys: bool,
+    /// Flow 3: the witness set that governs from the next entry on, as `did:key`s with the
+    /// threshold. The entry that installs it is approved by the set in force before it.
+    pub witnesses: Option<(Vec<String>, u32)>,
+}
+
+impl Change {
+    fn is_empty(&self) -> bool {
+        self.transport.is_none() && !self.rotate_keys && self.witnesses.is_none()
+    }
 }
 
 /// The log as served, before a later entry: the previous entry as the exact line the
@@ -409,11 +419,12 @@ fn previous_signer(previous: &Value, update_kid: &str) -> Option<String> {
         .filter(|k| k != update_kid)
 }
 
-/// Flow 2: a later entry. `update_kid` names, in `area`, the key committed by the previous
-/// entry; the entry is applied to a registered witness of the log's own witness set,
-/// published, the watchers the log names notified, and read back from the server and each
-/// watcher. The old update key and the old VID keys are still in `area` afterwards: retiring
-/// them is the caller's, once the read-back has held (flow 2 step 7).
+/// Flow 2, and flow 3 when `change.witnesses` is set: a later entry. `update_kid` names, in
+/// `area`, the key committed by the previous entry; the entry is applied to a registered
+/// witness of the set in force, which for a witness change is the old set, published, the
+/// watchers the log names notified, and read back from the server and each watcher. The
+/// old update key and the old VID keys are still in `area` afterwards: retiring them is
+/// the caller's, once the read-back has held (flow 2 step 7).
 pub async fn update_witnessed(
     area: &dyn SecureArea,
     hosting: &Hosting,
@@ -423,10 +434,32 @@ pub async fn update_witnessed(
     extra_watchers: &[String],
 ) -> Result<Published, VidError> {
     let did = current.identifier().to_string();
-    if change.transport.is_none() && !change.rotate_keys {
+    if change.is_empty() {
         return Err(VidError::WebVHError("nothing to change".into()));
     }
     let served = served_state(hosting, &did, extra_watchers).await?;
+
+    // flow 3: a new witness set must have a key the server registers for the prefix, or
+    // no later entry can be published there; refused here before the old set signs it
+    let mut params = serde_json::Map::new();
+    if let Some((ids, threshold)) = &change.witnesses {
+        let registered = hosting.registry_witnesses(&served.prefix).await?;
+        let usable = ids
+            .iter()
+            .filter(|id| registered.iter().any(|w| &w.id == *id))
+            .count() as u32;
+        if usable == 0 || *threshold > usable || *threshold == 0 {
+            return Err(VidError::WebVHError(format!(
+                "the new witness set has {usable} key(s) registered for {}, threshold {threshold}",
+                served.prefix
+            )));
+        }
+        let list: Vec<Value> = ids.iter().map(|id| json!({ "id": id })).collect();
+        params.insert(
+            "witness".into(),
+            json!({ "threshold": threshold, "witnesses": list }),
+        );
+    }
 
     // the new document: new transport, new keys, or both, under the same identifier
     let transport = change
@@ -440,7 +473,7 @@ pub async fn update_witnessed(
     };
     let doc = vid_to_did_document(new_vid.vid());
     let retired = previous_signer(&served.previous, update_kid);
-    let result = webvh::update_after(area, &served.previous, doc, update_kid)?;
+    let result = webvh::update_after_with(area, &served.previous, doc, update_kid, params)?;
 
     let notified = publish_later(hosting, &did, &served, &result.log_entry).await?;
 

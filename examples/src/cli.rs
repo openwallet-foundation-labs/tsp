@@ -200,6 +200,17 @@ enum Commands {
             help = "webvh, witnessed only: a watcher URL to notify besides those the DID names (repeatable)"
         )]
         watcher: Vec<String>,
+        #[arg(
+            long,
+            help = "webvh, witnessed only: a witness did:key for the new witness set, approved by the set in force (repeatable)"
+        )]
+        witness: Vec<String>,
+        #[arg(
+            long,
+            default_value_t = 1,
+            help = "webvh, witnessed only: the threshold of the new witness set"
+        )]
+        witness_threshold: u32,
     },
     #[command(
         about = "Deactivate the DID:WEBVH: one last log entry ends it; the wallet keeps the DID as a name only"
@@ -1137,6 +1148,8 @@ async fn run() -> Result<(), Error> {
             transport,
             rotate_keys,
             watcher,
+            witness,
+            witness_threshold,
         } => {
             let vid_alias = vid_wallet.try_resolve_alias(&vid)?;
             info!("Updating VID {vid_alias}");
@@ -1168,6 +1181,7 @@ async fn run() -> Result<(), Error> {
                     tsp_sdk::vid::did::hosting::Change {
                         transport,
                         rotate_keys,
+                        witnesses: (!witness.is_empty()).then_some((witness, witness_threshold)),
                     },
                     &watcher,
                 )

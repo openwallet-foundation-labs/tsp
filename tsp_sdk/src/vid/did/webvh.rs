@@ -259,9 +259,20 @@ pub fn update_after(
     updated_document: Value,
     update_kid: &str,
 ) -> Result<UpdateResult, VidError> {
+    update_after_with(area, previous, updated_document, update_kid, Map::new())
+}
+
+/// [`update_after`] with further parameters for the entry: a new `witness` set, new
+/// `watchers`. The update key hands over as always.
+pub fn update_after_with(
+    area: &dyn SecureArea,
+    previous: &Value,
+    updated_document: Value,
+    update_kid: &str,
+    mut params: Map<String, Value>,
+) -> Result<UpdateResult, VidError> {
     let next = area.create_key(None, crate::KeyType::Ed25519)?;
 
-    let mut params = Map::new();
     params.insert("updateKeys".into(), json!([update_kid]));
     params.insert(
         "nextKeyHashes".into(),
@@ -647,6 +658,41 @@ mod tests {
         assert!(
             outcome.is_err() || outcome.unwrap().1.deactivated,
             "an entry after deactivation must not resolve"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_witness_change_lands_in_the_entry_and_the_key_hands_over() {
+        let area = SoftwareSecureArea::new();
+        let (vid, genesis, keys) = create_webvh_with(
+            &area,
+            "example.com/t/erin",
+            "https://p.example/x".parse().unwrap(),
+            WebvhOptions {
+                witnesses: vec!["did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK".into()],
+                watchers: vec![],
+                portable: true,
+            },
+        )
+        .await
+        .unwrap();
+        let mut params = Map::new();
+        params.insert(
+            "witness".into(),
+            json!({ "threshold": 1, "witnesses": [{ "id": "did:key:z6MktHhPycwsZ2yuckDzftLJqn7EqGrUn9AqnZdhERqPfUSH" }] }),
+        );
+        let doc = vid_to_did_document(vid.vid());
+        let result =
+            update_after_with(&area, &genesis, doc, &keys.next_update_kid, params).unwrap();
+        let p = &result.log_entry["parameters"];
+        assert_eq!(
+            p["witness"]["witnesses"][0]["id"],
+            "did:key:z6MktHhPycwsZ2yuckDzftLJqn7EqGrUn9AqnZdhERqPfUSH"
+        );
+        assert_eq!(p["updateKeys"][0], keys.next_update_kid);
+        assert_eq!(
+            p["nextKeyHashes"][0],
+            entry::key_hash(&result.next_update_kid)
         );
     }
 
