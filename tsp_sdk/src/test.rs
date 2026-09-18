@@ -775,11 +775,11 @@ async fn test_unverified_receiver_in_direct_mode() {
 #[tokio::test]
 async fn test_prepopulated_store_import_preserves_dirty_state() {
     let dirty_store = create_prepopulated_store();
-    let (vids, aliases, keys) = dirty_store.export().unwrap();
-    let local_vid = aliases.get("local-owner").cloned().unwrap();
+    let state = dirty_store.export().unwrap();
+    let local_vid = state.aliases.get("local-owner").cloned().unwrap();
 
     let imported_store = create_async_test_store();
-    imported_store.import(vids, aliases, keys).unwrap();
+    imported_store.import(state).unwrap();
 
     assert_eq!(
         imported_store
@@ -822,15 +822,17 @@ async fn test_prepopulated_store_import_preserves_dirty_state() {
 async fn test_persisted_store_roundtrip_reopens_dirty_wallet() {
     let in_memory_store = create_async_test_store();
     let dirty_store = create_prepopulated_store();
-    let (vids, aliases, keys) = dirty_store.export().unwrap();
-    in_memory_store.import(vids, aliases, keys).unwrap();
+    let state = dirty_store.export().unwrap();
+    in_memory_store.import(state).unwrap();
 
     let fixture = create_persisted_store().await;
     fixture.persist_from(&in_memory_store).await;
     let reopened_store = fixture.reopen_into_store().await;
 
-    let (before_vids, before_aliases, _before_keys) = in_memory_store.export().unwrap();
-    let (after_vids, after_aliases, _after_keys) = reopened_store.export().unwrap();
+    let before = in_memory_store.export().unwrap();
+    let (before_vids, before_aliases) = (before.vids, before.aliases);
+    let after = reopened_store.export().unwrap();
+    let (after_vids, after_aliases) = (after.vids, after.aliases);
 
     assert_eq!(before_vids.len(), after_vids.len());
     assert_eq!(
@@ -882,9 +884,9 @@ async fn test_resolution_context_export_import_roundtrip() {
         .register_resolution_context(presented_did.to_string(), context.clone())
         .unwrap();
 
-    let (vids, aliases, method_state) = store.export().unwrap();
+    let state = store.export().unwrap();
     let reopened = create_async_test_store();
-    reopened.import(vids, aliases, method_state).unwrap();
+    reopened.import(state).unwrap();
 
     assert!(
         reopened
@@ -942,8 +944,8 @@ async fn test_persisted_store_roundtrip_preserves_resolution_contexts() {
     let storage = AskarSecureStorage::open(fixture.storage_url(), fixture.password())
         .await
         .expect("persisted wallet should reopen");
-    let (_vids, _aliases, method_state) =
-        storage.read().await.expect("persisted wallet should read");
+    let state = storage.read().await.expect("persisted wallet should read");
+    let method_state = state.method_state;
     storage
         .close()
         .await
@@ -999,9 +1001,9 @@ async fn assert_storage_open_or_read_fails(url: &str, password: &[u8]) {
 #[tokio::test]
 async fn test_dirty_roundtrip_multi_reopen_idempotent() {
     let dirty_store = create_prepopulated_store();
-    let (vids, aliases, keys) = dirty_store.export().unwrap();
+    let state = dirty_store.export().unwrap();
     let initial_store = create_async_test_store();
-    initial_store.import(vids, aliases, keys).unwrap();
+    initial_store.import(state).unwrap();
 
     let fixture = create_persisted_store().await;
     let baseline = export_snapshot(&initial_store);

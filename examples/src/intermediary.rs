@@ -874,10 +874,9 @@ async fn main() {
 
     let (vault, db) = match AskarSecureStorage::open(&wallet_url, password.as_bytes()).await {
         Ok(vault) => {
-            let (vids, aliases, keys) = vault.read().await.expect("could not read the wallet");
+            let state = vault.read().await.expect("could not read the wallet");
             let db = AsyncSecureStore::new();
-            db.import(vids, aliases, keys)
-                .expect("could not load the wallet");
+            db.import(state).expect("could not load the wallet");
             tracing::info!("opened wallet {}", args.wallet);
 
             (vault, db)

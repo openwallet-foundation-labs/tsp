@@ -193,5 +193,5 @@ pub use definitions::{
 };
 pub use error::Error;
 pub use secure_area::{KeyInfo, KeyType, SecureArea, SecureAreaError, SoftwareSecureArea};
-pub use store::{Aliases, SecureStore, SendOptions, WalletMethodState};
+pub use store::{Aliases, SecureStore, SendOptions, WalletMethodState, WalletState};
 pub use vid::{ExportVid, OwnedVid, ResolutionContext, VerifyVidOptions, Vid};

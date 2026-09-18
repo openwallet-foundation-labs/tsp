@@ -481,9 +481,42 @@ impl OwnedVid {
         Ok(Self { vid, keys })
     }
 
-    /// The keys as bytes, for the wallet that persists this VID and for nothing else.
-    pub(crate) fn key_material(&self) -> Option<(PrivateSigningKeyData, PrivateKeyData)> {
-        self.keys.material()
+    /// The aliases a VID's keys go by in any secure area.
+    pub fn key_aliases(id: &str) -> (String, String) {
+        (format!("{id}#signing-key"), format!("{id}#decryption-key"))
+    }
+
+    /// A handle on a VID whose keys are already in `area` under the VID's aliases; `None`
+    /// if they are not.
+    pub(crate) fn from_area(vid: Vid, area: Arc<SoftwareSecureArea>) -> Option<Self> {
+        let (sig_alias, enc_alias) = Self::key_aliases(&vid.id);
+        if !area.has_key(&sig_alias) || !area.has_key(&enc_alias) {
+            return None;
+        }
+        Some(Self {
+            vid,
+            keys: PrivateKeys {
+                area,
+                sig_alias,
+                enc_alias,
+            },
+        })
+    }
+
+    /// The same VID with its keys copied into `area`, and this handle pointing there.
+    pub(crate) fn adopted_by(
+        &self,
+        area: Arc<SoftwareSecureArea>,
+    ) -> Result<Self, crate::SecureAreaError> {
+        area.adopt(&self.keys.area)?;
+        Ok(Self {
+            vid: self.vid.clone(),
+            keys: PrivateKeys {
+                area,
+                sig_alias: self.keys.sig_alias.clone(),
+                enc_alias: self.keys.enc_alias.clone(),
+            },
+        })
     }
 
     /// The same keys under another identifier: the aliases stay, the area is shared.
@@ -539,8 +572,10 @@ pub struct ExportVid {
     pub sig_key_type: VidSignatureKeyType,
     pub public_enckey: PublicKeyData,
     pub enc_key_type: VidEncryptionKeyType,
-    pub(crate) sigkey: Option<PrivateSigningKeyData>,
-    pub(crate) enckey: Option<PrivateKeyData>,
+    /// Whether this endpoint controls the VID: its keys are then in the wallet's secure area
+    /// under `<id>#signing-key` and `<id>#decryption-key`, and travel with it, never here.
+    #[cfg_attr(feature = "serialize", serde(default))]
+    pub private: bool,
     pub relation_status: RelationshipStatus,
     pub relation_vid: Option<String>,
     pub parent_vid: Option<String>,
@@ -564,16 +599,7 @@ impl ExportVid {
         }
     }
 
-    pub(crate) fn private_vid(&self) -> Option<OwnedVid> {
-        match (&self.sigkey, &self.enckey) {
-            (Some(sigkey), Some(enckey)) => {
-                OwnedVid::from_parts(self.verified_vid(), sigkey.clone(), enckey.clone()).ok()
-            }
-            _ => None,
-        }
-    }
-
     pub fn is_private(&self) -> bool {
-        self.enckey.is_some() && self.sigkey.is_some()
+        self.private
     }
 }

@@ -31,6 +31,28 @@ pub enum KeyType {
     MlKem768X25519,
 }
 
+impl KeyType {
+    /// The name a key type is stored under.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            KeyType::Ed25519 => "Ed25519",
+            KeyType::MlDsa65 => "MlDsa65",
+            KeyType::X25519 => "X25519",
+            KeyType::MlKem768X25519 => "MlKem768X25519",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<Self> {
+        Some(match name {
+            "Ed25519" => KeyType::Ed25519,
+            "MlDsa65" => KeyType::MlDsa65,
+            "X25519" => KeyType::X25519,
+            "MlKem768X25519" => KeyType::MlKem768X25519,
+            _ => return None,
+        })
+    }
+}
+
 impl From<VidSignatureKeyType> for KeyType {
     fn from(t: VidSignatureKeyType) -> Self {
         match t {
@@ -191,6 +213,22 @@ impl SoftwareSecureArea {
         if let Ok(mut keys) = self.keys.write() {
             keys.remove(alias);
         }
+    }
+
+    /// Copy every key of `other` into this area, under the same aliases: how a store takes
+    /// on the keys of an [`crate::OwnedVid`] it is given, whose own area keeps working.
+    pub(crate) fn adopt(&self, other: &SoftwareSecureArea) -> Result<(), SecureAreaError> {
+        let taken: Vec<(String, KeyType, Secret, Option<Vec<u8>>)> = other
+            .keys
+            .read()
+            .map_err(|_| SecureAreaError::Crypto("secure area lock".into()))?
+            .iter()
+            .map(|(a, k)| (a.clone(), k.key_type, k.material.clone(), k.public.clone()))
+            .collect();
+        for (alias, key_type, material, public) in taken {
+            self.insert(&alias, key_type, material, public)?;
+        }
+        Ok(())
     }
 
     /// The alias the area gives a key nobody named.

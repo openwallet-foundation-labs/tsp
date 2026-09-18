@@ -536,9 +536,9 @@ async fn read_wallet(
                     "cannot open wallet {file}: {e} (wrong passphrase?)"
                 )))
             })?;
-        let (vids, aliases, keys) = vault.read().await?;
+        let state = vault.read().await?;
         let db = AsyncSecureStore::new();
-        db.import(vids, aliases, keys)?;
+        db.import(state)?;
         trace!("opened wallet {wallet_name}");
         Ok((vault, db))
     } else {
@@ -681,15 +681,6 @@ fn merge_method_state(
     vid_wallet: &AsyncSecureStore,
     method_state: tsp_sdk::WalletMethodState,
 ) -> Result<(), Error> {
-    for (kid, secret) in method_state.secret_keys {
-        let key_type = method_state
-            .secret_key_types
-            .get(&kid)
-            .copied()
-            .unwrap_or(tsp_sdk::KeyType::Ed25519);
-        vid_wallet.import_key(&kid, key_type, zeroize::Zeroizing::new(secret))?;
-    }
-
     for (did, context) in method_state.resolution_contexts {
         vid_wallet.register_resolution_context(did, context)?;
     }
@@ -897,7 +888,8 @@ async fn run() -> Result<(), Error> {
 
     match args.command {
         Commands::Show { sub } => {
-            let (mut vids, aliases, _keys) = vid_wallet.export()?;
+            let state = vid_wallet.export()?;
+            let (mut vids, aliases) = (state.vids, state.aliases);
             vids.sort_by(|a, b| a.id.cmp(&b.id));
 
             if let Some(ShowCommands::Local) = sub {
@@ -1153,7 +1145,7 @@ async fn run() -> Result<(), Error> {
             info!("Updating VID {vid_alias}");
             let exported = vid_wallet
                 .export()?
-                .0
+                .vids
                 .into_iter()
                 .find(|exported| exported.id == vid_alias)
                 .ok_or_else(|| Error::MissingVid(format!("Cannot find VID {vid_alias}")))?;

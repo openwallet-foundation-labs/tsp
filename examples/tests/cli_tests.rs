@@ -153,17 +153,16 @@ fn remove_next_update_alias(wallet_name: &str, did: &str) {
         let vault = AskarSecureStorage::open(&url, b"unsecure")
             .await
             .expect("Failed to open wallet storage");
-        let (vids, mut aliases, method_state) = vault.read().await.expect("Failed to read wallet");
+        let mut state = vault.read().await.expect("Failed to read wallet");
         let next_kid_alias = format!("__next_update_kid:{did}");
-        let removed = aliases.remove(&next_kid_alias);
+        let removed = state.aliases.remove(&next_kid_alias);
         assert!(
             removed.is_some(),
             "Expected wallet to contain precommit alias {next_kid_alias}"
         );
 
         let db = AsyncSecureStore::new();
-        db.import(vids, aliases, method_state)
-            .expect("Failed to import wallet state");
+        db.import(state).expect("Failed to import wallet state");
         vault
             .persist(db.export().expect("Failed to export wallet state"))
             .await
@@ -179,11 +178,10 @@ fn load_wallet(wallet_name: &str) -> AsyncSecureStore {
         let vault = AskarSecureStorage::open(&url, b"unsecure")
             .await
             .expect("Failed to open wallet storage");
-        let (vids, aliases, keys) = vault.read().await.expect("Failed to read wallet");
+        let state = vault.read().await.expect("Failed to read wallet");
 
         let db = AsyncSecureStore::new();
-        db.import(vids, aliases, keys)
-            .expect("Failed to import wallet state");
+        db.import(state).expect("Failed to import wallet state");
         vault.close().await.expect("Failed to close wallet storage");
         db
     })

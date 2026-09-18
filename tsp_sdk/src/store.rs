@@ -312,11 +312,18 @@ fn random_nonce_bytes() -> [u8; 16] {
 }
 
 pub type Aliases = HashMap<String, String>;
-/// Key material by alias, as it travels to and from the wallet's storage. Filled from the
-/// store's software secure area at export and emptied into it at import; never held
-/// anywhere else.
-pub type MethodSecretKeys = HashMap<String, Vec<u8>>;
 pub type ResolutionContexts = HashMap<String, crate::vid::ResolutionContext>;
+
+/// Everything the wallet holds, as it travels to and from storage: the VIDs with their
+/// relationships, the aliases, the method state, and the keys, which travel only as the
+/// software secure area that holds them and never as bytes in this struct.
+#[derive(Clone)]
+pub struct WalletState {
+    pub vids: Vec<ExportVid>,
+    pub aliases: Aliases,
+    pub method_state: WalletMethodState,
+    pub keys: Arc<crate::SoftwareSecureArea>,
+}
 
 #[cfg_attr(
     feature = "serialize",
@@ -325,11 +332,6 @@ pub type ResolutionContexts = HashMap<String, crate::vid::ResolutionContext>;
 )]
 #[derive(Clone, Debug, Default)]
 pub struct WalletMethodState {
-    pub secret_keys: MethodSecretKeys,
-    /// The type of each key in `secret_keys`; a key not listed is Ed25519, which every key
-    /// stored before types were recorded was.
-    #[cfg_attr(feature = "serialize", serde(default))]
-    pub secret_key_types: HashMap<String, crate::KeyType>,
     pub resolution_contexts: ResolutionContexts,
 }
 
@@ -407,7 +409,7 @@ impl SecureStore {
     }
 
     /// Export the wallet to serializable default types
-    pub fn export(&self) -> Result<(Vec<ExportVid>, Aliases, WalletMethodState), Error> {
+    pub fn export(&self) -> Result<WalletState, Error> {
         let vids = self
             .vids
             .read()?
@@ -419,18 +421,7 @@ impl SecureStore {
                 sig_key_type: context.vid.signature_key_type(),
                 public_enckey: context.vid.encryption_key().clone(),
                 enc_key_type: context.vid.encryption_key_type(),
-                // the one place key material leaves the software secure area: to the
-                // wallet that persists it
-                sigkey: context
-                    .private
-                    .as_ref()
-                    .and_then(|x| x.key_material())
-                    .map(|(sig, _)| sig),
-                enckey: context
-                    .private
-                    .as_ref()
-                    .and_then(|x| x.key_material())
-                    .map(|(_, enc)| enc),
+                private: context.private.is_some(),
                 relation_status: context.relation_status.clone(),
                 relation_vid: context.relation_vid.clone(),
                 parent_vid: context.parent_vid.clone(),
@@ -443,33 +434,38 @@ impl SecureStore {
             })
             .collect::<Vec<_>>();
 
-        // the method keys leave the software secure area here, towards the wallet's storage
-        let mut method_state = self.method_state.read()?.clone();
-        method_state.secret_keys.clear();
-        method_state.secret_key_types.clear();
-        for (alias, key_type, material) in self.secure_area.all_material() {
-            method_state
-                .secret_keys
-                .insert(alias.clone(), material.to_vec());
-            method_state.secret_key_types.insert(alias, key_type);
-        }
-
-        Ok((vids, self.aliases.read()?.clone(), method_state))
+        Ok(WalletState {
+            vids,
+            aliases: self.aliases.read()?.clone(),
+            method_state: self.method_state.read()?.clone(),
+            keys: self.secure_area.clone(),
+        })
     }
 
-    /// Import the wallet from serializable default types
-    pub fn import(
-        &self,
-        vids: Vec<ExportVid>,
-        aliases: Aliases,
-        method_state: WalletMethodState,
-    ) -> Result<(), Error> {
+    /// Import the wallet from serializable default types. The keys in `state.keys` are
+    /// taken into this store's secure area; a VID marked private whose keys are not there
+    /// is imported as a verified VID only.
+    pub fn import(&self, state: WalletState) -> Result<(), Error> {
+        let WalletState {
+            vids,
+            aliases,
+            method_state,
+            keys,
+        } = state;
+        if !Arc::ptr_eq(&keys, &self.secure_area) {
+            self.secure_area.adopt(&keys)?;
+        }
         vids.into_iter().try_for_each(|vid| {
+            let private = if vid.private {
+                OwnedVid::from_area(vid.verified_vid(), self.secure_area.clone()).map(Arc::new)
+            } else {
+                None
+            };
             self.vids.write()?.insert(
                 vid.id.to_string(),
                 VidContext {
                     vid: Arc::new(vid.verified_vid()),
-                    private: vid.private_vid().map(Arc::new),
+                    private,
                     relation_status: vid.relation_status,
                     relation_vid: vid.relation_vid,
                     parent_vid: vid.parent_vid,
@@ -483,18 +479,6 @@ impl SecureStore {
             Ok::<(), Error>(())
         })?;
 
-        // and come back in the same way: into the secure area, then forgotten
-        let mut method_state = method_state;
-        for (alias, material) in method_state.secret_keys.drain() {
-            let key_type = method_state
-                .secret_key_types
-                .get(&alias)
-                .copied()
-                .unwrap_or(crate::KeyType::Ed25519);
-            self.secure_area
-                .import(&alias, key_type, zeroize::Zeroizing::new(material))?;
-        }
-        method_state.secret_key_types.clear();
         *self.method_state.write()? = method_state;
 
         aliases.into_iter().try_for_each(|(k, v)| {
@@ -598,13 +582,14 @@ impl SecureStore {
         Ok(())
     }
 
-    /// Adds `private_vid` to the wallet. Its keys stay in the secure area it came with.
+    /// Adds `private_vid` to the wallet. Its keys are copied into the wallet's secure area,
+    /// where they are persisted with it.
     pub fn add_private_vid(
         &self,
         private_vid: OwnedVid,
         metadata: Option<serde_json::Value>,
     ) -> Result<(), Error> {
-        let vid = Arc::new(private_vid);
+        let vid = Arc::new(private_vid.adopted_by(self.secure_area.clone())?);
 
         self.vids
             .write()?
@@ -2738,8 +2723,8 @@ mod test {
 
     fn reopen_store(store: &SecureStore) -> SecureStore {
         let reopened = SecureStore::new();
-        let (vids, aliases, keys) = store.export().unwrap();
-        reopened.import(vids, aliases, keys).unwrap();
+        let state = store.export().unwrap();
+        reopened.import(state).unwrap();
         reopened
     }
 
@@ -3216,7 +3201,7 @@ mod test {
             .make_relationship_accept("bob", "alice", thread_id, None)
             .unwrap();
 
-        let (vids, _aliases, _keys) = store.export().unwrap();
+        let vids = store.export().unwrap().vids;
         let alice_entry = vids
             .iter()
             .find(|vid| vid.id == alice.identifier())
@@ -3655,7 +3640,7 @@ mod test {
         ));
 
         // the invite is still outstanding
-        let (vids, _, _) = a_store.export().unwrap();
+        let vids = a_store.export().unwrap().vids;
         let Some(alice_parallel_export) = vids
             .iter()
             .find(|vid| vid.id == alice_parallel.identifier())
@@ -3700,7 +3685,7 @@ mod test {
             panic!("unexpected message type");
         };
 
-        let (vids, _, _) = a_store.export().unwrap();
+        let vids = a_store.export().unwrap().vids;
         let Some(alice_parallel_export) = vids
             .iter()
             .find(|vid| vid.id == alice_parallel.identifier())

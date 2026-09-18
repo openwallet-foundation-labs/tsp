@@ -1,9 +1,9 @@
 //! Test utilities and helpers for writing tests.
 
 use crate::{
-    ExportVid, OwnedVid, RelationshipStatus, SecureStore,
+    OwnedVid, RelationshipStatus, SecureStore,
     definitions::{Digest, PendingNestedRelationship, VerifiedVid},
-    store::{Aliases, WalletMethodState},
+    store::WalletState,
 };
 #[cfg(feature = "resolve")]
 use crate::{
@@ -281,11 +281,13 @@ pub fn relationship_status_signature(status: RelationshipStatus) -> String {
     }
 }
 
-fn export_snapshot_parts(
-    vids: Vec<ExportVid>,
-    aliases: Aliases,
-    method_state: WalletMethodState,
-) -> StoreExportSnapshot {
+fn export_snapshot_parts(state: WalletState) -> StoreExportSnapshot {
+    let WalletState {
+        vids,
+        aliases,
+        method_state,
+        keys,
+    } = state;
     let mut vid_rows = vids
         .into_iter()
         .map(|exported| {
@@ -307,10 +309,13 @@ fn export_snapshot_parts(
         .collect::<Vec<_>>();
     vid_rows.sort();
 
-    let mut key_rows = method_state
-        .secret_keys
+    let mut key_rows = keys
+        .aliases()
         .into_iter()
-        .map(|(k, v)| (k, format!("{v:?}")))
+        .map(|alias| {
+            let public = crate::SecureArea::public_key(keys.as_ref(), &alias).ok();
+            (alias, format!("{public:?}"))
+        })
         .collect::<BTreeMap<_, _>>();
     key_rows.extend(
         method_state
@@ -328,8 +333,8 @@ fn export_snapshot_parts(
 
 /// Export a synchronous store into a normalized snapshot.
 pub fn export_snapshot_sync(store: &SecureStore) -> StoreExportSnapshot {
-    let (vids, aliases, keys) = store.export().unwrap();
-    export_snapshot_parts(vids, aliases, keys)
+    let state = store.export().unwrap();
+    export_snapshot_parts(state)
 }
 
 /// Seed data for relationship transition tests on dirty wallets.
@@ -662,8 +667,8 @@ pub fn create_routed_dirty_topology() -> RoutedDirtyTopology {
 /// Export an async store into a normalized snapshot.
 #[cfg(feature = "async")]
 pub fn export_snapshot(store: &AsyncSecureStore) -> StoreExportSnapshot {
-    let (vids, aliases, keys) = store.export().unwrap();
-    export_snapshot_parts(vids, aliases, keys)
+    let state = store.export().unwrap();
+    export_snapshot_parts(state)
 }
 
 /// Repository-backed wallet fixtures used for smoke tests and future
@@ -778,7 +783,7 @@ impl PersistedStoreFixture {
         let storage = AskarSecureStorage::open(&self.sqlite_url, &self.password)
             .await
             .expect("Failed to reopen persisted wallet storage");
-        let (vids, aliases, keys) = storage
+        let state = storage
             .read()
             .await
             .expect("Failed to read persisted wallet storage");
@@ -789,7 +794,7 @@ impl PersistedStoreFixture {
 
         let store = AsyncSecureStore::new();
         store
-            .import(vids, aliases, keys)
+            .import(state)
             .expect("Failed to import persisted store data");
         store
     }
@@ -900,8 +905,8 @@ mod tests {
         let reopened = fixture.reopen_into_store().await;
 
         assert_eq!(
-            original.export().unwrap().0.len(),
-            reopened.export().unwrap().0.len()
+            original.export().unwrap().vids.len(),
+            reopened.export().unwrap().vids.len()
         );
     }
 
@@ -997,8 +1002,8 @@ mod tests {
 
         let reopened = persist_reopen_cycle(&original, &fixture, 2).await;
         assert_eq!(
-            original.export().unwrap().0.len(),
-            reopened.export().unwrap().0.len()
+            original.export().unwrap().vids.len(),
+            reopened.export().unwrap().vids.len()
         );
     }
 
@@ -1007,12 +1012,12 @@ mod tests {
     async fn test_repo_wallet_fixture_roundtrip() {
         let fixture = create_repo_wallet_fixture(RepoWalletFixture::CurrentDirtySmall);
         let reopened = fixture.reopen_into_store().await;
-        let (vids, aliases, method_state) = reopened.export().unwrap();
-        assert!(!vids.is_empty());
+        let state = reopened.export().unwrap();
+        assert!(!state.vids.is_empty());
         assert!(
-            !aliases.is_empty()
-                || !method_state.secret_keys.is_empty()
-                || !method_state.resolution_contexts.is_empty(),
+            !state.aliases.is_empty()
+                || !state.keys.aliases().is_empty()
+                || !state.method_state.resolution_contexts.is_empty(),
             "repo wallet fixture should carry dirty wallet state"
         );
     }

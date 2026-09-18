@@ -3,12 +3,12 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use crate::{
-    ExportVid, OwnedVid, RelationshipStatus,
+    OwnedVid, RelationshipStatus,
     cesr::CryptoType,
     crypto::CryptoError,
     definitions::{Digest, ReceivedTspMessage, TSPStream, VerifiedVid},
     error::Error,
-    store::{Aliases, SecureStore, WalletMethodState},
+    store::{SecureStore, WalletState},
     vid::{ResolutionContext, VerifyVidOptions},
 };
 use bytes::BytesMut;
@@ -234,7 +234,7 @@ impl AsyncSecureStore {
     }
 
     /// Export the wallet to serializable default types
-    pub fn export(&self) -> Result<(Vec<ExportVid>, Aliases, WalletMethodState), Error> {
+    pub fn export(&self) -> Result<WalletState, Error> {
         self.inner.export()
     }
 
@@ -244,13 +244,8 @@ impl AsyncSecureStore {
     }
 
     /// Import the wallet from serializable default types
-    pub fn import(
-        &self,
-        vids: Vec<ExportVid>,
-        aliases: Aliases,
-        method_state: WalletMethodState,
-    ) -> Result<(), Error> {
-        self.inner.import(vids, aliases, method_state)
+    pub fn import(&self, state: WalletState) -> Result<(), Error> {
+        self.inner.import(state)
     }
 
     /// Get the current relationship status for a VID pair
