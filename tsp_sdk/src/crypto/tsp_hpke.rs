@@ -255,17 +255,18 @@ pub(crate) fn open<'a>(
 ) -> Result<(MessageContents<'a>, Option<ParallelSignatureInfo<'a>>), CryptoError> {
     match receiver.encryption_key_type() {
         VidEncryptionKeyType::X25519 => {
-            open_with_kem::<area_kem::AreaX25519>(receiver, raw_header, envelope, ciphertext)
+            open_with_kem::<prepared::PreparedX25519>(receiver, raw_header, envelope, ciphertext)
         }
         VidEncryptionKeyType::MlKem768X25519 => {
-            open_with_kem::<area_kem::AreaXWing>(receiver, raw_header, envelope, ciphertext)
+            open_with_kem::<prepared::PreparedXWing>(receiver, raw_header, envelope, ciphertext)
         }
     }
 }
 
-/// Open with a KEM whose private half is the receiver's secure area: the decapsulation
-/// happens behind the boundary, the key schedule and the AEAD run here.
-fn open_with_kem<'a, Kem: KemTrait<PrivateKey = area_kem::Handle>>(
+/// Open in two steps: first the one private answer the message needs, the KEM shared
+/// secret, asked of the receiver's secure area; then the `hpke` crate's key schedule and
+/// AEAD, unchanged, run on that answer. Nothing private happens inside the crate's call.
+fn open_with_kem<'a, Kem: KemTrait<PrivateKey = prepared::SharedSecretKey>>(
     receiver: &dyn PrivateVid,
     raw_header: &'a [u8],
     envelope: Envelope<&[u8]>,
@@ -281,93 +282,87 @@ fn open_with_kem<'a, Kem: KemTrait<PrivateKey = area_kem::Handle>>(
     let (encapped_key, rest) = ciphertext.split_at_mut(enc_size);
     let (ciphertext, tag) = rest.split_at_mut(rest.len() - tag_size);
 
+    let prepared = prepared::shared_secret::<Kem>(receiver, encapped_key)?;
     let encapped_key = Kem::EncappedKey::from_bytes(encapped_key)?;
     let tag = AeadTag::<Aead>::from_bytes(tag)?;
 
-    let _scope = area_kem::Scope::enter(receiver);
     single_shot_open_inout_detached::<Aead, Kdf, Kem>(
         &OpModeR::Base,
-        &area_kem::Handle,
+        &prepared,
         &encapped_key,
         HPKE_INFO,
         InOutBuf::from(&mut *ciphertext),
         raw_header,
         &tag,
     )?;
-    drop(_scope);
 
     open_payload(raw_header, envelope, ciphertext)
 }
 
-/// HPKE's KEM trait implemented over the receiver's secure area, so that the `hpke` crate's
-/// key schedule and AEAD are used unchanged while the private half of the KEM never leaves
-/// the boundary. The KEM trait has no place for a handle with a lifetime, so the receiver
-/// is reached through a thread-local set for the duration of one `open`.
-mod area_kem {
-    use super::{Kdf, PqKem, X25519Kem};
+/// HPKE's KEM trait for a decapsulation already done: the "private key" handed to the
+/// `hpke` crate is the KEM shared secret itself, computed beforehand from the secure area's
+/// `key_agreement` or `kem_decapsulate`, so the crate's key schedule and AEAD are used
+/// unchanged while no private operation runs inside its call. This is also the structure
+/// an asynchronous secure area needs: every private answer is gathered first.
+mod prepared {
+    use super::{CryptoError, Kdf, PqKem, X25519Kem};
     use crate::definitions::PrivateVid;
     use hpke::{
         Deserializable, HpkeError, Kem as KemTrait, Serializable, kdf::Kdf as KdfTrait,
         kem::SharedSecret,
     };
-    use std::cell::Cell;
+    use zeroize::Zeroizing;
 
-    thread_local! {
-        static RECEIVER: Cell<Option<&'static dyn PrivateVid>> = const { Cell::new(None) };
-    }
-
-    /// The receiver of the `open` in progress on this thread.
-    pub(super) struct Scope;
-
-    impl Scope {
-        pub(super) fn enter(receiver: &dyn PrivateVid) -> Self {
-            // SAFETY: the reference is stored only until this `Scope` is dropped, at the end
-            // of the `single_shot_open` call in `open_with_kem`, which holds `receiver` for
-            // longer; `decap` runs inside that call on this thread and nowhere else.
-            let erased: &'static dyn PrivateVid = unsafe {
-                std::mem::transmute::<&dyn PrivateVid, &'static dyn PrivateVid>(receiver)
-            };
-            RECEIVER.with(|c| c.set(Some(erased)));
-            Scope
-        }
-    }
-
-    impl Drop for Scope {
-        fn drop(&mut self) {
-            RECEIVER.with(|c| c.set(None));
-        }
-    }
-
-    fn with_receiver<T>(
-        f: impl FnOnce(&dyn PrivateVid) -> Result<T, HpkeError>,
-    ) -> Result<T, HpkeError> {
-        RECEIVER.with(|c| match c.get() {
-            Some(r) => f(r),
-            None => Err(HpkeError::DecapError),
-        })
-    }
-
-    /// Stands in for the private key: it names nothing, the scope does.
+    /// A KEM shared secret standing in for the private key. Both KEMs have 32-byte secrets.
     #[derive(Clone)]
-    pub(super) struct Handle;
+    pub(super) struct SharedSecretKey(Zeroizing<[u8; 32]>);
 
-    impl subtle::ConstantTimeEq for Handle {
-        fn ct_eq(&self, _: &Self) -> subtle::Choice {
-            subtle::Choice::from(1)
+    impl subtle::ConstantTimeEq for SharedSecretKey {
+        fn ct_eq(&self, other: &Self) -> subtle::Choice {
+            self.0.ct_eq(&*other.0)
         }
     }
 
-    impl Serializable for Handle {
+    impl Serializable for SharedSecretKey {
         type OutputSize = <<X25519Kem as KemTrait>::EncappedKey as Serializable>::OutputSize;
         fn write_exact(&self, buf: &mut [u8]) {
-            buf.fill(0);
+            buf.copy_from_slice(&*self.0);
         }
     }
 
-    impl Deserializable for Handle {
-        fn from_bytes(_: &[u8]) -> Result<Self, HpkeError> {
-            Ok(Handle)
+    impl Deserializable for SharedSecretKey {
+        fn from_bytes(bytes: &[u8]) -> Result<Self, HpkeError> {
+            let arr: [u8; 32] = bytes
+                .try_into()
+                .map_err(|_| HpkeError::IncorrectInputLength(32, bytes.len()))?;
+            Ok(SharedSecretKey(Zeroizing::new(arr)))
         }
+    }
+
+    /// The private answer for one message: the KEM shared secret for `encapped_key`.
+    pub(super) fn shared_secret<Kem: KemTrait<PrivateKey = SharedSecretKey>>(
+        receiver: &dyn PrivateVid,
+        encapped_key: &[u8],
+    ) -> Result<SharedSecretKey, CryptoError> {
+        let secret: Vec<u8> = match Kem::KEM_ID {
+            id if id == <X25519Kem as KemTrait>::KEM_ID => {
+                // DHKEM: dh from the secure area; shared_secret = ExtractAndExpand(dh, enc || pkR)
+                let dh = receiver.key_agreement(encapped_key)?;
+                let mut kem_context = Vec::with_capacity(64);
+                kem_context.extend_from_slice(encapped_key);
+                kem_context.extend_from_slice(receiver.encryption_key().as_ref());
+                let mut out = Zeroizing::new([0u8; 32]);
+                <Kdf as KdfTrait>::extract_and_expand(&dh, &suite_id(id), &kem_context, &mut *out)
+                    .map_err(|_| HpkeError::DecapError)?;
+                out.to_vec()
+            }
+            _ => receiver.kem_decapsulate(encapped_key)?.to_vec(),
+        };
+        let arr: [u8; 32] = secret
+            .as_slice()
+            .try_into()
+            .map_err(|_| HpkeError::DecapError)?;
+        Ok(SharedSecretKey(Zeroizing::new(arr)))
     }
 
     /// `b"KEM" || I2OSP(kem_id, 2)`, RFC 9180 section 4.1
@@ -377,111 +372,61 @@ mod area_kem {
         id
     }
 
-    /// DHKEM(X25519, HKDF-SHA256) with the Diffie-Hellman behind the boundary.
-    pub(super) struct AreaX25519;
+    macro_rules! prepared_kem {
+        ($name:ident, $base:ty, $doc:literal) => {
+            #[doc = $doc]
+            pub(super) struct $name;
 
-    impl KemTrait for AreaX25519 {
-        type PublicKey = <X25519Kem as KemTrait>::PublicKey;
-        type PrivateKey = Handle;
-        type EncappedKey = <X25519Kem as KemTrait>::EncappedKey;
-        type NSecret = <X25519Kem as KemTrait>::NSecret;
-        const KEM_ID: u16 = <X25519Kem as KemTrait>::KEM_ID;
+            impl KemTrait for $name {
+                type PublicKey = <$base as KemTrait>::PublicKey;
+                type PrivateKey = SharedSecretKey;
+                type EncappedKey = <$base as KemTrait>::EncappedKey;
+                type NSecret = <$base as KemTrait>::NSecret;
+                const KEM_ID: u16 = <$base as KemTrait>::KEM_ID;
 
-        fn sk_to_pk(_: &Handle) -> Self::PublicKey {
-            unreachable!("a public key is read from the VID, never derived through the boundary")
-        }
-
-        fn derive_keypair(_: &[u8]) -> (Handle, Self::PublicKey) {
-            unreachable!("keys are generated inside the secure area")
-        }
-
-        fn encap_with_rng(
-            pk_recip: &Self::PublicKey,
-            _sender_id_keypair: Option<(&Handle, &Self::PublicKey)>,
-            csprng: &mut impl hpke::rand_core::CryptoRng,
-        ) -> Result<(SharedSecret<Self>, Self::EncappedKey), HpkeError> {
-            let (ss, enc) = X25519Kem::encap_with_rng(pk_recip, None, csprng)?;
-            Ok((SharedSecret(ss.0), enc))
-        }
-
-        fn decap(
-            _: &Handle,
-            pk_sender_id: Option<&Self::PublicKey>,
-            encapped_key: &Self::EncappedKey,
-        ) -> Result<SharedSecret<Self>, HpkeError> {
-            if pk_sender_id.is_some() {
-                return Err(HpkeError::DecapError);
-            }
-            with_receiver(|receiver| {
-                let enc = encapped_key.to_bytes();
-                let dh = receiver
-                    .key_agreement(&enc)
-                    .map_err(|_| HpkeError::DecapError)?;
-                // kem_context = enc || pkR; shared_secret = ExtractAndExpand(dh, kem_context)
-                let mut kem_context = Vec::with_capacity(64);
-                kem_context.extend_from_slice(&enc);
-                kem_context.extend_from_slice(receiver.encryption_key().as_ref());
-                let mut shared_secret = SharedSecret::<Self>::default();
-                <Kdf as KdfTrait>::extract_and_expand(
-                    &dh,
-                    &suite_id(Self::KEM_ID),
-                    &kem_context,
-                    &mut shared_secret.0,
-                )
-                .map_err(|_| HpkeError::DecapError)?;
-                Ok(shared_secret)
-            })
-        }
-    }
-
-    /// MLKEM768-X25519 with the decapsulation behind the boundary.
-    pub(super) struct AreaXWing;
-
-    impl KemTrait for AreaXWing {
-        type PublicKey = <PqKem as KemTrait>::PublicKey;
-        type PrivateKey = Handle;
-        type EncappedKey = <PqKem as KemTrait>::EncappedKey;
-        type NSecret = <PqKem as KemTrait>::NSecret;
-        const KEM_ID: u16 = <PqKem as KemTrait>::KEM_ID;
-
-        fn sk_to_pk(_: &Handle) -> Self::PublicKey {
-            unreachable!("a public key is read from the VID, never derived through the boundary")
-        }
-
-        fn derive_keypair(_: &[u8]) -> (Handle, Self::PublicKey) {
-            unreachable!("keys are generated inside the secure area")
-        }
-
-        fn encap_with_rng(
-            pk_recip: &Self::PublicKey,
-            _sender_id_keypair: Option<(&Handle, &Self::PublicKey)>,
-            csprng: &mut impl hpke::rand_core::CryptoRng,
-        ) -> Result<(SharedSecret<Self>, Self::EncappedKey), HpkeError> {
-            let (ss, enc) = PqKem::encap_with_rng(pk_recip, None, csprng)?;
-            Ok((SharedSecret(ss.0), enc))
-        }
-
-        fn decap(
-            _: &Handle,
-            pk_sender_id: Option<&Self::PublicKey>,
-            encapped_key: &Self::EncappedKey,
-        ) -> Result<SharedSecret<Self>, HpkeError> {
-            if pk_sender_id.is_some() {
-                return Err(HpkeError::DecapError);
-            }
-            with_receiver(|receiver| {
-                let ss = receiver
-                    .kem_decapsulate(&encapped_key.to_bytes())
-                    .map_err(|_| HpkeError::DecapError)?;
-                let mut shared_secret = SharedSecret::<Self>::default();
-                if ss.len() != shared_secret.0.len() {
-                    return Err(HpkeError::DecapError);
+                fn sk_to_pk(_: &SharedSecretKey) -> Self::PublicKey {
+                    unreachable!("a public key is read from the VID, never derived here")
                 }
-                shared_secret.0.copy_from_slice(&ss);
-                Ok(shared_secret)
-            })
-        }
+
+                fn derive_keypair(_: &[u8]) -> (SharedSecretKey, Self::PublicKey) {
+                    unreachable!("keys are generated inside the secure area")
+                }
+
+                fn encap_with_rng(
+                    pk_recip: &Self::PublicKey,
+                    _sender_id_keypair: Option<(&SharedSecretKey, &Self::PublicKey)>,
+                    csprng: &mut impl hpke::rand_core::CryptoRng,
+                ) -> Result<(SharedSecret<Self>, Self::EncappedKey), HpkeError> {
+                    let (ss, enc) = <$base>::encap_with_rng(pk_recip, None, csprng)?;
+                    Ok((SharedSecret(ss.0), enc))
+                }
+
+                fn decap(
+                    prepared: &SharedSecretKey,
+                    pk_sender_id: Option<&Self::PublicKey>,
+                    _: &Self::EncappedKey,
+                ) -> Result<SharedSecret<Self>, HpkeError> {
+                    if pk_sender_id.is_some() {
+                        return Err(HpkeError::DecapError);
+                    }
+                    let mut shared_secret = SharedSecret::<Self>::default();
+                    shared_secret.0.copy_from_slice(&*prepared.0);
+                    Ok(shared_secret)
+                }
+            }
+        };
     }
+
+    prepared_kem!(
+        PreparedX25519,
+        X25519Kem,
+        "DHKEM(X25519, HKDF-SHA256) with the Diffie-Hellman done beforehand."
+    );
+    prepared_kem!(
+        PreparedXWing,
+        PqKem,
+        "MLKEM768-X25519 with the decapsulation done beforehand."
+    );
 }
 
 fn open_payload<'a>(
@@ -561,7 +506,7 @@ mod known_answer_tests {
 
     /// The same known answer, decapsulated behind the boundary: the private key is in a
     /// software secure area and only `key_agreement` or `kem_decapsulate` is asked of it.
-    fn open_kat_through_boundary<Kem: KemTrait<PrivateKey = super::area_kem::Handle>>(
+    fn open_kat_through_boundary<Kem: KemTrait<PrivateKey = super::prepared::SharedSecretKey>>(
         key_type: crate::KeyType,
         skr: &str,
         enc: &str,
@@ -633,10 +578,10 @@ mod known_answer_tests {
             (c.to_vec(), AeadTag::<Aead>::from_bytes(t).unwrap())
         };
 
-        let scope = super::area_kem::Scope::enter(&receiver);
+        let prepared = super::prepared::shared_secret::<Kem>(&receiver, &hex(enc)).unwrap();
         single_shot_open_inout_detached::<Aead, Kdf, Kem>(
             &OpModeR::Base,
-            &super::area_kem::Handle,
+            &prepared,
             &encapped_key,
             &hex(info),
             InOutBuf::from(ciphertext.as_mut_slice()),
@@ -644,7 +589,6 @@ mod known_answer_tests {
             &tag,
         )
         .unwrap();
-        drop(scope);
 
         assert_eq!(ciphertext, hex(pt));
     }
@@ -653,7 +597,7 @@ mod known_answer_tests {
     /// HKDF-SHA256, ChaCha20Poly1305): the classical TSP cipher suite
     #[test]
     fn rfc_9180_base_x25519_hkdf_sha256_chacha20poly1305() {
-        open_kat_through_boundary::<super::area_kem::AreaX25519>(
+        open_kat_through_boundary::<super::prepared::PreparedX25519>(
             crate::KeyType::X25519,
             "8057991eef8f1f1af18f4a9491d16a1ce333f695d4db8e38da75975c4478e0fb",
             "1afa08d3dec047a643885163f1180476fa7ddb54c6a8029ea33f95796bf2ac4a",
@@ -678,7 +622,7 @@ mod known_answer_tests {
     #[test]
     fn hpke_pq_base_x25519mlkem768_hkdf_sha256_chacha20poly1305() {
         let v = PQ_VECTOR;
-        open_kat_through_boundary::<super::area_kem::AreaXWing>(
+        open_kat_through_boundary::<super::prepared::PreparedXWing>(
             crate::KeyType::MlKem768X25519,
             v.0,
             v.1,
