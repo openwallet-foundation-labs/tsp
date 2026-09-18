@@ -1,5 +1,5 @@
-//! A [`SecureArea`] over Google Cloud KMS for Ed25519 signing: the key is made in the KMS,
-//! HSM-backed, and never leaves it; `sign` is one `asymmetricSign` call over the raw data,
+//! A [`SecureArea`] over Google Cloud KMS for Ed25519 signing: the key is made in the KMS
+//! and never leaves it; `sign` is one `asymmetricSign` call over the raw data,
 //! `public_key` one read. X25519 and the post-quantum keys are not the KMS's to hold and
 //! are refused here; the software area keeps them and routes the signing keys here (see
 //! [`crate::SoftwareSecureArea::attach_remote`]).
@@ -8,6 +8,11 @@
 //! wallet design note: a custom role on one key ring with create, get, sign and view of the
 //! public key, never destroy; the process runs as the VM's attached service account, no
 //! credential file; the audit log shows every signature.
+//!
+//! The KMS signs Ed25519 only at its SOFTWARE protection level, not in its HSMs (the
+//! service refuses `EC_SIGN_ED25519` at HSM). A software-level key is still never
+//! exportable and every use is logged; what it lacks is the hardware. An HSM would need an
+//! ECDSA key, which TSP's VIDs do not use.
 //!
 //! [`KmsClient`] is the KMS as this module needs it, three calls; [`GcpKms`] is the real
 //! one over REST, and tests use a fake.
@@ -280,10 +285,14 @@ const KMS: &str = "https://cloudkms.googleapis.com/v1";
 
 impl GcpKms {
     pub fn new(ring: &str, token: impl TokenSource + 'static) -> Self {
+        // an error status is read like any answer, so the KMS's reason reaches the caller
+        let config = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .build();
         Self {
             ring: ring.trim_matches('/').to_string(),
             token: Box::new(token),
-            agent: ureq::Agent::new_with_defaults(),
+            agent: ureq::Agent::new_with_config(config),
         }
     }
 
@@ -318,18 +327,24 @@ impl GcpKms {
                 .header("Authorization", &auth)
                 .send_empty(),
         };
-        match response {
-            Ok(mut r) => r
-                .body_mut()
-                .read_json::<serde_json::Value>()
-                .map_err(|e| KmsError::Malformed(e.to_string())),
-            Err(ureq::Error::StatusCode(403)) => Err(KmsError::Denied(format!("{method} {path}"))),
-            Err(ureq::Error::StatusCode(401)) => {
-                Err(KmsError::Denied("the token was not accepted".into()))
-            }
-            Err(ureq::Error::StatusCode(404)) => Err(KmsError::NotFound(path.to_string())),
-            Err(e) => Err(KmsError::Unreachable(e.to_string())),
+        let mut response = response.map_err(|e| KmsError::Unreachable(e.to_string()))?;
+        let status = response.status().as_u16();
+        let text = response
+            .body_mut()
+            .read_to_string()
+            .map_err(|e| KmsError::Malformed(e.to_string()))?;
+        if status >= 400 {
+            let reason = serde_json::from_str::<serde_json::Value>(&text)
+                .ok()
+                .and_then(|v| v["error"]["message"].as_str().map(str::to_string))
+                .unwrap_or(text);
+            return Err(match status {
+                401 | 403 => KmsError::Denied(format!("{method} {path}: {reason}")),
+                404 => KmsError::NotFound(format!("{path}: {reason}")),
+                _ => KmsError::Malformed(format!("{method} {path}: {status} {reason}")),
+            });
         }
+        serde_json::from_str(&text).map_err(|e| KmsError::Malformed(e.to_string()))
     }
 }
 
@@ -362,14 +377,14 @@ impl KmsClient for GcpKms {
             &format!("{}/cryptoKeys?cryptoKeyId={key_id}", self.ring),
             Some(serde_json::json!({
                 "purpose": "ASYMMETRIC_SIGN",
-                "versionTemplate": { "algorithm": "EC_SIGN_ED25519", "protectionLevel": "HSM" },
+                "versionTemplate": { "algorithm": "EC_SIGN_ED25519", "protectionLevel": "SOFTWARE" },
             })),
         )?;
         let name = created["name"]
             .as_str()
             .ok_or_else(|| KmsError::Malformed("created key has no name".into()))?;
         let version = format!("{name}/cryptoKeyVersions/1");
-        // an HSM key is generated after the call returns; wait for it
+        // the version may still be generating when the call returns; wait for it
         for _ in 0..30 {
             let state = self.call("GET", &version, None)?;
             match state["state"].as_str() {
