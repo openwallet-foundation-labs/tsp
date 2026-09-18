@@ -14,6 +14,10 @@ pub enum VidError {
     Serde(#[from] serde_json::Error),
     #[error("the secure area refused: {0}")]
     SecureArea(#[from] crate::SecureAreaError),
+    #[error(
+        "the DID {0} is deactivated: its log ends in deactivated: true and no document is returned"
+    )]
+    Deactivated(String),
     #[error("connection to '{0}' failed: {1}")]
     Connection(String, std::io::Error),
     #[error("invalid VID '{0}'")]

@@ -194,21 +194,23 @@ impl Hosting {
     }
 }
 
-/// What a created or updated identity leaves the caller with.
+/// What a created, updated or deactivated identity leaves the caller with.
 #[derive(Debug)]
 pub struct Published {
     /// The VID, with its current keys in `area`.
     pub private_vid: OwnedVid,
     /// The entry that was published.
     pub entry: Value,
-    /// The update key that signed the entry, and the successor it committed.
-    pub keys: WebvhKeys,
+    /// The update key that signed the entry, and the successor it committed; `None` after
+    /// a deactivation, which commits no successor.
+    pub keys: Option<WebvhKeys>,
     /// Each watcher notified, with its answer or the error.
     pub watchers: Vec<(String, Result<String, VidError>)>,
-    /// After a later entry: the key that signed the version before it, which can author
-    /// nothing after this one and is the caller's to delete (flow 2 step 7). `None` after a
-    /// first entry.
-    pub retired_update_kid: Option<String>,
+    /// The update keys that can author nothing after this entry, the caller's to delete
+    /// once it has seen the entry served (flow 2 step 7): after a later entry, the key that
+    /// signed the version before it; after a deactivation, that key and the one that signed
+    /// the deactivation, since nothing follows.
+    pub retired_update_kids: Vec<String>,
 }
 
 /// Flow 1: create a DID under `prefix` on the server, witnessed by every witness registered
@@ -271,9 +273,9 @@ pub async fn create_witnessed(
     Ok(Published {
         private_vid,
         entry,
-        keys,
+        keys: Some(keys),
         watchers: notified,
-        retired_update_kid: None,
+        retired_update_kids: Vec::new(),
     })
 }
 
@@ -282,6 +284,129 @@ pub async fn create_witnessed(
 pub struct Change {
     pub transport: Option<Url>,
     pub rotate_keys: bool,
+}
+
+/// The log as served, before a later entry: the previous entry as the exact line the
+/// server serves, since the entry hash chains from it and its `updateKeys` name the key to
+/// retire; the witness set and watchers in force from the resolver.
+struct Served {
+    previous: Value,
+    scid: String,
+    prefix: String,
+    active_witnesses: Vec<String>,
+    watchers: Vec<String>,
+}
+
+async fn served_state(
+    hosting: &Hosting,
+    did: &str,
+    extra_watchers: &[String],
+) -> Result<Served, VidError> {
+    let mut state = didwebvh_rs::DIDWebVHState::default();
+    let (_, meta) = state.resolve(did, None).await?;
+    let served_before = hosting.read_log(did).await?;
+    let previous: Value = served_before
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .and_then(|l| serde_json::from_str(l).ok())
+        .ok_or_else(|| VidError::WebVHError("the server serves no log for the DID".into()))?;
+    let active_witnesses: Vec<String> = match &meta.witness {
+        Some(didwebvh_rs::witness::Witnesses::Value { witnesses, .. }) => {
+            witnesses.iter().map(|w| w.id.clone()).collect()
+        }
+        _ => Vec::new(),
+    };
+    let mut watchers: Vec<String> = meta.watchers.clone().unwrap_or_default();
+    for w in extra_watchers {
+        if !watchers.contains(w) {
+            watchers.push(w.clone());
+        }
+    }
+    let parsed = WebVHURL::parse_did_url(did)?;
+    let scid = previous["parameters"]["scid"]
+        .as_str()
+        .map(str::to_string)
+        .unwrap_or_else(|| parsed.scid.clone());
+    // the DID's path is `/<prefix>/<name>`; the prefix is what the registry keys on
+    let prefix = parsed
+        .path
+        .trim_matches('/')
+        .split('/')
+        .next()
+        .filter(|p| !p.is_empty())
+        .map(|p| format!("/{p}/"))
+        .unwrap_or_else(|| "/a/".to_string());
+    Ok(Served {
+        previous,
+        scid,
+        prefix,
+        active_witnesses,
+        watchers,
+    })
+}
+
+/// Steps 3 to 6 of a later entry: apply to a registered witness of the set in force,
+/// publish, notify the watchers, read back from the server and each watcher.
+async fn publish_later(
+    hosting: &Hosting,
+    did: &str,
+    served: &Served,
+    entry: &Value,
+) -> Result<Vec<(String, Result<String, VidError>)>, VidError> {
+    let registered = hosting.registry_witnesses(&served.prefix).await?;
+    let Some(witness) = registered
+        .iter()
+        .find(|w| served.active_witnesses.contains(&w.id))
+        .or(registered.first())
+    else {
+        return Err(VidError::WebVHError(format!(
+            "the server registers no witness for {}",
+            served.prefix
+        )));
+    };
+
+    let proof = hosting
+        .apply(&witness.contact, entry, Some(&served.scid))
+        .await?;
+    hosting.publish(entry, &proof).await?;
+    let mut notified = Vec::new();
+    for w in &served.watchers {
+        notified.push((w.clone(), hosting.notify(w, did).await));
+    }
+
+    // read back: the server and every watcher serve the same log, ending in this entry
+    let now_served = hosting.read_log(did).await?;
+    let version_id = entry["versionId"].as_str().unwrap_or("?");
+    if !now_served
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .is_some_and(|l| l.contains(version_id))
+    {
+        return Err(VidError::WebVHError(
+            "the server does not serve the entry it accepted".into(),
+        ));
+    }
+    for (w, outcome) in notified.iter_mut() {
+        if outcome.is_ok()
+            && let Ok(held) = hosting.watcher_log(w, &served.scid).await
+            && held.trim() != now_served.trim()
+        {
+            *outcome = Err(VidError::WebVHError(
+                "the watcher holds a different log than the server serves".into(),
+            ));
+        }
+    }
+    Ok(notified)
+}
+
+/// The key that signed `previous`, unless it is the one signing now.
+fn previous_signer(previous: &Value, update_kid: &str) -> Option<String> {
+    previous["parameters"]["updateKeys"][0]
+        .as_str()
+        .map(str::to_string)
+        .filter(|k| k != update_kid)
 }
 
 /// Flow 2: a later entry. `update_kid` names, in `area`, the key committed by the previous
@@ -301,31 +426,7 @@ pub async fn update_witnessed(
     if change.transport.is_none() && !change.rotate_keys {
         return Err(VidError::WebVHError("nothing to change".into()));
     }
-
-    // the log as served, verified: the witness set and watchers in force from the resolver,
-    // the previous entry as the exact line the server serves, since the entry hash chains
-    // from it and its updateKeys name the key to retire
-    let mut state = didwebvh_rs::DIDWebVHState::default();
-    let (_, meta) = state.resolve(&did, None).await?;
-    let served_before = hosting.read_log(&did).await?;
-    let previous: Value = served_before
-        .lines()
-        .rev()
-        .find(|l| !l.trim().is_empty())
-        .and_then(|l| serde_json::from_str(l).ok())
-        .ok_or_else(|| VidError::WebVHError("the server serves no log for the DID".into()))?;
-    let active_witnesses: Vec<String> = match &meta.witness {
-        Some(didwebvh_rs::witness::Witnesses::Value { witnesses, .. }) => {
-            witnesses.iter().map(|w| w.id.clone()).collect()
-        }
-        _ => Vec::new(),
-    };
-    let mut watchers: Vec<String> = meta.watchers.clone().unwrap_or_default();
-    for w in extra_watchers {
-        if !watchers.contains(w) {
-            watchers.push(w.clone());
-        }
-    }
+    let served = served_state(hosting, &did, extra_watchers).await?;
 
     // the new document: new transport, new keys, or both, under the same identifier
     let transport = change
@@ -338,81 +439,51 @@ pub async fn update_witnessed(
         current.with_transport(transport)
     };
     let doc = vid_to_did_document(new_vid.vid());
-    // the key that signed the previous entry: retired once this one is served
-    let retired_update_kid = previous["parameters"]["updateKeys"][0]
-        .as_str()
-        .map(str::to_string)
-        .filter(|k| k != update_kid);
-    let result = webvh::update_after(area, &previous, doc, update_kid)?;
-    let entry = result.log_entry;
-    let scid = previous["parameters"]["scid"]
-        .as_str()
-        .map(str::to_string)
-        .or_else(|| WebVHURL::parse_did_url(&did).ok().map(|u| u.scid.clone()))
-        .ok_or_else(|| VidError::WebVHError("no SCID for the log".into()))?;
+    let retired = previous_signer(&served.previous, update_kid);
+    let result = webvh::update_after(area, &served.previous, doc, update_kid)?;
 
-    // a registered witness of the set in force
-    // the DID's path is `/<prefix>/<name>`; the prefix is what the registry keys on
-    let prefix = WebVHURL::parse_did_url(&did)
-        .ok()
-        .and_then(|u| {
-            u.path
-                .trim_matches('/')
-                .split('/')
-                .next()
-                .filter(|p| !p.is_empty())
-                .map(|p| format!("/{p}/"))
-        })
-        .unwrap_or_else(|| "/a/".to_string());
-    let registered = hosting.registry_witnesses(&prefix).await?;
-    let Some(witness) = registered
-        .iter()
-        .find(|w| active_witnesses.contains(&w.id))
-        .or(registered.first())
-    else {
-        return Err(VidError::WebVHError(format!(
-            "the server registers no witness for {prefix}"
-        )));
-    };
-
-    let proof = hosting.apply(&witness.contact, &entry, Some(&scid)).await?;
-    hosting.publish(&entry, &proof).await?;
-    let mut notified = Vec::new();
-    for w in &watchers {
-        notified.push((w.clone(), hosting.notify(w, &did).await));
-    }
-
-    // read back: the server and every watcher serve the same log, ending in this entry
-    let served = hosting.read_log(&did).await?;
-    let version_id = entry["versionId"].as_str().unwrap_or("?");
-    if !served
-        .lines()
-        .last()
-        .is_some_and(|l| l.contains(version_id))
-    {
-        return Err(VidError::WebVHError(
-            "the server does not serve the entry it accepted".into(),
-        ));
-    }
-    for (w, outcome) in notified.iter_mut() {
-        if outcome.is_ok()
-            && let Ok(held) = hosting.watcher_log(w, &scid).await
-            && held.trim() != served.trim()
-        {
-            *outcome = Err(VidError::WebVHError(
-                "the watcher holds a different log than the server serves".into(),
-            ));
-        }
-    }
+    let notified = publish_later(hosting, &did, &served, &result.log_entry).await?;
 
     Ok(Published {
         private_vid: new_vid,
-        entry,
-        keys: WebvhKeys {
+        entry: result.log_entry,
+        keys: Some(WebvhKeys {
             update_kid: result.current_update_kid,
             next_update_kid: result.next_update_kid,
-        },
+        }),
         watchers: notified,
-        retired_update_kid,
+        retired_update_kids: retired.into_iter().collect(),
+    })
+}
+
+/// Flow 2's last case: deactivation. Two entries end the log, both signed by `update_kid`,
+/// the key the previous entry committed: the first ends pre-rotation, the second
+/// deactivates (see [`webvh::deactivate_after`]); each is witnessed, published, watched
+/// and read back like any entry. Every update key retires: the previous signer and this
+/// one, since nothing follows. The VID's own keys are the caller's to retire with them.
+pub async fn deactivate_witnessed(
+    area: &dyn SecureArea,
+    hosting: &Hosting,
+    current: &OwnedVid,
+    update_kid: &str,
+    extra_watchers: &[String],
+) -> Result<Published, VidError> {
+    let did = current.identifier().to_string();
+    let served = served_state(hosting, &did, extra_watchers).await?;
+    let mut retired: Vec<String> = previous_signer(&served.previous, update_kid)
+        .into_iter()
+        .collect();
+    retired.push(update_kid.to_string());
+    let [ended, deactivation] = webvh::deactivate_after(area, &served.previous, update_kid)?;
+
+    publish_later(hosting, &did, &served, &ended).await?;
+    let notified = publish_later(hosting, &did, &served, &deactivation).await?;
+
+    Ok(Published {
+        private_vid: current.clone(),
+        entry: deactivation,
+        keys: None,
+        watchers: notified,
+        retired_update_kids: retired,
     })
 }

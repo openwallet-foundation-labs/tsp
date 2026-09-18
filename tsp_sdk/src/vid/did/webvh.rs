@@ -57,6 +57,10 @@ pub async fn resolve(id: &str) -> Result<(Vid, serde_json::Value), VidError> {
     let mut webvh = DIDWebVHState::default();
 
     let (log_entry, meta_data) = webvh.resolve(id, None).await?;
+    if meta_data.deactivated {
+        // the method returns no document for a deactivated DID; the outcome is the DID's state
+        return Err(VidError::Deactivated(id.to_string()));
+    }
     let did_doc: DidDocument = serde_json::from_value(log_entry.get_state().to_owned())?;
 
     let params = log_entry.get_parameters();
@@ -248,6 +252,53 @@ pub fn update_after(
         current_update_kid: update_kid.to_string(),
         next_update_kid: next.alias,
     })
+}
+
+/// The two entries that end a log (spec §Deactivate, under pre-rotation): the first ends
+/// pre-rotation, `nextKeyHashes: []` with `updateKeys` naming `update_kid`, the key the
+/// previous entry committed; the second is `deactivated: true` with `updateKeys: []`,
+/// signed by the same key, active since the first. One entry with `deactivated: true` and
+/// a named update key is valid by the specification's text and accepted by the DIF Python
+/// resolver, but `didwebvh-rs` refuses a deactivation whose `updateKeys` is not empty, and
+/// under pre-rotation emptying them takes the first entry; two entries are valid under all
+/// three. No successor is made: nothing may follow. The document is unchanged.
+pub fn deactivate_after(
+    area: &dyn SecureArea,
+    previous: &Value,
+    update_kid: &str,
+) -> Result<[Value; 2], VidError> {
+    let state = previous
+        .get("state")
+        .and_then(Value::as_object)
+        .cloned()
+        .ok_or_else(|| VidError::InternalError("previous entry has no document".into()))?;
+    let signer = |data: &[u8]| area.sign(update_kid, data);
+
+    let mut params = Map::new();
+    params.insert("updateKeys".into(), json!([update_kid]));
+    params.insert("nextKeyHashes".into(), json!([]));
+    let end_pre_rotation = entry::next_entry(
+        previous,
+        &entry::now_after(previous),
+        params,
+        state.clone(),
+        update_kid,
+        &signer,
+    )?;
+
+    let mut params = Map::new();
+    params.insert("updateKeys".into(), json!([]));
+    params.insert("deactivated".into(), json!(true));
+    let deactivation = entry::next_entry(
+        &end_pre_rotation,
+        &entry::now_after(&end_pre_rotation),
+        params,
+        state,
+        update_kid,
+        &signer,
+    )?;
+
+    Ok([end_pre_rotation, deactivation])
 }
 
 /// Building and signing log entries (spec §Create, §Update, §Entry Hash Generation,
@@ -522,6 +573,44 @@ mod tests {
         assert!(
             outcome.is_err() || outcome.unwrap().0.get_version_id().starts_with("1-"),
             "the forged entry must not resolve"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_deactivation_ends_the_log_and_nothing_follows() {
+        let area = SoftwareSecureArea::new();
+        let (vid, genesis, keys) = create_webvh(
+            &area,
+            "example.com/endpoint/dave",
+            "tcp://example.com:1234".parse().unwrap(),
+        )
+        .await
+        .unwrap();
+        let [ended, last] = deactivate_after(&area, &genesis, &keys.next_update_kid).unwrap();
+        assert_eq!(ended["parameters"]["nextKeyHashes"], serde_json::json!([]));
+        assert_eq!(last["parameters"]["deactivated"], true);
+        assert_eq!(last["parameters"]["updateKeys"], serde_json::json!([]));
+
+        let log = write_log(&[&genesis, &ended, &last]);
+        let mut webvh = DIDWebVHState::default();
+        let (resolved, meta) = webvh
+            .resolve_file(vid.identifier(), log.path().to_str().unwrap(), None)
+            .await
+            .unwrap();
+        assert!(resolved.get_version_id().starts_with("3-"));
+        assert!(meta.deactivated);
+
+        // nothing may follow: a further entry, however signed, does not resolve past the end
+        let doc = vid_to_did_document(vid.vid());
+        let after = update_after(&area, &last, doc, &keys.next_update_kid).unwrap();
+        let log = write_log(&[&genesis, &ended, &last, &after.log_entry]);
+        let mut webvh = DIDWebVHState::default();
+        let outcome = webvh
+            .resolve_file(vid.identifier(), log.path().to_str().unwrap(), None)
+            .await;
+        assert!(
+            outcome.is_err() || outcome.unwrap().1.deactivated,
+            "an entry after deactivation must not resolve"
         );
     }
 

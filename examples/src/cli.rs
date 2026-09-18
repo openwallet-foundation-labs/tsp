@@ -202,6 +202,23 @@ enum Commands {
         watcher: Vec<String>,
     },
     #[command(
+        about = "Deactivate the DID:WEBVH: one last log entry ends it; the wallet keeps the DID as a name only"
+    )]
+    Deactivate {
+        #[arg(help = "VID or Alias to deactivate")]
+        vid: String,
+        #[arg(
+            long,
+            help = "webvh only: the DID lives on a server that admits through a witness — get the entry witnessed, publish with POST /publish, notify the watchers"
+        )]
+        witnessed: bool,
+        #[arg(
+            long,
+            help = "a watcher URL to notify besides those the DID names (repeatable)"
+        )]
+        watcher: Vec<String>,
+    },
+    #[command(
         arg_required_else_help = true,
         about = "import an identity from a file (for demo purposes only)"
     )]
@@ -427,7 +444,12 @@ async fn create_witnessed_webvh(
             Err(e) => warn!("watcher {w}: {e}"),
         }
     }
-    Ok((published.private_vid, published.keys))
+    let keys = published.keys.ok_or_else(|| {
+        Error::Vid(VidError::WebVHError(
+            "a first entry commits a successor".to_string(),
+        ))
+    })?;
+    Ok((published.private_vid, keys))
 }
 
 fn did_server_url(did_server: &str, path: &str) -> String {
@@ -1060,6 +1082,55 @@ async fn run() -> Result<(), Error> {
             vid_wallet.add_private_vid(private_vid.clone(), metadata)?;
             info!("created VID {}", private_vid.identifier());
         }
+        Commands::Deactivate {
+            vid,
+            witnessed,
+            watcher,
+        } => {
+            if !witnessed {
+                return Err(Error::Vid(VidError::WebVHError(
+                    "deactivation is done through a witness: pass --witnessed".to_string(),
+                )));
+            }
+            let vid_alias = vid_wallet.try_resolve_alias(&vid)?;
+            let private_vid = vid_wallet.get_private_vid(&vid_alias)?;
+            let next_kid_alias = format!("__next_update_kid:{vid_alias}");
+            let update_kid = vid_wallet
+                .resolve_alias(&next_kid_alias)?
+                .filter(|kid| vid_wallet.has_key(kid))
+                .ok_or_else(|| {
+                    Error::MissingPrivateVid(
+                        "the wallet holds no committed update key for this DID".to_string(),
+                    )
+                })?;
+            let hosting = tsp_sdk::vid::did::hosting::Hosting::new(client.clone(), &did_server);
+            let published = tsp_sdk::vid::did::hosting::deactivate_witnessed(
+                vid_wallet.secure_area().as_ref(),
+                &hosting,
+                &private_vid,
+                &update_kid,
+                &watcher,
+            )
+            .await?;
+            info!(
+                "deactivated {} at version {}",
+                vid_alias,
+                published.entry["versionId"].as_str().unwrap_or("?")
+            );
+            for (w, outcome) in &published.watchers {
+                match outcome {
+                    Ok(result) => info!("notified watcher {w}: {result}"),
+                    Err(e) => warn!("watcher {w}: {e}"),
+                }
+            }
+            // step 7: every key of the identity retires; the name and its relationships stay
+            for retired in &published.retired_update_kids {
+                vid_wallet.delete_key(retired)?;
+            }
+            vid_wallet.remove_alias(&next_kid_alias)?;
+            vid_wallet.retire_private_vid(&vid_alias)?;
+            info!("the wallet keeps {vid_alias} as a name only");
+        }
         Commands::Update {
             vid,
             witnessed,
@@ -1119,8 +1190,10 @@ async fn run() -> Result<(), Error> {
                     .await
                     .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
                 vid_wallet.add_private_vid(published.private_vid, metadata)?;
-                vid_wallet.set_alias(next_kid_alias, published.keys.next_update_kid.clone())?;
-                if let Some(retired) = &published.retired_update_kid {
+                if let Some(keys) = &published.keys {
+                    vid_wallet.set_alias(next_kid_alias, keys.next_update_kid.clone())?;
+                }
+                for retired in &published.retired_update_kids {
                     vid_wallet.delete_key(retired)?;
                 }
                 info!("VID updated; next update key committed");

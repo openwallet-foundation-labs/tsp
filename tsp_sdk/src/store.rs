@@ -617,6 +617,27 @@ impl SecureStore {
         Ok(())
     }
 
+    /// Keep the VID as a verified VID only: its private half goes, and its keys are deleted
+    /// from the secure area. What a deactivated identity leaves behind: a name, and the
+    /// relationships that named it.
+    pub fn retire_private_vid(&self, vid: &str) -> Result<(), Error> {
+        let vid = self.try_resolve_alias(vid)?;
+        let (sig_alias, enc_alias) = OwnedVid::key_aliases(&vid);
+        self.modify_vid(&vid, |context| {
+            context.private = None;
+            Ok(())
+        })?;
+        self.secure_area.delete_key(&sig_alias)?;
+        self.secure_area.delete_key(&enc_alias)?;
+        Ok(())
+    }
+
+    /// Remove an alias.
+    pub fn remove_alias(&self, alias: &str) -> Result<(), Error> {
+        self.aliases.write()?.remove(alias);
+        Ok(())
+    }
+
     /// Remove a VID from the [`SecureStore`]
     pub fn forget_vid(&self, vid: &str) -> Result<(), Error> {
         self.vids.write()?.remove(vid);

@@ -294,6 +294,15 @@ impl AsyncSecureStore {
     }
 
     /// Remove a VID from the [`AsyncSecureStore`]
+    /// Keep the VID as a verified VID only; see [`SecureStore::retire_private_vid`].
+    pub fn retire_private_vid(&self, vid: &str) -> Result<(), Error> {
+        self.inner.retire_private_vid(vid)
+    }
+
+    pub fn remove_alias(&self, alias: &str) -> Result<(), Error> {
+        self.inner.remove_alias(alias)
+    }
+
     pub fn forget_vid(&self, vid: &str) -> Result<(), Error> {
         self.inner.forget_vid(vid)
     }
