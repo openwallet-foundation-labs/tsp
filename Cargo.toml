@@ -42,7 +42,8 @@ crypto_box = { version = "0.9.1", features = ["std", "seal"] }
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 salsa20 = "0.10"
 subtle = "2"
-ureq = { version = "3", features = ["json"] }
+# no webpki-roots: the OS trust store through the platform verifier, as the transports use
+ureq = { version = "3", default-features = false, features = ["rustls-no-provider", "_ring", "platform-verifier", "json"] }
 serde_json_canonicalizer = "0.3"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 crypto_secretbox = "0.1"
