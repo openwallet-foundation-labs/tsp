@@ -58,6 +58,20 @@ fn scid(metadata: Option<&serde_json::Value>) -> Option<&str> {
     metadata?["webvh_meta_data"]["scid"].as_str()
 }
 
+fn version_id(metadata: Option<&serde_json::Value>) -> Option<&str> {
+    metadata?["webvh_meta_data"]["versionId"].as_str()
+}
+
+/// Every `versionId` the server served at this resolution, when the resolution recorded
+/// them; a `did:webvh` resolved since flow 5 does.
+fn served_versions(metadata: Option<&serde_json::Value>) -> Option<Vec<&str>> {
+    let list = metadata?["served_versions"].as_array()?;
+    if list.is_empty() {
+        return None;
+    }
+    Some(list.iter().filter_map(|v| v.as_str()).collect())
+}
+
 /// Whether newly resolved key state continues the state already held, rather
 /// than replacing it (spec 3.7).
 ///
@@ -75,8 +89,17 @@ pub fn extends_held_key_state(
         // same identifier cannot yield different keys
         KeyStateProvenance::SelfCertifying => true,
 
-        // the history has to be the same history, and cannot go backwards
+        // the history has to be the same history, and cannot go backwards: the held tip,
+        // its hash included, must be an entry of the log now served; a version that only
+        // counts as high as the held one but hashes differently is a fork, not a rotation
         KeyStateProvenance::Provenanced => {
+            if let (Some(held_tip), Some(served)) = (
+                version_id(held_metadata),
+                served_versions(obtained_metadata),
+            ) {
+                return scid(held_metadata) == scid(obtained_metadata)
+                    && served.contains(&held_tip);
+            }
             match (
                 scid(held_metadata),
                 scid(obtained_metadata),
@@ -148,6 +171,27 @@ mod test {
         let obtained = vid("did:peer:4zQmHash", 1);
 
         assert!(extends_held_key_state(&held, None, &obtained, None));
+    }
+
+    #[test]
+    fn with_the_served_log_the_held_tip_must_be_in_it_hash_and_all() {
+        let held = vid("did:webvh:QmScid:example.com", 1);
+        let obtained = vid("did:webvh:QmScid:example.com", 2);
+        let held_meta = json!({"webvh_meta_data": {"scid": "QmScid", "versionId": "2-QmB"}});
+        let extends = |served: &[&str]| {
+            let obtained_meta = json!({
+                "webvh_meta_data": {"scid": "QmScid", "versionId": served[served.len() - 1]},
+                "served_versions": served,
+            });
+            extends_held_key_state(&held, Some(&held_meta), &obtained, Some(&obtained_meta))
+        };
+        assert!(extends(&["1-QmA", "2-QmB", "3-QmC"]), "an extension");
+        assert!(extends(&["1-QmA", "2-QmB"]), "unchanged");
+        assert!(!extends(&["1-QmA"]), "a rollback");
+        assert!(
+            !extends(&["1-QmA", "2-QmX", "3-QmC"]),
+            "a fork at the held version"
+        );
     }
 
     #[test]

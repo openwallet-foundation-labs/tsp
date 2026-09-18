@@ -14,6 +14,8 @@ pub enum CryptoError {
     CryptographicNacl(#[from] crypto_box::aead::Error),
     #[error("Wrong key length")]
     Key(#[from] TryFromSliceError),
+    #[error("the secure area refused the private operation: {0}")]
+    SecureArea(#[from] crate::SecureAreaError),
     #[error("could not verify signature for sender VID {0}: {1}")]
     Verify(String, String),
     #[error("unexpected recipient")]

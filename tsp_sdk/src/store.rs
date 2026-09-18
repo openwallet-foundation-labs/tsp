@@ -24,13 +24,16 @@ use std::{
 };
 use url::Url;
 
+use crate::SecureArea as _;
+
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
 pub(crate) struct VidContext {
     vid: Arc<dyn VerifiedVid>,
-    private: Option<Arc<dyn PrivateVid>>,
+    /// The VID's keys, behind the boundary, when this endpoint controls it.
+    private: Option<Arc<OwnedVid>>,
     relation_status: RelationshipStatus,
     relation_vid: Option<String>,
     parent_vid: Option<String>,
@@ -178,12 +181,16 @@ impl VerifiedVid for IntroducedVid<'_> {
 }
 
 impl PrivateVid for IntroducedVid<'_> {
-    fn decryption_key(&self) -> &crate::definitions::PrivateKeyData {
-        self.inner.decryption_key()
+    fn secure_area(&self) -> &dyn crate::SecureArea {
+        self.inner.secure_area()
     }
 
-    fn signing_key(&self) -> &crate::definitions::PrivateSigningKeyData {
-        self.inner.signing_key()
+    fn signing_key_alias(&self) -> &str {
+        self.inner.signing_key_alias()
+    }
+
+    fn decryption_key_alias(&self) -> &str {
+        self.inner.decryption_key_alias()
     }
 }
 
@@ -305,8 +312,18 @@ fn random_nonce_bytes() -> [u8; 16] {
 }
 
 pub type Aliases = HashMap<String, String>;
-pub type MethodSecretKeys = HashMap<String, Vec<u8>>;
 pub type ResolutionContexts = HashMap<String, crate::vid::ResolutionContext>;
+
+/// Everything the wallet holds, as it travels to and from storage: the VIDs with their
+/// relationships, the aliases, the method state, and the keys, which travel only as the
+/// software secure area that holds them and never as bytes in this struct.
+#[derive(Clone)]
+pub struct WalletState {
+    pub vids: Vec<ExportVid>,
+    pub aliases: Aliases,
+    pub method_state: WalletMethodState,
+    pub keys: Arc<crate::SoftwareSecureArea>,
+}
 
 #[cfg_attr(
     feature = "serialize",
@@ -315,7 +332,6 @@ pub type ResolutionContexts = HashMap<String, crate::vid::ResolutionContext>;
 )]
 #[derive(Clone, Debug, Default)]
 pub struct WalletMethodState {
-    pub secret_keys: MethodSecretKeys,
     pub resolution_contexts: ResolutionContexts,
 }
 
@@ -348,6 +364,8 @@ pub struct SecureStore {
     pub(crate) aliases: Arc<RwLock<Aliases>>,
     pub(crate) method_state: Arc<RwLock<WalletMethodState>>,
     pub(crate) relationship_policy: Arc<RwLock<RelationshipPolicy>>,
+    /// Keys that belong to no VID, behind the boundary; see [`SecureStore::secure_area`].
+    pub(crate) secure_area: Arc<crate::SoftwareSecureArea>,
 }
 
 /// This wallet is used to store and resolve VIDs
@@ -391,7 +409,7 @@ impl SecureStore {
     }
 
     /// Export the wallet to serializable default types
-    pub fn export(&self) -> Result<(Vec<ExportVid>, Aliases, WalletMethodState), Error> {
+    pub fn export(&self) -> Result<WalletState, Error> {
         let vids = self
             .vids
             .read()?
@@ -403,8 +421,7 @@ impl SecureStore {
                 sig_key_type: context.vid.signature_key_type(),
                 public_enckey: context.vid.encryption_key().clone(),
                 enc_key_type: context.vid.encryption_key_type(),
-                sigkey: context.private.as_ref().map(|x| x.signing_key().clone()),
-                enckey: context.private.as_ref().map(|x| x.decryption_key().clone()),
+                private: context.private.is_some(),
                 relation_status: context.relation_status.clone(),
                 relation_vid: context.relation_vid.clone(),
                 parent_vid: context.parent_vid.clone(),
@@ -417,28 +434,38 @@ impl SecureStore {
             })
             .collect::<Vec<_>>();
 
-        Ok((
+        Ok(WalletState {
             vids,
-            self.aliases.read()?.clone(),
-            self.method_state.read()?.clone(),
-        ))
+            aliases: self.aliases.read()?.clone(),
+            method_state: self.method_state.read()?.clone(),
+            keys: self.secure_area.clone(),
+        })
     }
 
-    /// Import the wallet from serializable default types
-    pub fn import(
-        &self,
-        vids: Vec<ExportVid>,
-        aliases: Aliases,
-        method_state: WalletMethodState,
-    ) -> Result<(), Error> {
+    /// Import the wallet from serializable default types. The keys in `state.keys` are
+    /// taken into this store's secure area; a VID marked private whose keys are not there
+    /// is imported as a verified VID only.
+    pub fn import(&self, state: WalletState) -> Result<(), Error> {
+        let WalletState {
+            vids,
+            aliases,
+            method_state,
+            keys,
+        } = state;
+        if !Arc::ptr_eq(&keys, &self.secure_area) {
+            self.secure_area.adopt(&keys)?;
+        }
         vids.into_iter().try_for_each(|vid| {
+            let private = if vid.private {
+                OwnedVid::from_area(vid.verified_vid(), self.secure_area.clone()).map(Arc::new)
+            } else {
+                None
+            };
             self.vids.write()?.insert(
                 vid.id.to_string(),
                 VidContext {
                     vid: Arc::new(vid.verified_vid()),
-                    private: vid
-                        .private_vid()
-                        .map(|private| -> Arc<dyn PrivateVid> { Arc::new(private) }),
+                    private,
                     relation_status: vid.relation_status,
                     relation_vid: vid.relation_vid,
                     parent_vid: vid.parent_vid,
@@ -460,16 +487,44 @@ impl SecureStore {
         })
     }
 
-    pub fn add_secret_key(&self, kid: String, secret_key: Vec<u8>) -> Result<(), Error> {
-        self.method_state
-            .write()?
-            .secret_keys
-            .insert(kid, secret_key);
-        Ok(())
+    /// The wallet's secure area for keys that belong to no VID: did:webvh update keys, and
+    /// whatever else a method or an application signs with. The VIDs' own keys are behind
+    /// each [`OwnedVid`].
+    pub fn secure_area(&self) -> &Arc<crate::SoftwareSecureArea> {
+        &self.secure_area
     }
 
-    pub fn get_secret_key(&self, kid: &str) -> Result<Option<Vec<u8>>, Error> {
-        Ok(self.method_state.read()?.secret_keys.get(kid).cloned())
+    /// Bring key material in from outside, under `kid`. The import vehicle; nothing reads
+    /// it back.
+    pub fn import_key(
+        &self,
+        kid: &str,
+        key_type: crate::KeyType,
+        material: crate::secure_area::Secret,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        Ok(self.secure_area.import(kid, key_type, material)?)
+    }
+
+    /// Make a key in the wallet's secure area; see [`crate::SecureArea::create_key`].
+    pub fn create_key(
+        &self,
+        alias: Option<&str>,
+        key_type: crate::KeyType,
+    ) -> Result<crate::KeyInfo, Error> {
+        Ok(self.secure_area.create_key(alias, key_type)?)
+    }
+
+    pub fn has_key(&self, kid: &str) -> bool {
+        self.secure_area.has_key(kid)
+    }
+
+    pub fn delete_key(&self, kid: &str) -> Result<(), Error> {
+        Ok(self.secure_area.delete_key(kid)?)
+    }
+
+    /// A signature over `data` by the key `kid` in the wallet's secure area.
+    pub fn sign_with_key(&self, kid: &str, data: &[u8]) -> Result<Vec<u8>, Error> {
+        Ok(self.secure_area.sign(kid, data)?)
     }
 
     pub fn register_resolution_context(
@@ -527,13 +582,14 @@ impl SecureStore {
         Ok(())
     }
 
-    /// Adds `private_vid` to the wallet
+    /// Adds `private_vid` to the wallet. Its keys are copied into the wallet's secure area,
+    /// where they are persisted with it.
     pub fn add_private_vid(
         &self,
-        private_vid: impl PrivateVid + 'static,
+        private_vid: OwnedVid,
         metadata: Option<serde_json::Value>,
     ) -> Result<(), Error> {
-        let vid = Arc::new(private_vid);
+        let vid = Arc::new(private_vid.adopted_by(self.secure_area.clone())?);
 
         self.vids
             .write()?
@@ -558,6 +614,27 @@ impl SecureStore {
                     .map_err(|_| Error::Internal)?,
             });
 
+        Ok(())
+    }
+
+    /// Keep the VID as a verified VID only: its private half goes, and its keys are deleted
+    /// from the secure area. What a deactivated identity leaves behind: a name, and the
+    /// relationships that named it.
+    pub fn retire_private_vid(&self, vid: &str) -> Result<(), Error> {
+        let vid = self.try_resolve_alias(vid)?;
+        let (sig_alias, enc_alias) = OwnedVid::key_aliases(&vid);
+        self.modify_vid(&vid, |context| {
+            context.private = None;
+            Ok(())
+        })?;
+        self.secure_area.delete_key(&sig_alias)?;
+        self.secure_area.delete_key(&enc_alias)?;
+        Ok(())
+    }
+
+    /// Remove an alias.
+    pub fn remove_alias(&self, alias: &str) -> Result<(), Error> {
+        self.aliases.write()?.remove(alias);
         Ok(())
     }
 
@@ -699,24 +776,17 @@ impl SecureStore {
     }
 
     /// Retrieve the [PrivateVid] identified by `vid` from the wallet, if it exists.
-    pub(crate) fn get_private_vid(&self, vid: &str) -> Result<Arc<dyn PrivateVid>, Error> {
+    pub(crate) fn get_private_vid(&self, vid: &str) -> Result<Arc<OwnedVid>, Error> {
         match self.get_vid(vid)?.private {
             Some(private) => Ok(private),
             None => Err(Error::MissingPrivateVid(vid.to_string())),
         }
     }
 
+    /// The [OwnedVid] identified by `vid`: its public half and a handle on its keys,
+    /// which stay in the secure area.
     pub fn get_owned_private_vid(&self, vid: &str) -> Result<OwnedVid, Error> {
-        let context = self.get_vid(vid)?;
-        let Some(private) = context.private else {
-            return Err(Error::MissingPrivateVid(vid.to_string()));
-        };
-
-        Ok(OwnedVid::from_parts(
-            crate::vid::Vid::from_verified(context.vid.as_ref()),
-            private.signing_key().clone(),
-            private.decryption_key().clone(),
-        ))
+        Ok((*self.get_private_vid(vid)?).clone())
     }
 
     /// Check whether the [VerifiedVid] identified by `vid` exists in the wallet
@@ -2674,8 +2744,8 @@ mod test {
 
     fn reopen_store(store: &SecureStore) -> SecureStore {
         let reopened = SecureStore::new();
-        let (vids, aliases, keys) = store.export().unwrap();
-        reopened.import(vids, aliases, keys).unwrap();
+        let state = store.export().unwrap();
+        reopened.import(state).unwrap();
         reopened
     }
 
@@ -3152,7 +3222,7 @@ mod test {
             .make_relationship_accept("bob", "alice", thread_id, None)
             .unwrap();
 
-        let (vids, _aliases, _keys) = store.export().unwrap();
+        let vids = store.export().unwrap().vids;
         let alice_entry = vids
             .iter()
             .find(|vid| vid.id == alice.identifier())
@@ -3591,7 +3661,7 @@ mod test {
         ));
 
         // the invite is still outstanding
-        let (vids, _, _) = a_store.export().unwrap();
+        let vids = a_store.export().unwrap().vids;
         let Some(alice_parallel_export) = vids
             .iter()
             .find(|vid| vid.id == alice_parallel.identifier())
@@ -3636,7 +3706,7 @@ mod test {
             panic!("unexpected message type");
         };
 
-        let (vids, _, _) = a_store.export().unwrap();
+        let vids = a_store.export().unwrap().vids;
         let Some(alice_parallel_export) = vids
             .iter()
             .find(|vid| vid.id == alice_parallel.identifier())

@@ -16,6 +16,20 @@ impl Drop for WalletCleanupGuard {
     }
 }
 
+/// The CLI with the wallet passphrase the tests use, so no test prompts for one.
+fn tsp() -> Command {
+    let mut cmd = Command::new(cargo_bin!("tsp"));
+    cmd.env("TSP_WALLET_PASSWORD", "unsecure");
+    cmd
+}
+
+/// The same, as a plain process command for the tests that read its output.
+fn tsp_std(bin: impl AsRef<std::ffi::OsStr>) -> StdCommand {
+    let mut cmd = StdCommand::new(bin);
+    cmd.env("TSP_WALLET_PASSWORD", "unsecure");
+    cmd
+}
+
 fn random_string(n: usize) -> String {
     thread_rng()
         .sample_iter(&Alphanumeric)
@@ -25,7 +39,7 @@ fn random_string(n: usize) -> String {
 }
 
 fn create_wallet(alias: &str, did_type: &str) -> String {
-    let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+    let mut cmd: Command = tsp();
     let random_name = format!("test_wallet_{}", random_string(8));
     cmd.args([
         "--wallet",
@@ -54,7 +68,7 @@ fn short_form(did: &str) -> String {
 }
 
 fn create_peer_wallet(alias: &str, tcp_addr: &str) -> String {
-    let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+    let mut cmd: Command = tsp();
     let wallet_name = format!("test_wallet_{}", random_string(8));
     cmd.args([
         "--wallet",
@@ -73,7 +87,7 @@ fn create_peer_wallet(alias: &str, tcp_addr: &str) -> String {
 }
 
 fn create_peer_identity(wallet_name: &str, alias: &str, tcp_addr: &str) {
-    let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+    let mut cmd: Command = tsp();
     cmd.args([
         "--wallet",
         wallet_name,
@@ -109,7 +123,7 @@ fn can_use_loopback_transport() -> bool {
 }
 
 fn print_did(wallet_name: &str, alias: &str) -> String {
-    let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+    let mut cmd: Command = tsp();
     let output = cmd
         .args(["--wallet", wallet_name, "print", alias])
         .output()
@@ -133,14 +147,14 @@ fn parse_relationship_stdout(stdout: &[u8]) -> (String, String) {
 }
 
 fn verify_did(wallet_name: &str, alias: &str, did: &str) {
-    let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+    let mut cmd: Command = tsp();
     cmd.args(["--wallet", wallet_name, "verify", "--alias", alias, did])
         .assert()
         .success();
 }
 
 fn rotate_keys(wallet_name: &str, alias: &str) {
-    let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+    let mut cmd: Command = tsp();
     cmd.args(["--wallet", wallet_name, "update", alias])
         .assert()
         .success();
@@ -153,17 +167,16 @@ fn remove_next_update_alias(wallet_name: &str, did: &str) {
         let vault = AskarSecureStorage::open(&url, b"unsecure")
             .await
             .expect("Failed to open wallet storage");
-        let (vids, mut aliases, method_state) = vault.read().await.expect("Failed to read wallet");
+        let mut state = vault.read().await.expect("Failed to read wallet");
         let next_kid_alias = format!("__next_update_kid:{did}");
-        let removed = aliases.remove(&next_kid_alias);
+        let removed = state.aliases.remove(&next_kid_alias);
         assert!(
             removed.is_some(),
             "Expected wallet to contain precommit alias {next_kid_alias}"
         );
 
         let db = AsyncSecureStore::new();
-        db.import(vids, aliases, method_state)
-            .expect("Failed to import wallet state");
+        db.import(state).expect("Failed to import wallet state");
         vault
             .persist(db.export().expect("Failed to export wallet state"))
             .await
@@ -179,11 +192,10 @@ fn load_wallet(wallet_name: &str) -> AsyncSecureStore {
         let vault = AskarSecureStorage::open(&url, b"unsecure")
             .await
             .expect("Failed to open wallet storage");
-        let (vids, aliases, keys) = vault.read().await.expect("Failed to read wallet");
+        let state = vault.read().await.expect("Failed to read wallet");
 
         let db = AsyncSecureStore::new();
-        db.import(vids, aliases, keys)
-            .expect("Failed to import wallet state");
+        db.import(state).expect("Failed to import wallet state");
         vault.close().await.expect("Failed to close wallet storage");
         db
     })
@@ -226,7 +238,7 @@ fn test_send_command_unverified_receiver_default() {
         s.spawn(|| {
             // send a message from sender to receiver
             let input = "Oh hello Marc";
-            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            let mut cmd: Command = tsp();
             cmd.args([
                 "--wallet",
                 random_sender_name.as_str(),
@@ -242,7 +254,7 @@ fn test_send_command_unverified_receiver_default() {
         });
         s.spawn(|| {
             // receive the message
-            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            let mut cmd: Command = tsp();
             cmd.args([
                 "--wallet",
                 random_receiver_name.as_str(),
@@ -280,7 +292,7 @@ fn test_send_command_unverified_receiver_ask_flag() {
 
     // Send a message from Marlon to Marc with --ask flag, answer no
     let input = "n\nOh hello Marc";
-    let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+    let mut cmd: Command = tsp();
     cmd.args([
         "--wallet",
         random_sender_name.as_str(),
@@ -304,7 +316,7 @@ fn test_send_command_unverified_receiver_ask_flag() {
         s.spawn(|| {
             // send a message from sender to receiver
             let input = "y\nOh hello Marc";
-            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            let mut cmd: Command = tsp();
             cmd.args([
                 "--wallet",
                 random_sender_name.as_str(),
@@ -325,7 +337,7 @@ fn test_send_command_unverified_receiver_ask_flag() {
         });
         s.spawn(|| {
             // receive the message
-            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            let mut cmd: Command = tsp();
             cmd.args([
                 "--wallet",
                 random_receiver_name.as_str(),
@@ -365,7 +377,7 @@ fn test_webvh_creation_key_rotation() {
         s.spawn(|| {
             // send a message from sender to receiver
             let input = "Oh hello Marc";
-            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            let mut cmd: Command = tsp();
             cmd.args([
                 "--wallet",
                 random_sender_name.as_str(),
@@ -381,7 +393,7 @@ fn test_webvh_creation_key_rotation() {
         });
         s.spawn(|| {
             // receive the message
-            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            let mut cmd: Command = tsp();
             cmd.args([
                 "--wallet",
                 random_receiver_name.as_str(),
@@ -402,7 +414,7 @@ fn test_webvh_creation_key_rotation() {
         s.spawn(|| {
             // send a message from sender to receiver
             let input = "Oh hello Marc";
-            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            let mut cmd: Command = tsp();
             cmd.args([
                 "--wallet",
                 random_sender_name.as_str(),
@@ -418,7 +430,7 @@ fn test_webvh_creation_key_rotation() {
         });
         s.spawn(|| {
             // receive the message
-            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            let mut cmd: Command = tsp();
             cmd.args([
                 "--wallet",
                 random_receiver_name.as_str(),
@@ -443,7 +455,7 @@ fn test_webvh_update_reports_out_of_sync_when_precommit_alias_is_missing() {
 
     remove_next_update_alias(&wallet_name, &did);
 
-    let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+    let mut cmd: Command = tsp();
     cmd.args(["--wallet", wallet_name.as_str(), "update", "foo"])
         .assert()
         .stderr(predicate::str::contains(
@@ -457,7 +469,7 @@ fn test_webvh_update_reports_out_of_sync_when_precommit_alias_is_missing() {
 fn test_request_help_lists_parallel_options() {
     let _cleanup = wallet_cleanup_guard();
 
-    let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+    let mut cmd: Command = tsp();
     cmd.args(["request", "--help"])
         .assert()
         .success()
@@ -470,7 +482,7 @@ fn test_request_help_lists_parallel_options() {
 fn test_parallel_request_requires_new_vid() {
     let _cleanup = wallet_cleanup_guard();
 
-    let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+    let mut cmd: Command = tsp();
     cmd.args(["request", "--parallel", "-s", "alice", "-r", "bob"])
         .assert()
         .stderr(predicate::str::contains("--new-vid"))
@@ -506,7 +518,7 @@ fn test_parallel_request_and_accept_roundtrip_over_cli() {
         let tsp_bin = tsp_bin.to_path_buf();
         let bob_wallet = bob_wallet.clone();
         thread::spawn(move || {
-            StdCommand::new(tsp_bin)
+            tsp_std(tsp_bin)
                 .args(["--wallet", bob_wallet.as_str(), "receive", "--one", "bob"])
                 .output()
                 .expect("failed to receive outer relationship request")
@@ -515,7 +527,7 @@ fn test_parallel_request_and_accept_roundtrip_over_cli() {
 
     thread::sleep(Duration::from_millis(300));
 
-    let outer_request = StdCommand::new(tsp_bin)
+    let outer_request = tsp_std(tsp_bin)
         .args([
             "--wallet",
             alice_wallet.as_str(),
@@ -546,7 +558,7 @@ fn test_parallel_request_and_accept_roundtrip_over_cli() {
         let tsp_bin = tsp_bin.to_path_buf();
         let alice_wallet = alice_wallet.clone();
         thread::spawn(move || {
-            StdCommand::new(tsp_bin)
+            tsp_std(tsp_bin)
                 .args([
                     "--wallet",
                     alice_wallet.as_str(),
@@ -561,7 +573,7 @@ fn test_parallel_request_and_accept_roundtrip_over_cli() {
 
     thread::sleep(Duration::from_millis(300));
 
-    let outer_accept = StdCommand::new(tsp_bin)
+    let outer_accept = tsp_std(tsp_bin)
         .args([
             "--wallet",
             bob_wallet.as_str(),
@@ -596,7 +608,7 @@ fn test_parallel_request_and_accept_roundtrip_over_cli() {
         let tsp_bin = tsp_bin.to_path_buf();
         let bob_wallet = bob_wallet.clone();
         thread::spawn(move || {
-            StdCommand::new(tsp_bin)
+            tsp_std(tsp_bin)
                 .args(["--wallet", bob_wallet.as_str(), "receive", "--one", "bob"])
                 .output()
                 .expect("failed to receive parallel relationship request")
@@ -609,7 +621,7 @@ fn test_parallel_request_and_accept_roundtrip_over_cli() {
         let tsp_bin = tsp_bin.to_path_buf();
         let alice_wallet = alice_wallet.clone();
         thread::spawn(move || {
-            StdCommand::new(tsp_bin)
+            tsp_std(tsp_bin)
                 .args([
                     "--wallet",
                     alice_wallet.as_str(),
@@ -640,7 +652,7 @@ fn test_parallel_request_and_accept_roundtrip_over_cli() {
         parse_relationship_stdout(&parallel_receive.stdout);
     assert_eq!(received_new_vid, short_form(&alice_alt_did));
 
-    let parallel_accept = StdCommand::new(tsp_bin)
+    let parallel_accept = tsp_std(tsp_bin)
         .args([
             "--wallet",
             bob_wallet.as_str(),
@@ -724,7 +736,7 @@ fn test_100_rotations_stress() {
     thread::scope(|s| {
         s.spawn(|| {
             let input = "Hello before rotations";
-            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            let mut cmd: Command = tsp();
             cmd.args([
                 "--wallet",
                 sender_wallet.as_str(),
@@ -739,7 +751,7 @@ fn test_100_rotations_stress() {
             .success();
         });
         s.spawn(|| {
-            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            let mut cmd: Command = tsp();
             cmd.args([
                 "--wallet",
                 receiver_wallet.as_str(),
@@ -776,7 +788,7 @@ fn test_100_rotations_stress() {
     thread::scope(|s| {
         s.spawn(|| {
             let input = "Hello after 100 rotations";
-            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            let mut cmd: Command = tsp();
             cmd.args([
                 "--wallet",
                 sender_wallet.as_str(),
@@ -791,7 +803,7 @@ fn test_100_rotations_stress() {
             .success();
         });
         s.spawn(|| {
-            let mut cmd: Command = Command::new(cargo_bin!("tsp"));
+            let mut cmd: Command = tsp();
             cmd.args([
                 "--wallet",
                 receiver_wallet.as_str(),

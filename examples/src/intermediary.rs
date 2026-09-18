@@ -474,19 +474,19 @@ async fn create_identity(
 ) -> String {
     refuse_if_name_taken(did_server, name).await;
 
-    let (private_vid, history, keys) =
-        tsp_sdk::vid::did::webvh::create_webvh(&format!("{did_server}/endpoint/{name}"), transport)
-            .await
-            .expect("could not create an identity");
+    let (private_vid, history, keys) = tsp_sdk::vid::did::webvh::create_webvh(
+        db.secure_area(),
+        &format!("{did_server}/endpoint/{name}"),
+        transport,
+    )
+    .await
+    .expect("could not create an identity");
 
     let did = private_vid.identifier().to_string();
 
-    // Both update keys are kept. The current one authorises the next log entry; the other is
-    // committed in advance by hash. Without them the identity can never be updated again.
-    db.add_secret_key(keys.update_kid.clone(), keys.update_key)
-        .expect("could not store the update key");
-    db.add_secret_key(keys.next_update_kid.clone(), keys.next_update_key)
-        .expect("could not store the next update key");
+    // Both update keys are in the wallet's secure area. The current one authorises the next
+    // log entry; the other is committed in advance by hash. Without them the identity can
+    // never be updated again.
     db.set_alias(format!("__next_update_kid:{did}"), keys.next_update_kid)
         .expect("could not record the next update key");
 
@@ -874,10 +874,9 @@ async fn main() {
 
     let (vault, db) = match AskarSecureStorage::open(&wallet_url, password.as_bytes()).await {
         Ok(vault) => {
-            let (vids, aliases, keys) = vault.read().await.expect("could not read the wallet");
+            let state = vault.read().await.expect("could not read the wallet");
             let db = AsyncSecureStore::new();
-            db.import(vids, aliases, keys)
-                .expect("could not load the wallet");
+            db.import(state).expect("could not load the wallet");
             tracing::info!("opened wallet {}", args.wallet);
 
             (vault, db)

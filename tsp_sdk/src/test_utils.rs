@@ -1,9 +1,9 @@
 //! Test utilities and helpers for writing tests.
 
 use crate::{
-    ExportVid, OwnedVid, RelationshipStatus, SecureStore,
+    OwnedVid, RelationshipStatus, SecureStore,
     definitions::{Digest, PendingNestedRelationship, VerifiedVid},
-    store::{Aliases, WalletMethodState},
+    store::WalletState,
 };
 #[cfg(feature = "resolve")]
 use crate::{
@@ -243,10 +243,18 @@ pub fn create_prepopulated_store() -> SecureStore {
 
     // Keep some persisted key history around as part of the fixture state.
     store
-        .add_secret_key("test-history-key-1".to_string(), vec![1, 2, 3, 4])
+        .import_key(
+            "test-history-key-1",
+            crate::KeyType::Ed25519,
+            zeroize::Zeroizing::new(vec![1, 2, 3, 4]),
+        )
         .unwrap();
     store
-        .add_secret_key("test-history-key-2".to_string(), vec![5, 6, 7, 8])
+        .import_key(
+            "test-history-key-2",
+            crate::KeyType::Ed25519,
+            zeroize::Zeroizing::new(vec![5, 6, 7, 8]),
+        )
         .unwrap();
 
     store
@@ -273,11 +281,13 @@ pub fn relationship_status_signature(status: RelationshipStatus) -> String {
     }
 }
 
-fn export_snapshot_parts(
-    vids: Vec<ExportVid>,
-    aliases: Aliases,
-    method_state: WalletMethodState,
-) -> StoreExportSnapshot {
+fn export_snapshot_parts(state: WalletState) -> StoreExportSnapshot {
+    let WalletState {
+        vids,
+        aliases,
+        method_state,
+        keys,
+    } = state;
     let mut vid_rows = vids
         .into_iter()
         .map(|exported| {
@@ -299,10 +309,13 @@ fn export_snapshot_parts(
         .collect::<Vec<_>>();
     vid_rows.sort();
 
-    let mut key_rows = method_state
-        .secret_keys
+    let mut key_rows = keys
+        .aliases()
         .into_iter()
-        .map(|(k, v)| (k, format!("{v:?}")))
+        .map(|alias| {
+            let public = crate::SecureArea::public_key(keys.as_ref(), &alias).ok();
+            (alias, format!("{public:?}"))
+        })
         .collect::<BTreeMap<_, _>>();
     key_rows.extend(
         method_state
@@ -320,8 +333,8 @@ fn export_snapshot_parts(
 
 /// Export a synchronous store into a normalized snapshot.
 pub fn export_snapshot_sync(store: &SecureStore) -> StoreExportSnapshot {
-    let (vids, aliases, keys) = store.export().unwrap();
-    export_snapshot_parts(vids, aliases, keys)
+    let state = store.export().unwrap();
+    export_snapshot_parts(state)
 }
 
 /// Seed data for relationship transition tests on dirty wallets.
@@ -374,7 +387,11 @@ pub fn create_dirty_store_with_transition_seed() -> (AsyncSecureStore, DirtyTran
         )
         .unwrap();
     store
-        .add_secret_key("transition-seed-key".to_string(), vec![9, 8, 7, 6])
+        .import_key(
+            "transition-seed-key",
+            crate::KeyType::Ed25519,
+            zeroize::Zeroizing::new(vec![9, 8, 7, 6]),
+        )
         .unwrap();
 
     (
@@ -430,9 +447,10 @@ pub fn create_high_entropy_dirty_store() -> (AsyncSecureStore, HighEntropyDirtyS
 
     for i in 0..16 {
         store
-            .add_secret_key(
-                format!("high-entropy-key-{i:02}"),
-                vec![i as u8, i as u8 ^ 0x5A, i as u8 ^ 0xA5, 0xFF],
+            .import_key(
+                &format!("high-entropy-key-{i:02}"),
+                crate::KeyType::Ed25519,
+                zeroize::Zeroizing::new(vec![i as u8, i as u8 ^ 0x5A, i as u8 ^ 0xA5, 0xFF]),
             )
             .unwrap();
     }
@@ -649,8 +667,8 @@ pub fn create_routed_dirty_topology() -> RoutedDirtyTopology {
 /// Export an async store into a normalized snapshot.
 #[cfg(feature = "async")]
 pub fn export_snapshot(store: &AsyncSecureStore) -> StoreExportSnapshot {
-    let (vids, aliases, keys) = store.export().unwrap();
-    export_snapshot_parts(vids, aliases, keys)
+    let state = store.export().unwrap();
+    export_snapshot_parts(state)
 }
 
 /// Repository-backed wallet fixtures used for smoke tests and future
@@ -765,7 +783,7 @@ impl PersistedStoreFixture {
         let storage = AskarSecureStorage::open(&self.sqlite_url, &self.password)
             .await
             .expect("Failed to reopen persisted wallet storage");
-        let (vids, aliases, keys) = storage
+        let state = storage
             .read()
             .await
             .expect("Failed to read persisted wallet storage");
@@ -776,7 +794,7 @@ impl PersistedStoreFixture {
 
         let store = AsyncSecureStore::new();
         store
-            .import(vids, aliases, keys)
+            .import(state)
             .expect("Failed to import persisted store data");
         store
     }
@@ -843,14 +861,8 @@ mod tests {
     #[test]
     fn test_create_prepopulated_store_has_history_keys() {
         let store = create_prepopulated_store();
-        assert_eq!(
-            store.get_secret_key("test-history-key-1").unwrap(),
-            Some(vec![1, 2, 3, 4])
-        );
-        assert_eq!(
-            store.get_secret_key("test-history-key-2").unwrap(),
-            Some(vec![5, 6, 7, 8])
-        );
+        assert!(store.has_key("test-history-key-1"));
+        assert!(store.has_key("test-history-key-2"));
         let (_, vid_rows, _) = export_snapshot_sync(&store);
         assert!(vid_rows.iter().any(|row| row.contains("Bi:")));
     }
@@ -893,8 +905,8 @@ mod tests {
         let reopened = fixture.reopen_into_store().await;
 
         assert_eq!(
-            original.export().unwrap().0.len(),
-            reopened.export().unwrap().0.len()
+            original.export().unwrap().vids.len(),
+            reopened.export().unwrap().vids.len()
         );
     }
 
@@ -906,10 +918,7 @@ mod tests {
             store.resolve_alias("local-owner").unwrap().as_deref(),
             Some(seed.local_vid.as_str())
         );
-        assert_eq!(
-            store.get_secret_key("transition-seed-key").unwrap(),
-            Some(vec![9, 8, 7, 6])
-        );
+        assert!(store.has_key("transition-seed-key"));
     }
 
     #[cfg(feature = "async")]
@@ -920,12 +929,7 @@ mod tests {
             store.resolve_alias("high-entropy-root").unwrap().as_deref(),
             Some(seed.local_vid.as_str())
         );
-        assert!(
-            store
-                .get_secret_key("high-entropy-key-00")
-                .unwrap()
-                .is_some()
-        );
+        assert!(store.has_key("high-entropy-key-00"));
         let (_aliases, vid_rows, _keys) = export_snapshot(&store);
         assert!(vid_rows.iter().any(|row| row.contains(">")));
         assert!(vid_rows.iter().any(|row| row.contains("Bi:")));
@@ -998,8 +1002,8 @@ mod tests {
 
         let reopened = persist_reopen_cycle(&original, &fixture, 2).await;
         assert_eq!(
-            original.export().unwrap().0.len(),
-            reopened.export().unwrap().0.len()
+            original.export().unwrap().vids.len(),
+            reopened.export().unwrap().vids.len()
         );
     }
 
@@ -1008,12 +1012,12 @@ mod tests {
     async fn test_repo_wallet_fixture_roundtrip() {
         let fixture = create_repo_wallet_fixture(RepoWalletFixture::CurrentDirtySmall);
         let reopened = fixture.reopen_into_store().await;
-        let (vids, aliases, method_state) = reopened.export().unwrap();
-        assert!(!vids.is_empty());
+        let state = reopened.export().unwrap();
+        assert!(!state.vids.is_empty());
         assert!(
-            !aliases.is_empty()
-                || !method_state.secret_keys.is_empty()
-                || !method_state.resolution_contexts.is_empty(),
+            !state.aliases.is_empty()
+                || !state.keys.aliases().is_empty()
+                || !state.method_state.resolution_contexts.is_empty(),
             "repo wallet fixture should carry dirty wallet state"
         );
     }

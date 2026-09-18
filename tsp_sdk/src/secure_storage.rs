@@ -4,13 +4,17 @@ use crate::definitions::{
     Digest, PendingNestedRelationship, VidEncryptionKeyType, VidSignatureKeyType,
 };
 use crate::{
-    Error, ExportVid, PendingIncomingParallelRelationship, PendingParallelRelationship,
-    RelationshipStatus,
-    store::{Aliases, WalletMethodState},
+    Error, ExportVid, KeyType, OwnedVid, PendingIncomingParallelRelationship,
+    PendingParallelRelationship, RelationshipStatus, SoftwareSecureArea,
+    store::{WalletMethodState, WalletState},
 };
-use aries_askar::{ErrorKind, StoreKeyMethod, entry::EntryOperation};
+use aries_askar::{
+    ErrorKind, StoreKeyMethod,
+    entry::{EntryOperation, EntryTag},
+};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 #[async_trait]
 pub trait SecureStorage: Sized {
@@ -20,14 +24,13 @@ pub trait SecureStorage: Sized {
     /// Open an existing secure storage
     async fn open(url: &str, password: &[u8]) -> Result<Self, Error>;
 
-    /// Write data from memory to secure storage
-    async fn persist(
-        &self,
-        state: (Vec<ExportVid>, Aliases, WalletMethodState),
-    ) -> Result<(), Error>;
+    /// Write the wallet's state to secure storage, keys included: they come as the software
+    /// secure area in `state.keys` and are written under their aliases.
+    async fn persist(&self, state: WalletState) -> Result<(), Error>;
 
-    /// Read data from secure storage to memory
-    async fn read(&self) -> Result<(Vec<ExportVid>, Aliases, WalletMethodState), Error>;
+    /// Read the wallet's state from secure storage; the keys come back in a fresh software
+    /// secure area.
+    async fn read(&self) -> Result<WalletState, Error>;
 
     /// Close the secure storage
     async fn close(self) -> Result<(), Error>;
@@ -151,6 +154,32 @@ impl From<LegacyRelationshipStatus> for RelationshipStatus {
     }
 }
 
+/// Insert a record, or replace the one already there.
+async fn upsert(
+    conn: &mut aries_askar::Session,
+    category: &str,
+    name: &str,
+    value: &[u8],
+    tags: Option<&[EntryTag]>,
+) -> Result<(), Error> {
+    match conn.insert(category, name, value, tags, None).await {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == ErrorKind::Duplicate => {
+            conn.update(
+                EntryOperation::Replace,
+                category,
+                name,
+                Some(value),
+                tags,
+                None,
+            )
+            .await?;
+            Ok(())
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
 fn decode_metadata(bytes: &[u8]) -> Result<Metadata, Error> {
     serde_json::from_slice(bytes)
         .or_else(|_| serde_json::from_slice::<LegacyMetadata>(bytes).map(Into::into))
@@ -184,103 +213,50 @@ impl SecureStorage for AskarSecureStorage {
         })
     }
 
-    async fn persist(
-        &self,
-        (vids, aliases, method_state): (Vec<ExportVid>, Aliases, WalletMethodState),
-    ) -> Result<(), Error> {
+    async fn persist(&self, state: WalletState) -> Result<(), Error> {
+        let WalletState {
+            vids,
+            aliases,
+            method_state,
+            keys,
+        } = state;
         let mut conn = self.inner.session(None).await?;
 
+        // the keys of every private VID, under the VID's aliases, in the records this
+        // storage has always used for them
+        let mut vid_key_aliases = std::collections::HashSet::new();
         for export in vids {
             let id = export.id.clone();
 
-            if let Some(ref private) = export.sigkey {
-                let signing_key_name = format!("{id}#signing-key");
-
-                if let Err(e) = conn
-                    .insert("key", &signing_key_name, private.as_slice(), None, None)
-                    .await
-                {
-                    if e.kind() == ErrorKind::Duplicate {
-                        conn.remove("key", &signing_key_name).await?;
-                        conn.insert("key", &signing_key_name, private.as_slice(), None, None)
-                            .await?;
-                    } else {
-                        Err(Error::from(e))?;
+            if export.private {
+                let (sig_alias, enc_alias) = OwnedVid::key_aliases(&id);
+                for alias in [&sig_alias, &enc_alias] {
+                    if let Some((_, material)) = keys.material(alias) {
+                        upsert(&mut conn, "key", alias, &material, None).await?;
                     }
                 }
+                vid_key_aliases.insert(sig_alias);
+                vid_key_aliases.insert(enc_alias);
             }
 
-            if let Some(private) = export.enckey {
-                let decryption_key_name = format!("{id}#decryption-key");
+            upsert(
+                &mut conn,
+                "key",
+                &format!("{id}#verification-key"),
+                export.public_sigkey.as_slice(),
+                None,
+            )
+            .await?;
+            upsert(
+                &mut conn,
+                "key",
+                &format!("{id}#encryption-key"),
+                export.public_enckey.as_slice(),
+                None,
+            )
+            .await?;
 
-                if let Err(e) = conn
-                    .insert("key", &decryption_key_name, private.as_slice(), None, None)
-                    .await
-                {
-                    if e.kind() == ErrorKind::Duplicate {
-                        conn.remove("key", &decryption_key_name).await?;
-                        conn.insert("key", &decryption_key_name, private.as_slice(), None, None)
-                            .await?
-                    } else {
-                        Err(Error::from(e))?;
-                    }
-                }
-            }
-
-            let verification_key_name = format!("{id}#verification-key");
-            if let Err(e) = conn
-                .insert(
-                    "key",
-                    &verification_key_name,
-                    export.public_sigkey.as_slice(),
-                    None,
-                    None,
-                )
-                .await
-            {
-                if e.kind() == ErrorKind::Duplicate {
-                    conn.remove("key", &verification_key_name).await?;
-                    conn.insert(
-                        "key",
-                        &verification_key_name,
-                        export.public_sigkey.as_slice(),
-                        None,
-                        None,
-                    )
-                    .await?;
-                } else {
-                    Err(Error::from(e))?;
-                }
-            }
-
-            let encryption_key_name = format!("{id}#encryption-key");
-            if let Err(e) = conn
-                .insert(
-                    "key",
-                    &encryption_key_name,
-                    export.public_enckey.as_slice(),
-                    None,
-                    None,
-                )
-                .await
-            {
-                if e.kind() == ErrorKind::Duplicate {
-                    conn.remove("key", &encryption_key_name).await?;
-                    conn.insert(
-                        "key",
-                        &encryption_key_name,
-                        export.public_enckey.as_slice(),
-                        None,
-                        None,
-                    )
-                    .await?;
-                } else {
-                    Err(Error::from(e))?;
-                }
-            }
-
-            #[allow(clippy::collapsible_if)]
-            if let Ok(data) = serde_json::to_string(&Metadata {
+            let data = serde_json::to_string(&Metadata {
                 id: id.to_string(),
                 enc_key_type: export.enc_key_type,
                 sig_key_type: export.sig_key_type,
@@ -292,114 +268,135 @@ impl SecureStorage for AskarSecureStorage {
                 pending_parallel_requests: export.pending_parallel_requests,
                 pending_incoming_parallel_requests: export.pending_incoming_parallel_requests,
                 metadata: export.metadata,
-            }) {
-                if let Err(e) = conn.insert("vid", &id, data.as_bytes(), None, None).await {
-                    if e.kind() == ErrorKind::Duplicate {
-                        conn.update(
-                            EntryOperation::Replace,
-                            "vid",
-                            &id,
-                            Some(data.as_bytes()),
-                            None,
-                            None,
-                        )
-                        .await?;
-                    } else {
-                        Err(Error::from(e))?;
-                    }
-                }
+            })
+            .map_err(|_| Error::DecodeState("could not encode vid metadata for storage"))?;
+            upsert(&mut conn, "vid", &id, data.as_bytes(), None).await?;
+        }
+
+        // every other key of the secure area: a did:webvh update key, an application's key;
+        // and a key the area no longer holds, a retired update key, leaves the storage too
+        let mut kept = std::collections::HashSet::new();
+        for (alias, key_type, material) in keys.all_material() {
+            if vid_key_aliases.contains(&alias) {
+                continue;
+            }
+            let tags = [EntryTag::Encrypted(
+                "type".to_string(),
+                key_type.as_str().to_string(),
+            )];
+            upsert(&mut conn, "secure_area_key", &alias, &material, Some(&tags)).await?;
+            kept.insert(alias);
+        }
+        let stored: Vec<String> = conn
+            .fetch_all(Some("secure_area_key"), None, None, None, false, false)
+            .await?
+            .iter()
+            .map(|e| e.name.clone())
+            .collect();
+        for alias in stored {
+            if !kept.contains(&alias) {
+                conn.remove("secure_area_key", &alias).await?;
             }
         }
 
-        if let Ok(aliases) = serde_json::to_value(&aliases)
-            && let Err(e) = conn
-                .insert(
-                    "extra_data",
-                    "aliases",
-                    aliases.to_string().as_bytes(),
-                    None,
-                    None,
-                )
-                .await
-        {
-            if e.kind() == ErrorKind::Duplicate {
-                conn.update(
-                    EntryOperation::Replace,
-                    "extra_data",
-                    "aliases",
-                    Some(aliases.to_string().as_bytes()),
-                    None,
-                    None,
-                )
-                .await?;
-            } else {
-                Err(Error::from(e))?;
-            }
-        }
-
-        let secret_keys = serde_json::to_value(&method_state.secret_keys)
-            .map_err(|_| Error::DecodeState("could not encode secret keys for storage"))?;
-        if let Err(e) = conn
-            .insert(
-                "method_state",
-                "secret_keys",
-                secret_keys.to_string().as_bytes(),
-                None,
-                None,
+        // keys that live in a remote secure area, a KMS: their handles, never a key; a
+        // VID's signing key among them, under the VID's alias
+        let mut kept_remote = std::collections::HashSet::new();
+        for (alias, key_type, handle) in keys.remote_handles() {
+            let tags = [EntryTag::Encrypted(
+                "type".to_string(),
+                key_type.as_str().to_string(),
+            )];
+            upsert(
+                &mut conn,
+                "secure_area_remote",
+                &alias,
+                handle.as_bytes(),
+                Some(&tags),
             )
-            .await
-        {
-            if e.kind() == ErrorKind::Duplicate {
-                conn.update(
-                    EntryOperation::Replace,
-                    "method_state",
-                    "secret_keys",
-                    Some(secret_keys.to_string().as_bytes()),
-                    None,
-                    None,
-                )
-                .await?;
-            } else {
-                Err(Error::from(e))?;
+            .await?;
+            kept_remote.insert(alias);
+        }
+        let stored: Vec<String> = conn
+            .fetch_all(Some("secure_area_remote"), None, None, None, false, false)
+            .await?
+            .iter()
+            .map(|e| e.name.clone())
+            .collect();
+        for alias in stored {
+            if !kept_remote.contains(&alias) {
+                conn.remove("secure_area_remote", &alias).await?;
             }
         }
+        // the records that carried method keys as a blob before the secure area
+        for (category, name) in [
+            ("method_state", "secret_keys"),
+            ("method_state", "secret_key_types"),
+            ("webvh_update_keys", "all"),
+        ] {
+            match conn.remove(category, name).await {
+                Ok(()) => {}
+                Err(e) if e.kind() == ErrorKind::NotFound => {}
+                Err(e) => Err(Error::from(e))?,
+            }
+        }
+
+        let aliases = serde_json::to_value(&aliases)
+            .map_err(|_| Error::DecodeState("could not encode aliases for storage"))?;
+        upsert(
+            &mut conn,
+            "extra_data",
+            "aliases",
+            aliases.to_string().as_bytes(),
+            None,
+        )
+        .await?;
 
         let resolution_contexts = serde_json::to_value(&method_state.resolution_contexts)
             .map_err(|_| Error::DecodeState("could not encode resolution contexts for storage"))?;
-        if let Err(e) = conn
-            .insert(
-                "method_state",
-                "resolution_contexts",
-                resolution_contexts.to_string().as_bytes(),
-                None,
-                None,
-            )
-            .await
-        {
-            if e.kind() == ErrorKind::Duplicate {
-                conn.update(
-                    EntryOperation::Replace,
-                    "method_state",
-                    "resolution_contexts",
-                    Some(resolution_contexts.to_string().as_bytes()),
-                    None,
-                    None,
-                )
-                .await?;
-            } else {
-                Err(Error::from(e))?;
-            }
-        }
+        upsert(
+            &mut conn,
+            "method_state",
+            "resolution_contexts",
+            resolution_contexts.to_string().as_bytes(),
+            None,
+        )
+        .await?;
 
         conn.commit().await?;
 
         Ok(())
     }
 
-    async fn read(&self) -> Result<(Vec<ExportVid>, Aliases, WalletMethodState), Error> {
+    async fn read(&self) -> Result<WalletState, Error> {
         let mut vids = Vec::new();
+        let keys = SoftwareSecureArea::new();
 
         let mut conn = self.inner.session(None).await?;
+
+        // the keys that live in a remote secure area, first: a VID whose signing key is one
+        // of them is private by that handle
+        for item in conn
+            .fetch_all(Some("secure_area_remote"), None, None, None, false, false)
+            .await?
+            .iter()
+        {
+            let key_type = item
+                .tags
+                .iter()
+                .find_map(|t| match t {
+                    EntryTag::Encrypted(name, value) | EntryTag::Plaintext(name, value)
+                        if name == "type" =>
+                    {
+                        KeyType::parse(value)
+                    }
+                    _ => None,
+                })
+                .unwrap_or(KeyType::Ed25519);
+            let handle = String::from_utf8_lossy(&item.value).into_owned();
+            keys.bind_remote(&item.name, key_type, &handle)?;
+        }
+
         let results = conn
             .fetch_all(Some("vid"), None, None, None, false, false)
             .await?;
@@ -409,25 +406,41 @@ impl SecureStorage for AskarSecureStorage {
 
             let id = data.id.clone();
 
-            let verification_key_name = format!("{id}#verification-key");
             let Some(verification_bytes) = conn
-                .fetch("key", &verification_key_name, false)
+                .fetch("key", &format!("{id}#verification-key"), false)
                 .await?
                 .map(|e| e.value.to_vec())
             else {
                 continue;
             };
 
-            let encryption_key_name = format!("{id}#encryption-key");
             let Some(encryption_bytes) = conn
-                .fetch("key", &encryption_key_name, false)
+                .fetch("key", &format!("{id}#encryption-key"), false)
                 .await?
                 .map(|e| e.value.to_vec())
             else {
                 continue;
             };
 
-            let mut vid = ExportVid {
+            // the VID's keys, straight into the secure area; one may live remotely instead
+            let (sig_alias, enc_alias) = OwnedVid::key_aliases(&id);
+            if let Some(sig) = conn.fetch("key", &sig_alias, false).await? {
+                keys.import(
+                    &sig_alias,
+                    data.sig_key_type.into(),
+                    zeroize::Zeroizing::new(sig.value.to_vec()),
+                )?;
+            }
+            if let Some(enc) = conn.fetch("key", &enc_alias, false).await? {
+                keys.import(
+                    &enc_alias,
+                    data.enc_key_type.into(),
+                    zeroize::Zeroizing::new(enc.value.to_vec()),
+                )?;
+            }
+            let private = keys.has_key(&sig_alias) && keys.has_key(&enc_alias);
+
+            vids.push(ExportVid {
                 id: data.id,
                 transport: data.transport.parse().map_err(|_| {
                     Error::DecodeState("could not parse transport URL from storage")
@@ -436,8 +449,7 @@ impl SecureStorage for AskarSecureStorage {
                 sig_key_type: data.sig_key_type,
                 public_enckey: encryption_bytes.into(),
                 enc_key_type: data.enc_key_type,
-                sigkey: None,
-                enckey: None,
+                private,
                 relation_status: data.relation_status,
                 relation_vid: data.relation_vid,
                 parent_vid: data.parent_vid,
@@ -445,42 +457,69 @@ impl SecureStorage for AskarSecureStorage {
                 pending_parallel_requests: data.pending_parallel_requests,
                 pending_incoming_parallel_requests: data.pending_incoming_parallel_requests,
                 metadata: data.metadata,
+            });
+        }
+
+        // the other keys of the secure area, by alias, typed by their tag
+        for item in conn
+            .fetch_all(Some("secure_area_key"), None, None, None, false, false)
+            .await?
+            .iter()
+        {
+            let key_type = item
+                .tags
+                .iter()
+                .find_map(|t| match t {
+                    EntryTag::Encrypted(name, value) | EntryTag::Plaintext(name, value)
+                        if name == "type" =>
+                    {
+                        KeyType::parse(value)
+                    }
+                    _ => None,
+                })
+                .unwrap_or(KeyType::Ed25519);
+            keys.import(
+                &item.name,
+                key_type,
+                zeroize::Zeroizing::new(item.value.to_vec()),
+            )?;
+        }
+
+        // and what a wallet written before the secure area holds: a blob of method keys,
+        // with their types beside it if they were ever recorded; all Ed25519 otherwise
+        let legacy: Option<HashMap<String, Vec<u8>>> =
+            match conn.fetch("method_state", "secret_keys", false).await? {
+                Some(data) => Some(serde_json::from_slice(&data.value).map_err(|_| {
+                    Error::DecodeState("could not decode secret keys from storage")
+                })?),
+                None => match conn.fetch("webvh_update_keys", "all", false).await? {
+                    Some(data) => Some(serde_json::from_slice(&data.value).map_err(|_| {
+                        Error::DecodeState("could not decode webvh keys from storage")
+                    })?),
+                    None => None,
+                },
             };
-
-            let signing_key_name = format!("{id}#signing-key");
-            let signing_key = conn
-                .fetch("key", &signing_key_name, false)
+        if let Some(legacy) = legacy {
+            let types: HashMap<String, KeyType> = match conn
+                .fetch("method_state", "secret_key_types", false)
                 .await?
-                .map(|e| e.value.to_vec());
-
-            let decryption_key_name = format!("{id}#decryption-key");
-            let decryption_key = conn
-                .fetch("key", &decryption_key_name, false)
-                .await?
-                .map(|e| e.value.to_vec());
-
-            if let (Some(signing_key), Some(decryption_key)) = (signing_key, decryption_key) {
-                vid.sigkey = Some(signing_key.into());
-                vid.enckey = Some(decryption_key.into());
+            {
+                Some(data) => serde_json::from_slice(&data.value).unwrap_or_default(),
+                None => HashMap::new(),
+            };
+            for (alias, material) in legacy {
+                if keys.has_key(&alias) {
+                    continue;
+                }
+                let key_type = types.get(&alias).copied().unwrap_or(KeyType::Ed25519);
+                keys.import(&alias, key_type, zeroize::Zeroizing::new(material))?;
             }
-
-            vids.push(vid);
         }
 
         let aliases = match conn.fetch("extra_data", "aliases", false).await? {
             Some(data) => serde_json::from_slice(&data.value)
                 .map_err(|_| Error::DecodeState("could not decode extra data from storage"))?,
             None => HashMap::new(),
-        };
-
-        let secret_keys = match conn.fetch("method_state", "secret_keys", false).await? {
-            Some(data) => serde_json::from_slice(&data.value)
-                .map_err(|_| Error::DecodeState("could not decode secret keys from storage"))?,
-            None => match conn.fetch("webvh_update_keys", "all", false).await? {
-                Some(data) => serde_json::from_slice(&data.value)
-                    .map_err(|_| Error::DecodeState("could not webvh keys from storage"))?,
-                None => HashMap::new(),
-            },
         };
 
         let resolution_contexts = match conn
@@ -495,14 +534,14 @@ impl SecureStorage for AskarSecureStorage {
 
         conn.commit().await?;
 
-        Ok((
+        Ok(WalletState {
             vids,
             aliases,
-            WalletMethodState {
-                secret_keys,
+            method_state: WalletMethodState {
                 resolution_contexts,
             },
-        ))
+            keys: Arc::new(keys),
+        })
     }
 
     async fn close(self) -> Result<(), Error> {
@@ -581,15 +620,15 @@ mod test {
             let vault = AskarSecureStorage::open("sqlite://test.sqlite", b"password")
                 .await
                 .unwrap();
-            let (vids, aliases, keys) = vault.read().await.unwrap();
+            let state = vault.read().await.unwrap();
 
             assert_eq!(
-                aliases.get("pigeon"),
+                state.aliases.get("pigeon"),
                 Some(&"did:web:did.teaspoon.world:endpoint:pigeon".to_string())
             );
 
             let store = SecureStore::new();
-            store.import(vids, aliases, keys).unwrap();
+            store.import(state).unwrap();
             assert!(store.has_private_vid(&id).unwrap());
 
             vault.destroy().await.unwrap();

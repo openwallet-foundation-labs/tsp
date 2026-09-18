@@ -654,7 +654,7 @@ fn resolve_vid_transport(
     alias_or_vid: &str,
 ) -> Result<(String, Url), Error> {
     let vid = store.try_resolve_alias(alias_or_vid)?;
-    let (vids, _, _) = store.export()?;
+    let vids = store.export()?.vids;
 
     let local = vids
         .iter()

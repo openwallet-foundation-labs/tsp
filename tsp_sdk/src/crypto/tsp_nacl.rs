@@ -2,7 +2,7 @@ use crate::{
     cesr::{CryptoType, DecodedPayload, Envelope},
     definitions::{Payload, PrivateVid, VerifiedVid},
 };
-use crypto_box::{PublicKey, SecretKey};
+use crypto_box::PublicKey;
 
 use super::{CryptoError, MessageContents, ParallelSignatureInfo};
 use super::{
@@ -138,8 +138,7 @@ pub(crate) fn open<'a>(
     envelope: Envelope<&[u8]>,
     ciphertext: &'a mut [u8],
 ) -> Result<(MessageContents<'a>, Option<ParallelSignatureInfo<'a>>), CryptoError> {
-    let receiver_secret_key = SecretKey::from_slice(receiver.decryption_key().as_slice())?;
-    let plaintext = receiver_secret_key.unseal(ciphertext)?;
+    let plaintext = unseal(receiver, ciphertext)?;
 
     // the sealed box decrypts into a fresh buffer; copy back into the message
     // buffer so the payload can borrow from it
@@ -179,6 +178,38 @@ pub(crate) fn open<'a>(
     ))
 }
 
+/// libsodium's `crypto_box_seal_open` with the Diffie-Hellman behind the boundary: the
+/// ephemeral public key leads the ciphertext; the nonce is BLAKE2b-24 of it and the
+/// receiver's public key; the box key is HSalsa20 of the shared secret; then
+/// XSalsa20-Poly1305. What `crypto_box::SecretKey::unseal` does, minus holding the key.
+fn unseal(receiver: &dyn PrivateVid, ciphertext: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    use crypto_secretbox::{KeyInit, aead::Aead};
+
+    const KEY_SIZE: usize = 32;
+    if ciphertext.len() <= KEY_SIZE {
+        return Err(crypto_box::aead::Error.into());
+    }
+    let (ephemeral_pk, boxed) = ciphertext.split_at(KEY_SIZE);
+
+    let shared = receiver.key_agreement(ephemeral_pk)?;
+    let key = salsa20::hsalsa::<salsa20::cipher::consts::U10>(
+        salsa20::cipher::generic_array::GenericArray::from_slice(&shared),
+        &salsa20::cipher::generic_array::GenericArray::default(),
+    );
+
+    let nonce = {
+        use blake2::{Blake2b, Digest};
+        let mut h = Blake2b::<blake2::digest::consts::U24>::new();
+        h.update(ephemeral_pk);
+        h.update(receiver.encryption_key().as_ref());
+        h.finalize()
+    };
+
+    let secretbox = crypto_secretbox::XSalsa20Poly1305::new_from_slice(&key)
+        .map_err(|_| crypto_box::aead::Error)?;
+    Ok(secretbox.decrypt(crypto_secretbox::Nonce::from_slice(&nonce), boxed)?)
+}
+
 #[cfg(test)]
 mod tests {
     use crypto_box::SecretKey;
@@ -205,6 +236,23 @@ mod tests {
         );
 
         let plaintext = secret_key.unseal(&sealed).unwrap();
+        assert_eq!(plaintext, b"TSP sealed box interop check");
+
+        // and the same box opened behind the boundary: the key in a software secure area,
+        // only the Diffie-Hellman asked of it
+        let vid = crate::OwnedVid::from_parts(
+            crate::vid::Vid::test_vid(
+                "did:test:receiver",
+                crate::definitions::VidSignatureKeyType::Ed25519,
+                vec![0; 32].into(),
+                crate::definitions::VidEncryptionKeyType::X25519,
+                secret_key.public_key().to_bytes().to_vec().into(),
+            ),
+            vec![0; 32].into(),
+            secret_key.to_bytes().to_vec().into(),
+        )
+        .unwrap();
+        let plaintext = super::unseal(&vid, &sealed).unwrap();
         assert_eq!(plaintext, b"TSP sealed box interop check");
     }
 }

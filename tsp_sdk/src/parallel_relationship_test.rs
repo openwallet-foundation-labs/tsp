@@ -239,8 +239,8 @@ async fn test_parallel_relationship_state_persists_after_import_and_reopen() {
     );
 
     let imported_alice = create_async_test_store();
-    let (vids, aliases, keys) = alice_db.export().unwrap();
-    imported_alice.import(vids, aliases, keys).unwrap();
+    let state = alice_db.export().unwrap();
+    imported_alice.import(state).unwrap();
 
     assert_bidirectional_relationship(&imported_alice, alice.identifier(), bob.identifier());
     assert_bidirectional_relationship(

@@ -54,13 +54,13 @@ impl Store {
         wait_for(async {
             match AskarSecureStorage::open(wallet_url, wallet_password).await {
                 Ok(vault) => {
-                    let (vids, aliases, keys) = vault.read().await.map_err(py_exception)?;
+                    let state = vault.read().await.map_err(py_exception)?;
 
                     let _ = rustls::crypto::CryptoProvider::install_default(
                         rustls::crypto::aws_lc_rs::default_provider(),
                     );
                     let inner = AsyncSecureStore::new();
-                    inner.import(vids, aliases, keys).map_err(py_exception)?;
+                    inner.import(state).map_err(py_exception)?;
 
                     Ok(Self { inner, vault })
                 }
@@ -77,8 +77,8 @@ impl Store {
 
     fn read_wallet(&mut self) -> PyResult<()> {
         wait_for(async {
-            let (vids, aliases, keys) = self.vault.read().await.map_err(py_exception)?;
-            self.inner.import(vids, aliases, keys).map_err(py_exception)
+            let state = self.vault.read().await.map_err(py_exception)?;
+            self.inner.import(state).map_err(py_exception)
         })?
     }
 
@@ -717,7 +717,10 @@ impl OwnedVid {
     #[staticmethod]
     fn new_did_webvh(did_name: String, transport: String) -> PyResult<(Self, String)> {
         wait_for(async {
+            // the update keys are made in a throwaway area: this binding has never kept them
+            let area = std::sync::Arc::new(tsp_sdk::SoftwareSecureArea::new());
             let (private_vid, history, _keys) = tsp_sdk::vid::did::webvh::create_webvh(
+                &area,
                 &did_name,
                 transport.parse().map_err(py_exception)?,
             )

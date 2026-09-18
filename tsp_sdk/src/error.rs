@@ -12,6 +12,8 @@ pub enum Error {
     Transport(#[from] crate::transport::TransportError),
     #[error("Error: {0}")]
     Crypto(#[from] crate::crypto::CryptoError),
+    #[error("the secure area refused: {0}")]
+    SecureArea(#[from] crate::SecureAreaError),
     #[error("Error: {0}")]
     Vid(#[from] crate::vid::VidError),
     #[error("Error: {0}")]

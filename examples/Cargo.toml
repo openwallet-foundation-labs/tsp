@@ -37,11 +37,12 @@ name = "did-server"
 path = "src/did-server.rs"
 
 [dependencies]
-tsp_sdk = { path = "../tsp_sdk", default-features = false, features = ["async", "resolve"] }
+zeroize = { workspace = true }
+tsp_sdk = { path = "../tsp_sdk", default-features = false, features = ["async", "resolve", "gcp-kms"] }
 async-stream = { workspace = true }
 axum = { workspace = true }
 base64ct = { workspace = true }
-clap = { workspace = true }
+clap = { workspace = true, features = ["env"] }
 reqwest = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true }
@@ -55,6 +56,7 @@ rustls = { workspace = true }
 tower-http = { workspace = true }
 urlencoding = "2.1"
 uuid = "1.17.0"
+rpassword = "7"
 humantime = "2.1.0"
 byte-unit = "5.1.6"
 

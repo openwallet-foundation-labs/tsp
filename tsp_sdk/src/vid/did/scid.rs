@@ -209,13 +209,14 @@ pub fn resolve_offline(id: &str, options: VerifyVidOptions) -> Result<crate::Vid
 }
 
 pub async fn create(
+    area: &std::sync::Arc<crate::SoftwareSecureArea>,
     transport: Url,
     context: ScidResolutionContext,
 ) -> Result<ScidCreateResult, VidError> {
     match (&context.source_method, &context.locator) {
         (ScidSourceMethod::Webvh, ScidLocator::Src(src)) => {
             let (source_private_vid, source_history, keys) =
-                webvh::create_webvh(src, transport).await?;
+                webvh::create_webvh(area, src, transport).await?;
             let source_did = source_private_vid.identifier().to_string();
             let presented_id = presented_did_from_source(&source_did)?;
             let source_vid = source_private_vid.vid().clone();
@@ -243,13 +244,9 @@ pub async fn create(
                 }),
             };
 
+            // the update keys are already in `area`, under their names; only the resolution
+            // context travels back to the wallet
             let mut method_state = WalletMethodState::default();
-            method_state
-                .secret_keys
-                .insert(keys.update_kid.clone(), keys.update_key);
-            method_state
-                .secret_keys
-                .insert(keys.next_update_kid.clone(), keys.next_update_key);
             method_state
                 .resolution_contexts
                 .insert(presented_id, ResolutionContext::Scid(resolution_context));
@@ -269,10 +266,12 @@ pub async fn create(
     }
 }
 
+/// The next entry of a did:scid's source DID, signed by the update key in `area` that the
+/// wallet's private state names.
 pub async fn update(
+    area: &dyn crate::SecureArea,
     private_vid: &OwnedVid,
     metadata: ScidVidMetadata,
-    method_state: &WalletMethodState,
 ) -> Result<ScidUpdateResult, VidError> {
     let private_state = metadata
         .private_state
@@ -281,16 +280,15 @@ pub async fn update(
 
     match private_state.source_method {
         ScidSourceMethod::Webvh => {
-            let update_key = select_webvh_update_key(&metadata, method_state, &private_state)?;
+            let update_kid = select_webvh_update_key(area, &metadata, &private_state)?;
             let source_private_vid = OwnedVid::bind(
                 private_state.source_did.clone(),
                 private_vid.endpoint().clone(),
             );
             let update_result = webvh::update(
+                area,
                 crate::vid::vid_to_did_document(source_private_vid.vid()),
-                update_key.first_chunk::<32>().ok_or_else(|| {
-                    VidError::WebVHError("Couldn't get WebVH UpdateKey Secret bytes".to_string())
-                })?,
+                &update_kid,
             )
             .await?;
 
@@ -305,11 +303,8 @@ pub async fn update(
                 }),
             };
 
-            let mut next_method_state = WalletMethodState::default();
-            next_method_state.secret_keys.insert(
-                update_result.next_update_kid.clone(),
-                update_result.next_update_key,
-            );
+            // the new successor is already in `area`
+            let next_method_state = WalletMethodState::default();
 
             Ok(ScidUpdateResult {
                 private_vid: source_private_vid.with_identifier(private_vid.identifier()),
@@ -407,15 +402,19 @@ fn presented_did_from_source(source_did: &str) -> Result<String, VidError> {
     }
 }
 
-fn select_webvh_update_key<'a>(
-    metadata: &'a ScidVidMetadata,
-    method_state: &'a WalletMethodState,
+/// Which key in `area` signs the next entry: the committed successor if the wallet holds it,
+/// else the current update key, provided the server has no pre-rotation the wallet missed.
+fn select_webvh_update_key(
+    area: &dyn crate::SecureArea,
+    metadata: &ScidVidMetadata,
     private_state: &ScidPrivateState,
-) -> Result<&'a Vec<u8>, VidError> {
+) -> Result<String, VidError> {
+    let held = |kid: &str| area.key_type(kid).is_ok();
+
     if let Some(next_update_kid) = private_state.next_update_kid.as_deref()
-        && let Some(secret) = method_state.secret_keys.get(next_update_kid)
+        && held(next_update_kid)
     {
-        return Ok(secret);
+        return Ok(next_update_kid.to_string());
     }
 
     let source_metadata = metadata
@@ -436,18 +435,18 @@ fn select_webvh_update_key<'a>(
     }
 
     if let Some(current_update_kid) = private_state.current_update_kid.as_deref()
-        && let Some(secret) = method_state.secret_keys.get(current_update_kid)
+        && held(current_update_kid)
     {
-        return Ok(secret);
+        return Ok(current_update_kid.to_string());
     }
 
     if let Some(update_kid) = source_metadata
         .as_ref()
         .and_then(|metadata| metadata.update_keys.as_ref())
         .and_then(|update_keys| update_keys.first())
-        && let Some(secret) = method_state.secret_keys.get(update_kid)
+        && held(update_kid)
     {
-        return Ok(secret);
+        return Ok(update_kid.to_string());
     }
 
     Err(VidError::InternalError(

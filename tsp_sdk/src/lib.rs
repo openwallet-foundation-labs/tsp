@@ -101,9 +101,17 @@ pub mod crypto;
 mod bench;
 /// Defines several common data structures, traits and error types that are used throughout the project.
 pub mod definitions;
+
 mod error;
 #[cfg(feature = "resolve")]
 mod http_client;
+/// The boundary around private keys: keys by alias, three private operations, nothing that
+/// returns a key.
+pub mod secure_area;
+
+/// A secure area over Google Cloud KMS for Ed25519 signing.
+#[cfg(feature = "gcp-kms")]
+pub mod gcp_kms;
 mod store;
 
 /// Contains code for handling *verified identifiers* and identities.
@@ -144,7 +152,9 @@ mod parallel_relationship_test;
 pub mod test_utils;
 
 #[cfg(feature = "async")]
-pub use async_store::AsyncSecureStore;
+pub use async_store::{
+    AsyncSecureStore, Contradiction, Resolution, ResolutionOutcome, WatcherCheck,
+};
 
 #[cfg(feature = "async")]
 pub use secure_storage::AskarSecureStorage;
@@ -188,5 +198,8 @@ pub use definitions::{
     VerifiedVid,
 };
 pub use error::Error;
-pub use store::{Aliases, SecureStore, SendOptions, WalletMethodState};
+pub use secure_area::{
+    KeyInfo, KeyType, RemoteKeys, SecureArea, SecureAreaError, SoftwareSecureArea,
+};
+pub use store::{Aliases, SecureStore, SendOptions, WalletMethodState, WalletState};
 pub use vid::{ExportVid, OwnedVid, ResolutionContext, VerifyVidOptions, Vid};

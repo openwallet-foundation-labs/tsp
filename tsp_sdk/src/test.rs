@@ -775,11 +775,11 @@ async fn test_unverified_receiver_in_direct_mode() {
 #[tokio::test]
 async fn test_prepopulated_store_import_preserves_dirty_state() {
     let dirty_store = create_prepopulated_store();
-    let (vids, aliases, keys) = dirty_store.export().unwrap();
-    let local_vid = aliases.get("local-owner").cloned().unwrap();
+    let state = dirty_store.export().unwrap();
+    let local_vid = state.aliases.get("local-owner").cloned().unwrap();
 
     let imported_store = create_async_test_store();
-    imported_store.import(vids, aliases, keys).unwrap();
+    imported_store.import(state).unwrap();
 
     assert_eq!(
         imported_store
@@ -788,10 +788,7 @@ async fn test_prepopulated_store_import_preserves_dirty_state() {
             .as_deref(),
         Some(local_vid.as_str())
     );
-    assert_eq!(
-        imported_store.get_secret_key("test-history-key-1").unwrap(),
-        Some(vec![1, 2, 3, 4])
-    );
+    assert!(imported_store.has_key("test-history-key-1"));
 
     let mut found_unidirectional = 0_usize;
     let mut found_reverse_unidirectional = 0_usize;
@@ -825,25 +822,24 @@ async fn test_prepopulated_store_import_preserves_dirty_state() {
 async fn test_persisted_store_roundtrip_reopens_dirty_wallet() {
     let in_memory_store = create_async_test_store();
     let dirty_store = create_prepopulated_store();
-    let (vids, aliases, keys) = dirty_store.export().unwrap();
-    in_memory_store.import(vids, aliases, keys).unwrap();
+    let state = dirty_store.export().unwrap();
+    in_memory_store.import(state).unwrap();
 
     let fixture = create_persisted_store().await;
     fixture.persist_from(&in_memory_store).await;
     let reopened_store = fixture.reopen_into_store().await;
 
-    let (before_vids, before_aliases, _before_keys) = in_memory_store.export().unwrap();
-    let (after_vids, after_aliases, _after_keys) = reopened_store.export().unwrap();
+    let before = in_memory_store.export().unwrap();
+    let (before_vids, before_aliases) = (before.vids, before.aliases);
+    let after = reopened_store.export().unwrap();
+    let (after_vids, after_aliases) = (after.vids, after.aliases);
 
     assert_eq!(before_vids.len(), after_vids.len());
     assert_eq!(
         before_aliases.get("local-owner"),
         after_aliases.get("local-owner")
     );
-    assert_eq!(
-        reopened_store.get_secret_key("test-history-key-2").unwrap(),
-        Some(vec![5, 6, 7, 8])
-    );
+    assert!(reopened_store.has_key("test-history-key-2"));
 
     let local_vid = reopened_store
         .resolve_alias("local-owner")
@@ -888,9 +884,9 @@ async fn test_resolution_context_export_import_roundtrip() {
         .register_resolution_context(presented_did.to_string(), context.clone())
         .unwrap();
 
-    let (vids, aliases, method_state) = store.export().unwrap();
+    let state = store.export().unwrap();
     let reopened = create_async_test_store();
-    reopened.import(vids, aliases, method_state).unwrap();
+    reopened.import(state).unwrap();
 
     assert!(
         reopened
@@ -948,8 +944,8 @@ async fn test_persisted_store_roundtrip_preserves_resolution_contexts() {
     let storage = AskarSecureStorage::open(fixture.storage_url(), fixture.password())
         .await
         .expect("persisted wallet should reopen");
-    let (_vids, _aliases, method_state) =
-        storage.read().await.expect("persisted wallet should read");
+    let state = storage.read().await.expect("persisted wallet should read");
+    let method_state = state.method_state;
     storage
         .close()
         .await
@@ -1005,23 +1001,17 @@ async fn assert_storage_open_or_read_fails(url: &str, password: &[u8]) {
 #[tokio::test]
 async fn test_dirty_roundtrip_multi_reopen_idempotent() {
     let dirty_store = create_prepopulated_store();
-    let (vids, aliases, keys) = dirty_store.export().unwrap();
+    let state = dirty_store.export().unwrap();
     let initial_store = create_async_test_store();
-    initial_store.import(vids, aliases, keys).unwrap();
+    initial_store.import(state).unwrap();
 
     let fixture = create_persisted_store().await;
     let baseline = export_snapshot(&initial_store);
     let reopened = persist_reopen_cycle(&initial_store, &fixture, 3).await;
 
     assert_eq!(baseline, export_snapshot(&reopened));
-    assert_eq!(
-        reopened.get_secret_key("test-history-key-1").unwrap(),
-        Some(vec![1, 2, 3, 4])
-    );
-    assert_eq!(
-        reopened.get_secret_key("test-history-key-2").unwrap(),
-        Some(vec![5, 6, 7, 8])
-    );
+    assert!(reopened.has_key("test-history-key-1"));
+    assert!(reopened.has_key("test-history-key-2"));
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1154,12 +1144,7 @@ async fn test_high_entropy_dirty_store_multi_reopen_consistency() {
             .as_deref(),
         Some(seed.local_vid.as_str())
     );
-    assert!(
-        reopened
-            .get_secret_key("high-entropy-key-00")
-            .unwrap()
-            .is_some()
-    );
+    assert!(reopened.has_key("high-entropy-key-00"));
 
     let RelationshipStatus::Bidirectional { .. } = reopened
         .get_relation_status_for_vid_pair(&seed.local_vid, &seed.bidirectional_remote_vid)
@@ -1418,4 +1403,71 @@ async fn test_persisted_store_open_with_corrupted_file_fails() {
     corrupt_sqlite_file(fixture.sqlite_path());
 
     assert_storage_open_or_read_fails(fixture.storage_url(), fixture.password()).await;
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[tokio::test]
+async fn a_key_deleted_from_the_secure_area_does_not_come_back_from_storage() {
+    let store = create_async_test_store();
+    let kept = store.create_key(None, crate::KeyType::Ed25519).unwrap();
+    let retired = store.create_key(None, crate::KeyType::Ed25519).unwrap();
+    let fixture = create_persisted_store().await;
+    fixture.persist_from(&store).await;
+    store.delete_key(&retired.alias).unwrap();
+    fixture.persist_from(&store).await;
+
+    let reopened = fixture.reopen_into_store().await;
+    assert!(reopened.has_key(&kept.alias));
+    assert!(
+        !reopened.has_key(&retired.alias),
+        "the retired key came back"
+    );
+}
+
+#[cfg(all(feature = "gcp-kms", not(target_arch = "wasm32")))]
+#[tokio::test]
+async fn a_wallet_whose_signing_keys_live_in_a_kms_reopens_and_signs_once_the_kms_is_attached() {
+    use crate::gcp_kms::{FakeKms, KmsSecureArea};
+    use std::sync::Arc;
+
+    let kms = Arc::new(FakeKms::default());
+    let store = create_async_test_store();
+    store
+        .secure_area()
+        .attach_remote(Arc::new(KmsSecureArea::new(kms.clone())))
+        .unwrap();
+
+    // an identity made in this wallet: its signing key in the KMS, its encryption key here
+    let vid = crate::OwnedVid::new_in(
+        store.secure_area().clone(),
+        "did:peer:test",
+        "tcp://127.0.0.1:1".parse().unwrap(),
+        crate::definitions::VidSignatureKeyType::Ed25519,
+        crate::definitions::VidEncryptionKeyType::X25519,
+    )
+    .unwrap();
+    store.add_private_vid(vid.clone(), None).unwrap();
+    let signed = store.sign_raw("did:peer:test", b"hello").unwrap();
+    assert_eq!(kms.signatures.lock().unwrap().len(), 1, "signed in the KMS");
+    let update = store.create_key(None, crate::KeyType::Ed25519).unwrap();
+    assert_eq!(store.secure_area().remote_handles().len(), 2);
+
+    let fixture = create_persisted_store().await;
+    fixture.persist_from(&store).await;
+    let reopened = fixture.reopen_into_store().await;
+
+    // known by handle, locked until the KMS is attached, then signing as before
+    assert!(reopened.has_private_vid("did:peer:test").unwrap());
+    assert!(matches!(
+        reopened.sign_raw("did:peer:test", b"hello"),
+        Err(crate::Error::Crypto(_))
+    ));
+    reopened
+        .secure_area()
+        .attach_remote(Arc::new(KmsSecureArea::new(kms.clone())))
+        .unwrap();
+    let again = reopened.sign_raw("did:peer:test", b"hello").unwrap();
+    assert_eq!(signed, again, "the same key, in the KMS, signs the same");
+    assert!(reopened.has_key(&update.alias));
+    assert!(reopened.sign_with_key(&update.alias, b"x").is_ok());
 }
