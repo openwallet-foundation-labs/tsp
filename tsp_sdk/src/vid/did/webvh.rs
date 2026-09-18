@@ -168,13 +168,14 @@ pub async fn create_webvh_with(
         &signer,
     )?;
 
-    vid.vid.id = genesis
+    let id = genesis
         .pointer("/state/id")
         .and_then(Value::as_str)
         .ok_or(VidError::InternalError(
             "Couldn't get DID ID from WebVH Log Entry".to_string(),
         ))?
         .to_string();
+    vid.set_identifier(id)?;
 
     Ok((
         vid,

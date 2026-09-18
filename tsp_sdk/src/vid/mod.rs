@@ -503,20 +503,50 @@ impl OwnedVid {
         })
     }
 
-    /// The same VID with its keys copied into `area`, and this handle pointing there.
+    /// The same VID with its keys copied into `area` under the aliases its identifier gives
+    /// them, and this handle pointing there. The aliases may differ from this handle's: a
+    /// did:webvh is created under a placeholder identifier, a did:scid is presented under
+    /// another identifier than its source.
     pub(crate) fn adopted_by(
         &self,
         area: Arc<SoftwareSecureArea>,
     ) -> Result<Self, crate::SecureAreaError> {
-        area.adopt(&self.keys.area)?;
+        let (sig_alias, enc_alias) = Self::key_aliases(&self.vid.id);
+        area.adopt_key(&self.keys.area, &self.keys.sig_alias, &sig_alias)?;
+        area.adopt_key(&self.keys.area, &self.keys.enc_alias, &enc_alias)?;
         Ok(Self {
             vid: self.vid.clone(),
             keys: PrivateKeys {
                 area,
-                sig_alias: self.keys.sig_alias.clone(),
-                enc_alias: self.keys.enc_alias.clone(),
+                sig_alias,
+                enc_alias,
             },
         })
+    }
+
+    /// Give the VID its final identifier, re-aliasing its keys to it: a did:webvh is built
+    /// under a placeholder until its SCID is known.
+    pub(crate) fn set_identifier(&mut self, id: String) -> Result<(), crate::SecureAreaError> {
+        let (sig_alias, enc_alias) = Self::key_aliases(&id);
+        let area = &self.keys.area;
+        area.adopt_key(area, &self.keys.sig_alias, &sig_alias)?;
+        area.adopt_key(area, &self.keys.enc_alias, &enc_alias)?;
+        area.delete(&self.keys.sig_alias);
+        area.delete(&self.keys.enc_alias);
+        self.keys.sig_alias = sig_alias;
+        self.keys.enc_alias = enc_alias;
+        self.vid.id = id;
+        Ok(())
+    }
+
+    /// The same identifier and keys with another transport.
+    pub fn with_transport(&self, transport: Url) -> Self {
+        let mut vid = self.vid.clone();
+        vid.transport = transport;
+        Self {
+            vid,
+            keys: self.keys.clone(),
+        }
     }
 
     /// The same keys under another identifier: the aliases stay, the area is shared.

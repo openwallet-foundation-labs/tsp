@@ -1404,3 +1404,22 @@ async fn test_persisted_store_open_with_corrupted_file_fails() {
 
     assert_storage_open_or_read_fails(fixture.storage_url(), fixture.password()).await;
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+#[tokio::test]
+async fn a_key_deleted_from_the_secure_area_does_not_come_back_from_storage() {
+    let store = create_async_test_store();
+    let kept = store.create_key(None, crate::KeyType::Ed25519).unwrap();
+    let retired = store.create_key(None, crate::KeyType::Ed25519).unwrap();
+    let fixture = create_persisted_store().await;
+    fixture.persist_from(&store).await;
+    store.delete_key(&retired.alias).unwrap();
+    fixture.persist_from(&store).await;
+
+    let reopened = fixture.reopen_into_store().await;
+    assert!(reopened.has_key(&kept.alias));
+    assert!(
+        !reopened.has_key(&retired.alias),
+        "the retired key came back"
+    );
+}

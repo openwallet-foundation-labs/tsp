@@ -273,7 +273,9 @@ impl SecureStorage for AskarSecureStorage {
             upsert(&mut conn, "vid", &id, data.as_bytes(), None).await?;
         }
 
-        // every other key of the secure area: a did:webvh update key, an application's key
+        // every other key of the secure area: a did:webvh update key, an application's key;
+        // and a key the area no longer holds, a retired update key, leaves the storage too
+        let mut kept = std::collections::HashSet::new();
         for (alias, key_type, material) in keys.all_material() {
             if vid_key_aliases.contains(&alias) {
                 continue;
@@ -283,6 +285,18 @@ impl SecureStorage for AskarSecureStorage {
                 key_type.as_str().to_string(),
             )];
             upsert(&mut conn, "secure_area_key", &alias, &material, Some(&tags)).await?;
+            kept.insert(alias);
+        }
+        let stored: Vec<String> = conn
+            .fetch_all(Some("secure_area_key"), None, None, None, false, false)
+            .await?
+            .iter()
+            .map(|e| e.name.clone())
+            .collect();
+        for alias in stored {
+            if !kept.contains(&alias) {
+                conn.remove("secure_area_key", &alias).await?;
+            }
         }
         // the records that carried method keys as a blob before the secure area
         for (category, name) in [

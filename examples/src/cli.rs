@@ -180,10 +180,26 @@ enum Commands {
         )]
         prefix: String,
     },
-    #[command(about = "Update the DID:WEBVH. Currently, only a rotation of TSP keys is supported")]
+    #[command(
+        about = "Update the DID:WEBVH: a new transport, new TSP keys, or both, as a new log entry"
+    )]
     Update {
         #[arg(help = "VID or Alias to update")]
         vid: String,
+        #[arg(
+            long,
+            help = "webvh only: the DID lives on a server that admits through a witness — get the entry witnessed, publish with POST /publish, notify the watchers"
+        )]
+        witnessed: bool,
+        #[arg(long, help = "webvh, witnessed only: a new transport URL")]
+        transport: Option<Url>,
+        #[arg(long, help = "webvh, witnessed only: new TSP keys")]
+        rotate_keys: bool,
+        #[arg(
+            long,
+            help = "webvh, witnessed only: a watcher URL to notify besides those the DID names (repeatable)"
+        )]
+        watcher: Vec<String>,
     },
     #[command(
         arg_required_else_help = true,
@@ -385,129 +401,33 @@ async fn create_witnessed_webvh(
     prefix: &str,
     client: &reqwest::Client,
 ) -> Result<(OwnedVid, tsp_sdk::vid::did::webvh::WebvhKeys), Error> {
-    let segment = prefix.trim_matches('/');
-    if segment.is_empty() || segment.contains('/') {
-        return Err(Error::Vid(VidError::InvalidVid(format!(
-            "prefix must be one path segment like /a/, got {prefix:?}"
-        ))));
-    }
-    let prefix = format!("/{segment}/");
-    let bad = |m: String| Error::Vid(VidError::InvalidVid(m));
-
-    // the directory: the witnesses registered for the prefix
-    let directory: serde_json::Value = client
-        .get(did_server_url(did_server, ".well-known/witnesses.json"))
-        .send()
-        .await
-        .map_err(|e| bad(format!("cannot read the witness directory: {e}")))?
-        .error_for_status()
-        .map_err(|e| bad(format!("witness directory: {e}")))?
-        .json()
-        .await
-        .map_err(|e| bad(format!("witness directory is not JSON: {e}")))?;
-    // every active witness key for the prefix, threshold one: a witness runs several keys so
-    // that the loss of one strands nobody who named them all
-    let rows: Vec<&serde_json::Value> = directory["witnesses"]
-        .as_array()
-        .map(|rows| {
-            rows.iter()
-                .filter(|w| {
-                    w["retired"].is_null()
-                        && w["prefixes"]
-                            .as_array()
-                            .is_some_and(|p| p.iter().any(|x| x == prefix.as_str()))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    let witness_ids: Vec<String> = rows
-        .iter()
-        .filter_map(|w| w["id"].as_str().map(str::to_string))
-        .collect();
-    let contact = rows
-        .first()
-        .and_then(|w| w["contact"].as_str())
-        .unwrap_or_default()
-        .to_string();
-    if witness_ids.is_empty() || contact.is_empty() {
-        return Err(bad(format!("the server registers no witness for {prefix}")));
-    }
-
-    // a random name under the prefix; the entry, witnessed, portable, with watchers
+    // a random name under the prefix; everything else is flow 1 in the SDK
     let name: String = uuid::Uuid::new_v4().as_bytes()[..8]
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
-    let (private_vid, entry, keys) = tsp_sdk::vid::did::webvh::create_webvh_with(
+    let hosting = tsp_sdk::vid::did::hosting::Hosting::new(client.clone(), did_server);
+    let published = tsp_sdk::vid::did::hosting::create_witnessed(
         vid_wallet.secure_area().as_ref(),
-        &format!("{did_server}/{segment}/{name}"),
+        &hosting,
+        did_server,
+        prefix,
+        &name,
         transport,
-        tsp_sdk::vid::did::webvh::WebvhOptions {
-            witnesses: witness_ids,
-            watchers: watchers.to_vec(),
-            portable: true,
-        },
+        watchers,
     )
     .await?;
-
-    // the witness
-    let response = client
-        .post(&contact)
-        .json(&serde_json::json!({
-            "type": "webvh.witness.apply",
-            "entry": entry,
-        }))
-        .send()
-        .await
-        .map_err(|e| bad(format!("witness unreachable: {e}")))?;
-    let status = response.status();
-    let mut proof: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| bad(format!("witness answer is not JSON: {e}")))?;
-    if !status.is_success() || proof["type"] != "webvh.witness.proof" {
-        return Err(bad(format!(
-            "witness refused: {} ({status})",
-            proof["reason"].as_str().unwrap_or("no reason")
-        )));
-    }
-    proof.as_object_mut().map(|p| p.remove("type"));
-    info!("witnessed by {}", contact);
-
-    // the server
-    let response = client
-        .post(did_server_url(did_server, "publish"))
-        .json(&serde_json::json!({ "entry": entry, "witness": proof }))
-        .send()
-        .await
-        .map_err(|e| bad(format!("DID server unreachable: {e}")))?;
-    let status = response.status();
-    if !status.is_success() {
-        let body: serde_json::Value = response.json().await.unwrap_or_default();
-        return Err(bad(format!(
-            "DID server refused: {} ({status})",
-            body["reason"].as_str().unwrap_or("no reason")
-        )));
-    }
     info!(
-        "published {}",
-        tsp_sdk::vid::did::get_resolve_url(private_vid.vid().identifier())?
+        "witnessed and published {}",
+        tsp_sdk::vid::did::get_resolve_url(published.private_vid.identifier())?
     );
-
-    // the watchers
-    for w in watchers {
-        let url = format!(
-            "{}/log?did={}",
-            w.trim_end_matches('/'),
-            private_vid.identifier()
-        );
-        match client.post(&url).send().await {
-            Ok(r) if r.status().is_success() => info!("notified watcher {w}"),
-            Ok(r) => warn!("watcher {w} answered {}", r.status()),
-            Err(e) => warn!("watcher {w} unreachable: {e}"),
+    for (w, outcome) in &published.watchers {
+        match outcome {
+            Ok(result) => info!("notified watcher {w}: {result}"),
+            Err(e) => warn!("watcher {w}: {e}"),
         }
     }
-    Ok((private_vid, keys))
+    Ok((published.private_vid, published.keys))
 }
 
 fn did_server_url(did_server: &str, path: &str) -> String {
@@ -1140,7 +1060,13 @@ async fn run() -> Result<(), Error> {
             vid_wallet.add_private_vid(private_vid.clone(), metadata)?;
             info!("created VID {}", private_vid.identifier());
         }
-        Commands::Update { vid } => {
+        Commands::Update {
+            vid,
+            witnessed,
+            transport,
+            rotate_keys,
+            watcher,
+        } => {
             let vid_alias = vid_wallet.try_resolve_alias(&vid)?;
             info!("Updating VID {vid_alias}");
             let exported = vid_wallet
@@ -1151,7 +1077,54 @@ async fn run() -> Result<(), Error> {
                 .ok_or_else(|| Error::MissingVid(format!("Cannot find VID {vid_alias}")))?;
             let private_vid = vid_wallet.get_private_vid(&vid_alias)?;
 
-            if let Some(metadata) = exported.metadata.clone()
+            if witnessed {
+                // flow 2: the key the previous entry committed signs; the rest is in the SDK
+                let next_kid_alias = format!("__next_update_kid:{vid_alias}");
+                let update_kid = vid_wallet
+                    .resolve_alias(&next_kid_alias)?
+                    .filter(|kid| vid_wallet.has_key(kid))
+                    .ok_or_else(|| {
+                        Error::MissingPrivateVid(
+                            "the wallet holds no committed update key for this DID".to_string(),
+                        )
+                    })?;
+                let hosting = tsp_sdk::vid::did::hosting::Hosting::new(client.clone(), &did_server);
+                let published = tsp_sdk::vid::did::hosting::update_witnessed(
+                    vid_wallet.secure_area().as_ref(),
+                    &hosting,
+                    &private_vid,
+                    &update_kid,
+                    tsp_sdk::vid::did::hosting::Change {
+                        transport,
+                        rotate_keys,
+                    },
+                    &watcher,
+                )
+                .await?;
+                info!(
+                    "published {} version {}",
+                    published.private_vid.identifier(),
+                    published.entry["versionId"].as_str().unwrap_or("?")
+                );
+                for (w, outcome) in &published.watchers {
+                    match outcome {
+                        Ok(result) => info!("notified watcher {w}: {result}"),
+                        Err(e) => warn!("watcher {w}: {e}"),
+                    }
+                }
+
+                // step 7: the key that signed this entry retires from signing; the new
+                // successor is remembered; the VID's keys are replaced if rotated
+                let (_, metadata) = verify_vid(published.private_vid.identifier())
+                    .await
+                    .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
+                vid_wallet.add_private_vid(published.private_vid, metadata)?;
+                vid_wallet.set_alias(next_kid_alias, published.keys.next_update_kid.clone())?;
+                if let Some(retired) = &published.retired_update_kid {
+                    vid_wallet.delete_key(retired)?;
+                }
+                info!("VID updated; next update key committed");
+            } else if let Some(metadata) = exported.metadata.clone()
                 && let Ok(scid_metadata) = serde_json::from_value::<ScidVidMetadata>(metadata)
             {
                 let update_result = tsp_sdk::vid::did::scid::update(

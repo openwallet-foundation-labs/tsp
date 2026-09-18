@@ -215,8 +215,23 @@ impl SoftwareSecureArea {
         }
     }
 
+    /// Copy one key of `other` into this area under `alias`: how a store takes on the keys
+    /// of an [`crate::OwnedVid`] it is given, under the aliases its identifier gives them.
+    pub(crate) fn adopt_key(
+        &self,
+        other: &SoftwareSecureArea,
+        from_alias: &str,
+        alias: &str,
+    ) -> Result<(), SecureAreaError> {
+        let (key_type, material, public) = other.with_key(from_alias, |k| {
+            Ok((k.key_type, k.material.clone(), k.public.clone()))
+        })?;
+        self.insert(alias, key_type, material, public)?;
+        Ok(())
+    }
+
     /// Copy every key of `other` into this area, under the same aliases: how a store takes
-    /// on the keys of an [`crate::OwnedVid`] it is given, whose own area keeps working.
+    /// on the keys of a wallet state read from storage.
     pub(crate) fn adopt(&self, other: &SoftwareSecureArea) -> Result<(), SecureAreaError> {
         let taken: Vec<(String, KeyType, Secret, Option<Vec<u8>>)> = other
             .keys
