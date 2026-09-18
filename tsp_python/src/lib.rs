@@ -718,7 +718,7 @@ impl OwnedVid {
     fn new_did_webvh(did_name: String, transport: String) -> PyResult<(Self, String)> {
         wait_for(async {
             // the update keys are made in a throwaway area: this binding has never kept them
-            let area = tsp_sdk::SoftwareSecureArea::new();
+            let area = std::sync::Arc::new(tsp_sdk::SoftwareSecureArea::new());
             let (private_vid, history, _keys) = tsp_sdk::vid::did::webvh::create_webvh(
                 &area,
                 &did_name,
