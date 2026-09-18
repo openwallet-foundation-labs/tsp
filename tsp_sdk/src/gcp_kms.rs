@@ -285,9 +285,15 @@ const KMS: &str = "https://cloudkms.googleapis.com/v1";
 
 impl GcpKms {
     pub fn new(ring: &str, token: impl TokenSource + 'static) -> Self {
-        // an error status is read like any answer, so the KMS's reason reaches the caller
+        // an error status is read like any answer, so the KMS's reason reaches the caller;
+        // TLS roots come from the OS trust store, as the SDK's transports do
         let config = ureq::Agent::config_builder()
             .http_status_as_error(false)
+            .tls_config(
+                ureq::tls::TlsConfig::builder()
+                    .root_certs(ureq::tls::RootCerts::PlatformVerifier)
+                    .build(),
+            )
             .build();
         Self {
             ring: ring.trim_matches('/').to_string(),
