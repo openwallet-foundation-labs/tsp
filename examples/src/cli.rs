@@ -365,12 +365,7 @@ fn store_webvh_keys(
     private_vid: &OwnedVid,
     keys: tsp_sdk::vid::did::webvh::WebvhKeys,
 ) {
-    vid_wallet
-        .add_secret_key(keys.update_kid.clone(), keys.update_key)
-        .expect("Cannot store current update key");
-    vid_wallet
-        .add_secret_key(keys.next_update_kid.clone(), keys.next_update_key)
-        .expect("Cannot store next update key");
+    // the keys themselves are already in the wallet's secure area, under their names
     vid_wallet
         .set_alias(
             format!("__next_update_kid:{}", private_vid.identifier()),
@@ -383,6 +378,7 @@ fn store_webvh_keys(
 /// server's witness directory, build the first entry under a random name naming that
 /// witness's keys, have it witnessed, publish entry and proof together, notify watchers.
 async fn create_witnessed_webvh(
+    vid_wallet: &AsyncSecureStore,
     did_server: &str,
     transport: Url,
     watchers: &[String],
@@ -443,6 +439,7 @@ async fn create_witnessed_webvh(
         .map(|b| format!("{b:02x}"))
         .collect();
     let (private_vid, entry, keys) = tsp_sdk::vid::did::webvh::create_webvh_with(
+        vid_wallet.secure_area().as_ref(),
         &format!("{did_server}/{segment}/{name}"),
         transport,
         tsp_sdk::vid::did::webvh::WebvhOptions {
@@ -685,7 +682,12 @@ fn merge_method_state(
     method_state: tsp_sdk::WalletMethodState,
 ) -> Result<(), Error> {
     for (kid, secret) in method_state.secret_keys {
-        vid_wallet.add_secret_key(kid, secret)?;
+        let key_type = method_state
+            .secret_key_types
+            .get(&kid)
+            .copied()
+            .unwrap_or(tsp_sdk::KeyType::Ed25519);
+        vid_wallet.import_key(&kid, key_type, zeroize::Zeroizing::new(secret))?;
     }
 
     for (did, context) in method_state.resolution_contexts {
@@ -995,9 +997,15 @@ async fn run() -> Result<(), Error> {
                     (private_vid, None)
                 }
                 DidType::Webvh if witnessed => {
-                    let (private_vid, keys) =
-                        create_witnessed_webvh(&did_server, transport, &watcher, &prefix, &client)
-                            .await?;
+                    let (private_vid, keys) = create_witnessed_webvh(
+                        &vid_wallet,
+                        &did_server,
+                        transport,
+                        &watcher,
+                        &prefix,
+                        &client,
+                    )
+                    .await?;
                     store_webvh_keys(&vid_wallet, &private_vid, keys);
                     if let Some(alias) = alias {
                         vid_wallet.set_alias(alias, private_vid.identifier().to_string())?;
@@ -1006,18 +1014,13 @@ async fn run() -> Result<(), Error> {
                 }
                 DidType::Webvh => {
                     let (private_vid, history, keys) = tsp_sdk::vid::did::webvh::create_webvh(
+                        vid_wallet.secure_area().as_ref(),
                         &format!("{did_server}/endpoint/{username}"),
                         transport,
                     )
                     .await?;
 
-                    // Store both current and next update keys for precommit support
-                    vid_wallet
-                        .add_secret_key(keys.update_kid.clone(), keys.update_key)
-                        .expect("Cannot store current update key");
-                    vid_wallet
-                        .add_secret_key(keys.next_update_kid.clone(), keys.next_update_key)
-                        .expect("Cannot store next update key");
+                    // both update keys are in the wallet's secure area; remember the successor
                     vid_wallet
                         .set_alias(
                             format!("__next_update_kid:{}", private_vid.identifier()),
@@ -1085,8 +1088,12 @@ async fn run() -> Result<(), Error> {
                     let default_src = format!("{did_server}/endpoint/{username}");
                     let context =
                         build_create_scid_context(source_method, src, peer_src, Some(default_src))?;
-                    let result =
-                        tsp_sdk::vid::did::scid::create(transport, context.clone()).await?;
+                    let result = tsp_sdk::vid::did::scid::create(
+                        vid_wallet.secure_area().as_ref(),
+                        transport,
+                        context.clone(),
+                    )
+                    .await?;
 
                     merge_method_state(&vid_wallet, result.method_state)?;
                     publish_scid_source(
@@ -1142,7 +1149,6 @@ async fn run() -> Result<(), Error> {
             info!("created VID {}", private_vid.identifier());
         }
         Commands::Update { vid } => {
-            let (_, _, method_state) = vid_wallet.export()?;
             let vid_alias = vid_wallet.try_resolve_alias(&vid)?;
             info!("Updating VID {vid_alias}");
             let exported = vid_wallet
@@ -1156,10 +1162,13 @@ async fn run() -> Result<(), Error> {
             if let Some(metadata) = exported.metadata.clone()
                 && let Ok(scid_metadata) = serde_json::from_value::<ScidVidMetadata>(metadata)
             {
-                let update_result =
-                    tsp_sdk::vid::did::scid::update(&private_vid, scid_metadata, &method_state)
-                        .await
-                        .map_err(map_scid_update_error)?;
+                let update_result = tsp_sdk::vid::did::scid::update(
+                    vid_wallet.secure_area().as_ref(),
+                    &private_vid,
+                    scid_metadata,
+                )
+                .await
+                .map_err(map_scid_update_error)?;
 
                 merge_method_state(&vid_wallet, update_result.method_state)?;
                 publish_scid_source(
@@ -1201,14 +1210,15 @@ async fn run() -> Result<(), Error> {
                     .expect("metadata should be of type 'WebvhMetadata'");
 
                 let next_kid_alias = format!("__next_update_kid:{}", resolved_vid.identifier());
-                let update_key =
+                let update_kid =
                     if let Ok(Some(next_kid)) = vid_wallet.resolve_alias(&next_kid_alias) {
                         info!("Using pre-committed update key for rotation");
-                        method_state.secret_keys.get(&next_kid).ok_or_else(|| {
-                            Error::MissingPrivateVid(
+                        if !vid_wallet.has_key(&next_kid) {
+                            return Err(Error::MissingPrivateVid(
                                 "Pre-committed key not found in wallet".to_string(),
-                            )
-                        })?
+                            ));
+                        }
+                        next_kid
                     } else {
                         if metadata.next_key_hashes.is_some() {
                             error!("Server has nextKeyHashes but wallet has no precommit key");
@@ -1228,32 +1238,22 @@ async fn run() -> Result<(), Error> {
                         };
 
                         info!("Using current update key (migrating legacy DID to precommit)");
-                        method_state
-                            .secret_keys
-                            .get(&update_keys[0])
-                            .ok_or_else(|| {
-                                Error::MissingPrivateVid(
-                                    "Cannot find update keys to update the DID".to_string(),
-                                )
-                            })?
+                        if !vid_wallet.has_key(&update_keys[0]) {
+                            return Err(Error::MissingPrivateVid(
+                                "Cannot find update keys to update the DID".to_string(),
+                            ));
+                        }
+                        update_keys[0].clone()
                     };
 
                 let update_result = tsp_sdk::vid::did::webvh::update(
+                    vid_wallet.secure_area().as_ref(),
                     vid_to_did_document(new_vid.vid()),
-                    update_key.first_chunk::<32>().ok_or_else(|| {
-                        Error::Vid(VidError::WebVHError(
-                            "Couldn't get WebVH UpdateKey Secret bytes".to_string(),
-                        ))
-                    })?,
+                    &update_kid,
                 )
                 .await?;
 
-                vid_wallet
-                    .add_secret_key(
-                        update_result.next_update_kid.clone(),
-                        update_result.next_update_key,
-                    )
-                    .expect("Cannot store new next update key");
+                // the new successor is in the wallet's secure area; remember its name
                 vid_wallet
                     .set_alias(next_kid_alias, update_result.next_update_kid)
                     .expect("Cannot update next update key reference");

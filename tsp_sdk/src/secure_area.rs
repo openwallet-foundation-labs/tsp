@@ -22,6 +22,7 @@ use zeroize::Zeroizing;
 use crate::definitions::{VidEncryptionKeyType, VidSignatureKeyType};
 
 /// What a key is for, and therefore which of the three operations it answers.
+#[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KeyType {
     Ed25519,
@@ -68,8 +69,35 @@ pub enum SecureAreaError {
 /// a secure area. Zeroised when dropped.
 pub type Secret = Zeroizing<Vec<u8>>;
 
+/// A key as the secure area names it: its alias and its public half.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeyInfo {
+    pub alias: String,
+    pub public: Vec<u8>,
+}
+
+/// The multikey of an Ed25519 public key: `z` + base58btc(`ed 01` ‖ key). The name a
+/// did:webvh update key goes by, and the alias the software area gives such a key when the
+/// caller names none.
+pub fn ed25519_multikey(public: &[u8]) -> String {
+    let mut bytes = vec![0xed, 0x01];
+    bytes.extend_from_slice(public);
+    format!("z{}", bs58::encode(bytes).into_string())
+}
+
 /// Keys by alias, and the private operations on them. Nothing returns a key.
 pub trait SecureArea: Send + Sync {
+    /// Make a key of `key_type`. With no alias the area names it: an Ed25519 key by its
+    /// multikey, any other by a random name.
+    fn create_key(
+        &self,
+        alias: Option<&str>,
+        key_type: KeyType,
+    ) -> Result<KeyInfo, SecureAreaError>;
+
+    /// Destroy a key. A key that is not there is not an error.
+    fn delete_key(&self, alias: &str) -> Result<(), SecureAreaError>;
+
     /// The public half of the key, in the encoding its type uses on the wire.
     fn public_key(&self, alias: &str) -> Result<Vec<u8>, SecureAreaError>;
 
@@ -89,7 +117,8 @@ pub trait SecureArea: Send + Sync {
 struct StoredKey {
     key_type: KeyType,
     material: Secret,
-    public: Vec<u8>,
+    /// `None` when the material is not a key of its type: kept as it came, refused at use.
+    public: Option<Vec<u8>>,
 }
 
 /// Keys in this process's memory. The import vehicle for keys that arrive as bytes (a VID
@@ -127,7 +156,21 @@ impl SoftwareSecureArea {
     /// Generate a key of `key_type` under `alias`; returns its public half.
     pub fn generate(&self, alias: &str, key_type: KeyType) -> Result<Vec<u8>, SecureAreaError> {
         let (material, public) = generate(key_type);
-        self.insert(alias, key_type, material, public)
+        self.insert(alias, key_type, material, Some(public.clone()))?;
+        Ok(public)
+    }
+
+    /// Every key's type and material, for the wallet that persists this software area and
+    /// for nothing else.
+    pub(crate) fn all_material(&self) -> Vec<(String, KeyType, Secret)> {
+        self.keys
+            .read()
+            .map(|k| {
+                k.iter()
+                    .map(|(a, key)| (a.clone(), key.key_type, key.material.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Bring key material in from outside: a 32-byte seed for Ed25519, X25519 and the
@@ -137,9 +180,10 @@ impl SoftwareSecureArea {
         alias: &str,
         key_type: KeyType,
         material: Secret,
-    ) -> Result<Vec<u8>, SecureAreaError> {
-        let public = public_of(key_type, &material)
-            .ok_or_else(|| SecureAreaError::Malformed(alias.into()))?;
+    ) -> Result<Option<Vec<u8>>, SecureAreaError> {
+        // material that is not a key of its type is kept as it came and refused when used,
+        // so a wallet with one bad key still opens
+        let public = public_of(key_type, &material);
         self.insert(alias, key_type, material, public)
     }
 
@@ -149,13 +193,25 @@ impl SoftwareSecureArea {
         }
     }
 
+    /// The alias the area gives a key nobody named.
+    fn default_alias(key_type: KeyType, public: &[u8]) -> String {
+        match key_type {
+            KeyType::Ed25519 => ed25519_multikey(public),
+            _ => {
+                let mut r = [0u8; 16];
+                rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut r);
+                format!("key-{}", bs58::encode(r).into_string())
+            }
+        }
+    }
+
     fn insert(
         &self,
         alias: &str,
         key_type: KeyType,
         material: Secret,
-        public: Vec<u8>,
-    ) -> Result<Vec<u8>, SecureAreaError> {
+        public: Option<Vec<u8>>,
+    ) -> Result<Option<Vec<u8>>, SecureAreaError> {
         let mut keys = self
             .keys
             .write()
@@ -198,8 +254,30 @@ impl SoftwareSecureArea {
 }
 
 impl SecureArea for SoftwareSecureArea {
+    fn create_key(
+        &self,
+        alias: Option<&str>,
+        key_type: KeyType,
+    ) -> Result<KeyInfo, SecureAreaError> {
+        let (material, public) = generate(key_type);
+        let alias = alias
+            .map(str::to_string)
+            .unwrap_or_else(|| Self::default_alias(key_type, &public));
+        self.insert(&alias, key_type, material, Some(public.clone()))?;
+        Ok(KeyInfo { alias, public })
+    }
+
+    fn delete_key(&self, alias: &str) -> Result<(), SecureAreaError> {
+        self.delete(alias);
+        Ok(())
+    }
+
     fn public_key(&self, alias: &str) -> Result<Vec<u8>, SecureAreaError> {
-        self.with_key(alias, |k| Ok(k.public.clone()))
+        self.with_key(alias, |k| {
+            k.public
+                .clone()
+                .ok_or_else(|| SecureAreaError::Malformed(alias.into()))
+        })
     }
 
     fn key_type(&self, alias: &str) -> Result<KeyType, SecureAreaError> {
@@ -260,6 +338,16 @@ impl SecureArea for SoftwareSecureArea {
 }
 
 impl<T: SecureArea + ?Sized> SecureArea for Arc<T> {
+    fn create_key(
+        &self,
+        alias: Option<&str>,
+        key_type: KeyType,
+    ) -> Result<KeyInfo, SecureAreaError> {
+        (**self).create_key(alias, key_type)
+    }
+    fn delete_key(&self, alias: &str) -> Result<(), SecureAreaError> {
+        (**self).delete_key(alias)
+    }
     fn public_key(&self, alias: &str) -> Result<Vec<u8>, SecureAreaError> {
         (**self).public_key(alias)
     }

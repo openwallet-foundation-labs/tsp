@@ -474,19 +474,19 @@ async fn create_identity(
 ) -> String {
     refuse_if_name_taken(did_server, name).await;
 
-    let (private_vid, history, keys) =
-        tsp_sdk::vid::did::webvh::create_webvh(&format!("{did_server}/endpoint/{name}"), transport)
-            .await
-            .expect("could not create an identity");
+    let (private_vid, history, keys) = tsp_sdk::vid::did::webvh::create_webvh(
+        db.secure_area().as_ref(),
+        &format!("{did_server}/endpoint/{name}"),
+        transport,
+    )
+    .await
+    .expect("could not create an identity");
 
     let did = private_vid.identifier().to_string();
 
-    // Both update keys are kept. The current one authorises the next log entry; the other is
-    // committed in advance by hash. Without them the identity can never be updated again.
-    db.add_secret_key(keys.update_kid.clone(), keys.update_key)
-        .expect("could not store the update key");
-    db.add_secret_key(keys.next_update_kid.clone(), keys.next_update_key)
-        .expect("could not store the next update key");
+    // Both update keys are in the wallet's secure area. The current one authorises the next
+    // log entry; the other is committed in advance by hash. Without them the identity can
+    // never be updated again.
     db.set_alias(format!("__next_update_kid:{did}"), keys.next_update_kid)
         .expect("could not record the next update key");
 

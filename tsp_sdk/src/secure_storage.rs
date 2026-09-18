@@ -337,6 +337,33 @@ impl SecureStorage for AskarSecureStorage {
             }
         }
 
+        let secret_key_types = serde_json::to_value(&method_state.secret_key_types)
+            .map_err(|_| Error::DecodeState("could not encode key types for storage"))?;
+        if let Err(e) = conn
+            .insert(
+                "method_state",
+                "secret_key_types",
+                secret_key_types.to_string().as_bytes(),
+                None,
+                None,
+            )
+            .await
+        {
+            if e.kind() == ErrorKind::Duplicate {
+                conn.update(
+                    EntryOperation::Replace,
+                    "method_state",
+                    "secret_key_types",
+                    Some(secret_key_types.to_string().as_bytes()),
+                    None,
+                    None,
+                )
+                .await?;
+            } else {
+                Err(Error::from(e))?;
+            }
+        }
+
         let secret_keys = serde_json::to_value(&method_state.secret_keys)
             .map_err(|_| Error::DecodeState("could not encode secret keys for storage"))?;
         if let Err(e) = conn
@@ -483,6 +510,15 @@ impl SecureStorage for AskarSecureStorage {
             },
         };
 
+        let secret_key_types = match conn
+            .fetch("method_state", "secret_key_types", false)
+            .await?
+        {
+            Some(data) => serde_json::from_slice(&data.value)
+                .map_err(|_| Error::DecodeState("could not decode key types from storage"))?,
+            None => HashMap::new(),
+        };
+
         let resolution_contexts = match conn
             .fetch("method_state", "resolution_contexts", false)
             .await?
@@ -500,6 +536,7 @@ impl SecureStorage for AskarSecureStorage {
             aliases,
             WalletMethodState {
                 secret_keys,
+                secret_key_types,
                 resolution_contexts,
             },
         ))

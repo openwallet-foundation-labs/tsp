@@ -125,12 +125,14 @@ impl PrivateKeys {
             &sig_alias,
             sig_key_type.into(),
             zeroize::Zeroizing::new(sigkey.as_slice().to_vec()),
-        )?;
+        )?
+        .ok_or_else(|| crate::SecureAreaError::Malformed(sig_alias.clone()))?;
         area.import(
             &enc_alias,
             enc_key_type.into(),
             zeroize::Zeroizing::new(enckey.as_slice().to_vec()),
-        )?;
+        )?
+        .ok_or_else(|| crate::SecureAreaError::Malformed(enc_alias.clone()))?;
         Ok(Self {
             area: Arc::new(area),
             sig_alias,

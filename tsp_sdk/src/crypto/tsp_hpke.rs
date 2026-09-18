@@ -617,7 +617,7 @@ mod known_answer_tests {
             .unwrap();
         let receiver = Receiver {
             area,
-            public: public.into(),
+            public: public.expect("a key of its type").into(),
             verifying: vec![0; 32].into(),
             enc_type: match key_type {
                 crate::KeyType::X25519 => crate::definitions::VidEncryptionKeyType::X25519,

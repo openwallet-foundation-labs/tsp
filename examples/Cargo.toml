@@ -37,6 +37,7 @@ name = "did-server"
 path = "src/did-server.rs"
 
 [dependencies]
+zeroize = { workspace = true }
 tsp_sdk = { path = "../tsp_sdk", default-features = false, features = ["async", "resolve"] }
 async-stream = { workspace = true }
 axum = { workspace = true }

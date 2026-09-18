@@ -404,17 +404,44 @@ impl AsyncSecureStore {
         self.inner.set_alias(alias, did)
     }
 
-    /// Store a raw secret key identified by `kid`.
-    ///
-    /// Used for managing auxiliary signing keys that are not bound to a VID,
-    /// for example WebVH pre-commit key material or TMCP signing keys.
-    pub fn add_secret_key(&self, kid: String, secret_key: Vec<u8>) -> Result<(), Error> {
-        self.inner.add_secret_key(kid, secret_key)
+    /// The wallet's secure area for keys that belong to no VID; see
+    /// [`SecureStore::secure_area`].
+    pub fn secure_area(&self) -> &Arc<crate::SoftwareSecureArea> {
+        self.inner.secure_area()
     }
 
-    /// Retrieve a previously stored raw secret key by `kid`.
-    ///
-    /// Returns `None` if no key is stored under `kid`.
+    /// Bring key material in from outside, under `kid`; see [`SecureStore::import_key`].
+    pub fn import_key(
+        &self,
+        kid: &str,
+        key_type: crate::KeyType,
+        material: crate::secure_area::Secret,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        self.inner.import_key(kid, key_type, material)
+    }
+
+    /// Make a key in the wallet's secure area; see [`SecureStore::create_key`].
+    pub fn create_key(
+        &self,
+        alias: Option<&str>,
+        key_type: crate::KeyType,
+    ) -> Result<crate::KeyInfo, Error> {
+        self.inner.create_key(alias, key_type)
+    }
+
+    pub fn has_key(&self, kid: &str) -> bool {
+        self.inner.has_key(kid)
+    }
+
+    pub fn delete_key(&self, kid: &str) -> Result<(), Error> {
+        self.inner.delete_key(kid)
+    }
+
+    /// A signature over `data` by the key `kid` in the wallet's secure area.
+    pub fn sign_with_key(&self, kid: &str, data: &[u8]) -> Result<Vec<u8>, Error> {
+        self.inner.sign_with_key(kid, data)
+    }
+
     /// Produce a raw detached signature over `data` using the private
     /// signing key of the private VID identified by `vid`.
     ///
@@ -431,10 +458,6 @@ impl AsyncSecureStore {
     pub fn sign_raw(&self, vid: &str, data: &[u8]) -> Result<Vec<u8>, Error> {
         let signer = self.inner.get_private_vid(vid)?;
         Ok(crate::crypto::sign_detached(signer.as_ref(), data)?)
-    }
-
-    pub fn get_secret_key(&self, kid: &str) -> Result<Option<Vec<u8>>, Error> {
-        self.inner.get_secret_key(kid)
     }
 
     pub fn register_resolution_context(

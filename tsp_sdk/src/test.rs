@@ -788,10 +788,7 @@ async fn test_prepopulated_store_import_preserves_dirty_state() {
             .as_deref(),
         Some(local_vid.as_str())
     );
-    assert_eq!(
-        imported_store.get_secret_key("test-history-key-1").unwrap(),
-        Some(vec![1, 2, 3, 4])
-    );
+    assert!(imported_store.has_key("test-history-key-1"));
 
     let mut found_unidirectional = 0_usize;
     let mut found_reverse_unidirectional = 0_usize;
@@ -840,10 +837,7 @@ async fn test_persisted_store_roundtrip_reopens_dirty_wallet() {
         before_aliases.get("local-owner"),
         after_aliases.get("local-owner")
     );
-    assert_eq!(
-        reopened_store.get_secret_key("test-history-key-2").unwrap(),
-        Some(vec![5, 6, 7, 8])
-    );
+    assert!(reopened_store.has_key("test-history-key-2"));
 
     let local_vid = reopened_store
         .resolve_alias("local-owner")
@@ -1014,14 +1008,8 @@ async fn test_dirty_roundtrip_multi_reopen_idempotent() {
     let reopened = persist_reopen_cycle(&initial_store, &fixture, 3).await;
 
     assert_eq!(baseline, export_snapshot(&reopened));
-    assert_eq!(
-        reopened.get_secret_key("test-history-key-1").unwrap(),
-        Some(vec![1, 2, 3, 4])
-    );
-    assert_eq!(
-        reopened.get_secret_key("test-history-key-2").unwrap(),
-        Some(vec![5, 6, 7, 8])
-    );
+    assert!(reopened.has_key("test-history-key-1"));
+    assert!(reopened.has_key("test-history-key-2"));
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1154,12 +1142,7 @@ async fn test_high_entropy_dirty_store_multi_reopen_consistency() {
             .as_deref(),
         Some(seed.local_vid.as_str())
     );
-    assert!(
-        reopened
-            .get_secret_key("high-entropy-key-00")
-            .unwrap()
-            .is_some()
-    );
+    assert!(reopened.has_key("high-entropy-key-00"));
 
     let RelationshipStatus::Bidirectional { .. } = reopened
         .get_relation_status_for_vid_pair(&seed.local_vid, &seed.bidirectional_remote_vid)

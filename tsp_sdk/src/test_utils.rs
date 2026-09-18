@@ -243,10 +243,18 @@ pub fn create_prepopulated_store() -> SecureStore {
 
     // Keep some persisted key history around as part of the fixture state.
     store
-        .add_secret_key("test-history-key-1".to_string(), vec![1, 2, 3, 4])
+        .import_key(
+            "test-history-key-1",
+            crate::KeyType::Ed25519,
+            zeroize::Zeroizing::new(vec![1, 2, 3, 4]),
+        )
         .unwrap();
     store
-        .add_secret_key("test-history-key-2".to_string(), vec![5, 6, 7, 8])
+        .import_key(
+            "test-history-key-2",
+            crate::KeyType::Ed25519,
+            zeroize::Zeroizing::new(vec![5, 6, 7, 8]),
+        )
         .unwrap();
 
     store
@@ -374,7 +382,11 @@ pub fn create_dirty_store_with_transition_seed() -> (AsyncSecureStore, DirtyTran
         )
         .unwrap();
     store
-        .add_secret_key("transition-seed-key".to_string(), vec![9, 8, 7, 6])
+        .import_key(
+            "transition-seed-key",
+            crate::KeyType::Ed25519,
+            zeroize::Zeroizing::new(vec![9, 8, 7, 6]),
+        )
         .unwrap();
 
     (
@@ -430,9 +442,10 @@ pub fn create_high_entropy_dirty_store() -> (AsyncSecureStore, HighEntropyDirtyS
 
     for i in 0..16 {
         store
-            .add_secret_key(
-                format!("high-entropy-key-{i:02}"),
-                vec![i as u8, i as u8 ^ 0x5A, i as u8 ^ 0xA5, 0xFF],
+            .import_key(
+                &format!("high-entropy-key-{i:02}"),
+                crate::KeyType::Ed25519,
+                zeroize::Zeroizing::new(vec![i as u8, i as u8 ^ 0x5A, i as u8 ^ 0xA5, 0xFF]),
             )
             .unwrap();
     }
@@ -843,14 +856,8 @@ mod tests {
     #[test]
     fn test_create_prepopulated_store_has_history_keys() {
         let store = create_prepopulated_store();
-        assert_eq!(
-            store.get_secret_key("test-history-key-1").unwrap(),
-            Some(vec![1, 2, 3, 4])
-        );
-        assert_eq!(
-            store.get_secret_key("test-history-key-2").unwrap(),
-            Some(vec![5, 6, 7, 8])
-        );
+        assert!(store.has_key("test-history-key-1"));
+        assert!(store.has_key("test-history-key-2"));
         let (_, vid_rows, _) = export_snapshot_sync(&store);
         assert!(vid_rows.iter().any(|row| row.contains("Bi:")));
     }
@@ -906,10 +913,7 @@ mod tests {
             store.resolve_alias("local-owner").unwrap().as_deref(),
             Some(seed.local_vid.as_str())
         );
-        assert_eq!(
-            store.get_secret_key("transition-seed-key").unwrap(),
-            Some(vec![9, 8, 7, 6])
-        );
+        assert!(store.has_key("transition-seed-key"));
     }
 
     #[cfg(feature = "async")]
@@ -920,12 +924,7 @@ mod tests {
             store.resolve_alias("high-entropy-root").unwrap().as_deref(),
             Some(seed.local_vid.as_str())
         );
-        assert!(
-            store
-                .get_secret_key("high-entropy-key-00")
-                .unwrap()
-                .is_some()
-        );
+        assert!(store.has_key("high-entropy-key-00"));
         let (_aliases, vid_rows, _keys) = export_snapshot(&store);
         assert!(vid_rows.iter().any(|row| row.contains(">")));
         assert!(vid_rows.iter().any(|row| row.contains("Bi:")));

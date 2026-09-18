@@ -192,6 +192,6 @@ pub use definitions::{
     VerifiedVid,
 };
 pub use error::Error;
-pub use secure_area::{KeyType, SecureArea, SecureAreaError, SoftwareSecureArea};
+pub use secure_area::{KeyInfo, KeyType, SecureArea, SecureAreaError, SoftwareSecureArea};
 pub use store::{Aliases, SecureStore, SendOptions, WalletMethodState};
 pub use vid::{ExportVid, OwnedVid, ResolutionContext, VerifyVidOptions, Vid};

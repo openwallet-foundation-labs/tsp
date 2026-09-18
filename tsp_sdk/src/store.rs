@@ -24,6 +24,8 @@ use std::{
 };
 use url::Url;
 
+use crate::SecureArea as _;
+
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
 
@@ -310,6 +312,9 @@ fn random_nonce_bytes() -> [u8; 16] {
 }
 
 pub type Aliases = HashMap<String, String>;
+/// Key material by alias, as it travels to and from the wallet's storage. Filled from the
+/// store's software secure area at export and emptied into it at import; never held
+/// anywhere else.
 pub type MethodSecretKeys = HashMap<String, Vec<u8>>;
 pub type ResolutionContexts = HashMap<String, crate::vid::ResolutionContext>;
 
@@ -321,6 +326,10 @@ pub type ResolutionContexts = HashMap<String, crate::vid::ResolutionContext>;
 #[derive(Clone, Debug, Default)]
 pub struct WalletMethodState {
     pub secret_keys: MethodSecretKeys,
+    /// The type of each key in `secret_keys`; a key not listed is Ed25519, which every key
+    /// stored before types were recorded was.
+    #[cfg_attr(feature = "serialize", serde(default))]
+    pub secret_key_types: HashMap<String, crate::KeyType>,
     pub resolution_contexts: ResolutionContexts,
 }
 
@@ -353,6 +362,8 @@ pub struct SecureStore {
     pub(crate) aliases: Arc<RwLock<Aliases>>,
     pub(crate) method_state: Arc<RwLock<WalletMethodState>>,
     pub(crate) relationship_policy: Arc<RwLock<RelationshipPolicy>>,
+    /// Keys that belong to no VID, behind the boundary; see [`SecureStore::secure_area`].
+    pub(crate) secure_area: Arc<crate::SoftwareSecureArea>,
 }
 
 /// This wallet is used to store and resolve VIDs
@@ -432,11 +443,18 @@ impl SecureStore {
             })
             .collect::<Vec<_>>();
 
-        Ok((
-            vids,
-            self.aliases.read()?.clone(),
-            self.method_state.read()?.clone(),
-        ))
+        // the method keys leave the software secure area here, towards the wallet's storage
+        let mut method_state = self.method_state.read()?.clone();
+        method_state.secret_keys.clear();
+        method_state.secret_key_types.clear();
+        for (alias, key_type, material) in self.secure_area.all_material() {
+            method_state
+                .secret_keys
+                .insert(alias.clone(), material.to_vec());
+            method_state.secret_key_types.insert(alias, key_type);
+        }
+
+        Ok((vids, self.aliases.read()?.clone(), method_state))
     }
 
     /// Import the wallet from serializable default types
@@ -465,6 +483,18 @@ impl SecureStore {
             Ok::<(), Error>(())
         })?;
 
+        // and come back in the same way: into the secure area, then forgotten
+        let mut method_state = method_state;
+        for (alias, material) in method_state.secret_keys.drain() {
+            let key_type = method_state
+                .secret_key_types
+                .get(&alias)
+                .copied()
+                .unwrap_or(crate::KeyType::Ed25519);
+            self.secure_area
+                .import(&alias, key_type, zeroize::Zeroizing::new(material))?;
+        }
+        method_state.secret_key_types.clear();
         *self.method_state.write()? = method_state;
 
         aliases.into_iter().try_for_each(|(k, v)| {
@@ -473,16 +503,44 @@ impl SecureStore {
         })
     }
 
-    pub fn add_secret_key(&self, kid: String, secret_key: Vec<u8>) -> Result<(), Error> {
-        self.method_state
-            .write()?
-            .secret_keys
-            .insert(kid, secret_key);
-        Ok(())
+    /// The wallet's secure area for keys that belong to no VID: did:webvh update keys, and
+    /// whatever else a method or an application signs with. The VIDs' own keys are behind
+    /// each [`OwnedVid`].
+    pub fn secure_area(&self) -> &Arc<crate::SoftwareSecureArea> {
+        &self.secure_area
     }
 
-    pub fn get_secret_key(&self, kid: &str) -> Result<Option<Vec<u8>>, Error> {
-        Ok(self.method_state.read()?.secret_keys.get(kid).cloned())
+    /// Bring key material in from outside, under `kid`. The import vehicle; nothing reads
+    /// it back.
+    pub fn import_key(
+        &self,
+        kid: &str,
+        key_type: crate::KeyType,
+        material: crate::secure_area::Secret,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        Ok(self.secure_area.import(kid, key_type, material)?)
+    }
+
+    /// Make a key in the wallet's secure area; see [`crate::SecureArea::create_key`].
+    pub fn create_key(
+        &self,
+        alias: Option<&str>,
+        key_type: crate::KeyType,
+    ) -> Result<crate::KeyInfo, Error> {
+        Ok(self.secure_area.create_key(alias, key_type)?)
+    }
+
+    pub fn has_key(&self, kid: &str) -> bool {
+        self.secure_area.has_key(kid)
+    }
+
+    pub fn delete_key(&self, kid: &str) -> Result<(), Error> {
+        Ok(self.secure_area.delete_key(kid)?)
+    }
+
+    /// A signature over `data` by the key `kid` in the wallet's secure area.
+    pub fn sign_with_key(&self, kid: &str, data: &[u8]) -> Result<Vec<u8>, Error> {
+        Ok(self.secure_area.sign(kid, data)?)
     }
 
     pub fn register_resolution_context(

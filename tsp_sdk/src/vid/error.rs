@@ -12,6 +12,8 @@ pub enum VidError {
     #[cfg(feature = "resolve")]
     #[error("(de)serializing '{0}")]
     Serde(#[from] serde_json::Error),
+    #[error("the secure area refused: {0}")]
+    SecureArea(#[from] crate::SecureAreaError),
     #[error("connection to '{0}' failed: {1}")]
     Connection(String, std::io::Error),
     #[error("invalid VID '{0}'")]
