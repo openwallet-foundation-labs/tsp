@@ -42,8 +42,6 @@ async = [
 resolve = ["serialize", "dep:reqwest", "dep:didwebvh-rs"]
 serialize = ["dep:serde_with"]
 use_local_certificate = []
-# A SecureArea over Google Cloud KMS for Ed25519 signing (see gcp_kms.rs)
-gcp-kms = ["dep:ureq"]
 postgres = ["async", "aries-askar/postgres"]
 
 [dependencies]
@@ -67,7 +65,6 @@ crypto_box = { workspace = true }
 x25519-dalek = { workspace = true }
 salsa20 = { workspace = true }
 subtle = { workspace = true }
-ureq = { workspace = true, optional = true }
 serde_json_canonicalizer = { workspace = true }
 chrono = { workspace = true }
 crypto_secretbox = { workspace = true }

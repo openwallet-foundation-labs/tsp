@@ -104,12 +104,6 @@ struct Cli {
     )]
     password: Option<String>,
     #[arg(
-        long,
-        env = "TSP_KMS_KEYRING",
-        help = "A Google Cloud KMS key ring, projects/../locations/../keyRings/..: signing keys are made and used there, never on this host. The token comes from GCP_ACCESS_TOKEN or the VM's metadata server"
-    )]
-    kms_keyring: Option<String>,
-    #[arg(
         short,
         long,
         default_value = "p.teaspoon.world",
@@ -174,22 +168,6 @@ enum Commands {
         src: Option<String>,
         #[arg(long)]
         peer_src: Option<String>,
-        #[arg(
-            long,
-            help = "webvh only: create on a server that admits through a witness — read its witness directory, create under a random name, get the entry witnessed, publish with POST /publish"
-        )]
-        witnessed: bool,
-        #[arg(
-            long,
-            help = "webvh only: a watcher URL to name in the DID and notify after publishing (repeatable)"
-        )]
-        watcher: Vec<String>,
-        #[arg(
-            long,
-            default_value = "/a/",
-            help = "webvh only: the path prefix to create under; a witness registered for it admits. /t/ is for tests"
-        )]
-        prefix: String,
     },
     #[command(
         about = "Update the DID:WEBVH: a new transport, new TSP keys, or both, as a new log entry"
@@ -197,48 +175,6 @@ enum Commands {
     Update {
         #[arg(help = "VID or Alias to update")]
         vid: String,
-        #[arg(
-            long,
-            help = "webvh only: the DID lives on a server that admits through a witness — get the entry witnessed, publish with POST /publish, notify the watchers"
-        )]
-        witnessed: bool,
-        #[arg(long, help = "webvh, witnessed only: a new transport URL")]
-        transport: Option<Url>,
-        #[arg(long, help = "webvh, witnessed only: new TSP keys")]
-        rotate_keys: bool,
-        #[arg(
-            long,
-            help = "webvh, witnessed only: a watcher URL to notify besides those the DID names (repeatable)"
-        )]
-        watcher: Vec<String>,
-        #[arg(
-            long,
-            help = "webvh, witnessed only: a witness did:key for the new witness set, approved by the set in force (repeatable)"
-        )]
-        witness: Vec<String>,
-        #[arg(
-            long,
-            default_value_t = 1,
-            help = "webvh, witnessed only: the threshold of the new witness set"
-        )]
-        witness_threshold: u32,
-    },
-    #[command(
-        about = "Deactivate the DID:WEBVH: one last log entry ends it; the wallet keeps the DID as a name only"
-    )]
-    Deactivate {
-        #[arg(help = "VID or Alias to deactivate")]
-        vid: String,
-        #[arg(
-            long,
-            help = "webvh only: the DID lives on a server that admits through a witness — get the entry witnessed, publish with POST /publish, notify the watchers"
-        )]
-        witnessed: bool,
-        #[arg(
-            long,
-            help = "a watcher URL to notify besides those the DID names (repeatable)"
-        )]
-        watcher: Vec<String>,
     },
     #[command(
         arg_required_else_help = true,
@@ -407,71 +343,6 @@ async fn write_wallet(vault: &AskarSecureStorage, db: &AsyncSecureStore) -> Resu
     trace!("persisted wallet");
 
     Ok(())
-}
-
-/// Build a URL for the DID server.
-///
-/// A local DID server is reached over plain HTTP, which is also how a local identifier is
-/// resolved. Publishing has to agree with resolution, or an identifier is written to one place
-/// and read from another.
-/// Keep a webvh identity's update key and its pre-committed successor in the wallet.
-fn store_webvh_keys(
-    vid_wallet: &AsyncSecureStore,
-    private_vid: &OwnedVid,
-    keys: tsp_sdk::vid::did::webvh::WebvhKeys,
-) {
-    // the keys themselves are already in the wallet's secure area, under their names
-    vid_wallet
-        .set_alias(
-            format!("__next_update_kid:{}", private_vid.identifier()),
-            keys.next_update_kid,
-        )
-        .expect("Cannot store next update key reference");
-}
-
-/// Create a `did:webvh` on a server that admits identities through a witness: read the
-/// server's witness directory, build the first entry under a random name naming that
-/// witness's keys, have it witnessed, publish entry and proof together, notify watchers.
-async fn create_witnessed_webvh(
-    vid_wallet: &AsyncSecureStore,
-    did_server: &str,
-    transport: Url,
-    watchers: &[String],
-    prefix: &str,
-    client: &reqwest::Client,
-) -> Result<(OwnedVid, tsp_sdk::vid::did::webvh::WebvhKeys), Error> {
-    // a random name under the prefix; everything else is flow 1 in the SDK
-    let name: String = uuid::Uuid::new_v4().as_bytes()[..8]
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    let hosting = tsp_sdk::vid::did::hosting::Hosting::new(client.clone(), did_server);
-    let published = tsp_sdk::vid::did::hosting::create_witnessed(
-        vid_wallet.secure_area(),
-        &hosting,
-        did_server,
-        prefix,
-        &name,
-        transport,
-        watchers,
-    )
-    .await?;
-    info!(
-        "witnessed and published {}",
-        tsp_sdk::vid::did::get_resolve_url(published.private_vid.identifier())?
-    );
-    for (w, outcome) in &published.watchers {
-        match outcome {
-            Ok(result) => info!("notified watcher {w}: {result}"),
-            Err(e) => warn!("watcher {w}: {e}"),
-        }
-    }
-    let keys = published.keys.ok_or_else(|| {
-        Error::Vid(VidError::WebVHError(
-            "a first entry commits a successor".to_string(),
-        ))
-    })?;
-    Ok((published.private_vid, keys))
 }
 
 fn did_server_url(did_server: &str, path: &str) -> String {
@@ -838,13 +709,6 @@ async fn run() -> Result<(), Error> {
     let password = wallet_password(args.password.clone(), &args.wallet)?;
     let (vault, vid_wallet) = read_wallet(&args.wallet, &password).await?;
 
-    if let Some(ring) = &args.kms_keyring {
-        let kms = tsp_sdk::gcp_kms::GcpKms::from_env(ring);
-        vid_wallet.secure_area().attach_remote(std::sync::Arc::new(
-            tsp_sdk::gcp_kms::KmsSecureArea::new(kms),
-        ))?;
-        info!("signing keys live in the KMS key ring {ring}");
-    }
     let server: String = args.server;
     let did_server = args.did_server;
 
@@ -953,9 +817,6 @@ async fn run() -> Result<(), Error> {
             source_method,
             src,
             peer_src,
-            witnessed,
-            watcher,
-            prefix,
         } => {
             let transport = if let Some(address) = tcp {
                 Url::parse(&format!("tcp://{address}")).unwrap()
@@ -982,22 +843,6 @@ async fn run() -> Result<(), Error> {
                     vid_wallet.set_alias(username, private_vid.identifier().to_string())?;
 
                     info!("created peer identity {}", private_vid.identifier());
-                    (private_vid, None)
-                }
-                DidType::Webvh if witnessed => {
-                    let (private_vid, keys) = create_witnessed_webvh(
-                        &vid_wallet,
-                        &did_server,
-                        transport,
-                        &watcher,
-                        &prefix,
-                        &client,
-                    )
-                    .await?;
-                    store_webvh_keys(&vid_wallet, &private_vid, keys);
-                    if let Some(alias) = alias {
-                        vid_wallet.set_alias(alias, private_vid.identifier().to_string())?;
-                    }
                     (private_vid, None)
                 }
                 DidType::Webvh => {
@@ -1136,64 +981,7 @@ async fn run() -> Result<(), Error> {
             vid_wallet.add_private_vid(private_vid.clone(), metadata)?;
             info!("created VID {}", private_vid.identifier());
         }
-        Commands::Deactivate {
-            vid,
-            witnessed,
-            watcher,
-        } => {
-            if !witnessed {
-                return Err(Error::Vid(VidError::WebVHError(
-                    "deactivation is done through a witness: pass --witnessed".to_string(),
-                )));
-            }
-            let vid_alias = vid_wallet.try_resolve_alias(&vid)?;
-            let private_vid = vid_wallet.get_private_vid(&vid_alias)?;
-            let next_kid_alias = format!("__next_update_kid:{vid_alias}");
-            let update_kid = vid_wallet
-                .resolve_alias(&next_kid_alias)?
-                .filter(|kid| vid_wallet.has_key(kid))
-                .ok_or_else(|| {
-                    Error::MissingPrivateVid(
-                        "the wallet holds no committed update key for this DID".to_string(),
-                    )
-                })?;
-            let hosting = tsp_sdk::vid::did::hosting::Hosting::new(client.clone(), &did_server);
-            let published = tsp_sdk::vid::did::hosting::deactivate_witnessed(
-                vid_wallet.secure_area().as_ref(),
-                &hosting,
-                &private_vid,
-                &update_kid,
-                &watcher,
-            )
-            .await?;
-            info!(
-                "deactivated {} at version {}",
-                vid_alias,
-                published.entry["versionId"].as_str().unwrap_or("?")
-            );
-            for (w, outcome) in &published.watchers {
-                match outcome {
-                    Ok(result) => info!("notified watcher {w}: {result}"),
-                    Err(e) => warn!("watcher {w}: {e}"),
-                }
-            }
-            // step 7: every key of the identity retires; the name and its relationships stay
-            for retired in &published.retired_update_kids {
-                vid_wallet.delete_key(retired)?;
-            }
-            vid_wallet.remove_alias(&next_kid_alias)?;
-            vid_wallet.retire_private_vid(&vid_alias)?;
-            info!("the wallet keeps {vid_alias} as a name only");
-        }
-        Commands::Update {
-            vid,
-            witnessed,
-            transport,
-            rotate_keys,
-            watcher,
-            witness,
-            witness_threshold,
-        } => {
+        Commands::Update { vid } => {
             let vid_alias = vid_wallet.try_resolve_alias(&vid)?;
             info!("Updating VID {vid_alias}");
             let exported = vid_wallet
@@ -1204,57 +992,7 @@ async fn run() -> Result<(), Error> {
                 .ok_or_else(|| Error::MissingVid(format!("Cannot find VID {vid_alias}")))?;
             let private_vid = vid_wallet.get_private_vid(&vid_alias)?;
 
-            if witnessed {
-                // flow 2: the key the previous entry committed signs; the rest is in the SDK
-                let next_kid_alias = format!("__next_update_kid:{vid_alias}");
-                let update_kid = vid_wallet
-                    .resolve_alias(&next_kid_alias)?
-                    .filter(|kid| vid_wallet.has_key(kid))
-                    .ok_or_else(|| {
-                        Error::MissingPrivateVid(
-                            "the wallet holds no committed update key for this DID".to_string(),
-                        )
-                    })?;
-                let hosting = tsp_sdk::vid::did::hosting::Hosting::new(client.clone(), &did_server);
-                let published = tsp_sdk::vid::did::hosting::update_witnessed(
-                    vid_wallet.secure_area().as_ref(),
-                    &hosting,
-                    &private_vid,
-                    &update_kid,
-                    tsp_sdk::vid::did::hosting::Change {
-                        transport,
-                        rotate_keys,
-                        witnesses: (!witness.is_empty()).then_some((witness, witness_threshold)),
-                    },
-                    &watcher,
-                )
-                .await?;
-                info!(
-                    "published {} version {}",
-                    published.private_vid.identifier(),
-                    published.entry["versionId"].as_str().unwrap_or("?")
-                );
-                for (w, outcome) in &published.watchers {
-                    match outcome {
-                        Ok(result) => info!("notified watcher {w}: {result}"),
-                        Err(e) => warn!("watcher {w}: {e}"),
-                    }
-                }
-
-                // step 7: the key that signed this entry retires from signing; the new
-                // successor is remembered; the VID's keys are replaced if rotated
-                let (_, metadata) = verify_vid(published.private_vid.identifier())
-                    .await
-                    .map_err(|err| Error::Vid(VidError::InvalidVid(err.to_string())))?;
-                vid_wallet.add_private_vid(published.private_vid, metadata)?;
-                if let Some(keys) = &published.keys {
-                    vid_wallet.set_alias(next_kid_alias, keys.next_update_kid.clone())?;
-                }
-                for retired in &published.retired_update_kids {
-                    vid_wallet.delete_key(retired)?;
-                }
-                info!("VID updated; next update key committed");
-            } else if let Some(metadata) = exported.metadata.clone()
+            if let Some(metadata) = exported.metadata.clone()
                 && let Ok(scid_metadata) = serde_json::from_value::<ScidVidMetadata>(metadata)
             {
                 let update_result = tsp_sdk::vid::did::scid::update(

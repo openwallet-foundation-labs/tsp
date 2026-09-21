@@ -1424,20 +1424,123 @@ async fn a_key_deleted_from_the_secure_area_does_not_come_back_from_storage() {
     );
 }
 
-#[cfg(all(feature = "gcp-kms", not(target_arch = "wasm32")))]
+/// A remote that holds Ed25519 keys by handle, in memory: what any KMS looks like to the
+/// wallet. Counts its signatures.
+#[cfg(not(target_arch = "wasm32"))]
+struct FakeRemote {
+    keys: std::sync::Mutex<std::collections::HashMap<String, (String, ed25519_dalek::SigningKey)>>,
+    signatures: std::sync::atomic::AtomicUsize,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl FakeRemote {
+    fn new() -> std::sync::Arc<Self> {
+        std::sync::Arc::new(Self {
+            keys: Default::default(),
+            signatures: Default::default(),
+        })
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl crate::SecureArea for std::sync::Arc<FakeRemote> {
+    fn create_key(
+        &self,
+        alias: Option<&str>,
+        key_type: crate::KeyType,
+    ) -> Result<crate::KeyInfo, crate::SecureAreaError> {
+        assert_eq!(key_type, crate::KeyType::Ed25519);
+        let key = ed25519_dalek::SigningKey::generate(&mut rand_core::OsRng);
+        let public = key.verifying_key().to_bytes().to_vec();
+        let alias = alias
+            .map(str::to_string)
+            .unwrap_or_else(|| crate::secure_area::ed25519_multikey(&public));
+        let handle = format!("remote/{alias}");
+        self.keys
+            .lock()
+            .unwrap()
+            .insert(alias.clone(), (handle, key));
+        Ok(crate::KeyInfo { alias, public })
+    }
+    fn delete_key(&self, alias: &str) -> Result<(), crate::SecureAreaError> {
+        self.keys.lock().unwrap().remove(alias);
+        Ok(())
+    }
+    fn public_key(&self, alias: &str) -> Result<Vec<u8>, crate::SecureAreaError> {
+        self.keys
+            .lock()
+            .unwrap()
+            .get(alias)
+            .map(|(_, k)| k.verifying_key().to_bytes().to_vec())
+            .ok_or_else(|| crate::SecureAreaError::UnknownKey(alias.into()))
+    }
+    fn key_type(&self, _: &str) -> Result<crate::KeyType, crate::SecureAreaError> {
+        Ok(crate::KeyType::Ed25519)
+    }
+    fn sign(&self, alias: &str, data: &[u8]) -> Result<Vec<u8>, crate::SecureAreaError> {
+        use ed25519_dalek::Signer;
+        self.signatures
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.keys
+            .lock()
+            .unwrap()
+            .get(alias)
+            .map(|(_, k)| k.sign(data).to_bytes().to_vec())
+            .ok_or_else(|| crate::SecureAreaError::UnknownKey(alias.into()))
+    }
+    fn key_agreement(
+        &self,
+        alias: &str,
+        _: &[u8],
+    ) -> Result<crate::secure_area::Secret, crate::SecureAreaError> {
+        Err(crate::SecureAreaError::WrongKeyType(alias.into()))
+    }
+    fn kem_decapsulate(
+        &self,
+        alias: &str,
+        _: &[u8],
+    ) -> Result<crate::secure_area::Secret, crate::SecureAreaError> {
+        Err(crate::SecureAreaError::WrongKeyType(alias.into()))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl crate::RemoteKeys for std::sync::Arc<FakeRemote> {
+    fn handle(&self, alias: &str) -> Option<String> {
+        self.keys.lock().unwrap().get(alias).map(|(h, _)| h.clone())
+    }
+    fn bind(
+        &self,
+        alias: &str,
+        _: crate::KeyType,
+        handle: &str,
+    ) -> Result<(), crate::SecureAreaError> {
+        // the key is found by its handle, whatever alias the wallet gives it
+        let mut keys = self.keys.lock().unwrap();
+        let found = keys
+            .iter()
+            .find(|(_, (h, _))| h == handle)
+            .map(|(a, (h, k))| (a.clone(), h.clone(), k.clone()));
+        let (old, h, k) = found.ok_or_else(|| crate::SecureAreaError::UnknownKey(alias.into()))?;
+        keys.remove(&old);
+        keys.insert(alias.to_string(), (h, k));
+        Ok(())
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 #[tokio::test]
-async fn a_wallet_whose_signing_keys_live_in_a_kms_reopens_and_signs_once_the_kms_is_attached() {
-    use crate::gcp_kms::{FakeKms, KmsSecureArea};
+async fn a_wallet_whose_signing_keys_live_remotely_reopens_and_signs_once_the_remote_is_attached() {
     use std::sync::Arc;
 
-    let kms = Arc::new(FakeKms::default());
+    let remote = FakeRemote::new();
     let store = create_async_test_store();
     store
         .secure_area()
-        .attach_remote(Arc::new(KmsSecureArea::new(kms.clone())))
+        .attach_remote(Arc::new(remote.clone()))
         .unwrap();
 
-    // an identity made in this wallet: its signing key in the KMS, its encryption key here
+    // an identity made in this wallet: its signing key remote, its encryption key here
     let vid = crate::OwnedVid::new_in(
         store.secure_area().clone(),
         "did:peer:test",
@@ -1448,7 +1551,11 @@ async fn a_wallet_whose_signing_keys_live_in_a_kms_reopens_and_signs_once_the_km
     .unwrap();
     store.add_private_vid(vid.clone(), None).unwrap();
     let signed = store.sign_raw("did:peer:test", b"hello").unwrap();
-    assert_eq!(kms.signatures.lock().unwrap().len(), 1, "signed in the KMS");
+    assert_eq!(
+        remote.signatures.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "signed remotely"
+    );
     let update = store.create_key(None, crate::KeyType::Ed25519).unwrap();
     assert_eq!(store.secure_area().remote_handles().len(), 2);
 
@@ -1456,7 +1563,7 @@ async fn a_wallet_whose_signing_keys_live_in_a_kms_reopens_and_signs_once_the_km
     fixture.persist_from(&store).await;
     let reopened = fixture.reopen_into_store().await;
 
-    // known by handle, locked until the KMS is attached, then signing as before
+    // known by handle, locked until the remote is attached, then signing as before
     assert!(reopened.has_private_vid("did:peer:test").unwrap());
     assert!(matches!(
         reopened.sign_raw("did:peer:test", b"hello"),
@@ -1464,10 +1571,10 @@ async fn a_wallet_whose_signing_keys_live_in_a_kms_reopens_and_signs_once_the_km
     ));
     reopened
         .secure_area()
-        .attach_remote(Arc::new(KmsSecureArea::new(kms.clone())))
+        .attach_remote(Arc::new(remote.clone()))
         .unwrap();
     let again = reopened.sign_raw("did:peer:test", b"hello").unwrap();
-    assert_eq!(signed, again, "the same key, in the KMS, signs the same");
+    assert_eq!(signed, again, "the same key, remote, signs the same");
     assert!(reopened.has_key(&update.alias));
     assert!(reopened.sign_with_key(&update.alias, b"x").is_ok());
 }

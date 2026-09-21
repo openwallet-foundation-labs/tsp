@@ -109,9 +109,6 @@ mod http_client;
 /// returns a key.
 pub mod secure_area;
 
-/// A secure area over Google Cloud KMS for Ed25519 signing.
-#[cfg(feature = "gcp-kms")]
-pub mod gcp_kms;
 mod store;
 
 /// Contains code for handling *verified identifiers* and identities.
