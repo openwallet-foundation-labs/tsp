@@ -246,7 +246,8 @@ fn decoded_signature_from_stream(
     Ok((signature, remaining))
 }
 
-/// The input of `Signature_new` (spec 9.4.1).
+/// The signable fields of a parallel (referral) relationship request:
+/// {XRFI, VID_sndr, Digest, Nonce, VID_new}, in the unified field order.
 pub fn encode_parallel_relation_proposal_challenge(
     sender_identity: Option<&[u8]>,
     nonce: &Nonce,
@@ -312,7 +313,9 @@ fn encode_sender_identity(
     checked_encode_variable_data(TSP_VID, sender_identity.unwrap_or(&[]), output)
 }
 
-/// The higher layer payload body (spec 9.4.4).
+/// Encode opaque upper-layer data as a `-A##` generic CESR stream holding a bare
+/// Bytes primitive, which is native CESR. The `-A##` stream frame is always
+/// present; its contents are the upper layer's.
 fn encode_opaque_data(
     data: &[u8],
     output: &mut impl for<'a> Extend<&'a u8>,
@@ -583,7 +586,7 @@ fn decode_sender_identity(stream: &mut [u8]) -> Result<(Option<&[u8]>, &mut [u8]
     Ok((vid, stream))
 }
 
-/// The higher layer payload body (spec 9.4.4).
+/// Decode opaque upper-layer data (see [encode_opaque_data])
 fn decode_opaque_data(stream: &mut [u8]) -> Result<(&mut [u8], &mut [u8]), DecodeError> {
     let (stream_quadlets, stream) =
         decode_count_mut(TSP_GENERIC_STREAM, stream).ok_or(DecodeError::UnexpectedData)?;
@@ -1198,7 +1201,7 @@ pub fn decode_envelope<'a>(stream: &'a mut [u8]) -> Result<CipherView<'a>, Decod
         },
     };
 
-    // spec 3.7
+    // PR83
     if !sigdata.is_empty() {
         return Err(DecodeError::TrailingGarbage);
     }
@@ -1343,7 +1346,7 @@ pub fn open_message_into_parts(data: &[u8]) -> Result<MessageParts<'_>, DecodeEr
         EncodedSignature::MlDsa65(sig) => sig.as_slice(),
     };
 
-    // spec 3.7
+    // PR83
     if !sigdata.is_empty() {
         return Err(DecodeError::TrailingGarbage);
     }
@@ -1672,7 +1675,7 @@ mod test {
         finalize_envelope_frame(&mut outer);
         encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
 
-        // spec 3.7
+        // PR83
         assert!(decode_envelope(&mut outer.clone()).is_ok());
         outer.push(b'-');
 

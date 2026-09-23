@@ -151,7 +151,9 @@ fn relationship_status_for(index: usize) -> RelationshipStatus {
 }
 
 impl RelationshipStatus {
-    /// Spec 7.3: the all-zero digest is a `TSP_RFD`'s NULL digest.
+    /// A bidirectional relationship for tests. The two digests are distinct
+    /// and non-zero: the all-zero digest is the NULL digest of a `TSP_RFD`,
+    /// not a digest any relationship would hold.
     fn bi_test(invite: u8, reply: u8) -> Self {
         Self::Bidirectional {
             invite_digest: [invite; 32],

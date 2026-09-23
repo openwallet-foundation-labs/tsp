@@ -76,7 +76,6 @@ pub struct PendingIncomingParallelRelationship {
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub enum RelationshipStatus {
-    /// Spec 7.2.1, 7.3.
     Bidirectional {
         invite_digest: Digest,
         reply_digest: Digest,

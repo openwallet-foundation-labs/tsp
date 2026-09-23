@@ -763,8 +763,7 @@ fn main() {
         json!({"crypto": "HpkeBase", "signature": "MlDsa65", "payload": {"content": "hello world"}}),
     );
 
-    // 11. a TSP_RFI carrying a populated Referral_Field (spec 7.2.1;
-    // trustoverip/tswg-tsp-specification#82)
+    // 11. a TSP_RFI carrying a populated Referral_Field (PR83)
     let referred_long_form = tsp_sdk::vid::introduction_identifier(alice_referred.vid());
 
     let mut envelope_prefix = Vec::new();

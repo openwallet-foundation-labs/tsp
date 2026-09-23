@@ -135,7 +135,7 @@ pub fn verify_payload<'a>(
 
     let decoded = crate::cesr::decode_payload(payload)?;
 
-    // spec 3.7 step 7
+    // PR83
     if let Some(id) = decoded.sender_identity
         && id != envelope_sender
     {
@@ -157,7 +157,7 @@ mod test {
     use super::*;
     use crate::test_utils::create_test_vid_pair;
 
-    /// Spec 3.7 step 7.
+    /// PR83
     #[test]
     fn sender_vid_field_must_match_the_envelope() {
         let (alice, bob) = create_test_vid_pair();

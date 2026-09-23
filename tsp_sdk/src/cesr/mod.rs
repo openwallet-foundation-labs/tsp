@@ -164,7 +164,7 @@ mod test {
 
     #[test]
     fn non_canonical_lead_bytes_are_rejected() {
-        // spec 3.7
+        // PR83
         for identifier in [3, 64] {
             let code_len = if identifier < 64 { 3 } else { 6 };
             for payload in [b"ab".as_slice(), b"a".as_slice()] {

@@ -398,7 +398,7 @@ mod test {
         }
     }
 
-    /// Spec 7.2.1; trustoverip/tswg-tsp-specification#82.
+    /// PR83
     #[test]
     #[wasm_bindgen_test]
     fn the_referral_vector_pins_how_the_referral_field_is_digested() {

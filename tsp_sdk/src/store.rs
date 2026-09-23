@@ -2110,7 +2110,7 @@ impl SecureStore {
         let old_relationship =
             self.replace_relation_status_for_vid(receiver, RelationshipStatus::Unrelated)?;
 
-        // spec 7.3
+        // PR83
         let thread_id = match old_relationship {
             RelationshipStatus::Bidirectional { invite_digest, .. } => invite_digest,
             RelationshipStatus::Unidirectional { invite_digest } => invite_digest,
@@ -2271,7 +2271,6 @@ impl SecureStore {
         self.add_verified_vid(nested_vid, None)
     }
 
-    /// Spec 7.2.1.
     fn establish_bidirectional_relation(
         &self,
         my_vid: &str,
@@ -3965,7 +3964,7 @@ mod test {
             .unwrap();
         a_store.open_message(&mut accept).unwrap();
 
-        // spec 7.3
+        // PR83
         let (_url, mut cancel) = b_store
             .make_relationship_cancel(bob.identifier(), alice.identifier())
             .unwrap();
