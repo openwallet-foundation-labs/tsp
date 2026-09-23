@@ -137,7 +137,7 @@ mod test {
                 Payload::RequestRelationship {
                     thread_id,
                     reply_path,
-                    ..
+                    form,
                 } => {
                     assert_eq!(declared_type, "XRFI", "{name}: payload type");
                     let e = &expect["payload"]["request_relationship"];
@@ -148,8 +148,31 @@ mod test {
                     );
                     assert!(
                         reply_path.is_empty(),
-                        "{name}: a direct invite has no reply path"
+                        "{name}: neither invite vector carries a reply path"
                     );
+
+                    match form {
+                        crate::definitions::RelationshipForm::Direct => assert!(
+                            e["referral"].is_null(),
+                            "{name}: the Referral_Field is empty"
+                        ),
+                        crate::definitions::RelationshipForm::Parallel {
+                            new_vid,
+                            sig_new_vid,
+                        } => {
+                            let r = &e["referral"];
+                            assert_eq!(
+                                std::str::from_utf8(new_vid).expect("new VID is a VID"),
+                                r["new_vid"].as_str().expect("new_vid"),
+                                "{name}: the referred VID"
+                            );
+                            assert_eq!(
+                                Base64UrlUnpadded::encode_string(sig_new_vid),
+                                r["sig_new_vid"].as_str().expect("sig_new_vid"),
+                                "{name}: Signature_new"
+                            );
+                        }
+                    }
                 }
                 Payload::AcceptRelationship {
                     thread_id,
@@ -253,7 +276,7 @@ mod test {
             }
         }
 
-        assert_eq!(vectors.vectors.len(), 10, "every vector was exercised");
+        assert_eq!(vectors.vectors.len(), 11, "every vector was exercised");
     }
 
     #[test]
@@ -290,13 +313,29 @@ mod test {
             // only the shapes whose payload the file describes in full can be
             // rebuilt from it; the nested and routed ones carry an inner
             // message whose own randomness is not separately recorded
+            // the referral's own fields outlive the payload that borrows them
+            let referral = expect["request_relationship"]["referral"].as_object();
+            let new_vid = referral.map(|r| r["new_vid"].as_str().expect("new_vid").to_owned());
+            let sig_new_vid = referral.map(|r| {
+                Base64UrlUnpadded::decode_vec(r["sig_new_vid"].as_str().expect("sig_new_vid"))
+                    .expect("signature")
+            });
+
             let payload = if let Some(content) = expect["content"].as_str() {
                 Payload::Content(content.as_bytes())
             } else if expect["request_relationship"].is_object() {
                 Payload::RequestRelationship {
                     thread_id: Default::default(),
                     reply_path: vec![],
-                    form: crate::definitions::RelationshipForm::Direct,
+                    form: match (&new_vid, &sig_new_vid) {
+                        (Some(new_vid), Some(sig_new_vid)) => {
+                            crate::definitions::RelationshipForm::Parallel {
+                                new_vid: new_vid.as_bytes(),
+                                sig_new_vid: &sig_new_vid[..],
+                            }
+                        }
+                        _ => crate::definitions::RelationshipForm::Direct,
+                    },
                 }
             } else if let Some(cancel) = expect["cancel_relationship"].as_object() {
                 let thread_id: [u8; 32] =
@@ -358,6 +397,69 @@ mod test {
                 "a vector altered at byte {position} must not open"
             );
         }
+    }
+
+    /// The referral vector exists to pin how the Referral_Field enters the TSP
+    /// Digest, which the specification left open to three readings. This checks
+    /// that the octets the file records are the real ones — they hash to the
+    /// digest on the wire, and they are what Signature_new was made over — and
+    /// that they discriminate: recounting the field, which is one of the
+    /// readings the vector rules out, gives a different digest.
+    #[test]
+    #[wasm_bindgen_test]
+    fn the_referral_vector_pins_how_the_referral_field_is_digested() {
+        use crate::cesr::encode_hops;
+
+        let vectors = load();
+        let vector = vectors
+            .vectors
+            .iter()
+            .find(|v| v["name"] == "control-rfi-referral")
+            .expect("the referral vector");
+
+        let sender = vectors.vid(vector["sender"].as_str().unwrap());
+        let receiver = vectors.vid(vector["receiver"].as_str().unwrap());
+        let referred = vectors.vid("alice_referred");
+        let mut message = Base64UrlUnpadded::decode_vec(vector["message"].as_str().unwrap())
+            .expect("message decodes");
+
+        let d = &vector["derivation"];
+        let decode =
+            |key: &str| Base64UrlUnpadded::decode_vec(d[key].as_str().expect(key)).expect("base64");
+        let digest_input = decode("digest_input");
+        let signature_input = decode("signature_input");
+        let digest = decode("digest");
+
+        let ((payload, ..), info) =
+            crate::crypto::open_with_signature_info(&receiver, &sender, &mut message)
+                .expect("the referral vector opens");
+        let Payload::RequestRelationship { thread_id, .. } = payload else {
+            panic!("the referral vector is an invite");
+        };
+        let info = info.expect("a populated Referral_Field yields a signature to check");
+
+        // the recorded digest input is what the message's own SAID is over
+        assert_eq!(crate::crypto::sha256(&digest_input), thread_id[..]);
+        assert_eq!(digest, thread_id);
+
+        // and the recorded signature input is what Signature_new covers
+        assert_eq!(signature_input, info.signed_data);
+        assert_eq!(decode("signature_new"), info.sig_new_vid);
+        crate::crypto::verify_detached(referred.vid(), &signature_input, info.sig_new_vid)
+            .expect("Signature_new verifies under the referred VID's key");
+
+        // the field contributes VID_new alone: the digest input ends with that
+        // primitive, with no -J## code and count of its own
+        let mut counted = Vec::new();
+        encode_hops(&[info.new_vid], &mut counted).expect("encode");
+        let bare = &counted[3..];
+        assert!(digest_input.ends_with(bare));
+
+        // recounting the field over VID_new alone — reading (b) of the three
+        // the specification admitted — would give a different digest
+        let mut recounted = digest_input[..digest_input.len() - bare.len()].to_vec();
+        recounted.extend_from_slice(&counted);
+        assert_ne!(crate::crypto::sha256(&recounted), thread_id[..]);
     }
 
     /// The segmenter is what "TSP Rev 3 on the Wire" and the specification's

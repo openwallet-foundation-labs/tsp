@@ -247,8 +247,11 @@ fn decoded_signature_from_stream(
 }
 
 /// The signable fields of a parallel (referral) relationship request:
-/// {XRFI, VID_sndr, Digest, Nonce, VID_new}, in the unified field order.
-pub(crate) fn encode_parallel_relation_proposal_challenge(
+/// {XRFI, VID_sndr, Digest, Nonce, Reply_Path, VID_new}, in the unified field
+/// order. This is what `Signature_new` is made over (spec 9.4.1); it differs
+/// from the digest input built by [`encode_digest_input`] only in the envelope
+/// prefix and in carrying the final digest rather than the dummy.
+pub fn encode_parallel_relation_proposal_challenge(
     sender_identity: Option<&[u8]>,
     nonce: &Nonce,
     request_digest: Digest<'_>,
@@ -313,11 +316,11 @@ fn encode_sender_identity(
     checked_encode_variable_data(TSP_VID, sender_identity.unwrap_or(&[]), output)
 }
 
-/// Encode opaque upper-layer data as a `-A##` generic CESR stream holding a bare
-/// Bytes primitive, which is native CESR. The `-A##` stream frame is always
-/// present; its contents are the upper layer's. A caller that interleaves
-/// non-native serializations (JSON, CBOR, MsgPak) encloses each in a `-H##`
-/// group inside the stream; TSP carries the stream contents opaquely.
+/// Encode opaque upper-layer data as the higher layer payload body: a `-A##`
+/// group holding exactly one Bytes primitive, whose count is the encoded length
+/// of that primitive. The content of the primitive is an opaque octet string
+/// the upper layer defines — a sniffable CESR stream, JSON, CBOR, MsgPack or
+/// anything else — which TSP carries without interpretation.
 fn encode_opaque_data(
     data: &[u8],
     output: &mut impl for<'a> Extend<&'a u8>,
@@ -588,7 +591,8 @@ fn decode_sender_identity(stream: &mut [u8]) -> Result<(Option<&[u8]>, &mut [u8]
     Ok((vid, stream))
 }
 
-/// Decode opaque upper-layer data (see [encode_opaque_data])
+/// Decode the higher layer payload body (see [encode_opaque_data]); the `-A##`
+/// group must hold exactly one Bytes primitive and its count must match
 fn decode_opaque_data(stream: &mut [u8]) -> Result<(&mut [u8], &mut [u8]), DecodeError> {
     let (stream_quadlets, stream) =
         decode_count_mut(TSP_GENERIC_STREAM, stream).ok_or(DecodeError::UnexpectedData)?;
@@ -1203,8 +1207,13 @@ pub fn decode_envelope<'a>(stream: &'a mut [u8]) -> Result<CipherView<'a>, Decod
         },
     };
 
-    // any data after the signature attachment is not part of this message
-    // (a transport may deliver several messages back-to-back) and is ignored
+    // a TSP message ends with its signature attachment group: what is delivered
+    // must be exactly one message, so octets after the group are a reason to
+    // reject it. A transport binding that carries more than one message in one
+    // transport-level unit delimits them before delivery (spec 3.7).
+    if !sigdata.is_empty() {
+        return Err(DecodeError::TrailingGarbage);
+    }
 
     Ok(CipherView {
         data,
@@ -1339,11 +1348,17 @@ pub fn open_message_into_parts(data: &[u8]) -> Result<MessageParts<'_>, DecodeEr
         })
     };
 
-    let signature = match EncodedSignature::decode(&mut &data[pos..])? {
+    let mut sigdata = &data[pos..];
+    let signature = match EncodedSignature::decode(&mut sigdata)? {
         EncodedSignature::NoSignature => &[],
         EncodedSignature::Ed25519(sig) => sig.as_slice(),
         EncodedSignature::MlDsa65(sig) => sig.as_slice(),
     };
+
+    // the attachment group ends the message; see [decode_envelope]
+    if !sigdata.is_empty() {
+        return Err(DecodeError::TrailingGarbage);
+    }
 
     let signature = Part {
         prefix: &data[pos..(data.len() - signature.len())],
@@ -1655,7 +1670,7 @@ mod test {
 
     #[test]
     #[wasm_bindgen_test]
-    fn trailing_data_is_ignored() {
+    fn trailing_data_is_rejected() {
         let fixed_sig = [1; 64];
 
         let mut outer = encode_envelope_vec(Envelope {
@@ -1669,11 +1684,12 @@ mod test {
         finalize_envelope_frame(&mut outer);
         encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
 
-        // a transport may deliver several messages back-to-back: data after the
-        // signature attachment is not part of this message and must not be an error
+        // exactly one message per delivery: the attachment group ends it, and
+        // octets after it are a reason to reject the message (spec 3.7)
+        assert!(decode_envelope(&mut outer.clone()).is_ok());
         outer.push(b'-');
 
-        assert!(decode_envelope(&mut outer).is_ok());
+        assert!(decode_envelope(&mut outer).is_err());
     }
 
     #[cfg(all(feature = "demo", test))]

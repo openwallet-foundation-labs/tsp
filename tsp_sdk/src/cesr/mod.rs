@@ -163,6 +163,29 @@ mod test {
     }
 
     #[test]
+    fn non_canonical_lead_bytes_are_rejected() {
+        // short form (`5B`/`6B`) and long form (`8AAB`/`9AAB`) alike: a lead
+        // byte that is not zero makes the primitive non-canonical (spec 3.7)
+        for identifier in [3, 64] {
+            let code_len = if identifier < 64 { 3 } else { 6 };
+            for payload in [b"ab".as_slice(), b"a".as_slice()] {
+                let mut data = vec![];
+                encode_variable_data(identifier, payload, &mut data);
+                assert_eq!(
+                    decode_variable_data(identifier, &mut &data[..]).unwrap(),
+                    payload
+                );
+
+                for lead in code_len..code_len + (3 - payload.len()) {
+                    let mut tampered = data.clone();
+                    tampered[lead] = 1;
+                    assert!(decode_variable_data(identifier, &mut &tampered[..]).is_none());
+                }
+            }
+        }
+    }
+
+    #[test]
     fn encode_and_decode() {
         let mut data = vec![];
         encode_genus([1, 2, 3], (4, 5, 6), &mut data);

@@ -2052,7 +2052,7 @@ impl SecureStore {
             Some(&mut reply_thread_id),
         )?;
 
-        self.establish_bidirectional_relation(sender, receiver, reply_thread_id, thread_id)?;
+        self.establish_bidirectional_relation(sender, receiver, thread_id, reply_thread_id)?;
 
         Ok((transport, tsp_message))
     }
@@ -2090,8 +2090,8 @@ impl SecureStore {
         self.establish_bidirectional_relation(
             sender_new_vid.identifier(),
             receiver_new_vid.identifier(),
-            reply_thread_id,
             thread_id,
+            reply_thread_id,
         )?;
         self.remove_pending_incoming_parallel_request(receiver_new_vid.identifier(), thread_id)?;
 
@@ -2108,6 +2108,8 @@ impl SecureStore {
         let old_relationship =
             self.replace_relation_status_for_vid(receiver, RelationshipStatus::Unrelated)?;
 
+        // the `TSP_RFD` names the Digest of the `TSP_RFI` that formed the
+        // relationship (spec 7.3), which is what `thread_id` holds on both sides
         let thread_id = match old_relationship {
             RelationshipStatus::Bidirectional { thread_id, .. } => thread_id,
             RelationshipStatus::Unidirectional { thread_id } => thread_id,
@@ -2209,7 +2211,7 @@ impl SecureStore {
             Some(selection),
         )?;
 
-        let relation_status = RelationshipStatus::bi(reply_thread_id, thread_id);
+        let relation_status = RelationshipStatus::bi(thread_id, reply_thread_id);
         self.set_relation_and_status_for_vid(
             nested_vid.identifier(),
             relation_status.clone(),
@@ -2268,6 +2270,9 @@ impl SecureStore {
         self.add_verified_vid(nested_vid, None)
     }
 
+    /// Record a formed relationship. Both endpoints record the same pair the
+    /// same way round: `thread_id` is the invite's Digest, `remote_thread_id`
+    /// the accept's Reply_Digest, whichever side this endpoint was (spec 7.2.1).
     fn establish_bidirectional_relation(
         &self,
         my_vid: &str,
@@ -3398,8 +3403,10 @@ mod test {
         else {
             panic!("parallel accept did not establish sender-side relationship");
         };
-        assert_eq!(sender_remote_thread_id, thread_id);
-        assert!(sender_thread_id.iter().any(|byte| *byte != 0));
+        // both sides hold the pair the same way round: the invite's digest
+        // first, the accept's second
+        assert_eq!(sender_thread_id, thread_id);
+        assert!(sender_remote_thread_id.iter().any(|byte| *byte != 0));
         assert!(outstanding_nested_requests.is_empty());
 
         let received = a_store.open_message(&mut sealed).unwrap();
@@ -3435,7 +3442,7 @@ mod test {
         assert_eq!(receiver_thread_id, thread_id);
         assert_eq!(receiver_remote_thread_id, received_reply_digest);
         assert!(outstanding_nested_requests.is_empty());
-        assert_eq!(sender_thread_id, received_reply_digest);
+        assert_eq!(sender_remote_thread_id, received_reply_digest);
     }
 
     #[test]
@@ -3921,8 +3928,51 @@ mod test {
     }
 
     #[test]
+    fn test_cancel_from_the_accepting_side_names_the_invite_digest() {
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+
+        let (_url, mut request) = a_store
+            .make_relationship_request(alice.identifier(), bob.identifier(), None)
+            .unwrap();
+
+        let ReceivedTspMessage::RequestRelationship {
+            thread_id: request_digest,
+            ..
+        } = b_store.open_message(&mut request).unwrap()
+        else {
+            panic!("unexpected message type");
+        };
+
+        let (_url, mut accept) = b_store
+            .make_relationship_accept(bob.identifier(), alice.identifier(), request_digest, None)
+            .unwrap();
+        a_store.open_message(&mut accept).unwrap();
+
+        // bob accepted rather than invited, but his cancel still names the
+        // digest of the invite that formed the relationship (spec 7.3)
+        let (_url, mut cancel) = b_store
+            .make_relationship_cancel(bob.identifier(), alice.identifier())
+            .unwrap();
+
+        let ReceivedTspMessage::CancelRelationship { thread_id, .. } =
+            a_store.open_message(&mut cancel).unwrap()
+        else {
+            panic!("unexpected message type");
+        };
+
+        assert_eq!(thread_id, request_digest);
+    }
+
+    #[test]
     #[wasm_bindgen_test]
-    fn test_direct_relationship_tracks_local_and_remote_thread_ids() {
+    fn test_direct_relationship_tracks_invite_and_reply_digests() {
         let a_store = create_test_store();
         let b_store = create_test_store();
         let (alice, bob) = create_test_vid_pair();
@@ -3972,8 +4022,9 @@ mod test {
                 remote_thread_id,
                 ..
             } => {
-                assert_eq!(remote_thread_id, request_digest);
-                thread_id
+                // the replier holds the pair the same way round as the inviter
+                assert_eq!(thread_id, request_digest);
+                remote_thread_id
             }
             status => panic!("unexpected replier status after accept: {status}"),
         };

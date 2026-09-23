@@ -118,7 +118,7 @@ pub fn verify_payload<'a>(
             Envelope {
                 crypto_type,
                 signature_type,
-                sender: _,
+                sender: envelope_sender,
                 receiver: _,
             },
         payload_position: Some(payload),
@@ -133,12 +133,52 @@ pub fn verify_payload<'a>(
         return Err(CryptoError::MissingCiphertext);
     }
 
+    let decoded = crate::cesr::decode_payload(payload)?;
+
+    // in a non-confidential payload the sender-VID field MAY be NULL; when it
+    // is not, it MUST match the envelope (spec 3.7 step 7). As in the encrypted
+    // backends the comparison is against the envelope rather than the resolved
+    // VID's own identifier, which differ for a VID being introduced
+    if let Some(id) = decoded.sender_identity
+        && id != envelope_sender
+    {
+        return Err(CryptoError::UnexpectedSender);
+    }
+
     Ok((
-        crate::cesr::decode_payload(payload)?,
+        decoded,
         MessageType {
             enclosing_crypto_type: None,
             crypto_type,
             signature_type,
         },
     ))
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::test_utils::create_test_vid_pair;
+
+    /// Spec 3.7 step 7: in a non-confidential payload the sender VID field may
+    /// be NULL, and when it is not it must match the envelope's sender
+    #[test]
+    fn sender_vid_field_must_match_the_envelope() {
+        let (alice, bob) = create_test_vid_pair();
+        let payload = crate::cesr::Payload::<_, &[u8]>::GenericMessage(b"hello".as_slice());
+
+        for (identity, expected) in [
+            (None, true),
+            (Some(alice.identifier().as_bytes()), true),
+            (Some(bob.identifier().as_bytes()), false),
+        ] {
+            let mut message = sign_payload(&alice, Some(&bob), &payload, identity).unwrap();
+
+            assert_eq!(
+                verify_payload(&alice, &mut message).is_ok(),
+                expected,
+                "sender VID field {identity:?}"
+            );
+        }
+    }
 }

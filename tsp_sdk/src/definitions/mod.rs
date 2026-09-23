@@ -76,6 +76,11 @@ pub struct PendingIncomingParallelRelationship {
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub enum RelationshipStatus {
+    /// A formed relationship. Both endpoints hold the same two digests the same
+    /// way round, whichever side each was: `thread_id` is the Digest of the
+    /// `TSP_RFI` that formed the relationship, `remote_thread_id` the
+    /// Reply_Digest of the `TSP_RFA` that answered it. Either may be used as a
+    /// thread identifier; a `TSP_RFD` names the first (spec 7.2.1, 7.3).
     Bidirectional {
         thread_id: Digest,
         remote_thread_id: Digest,
