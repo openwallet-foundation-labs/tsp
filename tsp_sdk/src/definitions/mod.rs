@@ -77,29 +77,35 @@ pub struct PendingIncomingParallelRelationship {
 #[derive(Clone, Debug)]
 pub enum RelationshipStatus {
     /// A formed relationship. Both endpoints hold the same two digests the same
-    /// way round, whichever side each was: `thread_id` is the Digest of the
-    /// `TSP_RFI` that formed the relationship, `remote_thread_id` the
-    /// Reply_Digest of the `TSP_RFA` that answered it. Either may be used as a
-    /// thread identifier; a `TSP_RFD` names the first (spec 7.2.1, 7.3).
+    /// way round, whichever side each was: the Digest of the `TSP_RFI` that
+    /// formed the relationship, and the Reply_Digest of the `TSP_RFA` that
+    /// answered it. Either may be used as a thread identifier; a `TSP_RFD`
+    /// names the invite's (spec 7.2.1, 7.3).
     Bidirectional {
-        thread_id: Digest,
-        remote_thread_id: Digest,
+        // the stored names are what wallets written before the rename carry;
+        // only the Rust names changed, so those wallets still load
+        #[cfg_attr(feature = "serialize", serde(rename = "thread_id"))]
+        invite_digest: Digest,
+        #[cfg_attr(feature = "serialize", serde(rename = "remote_thread_id"))]
+        reply_digest: Digest,
         outstanding_nested_requests: Vec<PendingNestedRelationship>,
     },
     Unidirectional {
-        thread_id: Digest,
+        #[cfg_attr(feature = "serialize", serde(rename = "thread_id"))]
+        invite_digest: Digest,
     },
     ReverseUnidirectional {
-        thread_id: Digest,
+        #[cfg_attr(feature = "serialize", serde(rename = "thread_id"))]
+        invite_digest: Digest,
     },
     Unrelated,
 }
 
 impl RelationshipStatus {
-    pub(crate) fn bi(thread_id: Digest, remote_thread_id: Digest) -> Self {
+    pub(crate) fn bi(invite_digest: Digest, reply_digest: Digest) -> Self {
         RelationshipStatus::Bidirectional {
-            thread_id,
-            remote_thread_id,
+            invite_digest,
+            reply_digest,
             outstanding_nested_requests: vec![],
         }
     }

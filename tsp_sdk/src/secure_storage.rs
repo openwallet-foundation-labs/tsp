@@ -129,8 +129,8 @@ impl From<LegacyRelationshipStatus> for RelationshipStatus {
                 outstanding_nested_requests,
                 outstanding_nested_thread_ids,
             } => RelationshipStatus::Bidirectional {
-                thread_id,
-                remote_thread_id: remote_thread_id.unwrap_or(thread_id),
+                invite_digest: thread_id,
+                reply_digest: remote_thread_id.unwrap_or(thread_id),
                 outstanding_nested_requests: if outstanding_nested_requests.is_empty() {
                     outstanding_nested_thread_ids
                         .into_iter()
@@ -144,10 +144,14 @@ impl From<LegacyRelationshipStatus> for RelationshipStatus {
                 },
             },
             LegacyRelationshipStatus::Unidirectional { thread_id } => {
-                RelationshipStatus::Unidirectional { thread_id }
+                RelationshipStatus::Unidirectional {
+                    invite_digest: thread_id,
+                }
             }
             LegacyRelationshipStatus::ReverseUnidirectional { thread_id } => {
-                RelationshipStatus::ReverseUnidirectional { thread_id }
+                RelationshipStatus::ReverseUnidirectional {
+                    invite_digest: thread_id,
+                }
             }
             LegacyRelationshipStatus::Unrelated => RelationshipStatus::Unrelated,
         }
@@ -657,8 +661,8 @@ mod test {
         let decoded = decode_metadata(raw.to_string().as_bytes()).unwrap();
 
         let RelationshipStatus::Bidirectional {
-            thread_id,
-            remote_thread_id,
+            invite_digest: thread_id,
+            reply_digest: remote_thread_id,
             outstanding_nested_requests,
         } = decoded.relation_status
         else {

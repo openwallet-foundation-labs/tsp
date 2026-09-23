@@ -507,8 +507,8 @@ fn ensure_bidirectional_relation(
             store.set_relation_and_status_for_vid(
                 remote_vid,
                 RelationshipStatus::Bidirectional {
-                    thread_id: [0; 32],
-                    remote_thread_id: [0; 32],
+                    invite_digest: [0; 32],
+                    reply_digest: [0; 32],
                     outstanding_nested_requests: vec![],
                 },
                 local_vid,

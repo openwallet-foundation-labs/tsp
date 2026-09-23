@@ -1526,7 +1526,9 @@ async fn run() -> Result<(), Error> {
                             debug!(remote_vid, "setting default relationship");
                             vid_wallet.set_relation_and_status_for_vid(
                                 &remote_vid,
-                                RelationshipStatus::ReverseUnidirectional { thread_id },
+                                RelationshipStatus::ReverseUnidirectional {
+                                    invite_digest: thread_id,
+                                },
                                 &vid,
                             )?;
                         }
