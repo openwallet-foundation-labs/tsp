@@ -1488,6 +1488,288 @@
       "spec": "7.2.1, 8, 9.4.1"
     },
     {
+      "derivation": {
+        "digest": "JQq7g9rQe5IeegWIeQhsv4Nm-S__P6V-d7QcXpnWP3g",
+        "digest_input": "YTSP-AAC4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFBXRFI4BAAIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMj0AARERERERERERERERERERER-JAA5BDOAGRpZDpwZWVyOjR6UW1SRlJOVVRhclptTWVidnZxTnlBRFA3cmtVZ2g1TkZGaHhxV3Z4M2VxcWdTMzp6MjVOUkpNS3BRS3duVW02azlGYlRTcDFlcUFOb3JEdEZpbUhXOW5HZExTZ0FiTjFVaHNRQU5GQW5oaWo4VlhycnduRERHNVJiN0hHcllwQkdaUnkzRWJnbXhpcnFKaTNXdU5maWFqYXZwczZrQWZudms5eWt4R3FjeEg0dTdQMlRKb2hmYnZpZ0dNVE1HeEFocWtVNEpEa1dZaTFzQnAyNjZuOHR6VHpEM0RmUlU5RmJ2SFM5OVdiUTNyZDZLYk5xRmZvVXpjaGJiOWJVOENDZndOckY4WjFkaVU4bWRqYmZiUVhrenNhdTRhZXhURnhCZ0NjYkVlTVVzNmZjTUFCSnFRbVg3RHpiM0hkTUU5ZWZQdlFSUUgzSlhIdkwyamtiUHVCcGoybnFHM2p1eVJXdm90aGNRdXdVYW9jMUNycDE5WXZ4dzh3Mm1UaVYxeTJ4aUF1dHBnNFJiRXU1Z045NGNGUkY0d0VXVXdoWUZnekZZb0xXd3FNR0ptTGJUQTk1VjdqQWZZQUFUblVFdFdLRmN3ZzJiWVlhTTJRbUZWNjdCbWk0M2FHdlFNWThxSkNYY1JEUEZadEV1eGVmUUFtOTE2VjZERjlKQjZvVFJhanp4N3ZKdkc2VmdVS3Y4aG5jVHJDYU1ObXZWMjJ1cGJmVTVkdVpLNHFCVHJYbzFjckpTaE5lbTU0N0ZnOTJGSHZhZHdIVUxrNDlac1ZCTWJQRVRRcEVFYXRrakJ0Z05n",
+        "signature_input": "XRFI4BAAICUKu4Pa0HuSHnoFiHkIbL-DZvkv_z-lfne0HF6Z1j940AARERERERERERERERERERER-JAA5BDOAGRpZDpwZWVyOjR6UW1SRlJOVVRhclptTWVidnZxTnlBRFA3cmtVZ2g1TkZGaHhxV3Z4M2VxcWdTMzp6MjVOUkpNS3BRS3duVW02azlGYlRTcDFlcUFOb3JEdEZpbUhXOW5HZExTZ0FiTjFVaHNRQU5GQW5oaWo4VlhycnduRERHNVJiN0hHcllwQkdaUnkzRWJnbXhpcnFKaTNXdU5maWFqYXZwczZrQWZudms5eWt4R3FjeEg0dTdQMlRKb2hmYnZpZ0dNVE1HeEFocWtVNEpEa1dZaTFzQnAyNjZuOHR6VHpEM0RmUlU5RmJ2SFM5OVdiUTNyZDZLYk5xRmZvVXpjaGJiOWJVOENDZndOckY4WjFkaVU4bWRqYmZiUVhrenNhdTRhZXhURnhCZ0NjYkVlTVVzNmZjTUFCSnFRbVg3RHpiM0hkTUU5ZWZQdlFSUUgzSlhIdkwyamtiUHVCcGoybnFHM2p1eVJXdm90aGNRdXdVYW9jMUNycDE5WXZ4dzh3Mm1UaVYxeTJ4aUF1dHBnNFJiRXU1Z045NGNGUkY0d0VXVXdoWUZnekZZb0xXd3FNR0ptTGJUQTk1VjdqQWZZQUFUblVFdFdLRmN3ZzJiWVlhTTJRbUZWNjdCbWk0M2FHdlFNWThxSkNYY1JEUEZadEV1eGVmUUFtOTE2VjZERjlKQjZvVFJhanp4N3ZKdkc2VmdVS3Y4aG5jVHJDYU1ObXZWMjJ1cGJmVTVkdVpLNHFCVHJYbzFjckpTaE5lbTU0N0ZnOTJGSHZhZHdIVUxrNDlac1ZCTWJQRVRRcEVFYXRrakJ0Z05n",
+        "signature_new": "VVFbFplUg8pvLJJF6_9bVMH1vBmqJnzGJ-NP8GOj74BaLhd_zBVsH7xNSCQa16q3FV_oGzyxXm-Kh-5YjUUNDg"
+      },
+      "description": "A TSP_RFI introducing a new VID over an existing relationship. The Referral_Field is populated: -J## covering VID_new and Signature_new. Signature_new is made by the new VID's own key, which is what proves control of it. Into the TSP Digest the field contributes VID_new alone, without its -J## code and count and without Signature_new; an empty field would contribute -JAA instead. The Reply_Path is empty and contributes its full encoding, -JAA.",
+      "ephemeral": {
+        "ikmE": "WZWlZqGZoqjRKMM35-_QVQyC-s46a7F4uOgaQcn-E7o",
+        "kind": "ikmE, the HPKE encapsulation keying material",
+        "public": "-RSFKGq436VjiepfHhVnCCTFmsruYqlGoi6kbkIKqU8"
+      },
+      "expect": {
+        "crypto": "HpkeBase",
+        "payload": {
+          "request_relationship": {
+            "referral": {
+              "new_vid": "did:peer:4zQmRFRNUTarZmMebvvqNyADP7rkUgh5NFFhxqWvx3eqqgS3:z25NRJMKpQKwnUm6k9FbTSp1eqANorDtFimHW9nGdLSgAbN1UhsQANFAnhij8VXrrwnDDG5Rb7HGrYpBGZRy3EbgmxirqJi3WuNfiajavps6kAfnvk9ykxGqcxH4u7P2TJohfbvigGMTMGxAhqkU4JDkWYi1sBp266n8tzTzD3DfRU9FbvHS99WbQ3rd6KbNqFfoUzchbb9bU8CCfwNrF8Z1diU8mdjbfbQXkzsau4aexTFxBgCcbEeMUs6fcMABJqQmX7Dzb3HdME9efPvQRQH3JXHvL2jkbPuBpj2nqG3juyRWvothcQuwUaoc1Crp19Yvxw8w2mTiV1y2xiAutpg4RbEu5gN94cFRF4wEWUwhYFgzFYoLWwqMGJmLbTA95V7jAfYAATnUEtWKFcwg2bYYaM2QmFV67Bmi43aGvQMY8qJCXcRDPFZtEuxefQAm916V6DF9JB6oTRajzx7vJvG6VgUKv8hncTrCaMNmvV22upbfU5duZK4qBTrXo1crJShNem547Fg92FHvadwHULk49ZsVBMbPETQpEEatkjBtgNg",
+              "sig_new_vid": "VVFbFplUg8pvLJJF6_9bVMH1vBmqJnzGJ-NP8GOj74BaLhd_zBVsH7xNSCQa16q3FV_oGzyxXm-Kh-5YjUUNDg"
+            },
+            "reply_path": [],
+            "thread_id": "JQq7g9rQe5IeegWIeQhsv4Nm-S__P6V-d7QcXpnWP3g"
+          }
+        }
+      },
+      "inner": null,
+      "layout": [
+        "-Z##",
+        "XRFI",
+        "VID_sndr | 4BAA",
+        "Digest",
+        "Nonce",
+        "Reply_Path",
+        "Referral_Field",
+        "Padding_Field"
+      ],
+      "message": "-EE5YTSP-AAC4BATZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx4BATZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB4FEO-RSFKGq436VjiepfHhVnCCTFmsruYqlGoi6kbkIKqU8V0M_vVgpSNrrjwBLnXeYQmKsJtapjeG6oqRjZ5D_tuLgeugnAcU-LC592RFq11nnYSDHVhiGGLXCA1Io6TmVIFr4_0Zij8ANtcdJ5ztC-6dIvQaa54aHihImTfA2OcJrW46XmG4Nw-JiQVV0TCnr5SJKS8UVj2Klpb1w1uBWj2V5aTbvJWi8Bz0ujPcgyPR24VZubZ4d8BGbx7LPHb6VoTcJqmRv3hRKfey_U8kYZK29sE0guJ9cGoW8hKvo59E43zL005VQL6VyngtAO_IZkImoEhGwb75wRbihsc711na0haU7i8QzbyKB9Y_-rNP-UBf-SNSTPJ9DuQE1M9zdPf39ckWfyf2Z4vd0CT8HwKUMCkFCB9wPpQtFj59GUwilPjic0wZcKEuOzM-Mkz_xrnBkKqD0pGdPh_LBcYvXZ8gNj5Q8mfBvdL618uz0UB2otOKZyatoqJVrg9Sm1SjoO-LN9PDJ_mnllkrgA5qpiksqTTmpTo2D3jewFhSV-fQS0psC0CnB_DPC5rmOOa3TrYHokDpFHUaFota2Bt_TO27LSMce1p8k6SQ-ywEAWGoSXGy2DjYdTffQJhyMZsDCBH2GFzYXGsg4L633e0h8YAb72bBF9LDKmKEeATzmo_-d_kGkILZM98mhS3kYfnOq8QoFc8R7LZBYy2R0RKdFU176v1fMNN3aCRSjc868SQxc5hP2LKzaLuHvapCFtBu8Q8mXdWjYZqhFAG_OBrrvHxVNcyGrxCVbS2LfFhmu-T5YsbFrbQrutmO8GiGzg_4Zi6gHhGCFCsF-dSACWC_UGWeW73LZhdXqlE6IF11lgx1bb1BmuBJHlN7kS3ZKWDXdJRKJVCmbmWKRdj7TUobmR4_cryQJsdIcV_nY4JO4Sq95wX2FTgoATnxuupcwp75spTNGjy4OZYd1T_ktZmrQjKJpmMEO8L969IrWR7CpROEqFP8qNRXQg0aICvJ-rfzn7cMqma9m1WH7MysEglh1YpNuOriMTFiTu85GeD9QzGQqmcoo936DAaZtw-CAX-KAWBABPeezGVsjfnjw_5CdV6hpAWWqPKt7Zk3_LFp8qP2x0gIcOL8m0EV5qcWCFAeXfiYh53AfNB_zYTuX-ZSYlMNMK",
+      "name": "control-rfi-referral",
+      "nonce": "EREREREREREREREREREREQ",
+      "payload_plaintext": "-ZD9XRFI4BAAICUKu4Pa0HuSHnoFiHkIbL-DZvkv_z-lfne0HF6Z1j940AARERERERERERERERERERER-JAA-JDn5BDOAGRpZDpwZWVyOjR6UW1SRlJOVVRhclptTWVidnZxTnlBRFA3cmtVZ2g1TkZGaHhxV3Z4M2VxcWdTMzp6MjVOUkpNS3BRS3duVW02azlGYlRTcDFlcUFOb3JEdEZpbUhXOW5HZExTZ0FiTjFVaHNRQU5GQW5oaWo4VlhycnduRERHNVJiN0hHcllwQkdaUnkzRWJnbXhpcnFKaTNXdU5maWFqYXZwczZrQWZudms5eWt4R3FjeEg0dTdQMlRKb2hmYnZpZ0dNVE1HeEFocWtVNEpEa1dZaTFzQnAyNjZuOHR6VHpEM0RmUlU5RmJ2SFM5OVdiUTNyZDZLYk5xRmZvVXpjaGJiOWJVOENDZndOckY4WjFkaVU4bWRqYmZiUVhrenNhdTRhZXhURnhCZ0NjYkVlTVVzNmZjTUFCSnFRbVg3RHpiM0hkTUU5ZWZQdlFSUUgzSlhIdkwyamtiUHVCcGoybnFHM2p1eVJXdm90aGNRdXdVYW9jMUNycDE5WXZ4dzh3Mm1UaVYxeTJ4aUF1dHBnNFJiRXU1Z045NGNGUkY0d0VXVXdoWUZnekZZb0xXd3FNR0ptTGJUQTk1VjdqQWZZQUFUblVFdFdLRmN3ZzJiWVlhTTJRbUZWNjdCbWk0M2FHdlFNWThxSkNYY1JEUEZadEV1eGVmUUFtOTE2VjZERjlKQjZvVFJhanp4N3ZKdkc2VmdVS3Y4aG5jVHJDYU1ObXZWMjJ1cGJmVTVkdVpLNHFCVHJYbzFjckpTaE5lbTU0N0ZnOTJGSHZhZHdIVUxrNDlac1ZCTWJQRVRRcEVFYXRrakJ0Z05n-CAX-KAWBABVUVsWmVSDym8skkXr_1tUwfW8GaomfMYn40_wY6PvgFouF3_MFWwfvE1IJBrXqrcVX-gbPLFeb4qH7liNRQ0O4BAA",
+      "payload_segments": [
+        {
+          "chars": 4,
+          "field": "payload code",
+          "kind": "code",
+          "note": "counts the payload that follows",
+          "text": "-ZD9",
+          "value": "253 quadlets = 759 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "payload type",
+          "kind": "code",
+          "note": "relationship forming invite",
+          "text": "XRFI",
+          "value": "TSP_RFI"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 0 quadlets",
+          "text": "4BAA",
+          "value": "empty, the NULL value"
+        },
+        {
+          "chars": 1,
+          "field": "Digest code",
+          "kind": "code",
+          "note": "SHA2-256, 32 bytes",
+          "text": "I",
+          "value": null
+        },
+        {
+          "chars": 43,
+          "field": "Digest",
+          "kind": "data",
+          "note": "43 characters",
+          "text": "CUKu4Pa0HuSHnoFiHkIbL-DZvkv_z-lfne0HF6Z1j94",
+          "value": "250abb83dad07b921e7a058879086cbf8366f92fff3fa57e77b41c5e99d63f78"
+        },
+        {
+          "chars": 2,
+          "field": "Nonce code",
+          "kind": "code",
+          "note": "128 bits",
+          "text": "0A",
+          "value": null
+        },
+        {
+          "chars": 22,
+          "field": "Nonce",
+          "kind": "data",
+          "note": "22 characters",
+          "text": "ARERERERERERERERERERER",
+          "value": "11111111111111111111111111111111"
+        },
+        {
+          "chars": 4,
+          "field": "hop list code",
+          "kind": "code",
+          "note": "a list of VIDs",
+          "text": "-JAA",
+          "value": "empty"
+        },
+        {
+          "chars": 4,
+          "field": "hop list code",
+          "kind": "code",
+          "note": "a list of VIDs",
+          "text": "-JDn",
+          "value": "231 quadlets = 693 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "VID_hop code",
+          "kind": "code",
+          "note": "lead pad 1, count 206 quadlets",
+          "text": "5BDO",
+          "value": "617 bytes follow"
+        },
+        {
+          "chars": 824,
+          "field": "VID_hop",
+          "kind": "data",
+          "note": "617 bytes",
+          "text": "AGRpZDpwZWVyOjR6UW1SRlJOVVRhclptTWVidnZxTnlBRFA3cmtVZ2g1TkZGaHhxV3Z4M2VxcWdTMzp6MjVOUkpNS3BRS3duVW02azlGYlRTcDFlcUFOb3JEdEZpbUhXOW5HZExTZ0FiTjFVaHNRQU5GQW5oaWo4VlhycnduRERHNVJiN0hHcllwQkdaUnkzRWJnbXhpcnFKaTNXdU5maWFqYXZwczZrQWZudms5eWt4R3FjeEg0dTdQMlRKb2hmYnZpZ0dNVE1HeEFocWtVNEpEa1dZaTFzQnAyNjZuOHR6VHpEM0RmUlU5RmJ2SFM5OVdiUTNyZDZLYk5xRmZvVXpjaGJiOWJVOENDZndOckY4WjFkaVU4bWRqYmZiUVhrenNhdTRhZXhURnhCZ0NjYkVlTVVzNmZjTUFCSnFRbVg3RHpiM0hkTUU5ZWZQdlFSUUgzSlhIdkwyamtiUHVCcGoybnFHM2p1eVJXdm90aGNRdXdVYW9jMUNycDE5WXZ4dzh3Mm1UaVYxeTJ4aUF1dHBnNFJiRXU1Z045NGNGUkY0d0VXVXdoWUZnekZZb0xXd3FNR0ptTGJUQTk1VjdqQWZZQUFUblVFdFdLRmN3ZzJiWVlhTTJRbUZWNjdCbWk0M2FHdlFNWThxSkNYY1JEUEZadEV1eGVmUUFtOTE2VjZERjlKQjZvVFJhanp4N3ZKdkc2VmdVS3Y4aG5jVHJDYU1ObXZWMjJ1cGJmVTVkdVpLNHFCVHJYbzFjckpTaE5lbTU0N0ZnOTJGSHZhZHdIVUxrNDlac1ZCTWJQRVRRcEVFYXRrakJ0Z05n",
+          "value": "did:peer:4zQmRFRNUTarZmMebvvqNyADP7rkUgh5NFFhxqWvx3eqqgS3:z25NRJMKpQKwnUm6k9FbTSp1eqANorDtFimHW9nGdLSgAbN1UhsQANFAnhij8VXrrwnDDG5Rb7HGrYpBGZRy3EbgmxirqJi3WuNfiajavps6kAfnvk9ykxGqcxH4u7P2TJohfbvigGMTMGxAhqkU4JDkWYi1sBp266n8tzTzD3DfRU9FbvHS99WbQ3rd6KbNqFfoUzchbb9bU8CCfwNrF8Z1diU8mdjbfbQXkzsau4aexTFxBgCcbEeMUs6fcMABJqQmX7Dzb3HdME9efPvQRQH3JXHvL2jkbPuBpj2nqG3juyRWvothcQuwUaoc1Crp19Yvxw8w2mTiV1y2xiAutpg4RbEu5gN94cFRF4wEWUwhYFgzFYoLWwqMGJmLbTA95V7jAfYAATnUEtWKFcwg2bYYaM2QmFV67Bmi43aGvQMY8qJCXcRDPFZtEuxefQAm916V6DF9JB6oTRajzx7vJvG6VgUKv8hncTrCaMNmvV22upbfU5duZK4qBTrXo1crJShNem547Fg92FHvadwHULk49ZsVBMbPETQpEEatkjBtgNg"
+        },
+        {
+          "chars": 4,
+          "field": "attachments code",
+          "kind": "code",
+          "note": "attachment group",
+          "text": "-CAX",
+          "value": "23 quadlets = 69 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "signatures code",
+          "kind": "code",
+          "note": "indexed signature group",
+          "text": "-KAW",
+          "value": "22 quadlets = 66 bytes"
+        },
+        {
+          "chars": 2,
+          "field": "signature code",
+          "kind": "code",
+          "note": "Ed25519, signing key index 0",
+          "text": "BA",
+          "value": null
+        },
+        {
+          "chars": 86,
+          "field": "signature",
+          "kind": "data",
+          "note": "64 bytes",
+          "text": "BVUVsWmVSDym8skkXr_1tUwfW8GaomfMYn40_wY6PvgFouF3_MFWwfvE1IJBrXqrcVX-gbPLFeb4qH7liNRQ0O",
+          "value": "55515b16995483ca6f2c9245ebff5b54c1f5bc19aa267cc627e34ff063a3ef805a2e177fcc156c1fbc4d48241ad7aab7155fe81b3cb15e6f8a87ee588d450d0e"
+        },
+        {
+          "chars": 4,
+          "field": "Padding_Field code",
+          "kind": "code",
+          "note": "lead pad 0, count 0 quadlets",
+          "text": "4BAA",
+          "value": "empty, the NULL value"
+        }
+      ],
+      "receiver": "bob",
+      "seed": "DAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "segments": [
+        {
+          "chars": 4,
+          "field": "frame code",
+          "kind": "code",
+          "note": "counts the signable content that follows",
+          "text": "-EE5",
+          "value": "313 quadlets = 939 bytes"
+        },
+        {
+          "chars": 5,
+          "field": "TSP protocol code",
+          "kind": "code",
+          "note": "unique in the CESR code; also the HPKE info",
+          "text": "YTSP-",
+          "value": null
+        },
+        {
+          "chars": 3,
+          "field": "TSP_Version",
+          "kind": "data",
+          "note": "MAJOR is the first character, MINOR the following two",
+          "text": "AAC",
+          "value": "0.2"
+        },
+        {
+          "chars": 4,
+          "field": "VID_sndr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
+          "field": "VID_sndr",
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVVMNjFOYzFGN2lvaUt4SE5xd25KWFg0c3JoRnNLS1BvNlRyQ21oTTNkZnBx",
+          "value": "did:peer:4zQmUL61Nc1F7ioiKxHNqwnJXX4srhFsKKPo6TrCmhM3dfpq"
+        },
+        {
+          "chars": 4,
+          "field": "VID_rcvr code",
+          "kind": "code",
+          "note": "lead pad 0, count 19 quadlets",
+          "text": "4BAT",
+          "value": "57 bytes follow"
+        },
+        {
+          "chars": 76,
+          "field": "VID_rcvr",
+          "kind": "data",
+          "note": "57 bytes",
+          "text": "ZGlkOnBlZXI6NHpRbVptQ0FzRzdqMWV3VGpYanRkZHd1amlrMzNDRTJjTWJZU1BhZ3BNaVludDFB",
+          "value": "did:peer:4zQmZmCAsG7j1ewTjXjtddwujik33CE2cMbYSPagpMiYnt1A"
+        },
+        {
+          "chars": 4,
+          "field": "ciphertext code",
+          "kind": "code",
+          "note": "4F/5F/6F: HPKE-Base, including its post-quantum KEM; lead pad 0, count 270 quadlets",
+          "text": "4FEO",
+          "value": "810 bytes follow"
+        },
+        {
+          "chars": 1080,
+          "field": "ciphertext",
+          "kind": "data",
+          "note": "810 bytes, shown as hex",
+          "text": "-RSFKGq436VjiepfHhVnCCTFmsruYqlGoi6kbkIKqU8V0M_vVgpSNrrjwBLnXeYQmKsJtapjeG6oqRjZ5D_tuLgeugnAcU-LC592RFq11nnYSDHVhiGGLXCA1Io6TmVIFr4_0Zij8ANtcdJ5ztC-6dIvQaa54aHihImTfA2OcJrW46XmG4Nw-JiQVV0TCnr5SJKS8UVj2Klpb1w1uBWj2V5aTbvJWi8Bz0ujPcgyPR24VZubZ4d8BGbx7LPHb6VoTcJqmRv3hRKfey_U8kYZK29sE0guJ9cGoW8hKvo59E43zL005VQL6VyngtAO_IZkImoEhGwb75wRbihsc711na0haU7i8QzbyKB9Y_-rNP-UBf-SNSTPJ9DuQE1M9zdPf39ckWfyf2Z4vd0CT8HwKUMCkFCB9wPpQtFj59GUwilPjic0wZcKEuOzM-Mkz_xrnBkKqD0pGdPh_LBcYvXZ8gNj5Q8mfBvdL618uz0UB2otOKZyatoqJVrg9Sm1SjoO-LN9PDJ_mnllkrgA5qpiksqTTmpTo2D3jewFhSV-fQS0psC0CnB_DPC5rmOOa3TrYHokDpFHUaFota2Bt_TO27LSMce1p8k6SQ-ywEAWGoSXGy2DjYdTffQJhyMZsDCBH2GFzYXGsg4L633e0h8YAb72bBF9LDKmKEeATzmo_-d_kGkILZM98mhS3kYfnOq8QoFc8R7LZBYy2R0RKdFU176v1fMNN3aCRSjc868SQxc5hP2LKzaLuHvapCFtBu8Q8mXdWjYZqhFAG_OBrrvHxVNcyGrxCVbS2LfFhmu-T5YsbFrbQrutmO8GiGzg_4Zi6gHhGCFCsF-dSACWC_UGWeW73LZhdXqlE6IF11lgx1bb1BmuBJHlN7kS3ZKWDXdJRKJVCmbmWKRdj7TUobmR4_cryQJsdIcV_nY4JO4Sq95wX2FTgoATnxuupcwp75spTNGjy4OZYd1T_ktZmrQjKJpmMEO8L969IrWR7CpROEqFP8qNRXQg0aICvJ-rfzn7cMqma9m1WH7MysEglh1YpNuOriMTFiTu85GeD9QzGQqmcoo936DAaZtw",
+          "value": "f91485286ab8dfa56389ea5f1e15670824c59acaee62a946a22ea46e420aa94f15d0cfef560a5236bae3c012e75de61098ab09b5aa63786ea8a918d9e43fedb8b81eba09c0714f8b0b9f76445ab5d679d84831d58621862d7080d48a3a4e654816be3fd198a3f0036d71d279ced0bee9d22f41a6b9e1a1e28489937c0d8e709ad6e3a5e61b8370f89890555d130a7af9489292f14563d8a9696f5c35b815a3d95e5a4dbbc95a2f01cf4ba33dc8323d1db8559b9b67877c0466f1ecb3c76fa5684dc26a991bf785129f7b2fd4f246192b6f6c13482e27d706a16f212afa39f44e37ccbd34e5540be95ca782d00efc8664226a04846c1bef9c116e286c73bd759dad21694ee2f10cdbc8a07d63ffab34ff9405ff923524cf27d0ee404d4cf7374f7f7f5c9167f27f6678bddd024fc1f0294302905081f703e942d163e7d194c2294f8e2734c1970a12e3b333e324cffc6b9c190aa83d2919d3e1fcb05c62f5d9f20363e50f267c1bdd2fad7cbb3d14076a2d38a6726ada2a255ae0f529b54a3a0ef8b37d3c327f9a796592b800e6aa6292ca934e6a53a360f78dec0585257e7d04b4a6c0b40a707f0cf0b9ae638e6b74eb607a240e914751a168b5ad81b7f4cedbb2d231c7b5a7c93a490fb2c040161a84971b2d838d87537df409872319b030811f6185cd85c6b20e0beb7dded21f1801bef66c117d2c32a62847804f39a8ffe77f9069082d933df26852de461f9ceabc42815cf11ecb641632d91d1129d154d7beafd5f30d3776824528dcf3af1243173984fd8b2b368bb87bdaa4216d06ef10f265dd5a3619aa11401bf381aebbc7c5535cc86af10956d2d8b7c5866bbe4f962c6c5adb42bbad98ef06886ce0ff8662ea01e1182142b05f9d4800960bf50659e5bbdcb661757aa513a205d75960c756dbd419ae0491e537b912dd92960d774944a2550a66e658a45d8fb4d4a1b991e3f72bc9026c748715fe763824ee12abde705f61538280139f1baea5cc29ef9b294cd1a3cb839961dd53fe4b599ab423289a663043bc2fdebd22b591ec2a51384a853fca8d457420d1a202bc9fab7f39fb70caa66bd9b5587ecccac120961d58a4db8eae23131624eef3919e0fd433190aa6728a3ddfa0c0699b70"
+        },
+        {
+          "chars": 4,
+          "field": "attachments code",
+          "kind": "code",
+          "note": "attachment group",
+          "text": "-CAX",
+          "value": "23 quadlets = 69 bytes"
+        },
+        {
+          "chars": 4,
+          "field": "signatures code",
+          "kind": "code",
+          "note": "indexed signature group",
+          "text": "-KAW",
+          "value": "22 quadlets = 66 bytes"
+        },
+        {
+          "chars": 2,
+          "field": "signature code",
+          "kind": "code",
+          "note": "Ed25519, signing key index 0",
+          "text": "BA",
+          "value": null
+        },
+        {
+          "chars": 86,
+          "field": "signature",
+          "kind": "data",
+          "note": "64 bytes",
+          "text": "BPeezGVsjfnjw_5CdV6hpAWWqPKt7Zk3_LFp8qP2x0gIcOL8m0EV5qcWCFAeXfiYh53AfNB_zYTuX-ZSYlMNMK",
+          "value": "4f79ecc656c8df9e3c3fe42755ea1a40596a8f2aded9937fcb169f2a3f6c7480870e2fc9b4115e6a71608501e5df898879dc07cd07fcd84ee5fe65262530d30a"
+        }
+      ],
+      "sender": "alice",
+      "spec": "7.2.1, 7.2.5, 9.4.1"
+    },
+    {
       "description": "A nested message. The outer payload is XHOP: sender VID, an empty hop list -JAA because the outer relationship is direct, a padding field, then a complete inner TSP message with its own envelope, payload and signature. The inner VIDs are did:peer short forms, 57 characters each, which is what the two endpoints use once they have exchanged the long form that carries the document.",
       "ephemeral": {
         "ikmE": "wTSnRd6U5rWz-3yO0ngUXXg_6V5WgUjGbGLk0LrLj0g",
@@ -2452,6 +2734,47 @@
       "publicSigkey": "b5DCBaChqWVVGJOsGWcKuKti0SKfm53pTfOwuj-hm9g",
       "sigKeyType": "Ed25519",
       "sigkey": "MqiUK5zsViOi9QxQlyMXvPdraQghVOASyFiAvlFXp4U",
+      "transport": "tsp://"
+    },
+    "alice_referred": {
+      "document": {
+        "@context": "https://www.w3.org/ns/did/v1",
+        "authentication": [
+          "#key-1"
+        ],
+        "keyAgreement": [
+          "#key-2"
+        ],
+        "service": [
+          {
+            "id": "#tsp",
+            "serviceEndpoint": {
+              "uri": "tsp://"
+            },
+            "type": "tsp"
+          }
+        ],
+        "verificationMethod": [
+          {
+            "id": "#key-1",
+            "publicKeyMultibase": "z6MkjijAede3XVcgXvkebsyye18rhbtUWjHUXGHPug96wyve",
+            "type": "Multikey"
+          },
+          {
+            "id": "#key-2",
+            "publicKeyMultibase": "z6LSg9GB1xnn1YDSEQMNZvedjcbNoDiFEgEbajZwNnkA41ZZ",
+            "type": "Multikey"
+          }
+        ]
+      },
+      "encKeyType": "X25519",
+      "enckey": "lDy7QQoN-PR0PhyZAthCSZ8OvOZ1oqiaQfDHr0F6DWk",
+      "id": "did:peer:4zQmRFRNUTarZmMebvvqNyADP7rkUgh5NFFhxqWvx3eqqgS3",
+      "idLongForm": "did:peer:4zQmRFRNUTarZmMebvvqNyADP7rkUgh5NFFhxqWvx3eqqgS3:z25NRJMKpQKwnUm6k9FbTSp1eqANorDtFimHW9nGdLSgAbN1UhsQANFAnhij8VXrrwnDDG5Rb7HGrYpBGZRy3EbgmxirqJi3WuNfiajavps6kAfnvk9ykxGqcxH4u7P2TJohfbvigGMTMGxAhqkU4JDkWYi1sBp266n8tzTzD3DfRU9FbvHS99WbQ3rd6KbNqFfoUzchbb9bU8CCfwNrF8Z1diU8mdjbfbQXkzsau4aexTFxBgCcbEeMUs6fcMABJqQmX7Dzb3HdME9efPvQRQH3JXHvL2jkbPuBpj2nqG3juyRWvothcQuwUaoc1Crp19Yvxw8w2mTiV1y2xiAutpg4RbEu5gN94cFRF4wEWUwhYFgzFYoLWwqMGJmLbTA95V7jAfYAATnUEtWKFcwg2bYYaM2QmFV67Bmi43aGvQMY8qJCXcRDPFZtEuxefQAm916V6DF9JB6oTRajzx7vJvG6VgUKv8hncTrCaMNmvV22upbfU5duZK4qBTrXo1crJShNem547Fg92FHvadwHULk49ZsVBMbPETQpEEatkjBtgNg",
+      "publicEnckey": "Ql8Xuy4ejZdHGWrfehc5aTtCGF0fY1jUlh_NPY0DiQg",
+      "publicSigkey": "TkDQONscMVauhQQE0TfgAhXQSoG_SGVNLOlz6VFapoc",
+      "sigKeyType": "Ed25519",
+      "sigkey": "pA42dzrFSFimN_v0W5yx9gZJHYbEAOH5VKy2cLftzIk",
       "transport": "tsp://"
     },
     "bob": {

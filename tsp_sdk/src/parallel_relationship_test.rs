@@ -28,8 +28,8 @@ fn establish_existing_relationship(
         .set_relation_and_status_for_vid(
             b_vid.identifier(),
             RelationshipStatus::Bidirectional {
-                thread_id: [1; 32],
-                remote_thread_id: [2; 32],
+                invite_digest: [1; 32],
+                reply_digest: [2; 32],
                 outstanding_nested_requests: vec![],
             },
             a_vid.identifier(),
@@ -39,8 +39,8 @@ fn establish_existing_relationship(
         .set_relation_and_status_for_vid(
             a_vid.identifier(),
             RelationshipStatus::Bidirectional {
-                thread_id: [2; 32],
-                remote_thread_id: [1; 32],
+                invite_digest: [2; 32],
+                reply_digest: [1; 32],
                 outstanding_nested_requests: vec![],
             },
             b_vid.identifier(),

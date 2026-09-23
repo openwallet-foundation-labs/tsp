@@ -1897,7 +1897,9 @@ impl SecureStore {
 
         self.set_relation_and_status_for_vid(
             receiver_vid.identifier(),
-            RelationshipStatus::Unidirectional { thread_id },
+            RelationshipStatus::Unidirectional {
+                invite_digest: thread_id,
+            },
             sender_vid.identifier(),
         )?;
 
@@ -2052,7 +2054,7 @@ impl SecureStore {
             Some(&mut reply_thread_id),
         )?;
 
-        self.establish_bidirectional_relation(sender, receiver, reply_thread_id, thread_id)?;
+        self.establish_bidirectional_relation(sender, receiver, thread_id, reply_thread_id)?;
 
         Ok((transport, tsp_message))
     }
@@ -2090,8 +2092,8 @@ impl SecureStore {
         self.establish_bidirectional_relation(
             sender_new_vid.identifier(),
             receiver_new_vid.identifier(),
-            reply_thread_id,
             thread_id,
+            reply_thread_id,
         )?;
         self.remove_pending_incoming_parallel_request(receiver_new_vid.identifier(), thread_id)?;
 
@@ -2108,10 +2110,11 @@ impl SecureStore {
         let old_relationship =
             self.replace_relation_status_for_vid(receiver, RelationshipStatus::Unrelated)?;
 
+        // PR83
         let thread_id = match old_relationship {
-            RelationshipStatus::Bidirectional { thread_id, .. } => thread_id,
-            RelationshipStatus::Unidirectional { thread_id } => thread_id,
-            RelationshipStatus::ReverseUnidirectional { thread_id } => thread_id,
+            RelationshipStatus::Bidirectional { invite_digest, .. } => invite_digest,
+            RelationshipStatus::Unidirectional { invite_digest } => invite_digest,
+            RelationshipStatus::ReverseUnidirectional { invite_digest } => invite_digest,
             RelationshipStatus::Unrelated => {
                 return Err(Error::Relationship("no relationship to cancel".into()));
             }
@@ -2209,7 +2212,7 @@ impl SecureStore {
             Some(selection),
         )?;
 
-        let relation_status = RelationshipStatus::bi(reply_thread_id, thread_id);
+        let relation_status = RelationshipStatus::bi(thread_id, reply_thread_id);
         self.set_relation_and_status_for_vid(
             nested_vid.identifier(),
             relation_status.clone(),
@@ -2272,14 +2275,14 @@ impl SecureStore {
         &self,
         my_vid: &str,
         other_vid: &str,
-        thread_id: Digest,
-        remote_thread_id: Digest,
+        invite_digest: Digest,
+        reply_digest: Digest,
     ) -> Result<(), Error> {
         self.set_relation_and_status_for_vid(
             other_vid,
             RelationshipStatus::Bidirectional {
-                thread_id,
-                remote_thread_id,
+                invite_digest,
+                reply_digest,
                 outstanding_nested_requests: Default::default(),
             },
             my_vid,
@@ -2321,17 +2324,21 @@ impl SecureStore {
         match self.relation_status_for_vid_pair(local_vid, remote_vid)? {
             RelationshipStatus::Unrelated => self.set_relation_and_status_for_vid(
                 remote_vid,
-                RelationshipStatus::ReverseUnidirectional { thread_id },
+                RelationshipStatus::ReverseUnidirectional {
+                    invite_digest: thread_id,
+                },
                 local_vid,
             ),
             // our own invite is still outstanding: the lower digest wins
             RelationshipStatus::Unidirectional {
-                thread_id: our_thread_id,
+                invite_digest: our_thread_id,
             } => {
                 if thread_id < our_thread_id {
                     self.set_relation_and_status_for_vid(
                         remote_vid,
-                        RelationshipStatus::ReverseUnidirectional { thread_id },
+                        RelationshipStatus::ReverseUnidirectional {
+                            invite_digest: thread_id,
+                        },
                         local_vid,
                     )
                 } else {
@@ -2370,19 +2377,22 @@ impl SecureStore {
         };
         let reply_expected = match self.relation_status_for_vid_pair(local_vid, remote_vid)? {
             RelationshipStatus::Bidirectional {
-                thread_id: local,
-                remote_thread_id: remote,
+                invite_digest: invite,
+                reply_digest: reply,
                 ..
             } => {
-                // either direction's digest identifies the relationship
-                if thread_id != local && thread_id != remote {
+                if thread_id != invite && thread_id != reply {
                     return ignore();
                 }
 
                 true
             }
-            RelationshipStatus::Unidirectional { thread_id: digest }
-            | RelationshipStatus::ReverseUnidirectional { thread_id: digest } => {
+            RelationshipStatus::Unidirectional {
+                invite_digest: digest,
+            }
+            | RelationshipStatus::ReverseUnidirectional {
+                invite_digest: digest,
+            } => {
                 if thread_id != digest {
                     return ignore();
                 }
@@ -2415,7 +2425,9 @@ impl SecureStore {
             )));
         };
 
-        let RelationshipStatus::Unidirectional { thread_id: digest } = context.relation_status
+        let RelationshipStatus::Unidirectional {
+            invite_digest: digest,
+        } = context.relation_status
         else {
             return Err(Error::Relationship(format!(
                 "no unidirectional relationship with {other_vid}, cannot upgrade"
@@ -2431,8 +2443,8 @@ impl SecureStore {
         context.relation_vid = Some(my_vid.to_string());
 
         context.relation_status = RelationshipStatus::Bidirectional {
-            thread_id: digest,
-            remote_thread_id,
+            invite_digest: digest,
+            reply_digest: remote_thread_id,
             outstanding_nested_requests: Default::default(),
         };
 
@@ -2722,8 +2734,8 @@ mod test {
             .set_relation_and_status_for_vid(
                 b_vid.identifier(),
                 RelationshipStatus::Bidirectional {
-                    thread_id: [1; 32],
-                    remote_thread_id: [2; 32],
+                    invite_digest: [1; 32],
+                    reply_digest: [2; 32],
                     outstanding_nested_requests: vec![],
                 },
                 a_vid.identifier(),
@@ -2733,8 +2745,8 @@ mod test {
             .set_relation_and_status_for_vid(
                 a_vid.identifier(),
                 RelationshipStatus::Bidirectional {
-                    thread_id: [2; 32],
-                    remote_thread_id: [1; 32],
+                    invite_digest: [2; 32],
+                    reply_digest: [1; 32],
                     outstanding_nested_requests: vec![],
                 },
                 b_vid.identifier(),
@@ -2886,7 +2898,7 @@ mod test {
             .unwrap();
 
         let RelationshipStatus::Unidirectional {
-            thread_id: a_digest,
+            invite_digest: a_digest,
         } = a_store
             .relation_status_for_vid_pair(alice.identifier(), bob.identifier())
             .unwrap()
@@ -2894,7 +2906,7 @@ mod test {
             panic!("alice should have an outstanding request");
         };
         let RelationshipStatus::Unidirectional {
-            thread_id: b_digest,
+            invite_digest: b_digest,
         } = b_store
             .relation_status_for_vid_pair(bob.identifier(), alice.identifier())
             .unwrap()
@@ -2914,7 +2926,7 @@ mod test {
                 b_store
                     .relation_status_for_vid_pair(bob.identifier(), alice.identifier())
                     .unwrap(),
-                RelationshipStatus::ReverseUnidirectional { thread_id } if thread_id == a_digest
+                RelationshipStatus::ReverseUnidirectional { invite_digest: thread_id } if thread_id == a_digest
             ));
         } else {
             assert!(b_result.is_err(), "bob keeps his own lower-digest invite");
@@ -2923,7 +2935,7 @@ mod test {
                 a_store
                     .relation_status_for_vid_pair(alice.identifier(), bob.identifier())
                     .unwrap(),
-                RelationshipStatus::ReverseUnidirectional { thread_id } if thread_id == b_digest
+                RelationshipStatus::ReverseUnidirectional { invite_digest: thread_id } if thread_id == b_digest
             ));
         }
     }
@@ -3013,7 +3025,9 @@ mod test {
         a_store
             .set_relation_and_status_for_vid(
                 bob.identifier(),
-                RelationshipStatus::Unidirectional { thread_id: [9; 32] },
+                RelationshipStatus::Unidirectional {
+                    invite_digest: [9; 32],
+                },
                 alice.identifier(),
             )
             .unwrap();
@@ -3056,7 +3070,9 @@ mod test {
         b_store
             .set_relation_and_status_for_vid(
                 intermediary.identifier(),
-                RelationshipStatus::Unidirectional { thread_id: [7; 32] },
+                RelationshipStatus::Unidirectional {
+                    invite_digest: [7; 32],
+                },
                 bob.identifier(),
             )
             .unwrap();
@@ -3389,8 +3405,8 @@ mod test {
 
         assert_url_matches(&url, &alice_parallel);
         let RelationshipStatus::Bidirectional {
-            thread_id: sender_thread_id,
-            remote_thread_id: sender_remote_thread_id,
+            invite_digest: sender_thread_id,
+            reply_digest: sender_remote_thread_id,
             outstanding_nested_requests,
         } = b_store
             .relation_status_for_vid_pair(bob_parallel.identifier(), alice_parallel.identifier())
@@ -3398,8 +3414,8 @@ mod test {
         else {
             panic!("parallel accept did not establish sender-side relationship");
         };
-        assert_eq!(sender_remote_thread_id, thread_id);
-        assert!(sender_thread_id.iter().any(|byte| *byte != 0));
+        assert_eq!(sender_thread_id, thread_id);
+        assert!(sender_remote_thread_id.iter().any(|byte| *byte != 0));
         assert!(outstanding_nested_requests.is_empty());
 
         let received = a_store.open_message(&mut sealed).unwrap();
@@ -3423,8 +3439,8 @@ mod test {
         assert!(received_reply_digest.iter().any(|byte| *byte != 0));
 
         let RelationshipStatus::Bidirectional {
-            thread_id: receiver_thread_id,
-            remote_thread_id: receiver_remote_thread_id,
+            invite_digest: receiver_thread_id,
+            reply_digest: receiver_remote_thread_id,
             outstanding_nested_requests,
         } = a_store
             .relation_status_for_vid_pair(alice_parallel.identifier(), bob_parallel.identifier())
@@ -3435,7 +3451,7 @@ mod test {
         assert_eq!(receiver_thread_id, thread_id);
         assert_eq!(receiver_remote_thread_id, received_reply_digest);
         assert!(outstanding_nested_requests.is_empty());
-        assert_eq!(sender_thread_id, received_reply_digest);
+        assert_eq!(sender_remote_thread_id, received_reply_digest);
     }
 
     #[test]
@@ -3516,8 +3532,8 @@ mod test {
             .unwrap()
         {
             RelationshipStatus::Bidirectional {
-                thread_id: reopened_thread_id,
-                remote_thread_id,
+                invite_digest: reopened_thread_id,
+                reply_digest: remote_thread_id,
                 ..
             } => {
                 assert_eq!(reopened_thread_id, thread_id);
@@ -3921,8 +3937,50 @@ mod test {
     }
 
     #[test]
+    fn test_cancel_from_the_accepting_side_names_the_invite_digest() {
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+
+        let (_url, mut request) = a_store
+            .make_relationship_request(alice.identifier(), bob.identifier(), None)
+            .unwrap();
+
+        let ReceivedTspMessage::RequestRelationship {
+            thread_id: request_digest,
+            ..
+        } = b_store.open_message(&mut request).unwrap()
+        else {
+            panic!("unexpected message type");
+        };
+
+        let (_url, mut accept) = b_store
+            .make_relationship_accept(bob.identifier(), alice.identifier(), request_digest, None)
+            .unwrap();
+        a_store.open_message(&mut accept).unwrap();
+
+        // PR83
+        let (_url, mut cancel) = b_store
+            .make_relationship_cancel(bob.identifier(), alice.identifier())
+            .unwrap();
+
+        let ReceivedTspMessage::CancelRelationship { thread_id, .. } =
+            a_store.open_message(&mut cancel).unwrap()
+        else {
+            panic!("unexpected message type");
+        };
+
+        assert_eq!(thread_id, request_digest);
+    }
+
+    #[test]
     #[wasm_bindgen_test]
-    fn test_direct_relationship_tracks_local_and_remote_thread_ids() {
+    fn test_direct_relationship_tracks_invite_and_reply_digests() {
         let a_store = create_test_store();
         let b_store = create_test_store();
         let (alice, bob) = create_test_vid_pair();
@@ -3940,7 +3998,9 @@ mod test {
             .relation_status_for_vid_pair(alice.identifier(), bob.identifier())
             .unwrap()
         {
-            RelationshipStatus::Unidirectional { thread_id } => thread_id,
+            RelationshipStatus::Unidirectional {
+                invite_digest: thread_id,
+            } => thread_id,
             status => panic!("unexpected requester status after request: {status}"),
         };
 
@@ -3954,7 +4014,9 @@ mod test {
         b_store
             .set_relation_and_status_for_vid(
                 alice.identifier(),
-                RelationshipStatus::Unidirectional { thread_id },
+                RelationshipStatus::Unidirectional {
+                    invite_digest: thread_id,
+                },
                 bob.identifier(),
             )
             .unwrap();
@@ -3968,12 +4030,12 @@ mod test {
             .unwrap()
         {
             RelationshipStatus::Bidirectional {
-                thread_id,
-                remote_thread_id,
+                invite_digest: thread_id,
+                reply_digest: remote_thread_id,
                 ..
             } => {
-                assert_eq!(remote_thread_id, request_digest);
-                thread_id
+                assert_eq!(thread_id, request_digest);
+                remote_thread_id
             }
             status => panic!("unexpected replier status after accept: {status}"),
         };
@@ -3989,8 +4051,8 @@ mod test {
             .unwrap()
         {
             RelationshipStatus::Bidirectional {
-                thread_id,
-                remote_thread_id,
+                invite_digest: thread_id,
+                reply_digest: remote_thread_id,
                 ..
             } => {
                 assert_eq!(thread_id, request_digest);
@@ -4031,7 +4093,9 @@ mod test {
         b_store
             .set_relation_and_status_for_vid(
                 alice_intermediary.identifier(),
-                RelationshipStatus::Unidirectional { thread_id: [6; 32] },
+                RelationshipStatus::Unidirectional {
+                    invite_digest: [6; 32],
+                },
                 bob.identifier(),
             )
             .unwrap();
@@ -4041,7 +4105,9 @@ mod test {
         a_store
             .set_relation_and_status_for_vid(
                 bob_intermediary.identifier(),
-                RelationshipStatus::Unidirectional { thread_id: [5; 32] },
+                RelationshipStatus::Unidirectional {
+                    invite_digest: [5; 32],
+                },
                 alice.identifier(),
             )
             .unwrap();
@@ -4141,7 +4207,7 @@ mod test {
             .set_relation_and_status_for_vid(
                 sneaky_a.identifier(),
                 RelationshipStatus::ReverseUnidirectional {
-                    thread_id: Default::default(),
+                    invite_digest: Default::default(),
                 },
                 sneaky_d.identifier(),
             )
@@ -4151,7 +4217,7 @@ mod test {
             .set_relation_and_status_for_vid(
                 b.identifier(),
                 RelationshipStatus::Unidirectional {
-                    thread_id: Default::default(),
+                    invite_digest: Default::default(),
                 },
                 nette_a.identifier(),
             )
@@ -4161,7 +4227,7 @@ mod test {
             .set_relation_and_status_for_vid(
                 sneaky_d.identifier(),
                 RelationshipStatus::Unidirectional {
-                    thread_id: Default::default(),
+                    invite_digest: Default::default(),
                 },
                 sneaky_a.identifier(),
             )
@@ -4178,7 +4244,7 @@ mod test {
             .set_relation_and_status_for_vid(
                 c.identifier(),
                 RelationshipStatus::Unidirectional {
-                    thread_id: Default::default(),
+                    invite_digest: Default::default(),
                 },
                 b.identifier(),
             )
@@ -4188,7 +4254,7 @@ mod test {
             .set_relation_and_status_for_vid(
                 nette_d.identifier(),
                 RelationshipStatus::Unidirectional {
-                    thread_id: Default::default(),
+                    invite_digest: Default::default(),
                 },
                 mailbox_c.identifier(),
             )
@@ -4376,8 +4442,8 @@ mod test {
             .set_relation_and_status_for_vid(
                 bob.identifier(),
                 RelationshipStatus::Bidirectional {
-                    thread_id: [1; 32],
-                    remote_thread_id: [2; 32],
+                    invite_digest: [1; 32],
+                    reply_digest: [2; 32],
                     outstanding_nested_requests: vec![],
                 },
                 alice.identifier(),
@@ -4560,7 +4626,7 @@ mod test {
             .set_relation_and_status_for_vid(
                 nested_b.identifier(),
                 RelationshipStatus::Unidirectional {
-                    thread_id: Default::default(),
+                    invite_digest: Default::default(),
                 },
                 nested_a.identifier(),
             )
@@ -4582,7 +4648,7 @@ mod test {
             .set_relation_and_status_for_vid(
                 nested_a.identifier(),
                 RelationshipStatus::Unidirectional {
-                    thread_id: Default::default(),
+                    invite_digest: Default::default(),
                 },
                 nested_b.identifier(),
             )
@@ -4673,7 +4739,7 @@ mod test {
                 .set_relation_and_status_for_vid(
                     other.identifier(),
                     RelationshipStatus::Unidirectional {
-                        thread_id: Default::default(),
+                        invite_digest: Default::default(),
                     },
                     own.identifier(),
                 )
@@ -4776,7 +4842,7 @@ mod test {
             .set_relation_and_status_for_vid(
                 a.identifier(),
                 RelationshipStatus::Unidirectional {
-                    thread_id: Default::default(),
+                    invite_digest: Default::default(),
                 },
                 b.identifier(),
             )

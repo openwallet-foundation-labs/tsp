@@ -77,24 +77,24 @@ pub struct PendingIncomingParallelRelationship {
 #[derive(Clone, Debug)]
 pub enum RelationshipStatus {
     Bidirectional {
-        thread_id: Digest,
-        remote_thread_id: Digest,
+        invite_digest: Digest,
+        reply_digest: Digest,
         outstanding_nested_requests: Vec<PendingNestedRelationship>,
     },
     Unidirectional {
-        thread_id: Digest,
+        invite_digest: Digest,
     },
     ReverseUnidirectional {
-        thread_id: Digest,
+        invite_digest: Digest,
     },
     Unrelated,
 }
 
 impl RelationshipStatus {
-    pub(crate) fn bi(thread_id: Digest, remote_thread_id: Digest) -> Self {
+    pub(crate) fn bi(invite_digest: Digest, reply_digest: Digest) -> Self {
         RelationshipStatus::Bidirectional {
-            thread_id,
-            remote_thread_id,
+            invite_digest,
+            reply_digest,
             outstanding_nested_requests: vec![],
         }
     }

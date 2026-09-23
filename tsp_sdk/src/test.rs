@@ -419,8 +419,8 @@ async fn test_routed_mode() {
         .set_relation_and_status_for_vid(
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:bob",
             RelationshipStatus::Bidirectional {
-                thread_id: Default::default(),
-                remote_thread_id: Default::default(),
+                invite_digest: Default::default(),
+                reply_digest: Default::default(),
                 outstanding_nested_requests: vec![],
             },
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
@@ -430,8 +430,8 @@ async fn test_routed_mode() {
         .set_relation_and_status_for_vid(
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
             RelationshipStatus::Bidirectional {
-                thread_id: Default::default(),
-                remote_thread_id: Default::default(),
+                invite_digest: Default::default(),
+                reply_digest: Default::default(),
                 outstanding_nested_requests: vec![],
             },
             "did:web:raw.githubusercontent.com:openwallet-foundation-labs:tsp:main:examples:test:alice",
@@ -1185,7 +1185,9 @@ async fn test_relationship_transition_request_accept_after_reopen() {
         .get_relation_status_for_vid_pair(&a_vid, &b_vid)
         .unwrap()
     {
-        RelationshipStatus::Unidirectional { thread_id } => thread_id,
+        RelationshipStatus::Unidirectional {
+            invite_digest: thread_id,
+        } => thread_id,
         status => panic!("unexpected status after request: {status}"),
     };
 
@@ -1203,7 +1205,9 @@ async fn test_relationship_transition_request_accept_after_reopen() {
     b_store
         .set_relation_and_status_for_vid(
             &a_vid,
-            RelationshipStatus::Unidirectional { thread_id },
+            RelationshipStatus::Unidirectional {
+                invite_digest: thread_id,
+            },
             &b_vid,
         )
         .unwrap();
@@ -1221,7 +1225,7 @@ async fn test_relationship_transition_request_accept_after_reopen() {
     };
 
     let RelationshipStatus::Bidirectional {
-        thread_id: upgraded,
+        invite_digest: upgraded,
         ..
     } = a_store
         .get_relation_status_for_vid_pair(&a_vid, &b_vid)
@@ -1285,13 +1289,17 @@ async fn test_nested_relationship_transition_after_reopen() {
         .get_relation_status_for_vid_pair(&a_vid, &b_vid)
         .unwrap()
     {
-        RelationshipStatus::Unidirectional { thread_id } => thread_id,
+        RelationshipStatus::Unidirectional {
+            invite_digest: thread_id,
+        } => thread_id,
         _ => panic!("missing unidirectional relation before accept"),
     };
     b_store
         .set_relation_and_status_for_vid(
             &a_vid,
-            RelationshipStatus::Unidirectional { thread_id },
+            RelationshipStatus::Unidirectional {
+                invite_digest: thread_id,
+            },
             &b_vid,
         )
         .unwrap();

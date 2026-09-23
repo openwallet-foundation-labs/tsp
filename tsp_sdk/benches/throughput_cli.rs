@@ -68,8 +68,8 @@ fn relationship_bi_bench() -> RelationshipStatus {
     // distinct non-zero thread ids: the all-zero digest is the NULL digest of
     // a TSP_RFD, not a thread id a relationship would hold
     RelationshipStatus::Bidirectional {
-        thread_id: [0x11u8; 32],
-        remote_thread_id: [0x22u8; 32],
+        invite_digest: [0x11u8; 32],
+        reply_digest: [0x22u8; 32],
         outstanding_nested_requests: vec![],
     }
 }

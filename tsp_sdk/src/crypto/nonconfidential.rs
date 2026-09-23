@@ -118,7 +118,7 @@ pub fn verify_payload<'a>(
             Envelope {
                 crypto_type,
                 signature_type,
-                sender: _,
+                sender: envelope_sender,
                 receiver: _,
             },
         payload_position: Some(payload),
@@ -133,12 +133,48 @@ pub fn verify_payload<'a>(
         return Err(CryptoError::MissingCiphertext);
     }
 
+    let decoded = crate::cesr::decode_payload(payload)?;
+
+    // PR83
+    if let Some(id) = decoded.sender_identity
+        && id != envelope_sender
+    {
+        return Err(CryptoError::UnexpectedSender);
+    }
+
     Ok((
-        crate::cesr::decode_payload(payload)?,
+        decoded,
         MessageType {
             enclosing_crypto_type: None,
             crypto_type,
             signature_type,
         },
     ))
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::test_utils::create_test_vid_pair;
+
+    /// PR83
+    #[test]
+    fn sender_vid_field_must_match_the_envelope() {
+        let (alice, bob) = create_test_vid_pair();
+        let payload = crate::cesr::Payload::<_, &[u8]>::GenericMessage(b"hello".as_slice());
+
+        for (identity, expected) in [
+            (None, true),
+            (Some(alice.identifier().as_bytes()), true),
+            (Some(bob.identifier().as_bytes()), false),
+        ] {
+            let mut message = sign_payload(&alice, Some(&bob), &payload, identity).unwrap();
+
+            assert_eq!(
+                verify_payload(&alice, &mut message).is_ok(),
+                expected,
+                "sender VID field {identity:?}"
+            );
+        }
+    }
 }

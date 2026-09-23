@@ -134,14 +134,14 @@ fn relationship_status_for(index: usize) -> RelationshipStatus {
     match index % 4 {
         0 => RelationshipStatus::Unrelated,
         1 => RelationshipStatus::Unidirectional {
-            thread_id: relationship_digest(index),
+            invite_digest: relationship_digest(index),
         },
         2 => RelationshipStatus::ReverseUnidirectional {
-            thread_id: relationship_digest(index),
+            invite_digest: relationship_digest(index),
         },
         _ => RelationshipStatus::Bidirectional {
-            thread_id: relationship_digest(index),
-            remote_thread_id: relationship_digest(index + 1_000),
+            invite_digest: relationship_digest(index),
+            reply_digest: relationship_digest(index + 1_000),
             outstanding_nested_requests: vec![PendingNestedRelationship {
                 thread_id: relationship_digest(index + 10_000),
                 local_nested_vid: format!("did:example:nested:{index}"),
@@ -151,13 +151,13 @@ fn relationship_status_for(index: usize) -> RelationshipStatus {
 }
 
 impl RelationshipStatus {
-    /// A bidirectional relationship for tests. The two thread ids are distinct
-    /// and non-zero: the all-zero digest is the NULL digest of a `TSP_RFD`
-    /// (spec 7.3), not a thread id any relationship would hold.
-    fn bi_test(thread_id: u8, remote_thread_id: u8) -> Self {
+    /// A bidirectional relationship for tests. The two digests are distinct
+    /// and non-zero: the all-zero digest is the NULL digest of a `TSP_RFD`,
+    /// not a digest any relationship would hold.
+    fn bi_test(invite: u8, reply: u8) -> Self {
         Self::Bidirectional {
-            thread_id: [thread_id; 32],
-            remote_thread_id: [remote_thread_id; 32],
+            invite_digest: [invite; 32],
+            reply_digest: [reply; 32],
             outstanding_nested_requests: vec![],
         }
     }
@@ -210,8 +210,8 @@ pub fn create_prepopulated_store() -> SecureStore {
         .set_relation_and_status_for_vid(
             remote_parent.identifier(),
             RelationshipStatus::Bidirectional {
-                thread_id: relationship_digest(20_001),
-                remote_thread_id: relationship_digest(20_011),
+                invite_digest: relationship_digest(20_001),
+                reply_digest: relationship_digest(20_011),
                 outstanding_nested_requests: vec![PendingNestedRelationship {
                     thread_id: relationship_digest(20_002),
                     local_nested_vid: "did:example:nested:20_002".to_string(),
@@ -230,8 +230,8 @@ pub fn create_prepopulated_store() -> SecureStore {
         .set_relation_and_status_for_vid(
             remote_nested.identifier(),
             RelationshipStatus::Bidirectional {
-                thread_id: relationship_digest(20_101),
-                remote_thread_id: relationship_digest(20_111),
+                invite_digest: relationship_digest(20_101),
+                reply_digest: relationship_digest(20_111),
                 outstanding_nested_requests: vec![PendingNestedRelationship {
                     thread_id: relationship_digest(20_102),
                     local_nested_vid: "did:example:nested:20_102".to_string(),
@@ -271,11 +271,15 @@ pub type StoreExportSnapshot = (
 pub fn relationship_status_signature(status: RelationshipStatus) -> String {
     match status {
         RelationshipStatus::Unrelated => "Unrelated".to_string(),
-        RelationshipStatus::Unidirectional { thread_id } => format!("Uni:{thread_id:?}"),
-        RelationshipStatus::ReverseUnidirectional { thread_id } => format!("RevUni:{thread_id:?}"),
+        RelationshipStatus::Unidirectional {
+            invite_digest: thread_id,
+        } => format!("Uni:{thread_id:?}"),
+        RelationshipStatus::ReverseUnidirectional {
+            invite_digest: thread_id,
+        } => format!("RevUni:{thread_id:?}"),
         RelationshipStatus::Bidirectional {
-            thread_id,
-            remote_thread_id,
+            invite_digest: thread_id,
+            reply_digest: remote_thread_id,
             outstanding_nested_requests,
         } => format!("Bi:{thread_id:?}:{remote_thread_id:?}:{outstanding_nested_requests:?}"),
     }
@@ -376,8 +380,8 @@ pub fn create_dirty_store_with_transition_seed() -> (AsyncSecureStore, DirtyTran
         .set_relation_and_status_for_vid(
             remote_bidirectional.identifier(),
             RelationshipStatus::Bidirectional {
-                thread_id: relationship_digest(30_001),
-                remote_thread_id: relationship_digest(30_011),
+                invite_digest: relationship_digest(30_001),
+                reply_digest: relationship_digest(30_011),
                 outstanding_nested_requests: vec![PendingNestedRelationship {
                     thread_id: relationship_digest(30_002),
                     local_nested_vid: "did:example:nested:30_002".to_string(),
@@ -510,8 +514,8 @@ pub fn create_high_entropy_dirty_store() -> (AsyncSecureStore, HighEntropyDirtyS
             .set_relation_and_status_for_vid(
                 remote_parent.identifier(),
                 RelationshipStatus::Bidirectional {
-                    thread_id: relationship_digest(40_000 + i),
-                    remote_thread_id: relationship_digest(40_100 + i),
+                    invite_digest: relationship_digest(40_000 + i),
+                    reply_digest: relationship_digest(40_100 + i),
                     outstanding_nested_requests: vec![PendingNestedRelationship {
                         thread_id: relationship_digest(41_000 + i),
                         local_nested_vid: format!("did:example:nested:41_{i:03}"),
@@ -527,8 +531,8 @@ pub fn create_high_entropy_dirty_store() -> (AsyncSecureStore, HighEntropyDirtyS
             .set_relation_and_status_for_vid(
                 remote_nested.identifier(),
                 RelationshipStatus::Bidirectional {
-                    thread_id: relationship_digest(42_000 + i),
-                    remote_thread_id: relationship_digest(42_100 + i),
+                    invite_digest: relationship_digest(42_000 + i),
+                    reply_digest: relationship_digest(42_100 + i),
                     outstanding_nested_requests: vec![PendingNestedRelationship {
                         thread_id: relationship_digest(43_000 + i),
                         local_nested_vid: format!("did:example:nested:43_{i:03}"),
