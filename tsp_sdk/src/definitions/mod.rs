@@ -82,20 +82,14 @@ pub enum RelationshipStatus {
     /// answered it. Either may be used as a thread identifier; a `TSP_RFD`
     /// names the invite's (spec 7.2.1, 7.3).
     Bidirectional {
-        // the stored names are what wallets written before the rename carry;
-        // only the Rust names changed, so those wallets still load
-        #[cfg_attr(feature = "serialize", serde(rename = "thread_id"))]
         invite_digest: Digest,
-        #[cfg_attr(feature = "serialize", serde(rename = "remote_thread_id"))]
         reply_digest: Digest,
         outstanding_nested_requests: Vec<PendingNestedRelationship>,
     },
     Unidirectional {
-        #[cfg_attr(feature = "serialize", serde(rename = "thread_id"))]
         invite_digest: Digest,
     },
     ReverseUnidirectional {
-        #[cfg_attr(feature = "serialize", serde(rename = "thread_id"))]
         invite_digest: Digest,
     },
     Unrelated,
