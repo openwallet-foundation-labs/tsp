@@ -197,7 +197,6 @@ fn main() {
     // the intermediaries a routed message traverses
     let p = peer_vid(5);
     let q = peer_vid(6);
-    // the new VID a referral introduces over an existing relationship
     let alice_referred = peer_vid(7);
     // post-quantum endpoints: the same HPKE-Base mode, a different KEM
     let pq_alice = pq_peer_vid(1);
@@ -764,14 +763,8 @@ fn main() {
         json!({"crypto": "HpkeBase", "signature": "MlDsa65", "payload": {"content": "hello world"}}),
     );
 
-    // 11. a TSP_RFI carrying a populated Referral_Field
-    //
-    // The referral is what settles how the field enters the TSP Digest: when it
-    // is populated the input is VID_new alone, without the field's -J## code
-    // and count and without Signature_new, and when it is empty it is -JAA.
-    // Both derivations are published so an implementation reading the rule
-    // differently can see where it parts company, rather than only finding out
-    // when an introduction fails against a peer.
+    // 11. a TSP_RFI carrying a populated Referral_Field (spec 7.2.1;
+    // trustoverip/tswg-tsp-specification#82)
     let referred_long_form = tsp_sdk::vid::introduction_identifier(alice_referred.vid());
 
     let mut envelope_prefix = Vec::new();
@@ -782,8 +775,6 @@ fn main() {
     )
     .expect("envelope prefix");
 
-    // the digest is derived first, over a payload whose digest slot is dummied
-    // and whose Signature_new is not yet made
     let dummy_signature = [0_u8; 64];
     let unsigned: cesr::Payload<'_, &[u8], &[u8]> = cesr::Payload::RelationProposal {
         request_digest: digest_of(&[0_u8; 32], cesr::CryptoType::HpkeBase),
@@ -796,8 +787,6 @@ fn main() {
         .expect("digest input");
     let referral_digest = tsp_sdk::crypto::sha256(&digest_input);
 
-    // Signature_new is then made over the challenge, which carries the final
-    // digest; the two inputs differ only in the envelope prefix and the dummy
     let signature_input = cesr::encode_parallel_relation_proposal_challenge(
         None,
         &cesr::Nonce::generate(|dst| *dst = NONCE),
@@ -826,7 +815,6 @@ fn main() {
         Some(NONCE),
     )
     .unwrap();
-    // the derivation above is the SDK's own, reached by a different route
     assert_eq!(
         sealed_digest, referral_digest,
         "control-rfi-referral: derived digest does not match the sealed message"
@@ -875,9 +863,6 @@ fn main() {
         }),
     );
 
-    // the octets each derivation runs over, which is what the issue this vector
-    // answers asks for; `add` carries no slot for them, so the vector is built
-    // last and then moved in beside the other control messages
     drop(add);
     let mut referral = vectors.pop().expect("the referral vector was just pushed");
     referral
@@ -885,9 +870,6 @@ fn main() {
         .expect("a vector is an object")
         .insert(
             "derivation".to_string(),
-            // the octets alone: `segments` walks a payload layout to tell a VID
-            // from the padding field, which share the code B, and neither of
-            // these streams is a payload — it would mislabel VID_new
             json!({
                 "digest_input": b64(&digest_input),
                 "digest": b64(&referral_digest),

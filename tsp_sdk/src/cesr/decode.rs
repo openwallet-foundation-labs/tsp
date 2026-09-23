@@ -79,10 +79,7 @@ pub fn decode_variable_data_index(
         // access check: make sure that if this function returns Some(...), that the range is valid
         stream.get(data_begin..data_end)?;
 
-        // canonical encoding: a primitive's lead bytes are zero, and a receiver
-        // must reject one whose lead bytes are not. TSP digests and signatures
-        // are computed over exact encoded bytes, so a non-canonical encoding
-        // would admit distinct byte sequences for the same value.
+        // spec 3.7
         let code_len = if selector >= D7 { 6 } else { 3 };
         if stream.get(code_len..data_begin)?.iter().any(|&b| b != 0) {
             return None;

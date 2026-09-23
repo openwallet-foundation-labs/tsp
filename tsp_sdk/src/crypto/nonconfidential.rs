@@ -135,10 +135,7 @@ pub fn verify_payload<'a>(
 
     let decoded = crate::cesr::decode_payload(payload)?;
 
-    // in a non-confidential payload the sender-VID field MAY be NULL; when it
-    // is not, it MUST match the envelope (spec 3.7 step 7). As in the encrypted
-    // backends the comparison is against the envelope rather than the resolved
-    // VID's own identifier, which differ for a VID being introduced
+    // spec 3.7 step 7
     if let Some(id) = decoded.sender_identity
         && id != envelope_sender
     {
@@ -160,8 +157,7 @@ mod test {
     use super::*;
     use crate::test_utils::create_test_vid_pair;
 
-    /// Spec 3.7 step 7: in a non-confidential payload the sender VID field may
-    /// be NULL, and when it is not it must match the envelope's sender
+    /// Spec 3.7 step 7.
     #[test]
     fn sender_vid_field_must_match_the_envelope() {
         let (alice, bob) = create_test_vid_pair();

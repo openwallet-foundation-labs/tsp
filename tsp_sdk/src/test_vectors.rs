@@ -313,7 +313,6 @@ mod test {
             // only the shapes whose payload the file describes in full can be
             // rebuilt from it; the nested and routed ones carry an inner
             // message whose own randomness is not separately recorded
-            // the referral's own fields outlive the payload that borrows them
             let referral = expect["request_relationship"]["referral"].as_object();
             let new_vid = referral.map(|r| r["new_vid"].as_str().expect("new_vid").to_owned());
             let sig_new_vid = referral.map(|r| {
@@ -399,12 +398,7 @@ mod test {
         }
     }
 
-    /// The referral vector exists to pin how the Referral_Field enters the TSP
-    /// Digest, which the specification left open to three readings. This checks
-    /// that the octets the file records are the real ones — they hash to the
-    /// digest on the wire, and they are what Signature_new was made over — and
-    /// that they discriminate: recounting the field, which is one of the
-    /// readings the vector rules out, gives a different digest.
+    /// Spec 7.2.1; trustoverip/tswg-tsp-specification#82.
     #[test]
     #[wasm_bindgen_test]
     fn the_referral_vector_pins_how_the_referral_field_is_digested() {
@@ -438,25 +432,19 @@ mod test {
         };
         let info = info.expect("a populated Referral_Field yields a signature to check");
 
-        // the recorded digest input is what the message's own SAID is over
         assert_eq!(crate::crypto::sha256(&digest_input), thread_id[..]);
         assert_eq!(digest, thread_id);
 
-        // and the recorded signature input is what Signature_new covers
         assert_eq!(signature_input, info.signed_data);
         assert_eq!(decode("signature_new"), info.sig_new_vid);
         crate::crypto::verify_detached(referred.vid(), &signature_input, info.sig_new_vid)
             .expect("Signature_new verifies under the referred VID's key");
 
-        // the field contributes VID_new alone: the digest input ends with that
-        // primitive, with no -J## code and count of its own
         let mut counted = Vec::new();
         encode_hops(&[info.new_vid], &mut counted).expect("encode");
         let bare = &counted[3..];
         assert!(digest_input.ends_with(bare));
 
-        // recounting the field over VID_new alone — reading (b) of the three
-        // the specification admitted — would give a different digest
         let mut recounted = digest_input[..digest_input.len() - bare.len()].to_vec();
         recounted.extend_from_slice(&counted);
         assert_ne!(crate::crypto::sha256(&recounted), thread_id[..]);

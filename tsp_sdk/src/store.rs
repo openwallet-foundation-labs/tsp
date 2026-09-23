@@ -2110,8 +2110,7 @@ impl SecureStore {
         let old_relationship =
             self.replace_relation_status_for_vid(receiver, RelationshipStatus::Unrelated)?;
 
-        // the `TSP_RFD` names the Digest of the `TSP_RFI` that formed the
-        // relationship (spec 7.3), which both sides hold as `invite_digest`
+        // spec 7.3
         let thread_id = match old_relationship {
             RelationshipStatus::Bidirectional { invite_digest, .. } => invite_digest,
             RelationshipStatus::Unidirectional { invite_digest } => invite_digest,
@@ -2272,9 +2271,7 @@ impl SecureStore {
         self.add_verified_vid(nested_vid, None)
     }
 
-    /// Record a formed relationship. Both endpoints record the same pair the
-    /// same way round: `thread_id` is the invite's Digest, `remote_thread_id`
-    /// the accept's Reply_Digest, whichever side this endpoint was (spec 7.2.1).
+    /// Spec 7.2.1.
     fn establish_bidirectional_relation(
         &self,
         my_vid: &str,
@@ -2385,7 +2382,6 @@ impl SecureStore {
                 reply_digest: reply,
                 ..
             } => {
-                // either digest of the relationship identifies it
                 if thread_id != invite && thread_id != reply {
                     return ignore();
                 }
@@ -3419,8 +3415,6 @@ mod test {
         else {
             panic!("parallel accept did not establish sender-side relationship");
         };
-        // both sides hold the pair the same way round: the invite's digest
-        // first, the accept's second
         assert_eq!(sender_thread_id, thread_id);
         assert!(sender_remote_thread_id.iter().any(|byte| *byte != 0));
         assert!(outstanding_nested_requests.is_empty());
@@ -3971,8 +3965,7 @@ mod test {
             .unwrap();
         a_store.open_message(&mut accept).unwrap();
 
-        // bob accepted rather than invited, but his cancel still names the
-        // digest of the invite that formed the relationship (spec 7.3)
+        // spec 7.3
         let (_url, mut cancel) = b_store
             .make_relationship_cancel(bob.identifier(), alice.identifier())
             .unwrap();
@@ -4042,7 +4035,6 @@ mod test {
                 reply_digest: remote_thread_id,
                 ..
             } => {
-                // the replier holds the pair the same way round as the inviter
                 assert_eq!(thread_id, request_digest);
                 remote_thread_id
             }
