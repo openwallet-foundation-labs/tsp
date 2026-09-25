@@ -1173,9 +1173,17 @@ impl SecureStore {
             );
         }
 
-        // send direct mode
+        // send direct mode; a relationship request introduces a did:peer by
+        // its long form, the form a receiver that never saw it can resolve
+        let introduced;
+        let sender: &dyn PrivateVid = if matches!(payload, Payload::RequestRelationship { .. }) {
+            introduced = IntroducedVid::new(&*sender);
+            &introduced
+        } else {
+            &*sender
+        };
         let tsp_message = seal_envelope(
-            &*sender,
+            sender,
             &*receiver_context.vid,
             payload,
             digest,
@@ -1626,7 +1634,9 @@ impl SecureStore {
                         // we must communicate the payload to them so they can process it further.
                         // we cannot do this after 'open_message' since 'inner' will be borrowed
                         let inner_vid = Self::probe_sender(inner)?;
-                        if self.get_verified_vid(inner_vid).is_err() {
+                        if self.get_verified_vid(inner_vid).is_err()
+                            && verify_vid_offline(inner_vid).is_err()
+                        {
                             return Err(Error::UnverifiedSource(
                                 inner_vid.to_owned(),
                                 #[cfg(feature = "async")]
@@ -3043,13 +3053,10 @@ mod test {
     }
 
     #[test]
-    #[wasm_bindgen_test]
-    fn test_nested_message_from_unknown_inner_sender_opens_after_verification() {
-        // A nested message whose inner sender is unknown is reported as
-        // UnverifiedSource so the caller can resolve that VID and try again.
-        // The retry must succeed on a fresh copy of the same bytes -- this is
-        // the shape of a routed invite arriving from an endpoint the receiver
-        // has never seen.
+    fn test_nested_request_from_an_unseen_did_peer_opens() {
+        // A routed invite from an endpoint the receiver has never seen: the
+        // inner request carries the did:peer's long form, which resolves on
+        // its own, so the message opens on the first try.
         let a_store = create_test_store();
         let q_store = create_test_store();
         let b_store = create_test_store();
@@ -3080,7 +3087,7 @@ mod test {
         let (_url, inner) = a_store
             .make_relationship_request(alice.identifier(), bob.identifier(), None)
             .unwrap();
-        let (_url, nested) = q_store
+        let (_url, mut nested) = q_store
             .seal_message_payload(
                 intermediary.identifier(),
                 bob.identifier(),
@@ -3088,23 +3095,12 @@ mod test {
             )
             .unwrap();
 
-        let mut first = nested.clone();
-        // the variant carries the payload only when the async feature is on
-        let Err(Error::UnverifiedSource(unknown, ..)) = b_store.open_message(&mut first) else {
-            panic!("an unknown inner sender should be reported");
+        let received = b_store.open_message(&mut nested).unwrap();
+        let ReceivedTspMessage::RequestRelationship { sender, .. } = received else {
+            panic!("not a relationship request");
         };
-        assert_eq!(unknown, alice.identifier());
-
-        b_store.add_verified_vid(alice.clone(), None).unwrap();
-
-        let mut retry = nested.clone();
-        let received = b_store
-            .open_message(&mut retry)
-            .expect("the retry must open the message");
-        assert!(matches!(
-            received,
-            ReceivedTspMessage::RequestRelationship { .. }
-        ));
+        assert_eq!(sender, alice.identifier(), "known by the short form");
+        assert!(b_store.has_verified_vid(alice.identifier()).unwrap());
     }
 
     #[test]
