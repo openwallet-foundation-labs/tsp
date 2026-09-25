@@ -1170,6 +1170,44 @@ async fn test_high_entropy_dirty_store_multi_reopen_consistency() {
     );
 }
 
+/// A did:peer's direct relationship request reaches a receiver that has never
+/// seen it: the envelope carries the long form, which resolves on its own.
+#[test]
+fn test_did_peer_introduces_itself_on_a_direct_request() {
+    let a_store = crate::SecureStore::new();
+    let b_store = crate::SecureStore::new();
+    let a = OwnedVid::new_did_peer("tcp://127.0.0.1:1".parse().unwrap());
+    let b = OwnedVid::new_did_peer("tcp://127.0.0.1:2".parse().unwrap());
+    let (a_vid, b_vid) = (a.identifier().to_string(), b.identifier().to_string());
+    a_store.add_verified_vid(b.vid().clone(), None).unwrap();
+    a_store.add_private_vid(a, None).unwrap();
+    b_store.add_private_vid(b, None).unwrap();
+
+    let (_, mut request) = a_store
+        .make_relationship_request(&a_vid, &b_vid, None)
+        .unwrap();
+    let crate::ReceivedTspMessage::RequestRelationship {
+        sender, thread_id, ..
+    } = b_store.open_message(&mut request).unwrap()
+    else {
+        panic!("not a relationship request");
+    };
+    assert_eq!(sender, a_vid, "known by the short form from here on");
+
+    let (_, mut accept) = b_store
+        .make_relationship_accept(&b_vid, &a_vid, thread_id, None)
+        .unwrap();
+    assert!(matches!(
+        a_store.open_message(&mut accept).unwrap(),
+        crate::ReceivedTspMessage::AcceptRelationship { .. }
+    ));
+    let (_, mut sealed) = a_store.seal_message(&a_vid, &b_vid, b"hello").unwrap();
+    assert!(matches!(
+        b_store.open_message(&mut sealed).unwrap(),
+        crate::ReceivedTspMessage::GenericMessage { .. }
+    ));
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 #[tokio::test]
 async fn test_relationship_transition_request_accept_after_reopen() {
