@@ -721,7 +721,9 @@ impl OwnedVid {
             .map_err(|_| PyException::new_err("seed must be 32 bytes"))?;
         let url = url.parse().map_err(py_exception)?;
 
-        Ok(OwnedVid(tsp_sdk::OwnedVid::new_did_peer_from_seed(url, seed)))
+        Ok(OwnedVid(tsp_sdk::OwnedVid::new_did_peer_from_seed(
+            url, seed,
+        )))
     }
 
     #[staticmethod]
