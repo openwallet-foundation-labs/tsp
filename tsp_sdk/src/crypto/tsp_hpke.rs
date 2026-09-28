@@ -255,15 +255,18 @@ pub(crate) fn open<'a>(
 ) -> Result<(MessageContents<'a>, Option<ParallelSignatureInfo<'a>>), CryptoError> {
     match receiver.encryption_key_type() {
         VidEncryptionKeyType::X25519 => {
-            open_with_kem::<X25519Kem>(receiver, raw_header, envelope, ciphertext)
+            open_with_kem::<prepared::PreparedX25519>(receiver, raw_header, envelope, ciphertext)
         }
         VidEncryptionKeyType::MlKem768X25519 => {
-            open_with_kem::<PqKem>(receiver, raw_header, envelope, ciphertext)
+            open_with_kem::<prepared::PreparedXWing>(receiver, raw_header, envelope, ciphertext)
         }
     }
 }
 
-fn open_with_kem<'a, Kem: KemTrait>(
+/// Open in two steps: first the one private answer the message needs, the KEM shared
+/// secret, asked of the receiver's secure area; then the `hpke` crate's key schedule and
+/// AEAD, unchanged, run on that answer. Nothing private happens inside the crate's call.
+fn open_with_kem<'a, Kem: KemTrait<PrivateKey = prepared::SharedSecretKey>>(
     receiver: &dyn PrivateVid,
     raw_header: &'a [u8],
     envelope: Envelope<&[u8]>,
@@ -279,13 +282,13 @@ fn open_with_kem<'a, Kem: KemTrait>(
     let (encapped_key, rest) = ciphertext.split_at_mut(enc_size);
     let (ciphertext, tag) = rest.split_at_mut(rest.len() - tag_size);
 
-    let receiver_decryption_key = Kem::PrivateKey::from_bytes(receiver.decryption_key().as_ref())?;
+    let prepared = prepared::shared_secret::<Kem>(receiver, encapped_key)?;
     let encapped_key = Kem::EncappedKey::from_bytes(encapped_key)?;
     let tag = AeadTag::<Aead>::from_bytes(tag)?;
 
     single_shot_open_inout_detached::<Aead, Kdf, Kem>(
         &OpModeR::Base,
-        &receiver_decryption_key,
+        &prepared,
         &encapped_key,
         HPKE_INFO,
         InOutBuf::from(&mut *ciphertext),
@@ -294,6 +297,136 @@ fn open_with_kem<'a, Kem: KemTrait>(
     )?;
 
     open_payload(raw_header, envelope, ciphertext)
+}
+
+/// HPKE's KEM trait for a decapsulation already done: the "private key" handed to the
+/// `hpke` crate is the KEM shared secret itself, computed beforehand from the secure area's
+/// `key_agreement` or `kem_decapsulate`, so the crate's key schedule and AEAD are used
+/// unchanged while no private operation runs inside its call. This is also the structure
+/// an asynchronous secure area needs: every private answer is gathered first.
+mod prepared {
+    use super::{CryptoError, Kdf, PqKem, X25519Kem};
+    use crate::definitions::PrivateVid;
+    use hpke::{
+        Deserializable, HpkeError, Kem as KemTrait, Serializable, kdf::Kdf as KdfTrait,
+        kem::SharedSecret,
+    };
+    use zeroize::Zeroizing;
+
+    /// A KEM shared secret standing in for the private key. Both KEMs have 32-byte secrets.
+    #[derive(Clone)]
+    pub(super) struct SharedSecretKey(Zeroizing<[u8; 32]>);
+
+    impl subtle::ConstantTimeEq for SharedSecretKey {
+        fn ct_eq(&self, other: &Self) -> subtle::Choice {
+            self.0.ct_eq(&*other.0)
+        }
+    }
+
+    impl Serializable for SharedSecretKey {
+        type OutputSize = <<X25519Kem as KemTrait>::EncappedKey as Serializable>::OutputSize;
+        fn write_exact(&self, buf: &mut [u8]) {
+            buf.copy_from_slice(&*self.0);
+        }
+    }
+
+    impl Deserializable for SharedSecretKey {
+        fn from_bytes(bytes: &[u8]) -> Result<Self, HpkeError> {
+            let arr: [u8; 32] = bytes
+                .try_into()
+                .map_err(|_| HpkeError::IncorrectInputLength(32, bytes.len()))?;
+            Ok(SharedSecretKey(Zeroizing::new(arr)))
+        }
+    }
+
+    /// The private answer for one message: the KEM shared secret for `encapped_key`.
+    pub(super) fn shared_secret<Kem: KemTrait<PrivateKey = SharedSecretKey>>(
+        receiver: &dyn PrivateVid,
+        encapped_key: &[u8],
+    ) -> Result<SharedSecretKey, CryptoError> {
+        let secret: Vec<u8> = match Kem::KEM_ID {
+            id if id == <X25519Kem as KemTrait>::KEM_ID => {
+                // DHKEM: dh from the secure area; shared_secret = ExtractAndExpand(dh, enc || pkR)
+                let dh = receiver.key_agreement(encapped_key)?;
+                let mut kem_context = Vec::with_capacity(64);
+                kem_context.extend_from_slice(encapped_key);
+                kem_context.extend_from_slice(receiver.encryption_key().as_ref());
+                let mut out = Zeroizing::new([0u8; 32]);
+                <Kdf as KdfTrait>::extract_and_expand(&dh, &suite_id(id), &kem_context, &mut *out)
+                    .map_err(|_| HpkeError::DecapError)?;
+                out.to_vec()
+            }
+            _ => receiver.kem_decapsulate(encapped_key)?.to_vec(),
+        };
+        let arr: [u8; 32] = secret
+            .as_slice()
+            .try_into()
+            .map_err(|_| HpkeError::DecapError)?;
+        Ok(SharedSecretKey(Zeroizing::new(arr)))
+    }
+
+    /// `b"KEM" || I2OSP(kem_id, 2)`, RFC 9180 section 4.1
+    fn suite_id(kem_id: u16) -> [u8; 5] {
+        let mut id = *b"KEMXX";
+        id[3..5].copy_from_slice(&kem_id.to_be_bytes());
+        id
+    }
+
+    macro_rules! prepared_kem {
+        ($name:ident, $base:ty, $doc:literal) => {
+            #[doc = $doc]
+            pub(super) struct $name;
+
+            impl KemTrait for $name {
+                type PublicKey = <$base as KemTrait>::PublicKey;
+                type PrivateKey = SharedSecretKey;
+                type EncappedKey = <$base as KemTrait>::EncappedKey;
+                type NSecret = <$base as KemTrait>::NSecret;
+                const KEM_ID: u16 = <$base as KemTrait>::KEM_ID;
+
+                fn sk_to_pk(_: &SharedSecretKey) -> Self::PublicKey {
+                    unreachable!("a public key is read from the VID, never derived here")
+                }
+
+                fn derive_keypair(_: &[u8]) -> (SharedSecretKey, Self::PublicKey) {
+                    unreachable!("keys are generated inside the secure area")
+                }
+
+                fn encap_with_rng(
+                    pk_recip: &Self::PublicKey,
+                    _sender_id_keypair: Option<(&SharedSecretKey, &Self::PublicKey)>,
+                    csprng: &mut impl hpke::rand_core::CryptoRng,
+                ) -> Result<(SharedSecret<Self>, Self::EncappedKey), HpkeError> {
+                    let (ss, enc) = <$base>::encap_with_rng(pk_recip, None, csprng)?;
+                    Ok((SharedSecret(ss.0), enc))
+                }
+
+                fn decap(
+                    prepared: &SharedSecretKey,
+                    pk_sender_id: Option<&Self::PublicKey>,
+                    _: &Self::EncappedKey,
+                ) -> Result<SharedSecret<Self>, HpkeError> {
+                    if pk_sender_id.is_some() {
+                        return Err(HpkeError::DecapError);
+                    }
+                    let mut shared_secret = SharedSecret::<Self>::default();
+                    shared_secret.0.copy_from_slice(&*prepared.0);
+                    Ok(shared_secret)
+                }
+            }
+        };
+    }
+
+    prepared_kem!(
+        PreparedX25519,
+        X25519Kem,
+        "DHKEM(X25519, HKDF-SHA256) with the Diffie-Hellman done beforehand."
+    );
+    prepared_kem!(
+        PreparedXWing,
+        PqKem,
+        "MLKEM768-X25519 with the decapsulation done beforehand."
+    );
 }
 
 fn open_payload<'a>(
@@ -371,10 +504,108 @@ mod known_answer_tests {
         assert_eq!(ciphertext, hex(pt));
     }
 
+    /// The same known answer, decapsulated behind the boundary: the private key is in a
+    /// software secure area and only `key_agreement` or `kem_decapsulate` is asked of it.
+    fn open_kat_through_boundary<Kem: KemTrait<PrivateKey = super::prepared::SharedSecretKey>>(
+        key_type: crate::KeyType,
+        skr: &str,
+        enc: &str,
+        info: &str,
+        aad: &str,
+        ct: &str,
+        pt: &str,
+    ) {
+        use crate::definitions::{PrivateVid, VerifiedVid};
+
+        struct Receiver {
+            area: crate::SoftwareSecureArea,
+            public: crate::definitions::PublicKeyData,
+            verifying: crate::definitions::PublicVerificationKeyData,
+            enc_type: crate::definitions::VidEncryptionKeyType,
+            url: url::Url,
+        }
+        impl VerifiedVid for Receiver {
+            fn identifier(&self) -> &str {
+                "did:test:receiver"
+            }
+            fn endpoint(&self) -> &url::Url {
+                &self.url
+            }
+            fn verifying_key(&self) -> &crate::definitions::PublicVerificationKeyData {
+                &self.verifying
+            }
+            fn encryption_key(&self) -> &crate::definitions::PublicKeyData {
+                &self.public
+            }
+            fn encryption_key_type(&self) -> crate::definitions::VidEncryptionKeyType {
+                self.enc_type
+            }
+            fn signature_key_type(&self) -> crate::definitions::VidSignatureKeyType {
+                crate::definitions::VidSignatureKeyType::Ed25519
+            }
+        }
+        impl PrivateVid for Receiver {
+            fn secure_area(&self) -> &dyn crate::SecureArea {
+                &self.area
+            }
+            fn signing_key_alias(&self) -> &str {
+                "sig"
+            }
+            fn decryption_key_alias(&self) -> &str {
+                "enc"
+            }
+        }
+
+        let area = crate::SoftwareSecureArea::new();
+        let public = area
+            .import("enc", key_type, zeroize::Zeroizing::new(hex(skr)))
+            .unwrap();
+        let receiver = Receiver {
+            area,
+            public: public.expect("a key of its type").into(),
+            verifying: vec![0; 32].into(),
+            enc_type: match key_type {
+                crate::KeyType::X25519 => crate::definitions::VidEncryptionKeyType::X25519,
+                _ => crate::definitions::VidEncryptionKeyType::MlKem768X25519,
+            },
+            url: "https://example.com".parse().unwrap(),
+        };
+
+        let encapped_key = Kem::EncappedKey::from_bytes(&hex(enc)).unwrap();
+        let ct = hex(ct);
+        let (mut ciphertext, tag) = {
+            let (c, t) = ct.split_at(ct.len() - 16);
+            (c.to_vec(), AeadTag::<Aead>::from_bytes(t).unwrap())
+        };
+
+        let prepared = super::prepared::shared_secret::<Kem>(&receiver, &hex(enc)).unwrap();
+        single_shot_open_inout_detached::<Aead, Kdf, Kem>(
+            &OpModeR::Base,
+            &prepared,
+            &encapped_key,
+            &hex(info),
+            InOutBuf::from(ciphertext.as_mut_slice()),
+            &hex(aad),
+            &tag,
+        )
+        .unwrap();
+
+        assert_eq!(ciphertext, hex(pt));
+    }
+
     /// RFC 9180 test vector A.2 (base mode, DHKEM(X25519, HKDF-SHA256),
     /// HKDF-SHA256, ChaCha20Poly1305): the classical TSP cipher suite
     #[test]
     fn rfc_9180_base_x25519_hkdf_sha256_chacha20poly1305() {
+        open_kat_through_boundary::<super::prepared::PreparedX25519>(
+            crate::KeyType::X25519,
+            "8057991eef8f1f1af18f4a9491d16a1ce333f695d4db8e38da75975c4478e0fb",
+            "1afa08d3dec047a643885163f1180476fa7ddb54c6a8029ea33f95796bf2ac4a",
+            "4f6465206f6e2061204772656369616e2055726e",
+            "436f756e742d30",
+            "1c5250d8034ec2b784ba2cfd69dbdb8af406cfe3ff938e131f0def8c8b60b4db21993c62ce81883d2dd1b51a28",
+            "4265617574792069732074727574682c20747275746820626561757479",
+        );
         open_kat::<X25519Kem>(
             "8057991eef8f1f1af18f4a9491d16a1ce333f695d4db8e38da75975c4478e0fb",
             "1afa08d3dec047a643885163f1180476fa7ddb54c6a8029ea33f95796bf2ac4a",
@@ -390,13 +621,25 @@ mod known_answer_tests {
     /// Source: test-vectors.json of the hpkewg/hpke-pq draft repository
     #[test]
     fn hpke_pq_base_x25519mlkem768_hkdf_sha256_chacha20poly1305() {
-        open_kat::<PqKem>(
-            "b6bfa0299b955e85224df2e468f29eeab377ff3b96d4462b39447a22d32b91be",
-            "ab354dd589f74ee0eab7718a630cbec5df1d09058e177cd6dd141d883450ddd70c050d88bed3d07cce23415cab411108cc30906482a71adcb134a56e978a6152a8e063b24acd1534f264f10458152a9ed4f1f32b3d480c4f2453b7fdea7720146b3ee92cf8a13a4840076f68c911c65fa3db5053fb0aabf79e64cd5e7aa71b2b9641e713ec7df552e17d5020f8721ee449b42c888e2a3f87cfd96e3a98c3e7c4cd8f647f899570f596bf17d2b6fa2cad19706d9cc3cf09493e1c7ffa0eb2a4559ae1d940fdbef97bed383e6ccfdb448d9f1a81805166b32c2af2e16878c6dc46ab43323ed9c136b925239782e3c329c31a5cf2a80faf025a80766e244605c27afe4b624d9d8ca99b6ef5439ed1ad044b518c434385acd49f1369ded6624a2832a571ccdd70d08b3c04cb1cd3136166f9a485f536f69ec66f0293e840025ccaac42f8e5f7c9cb818076c272797047f5e50c1e9f1dab81cfb48fe4c4998b2427f009702b145f34ad8dbc3e7ad4e4023057ba31cd02c4c0545ebf71eb02533e8eaa2b2f2690ee1407bf1f66dc5f4d836c45b82f10b720df72d237488a9af1b6dfb4741fd613379c2e211e77f7fae6b3734ad81de2d452005334857c4a3cbc82afc7428fe510495969b296d24e1a7431f557d48578cf92ae86c0392f0ba73755a9e5465c8e3495e4cd2a82d463244341e39414e26c9b242f31d2cf0e46b2aeb11dd5e56ec44834350d151344229e410faff2b2ace5c9b3fa12571db1d28da2c7133492781dac41b7a7e2bac2260fd12f56939033587824c9dfb17d41b3bceea53763193abe0c7c184d5de161ef5312f31fab42478c9a193b868e4d29b2b7624f3ebe740f393d03d843cd5327286a579fd2a6e37aca5b64f9316115d612c7781e704ea7d182701c5019975cad14fbf4ab3904d4a35acaf0be32d716a1ef5d7188fc418ae9e60744325a3e8001655b756df94c24031c3ce32bd90c0ecdac52ca140fdad7f44d04bd0a7e2a726c54cf9793f8784a23296f65da3fd1cbc18300d503c5b27be99b9b0e32d20b3614dc8a999f30c2779dd7886cfd486dc1c93ebcf517b5210a4359d9fa1805381f0f2261ff47de01de555d98bc1a30dda557a83007b61636abaf9041f96890f0f565eefc45859fbcd32d91b203215541227a4fcc3d95be2ddb0702878caa20f2da62c4ff9fe33af591ba1ec241fbe2208e0480f8b1cca1679c096f8f5a02a33e9df445b3274ac112b43d51510135cd3f532a3379e90bb7f0cb43717e90555bb1a80924cc69577455687cceb9b1610c05839541e87ad83d79ef3ff24ace1934cfbe989691959d93ac48c716b672b370dd4c144ca1e32508707a6ef8aa29b55759b3d054c56bee1baa6f41b84b9fc3fd681a1a1528eac578141529836a29dda1501a49ba2455367256d2fe6f74ebb74ef9a49a94a4c6cd1dd09810f0e9bffa69dd8c94d226d0b2977b11a35382888961004a44c60fd602e9ff4271287e9240ba96146515b9db9da60375aeeafeac1eeb764faebacd197df27817c35fe4c5c802e43349d7bc95c8b40c001449d3251c1d92ff6d5c3b08c4b27c",
-            "34663634363532303666366532303631323034373732363536333639363136653230353537323665",
-            "436f756e742d30",
-            "a4ab74475a498ed725f685421f67c09a4783fe76f67bd251e1e73db8eb1452dfad4df3c6453f7edecc7bb055dde561e2efd54d73a3d4f1f2f02eac90ba1e9b84ded66d43aee6393524db",
-            "34323635363137353734373932303639373332303734373237353734363832633230373437323735373436383230363236353631373537343739",
+        let v = PQ_VECTOR;
+        open_kat_through_boundary::<super::prepared::PreparedXWing>(
+            crate::KeyType::MlKem768X25519,
+            v.0,
+            v.1,
+            v.2,
+            v.3,
+            v.4,
+            v.5,
         );
+        open_kat::<PqKem>(v.0, v.1, v.2, v.3, v.4, v.5);
     }
+
+    const PQ_VECTOR: (&str, &str, &str, &str, &str, &str) = (
+        "b6bfa0299b955e85224df2e468f29eeab377ff3b96d4462b39447a22d32b91be",
+        "ab354dd589f74ee0eab7718a630cbec5df1d09058e177cd6dd141d883450ddd70c050d88bed3d07cce23415cab411108cc30906482a71adcb134a56e978a6152a8e063b24acd1534f264f10458152a9ed4f1f32b3d480c4f2453b7fdea7720146b3ee92cf8a13a4840076f68c911c65fa3db5053fb0aabf79e64cd5e7aa71b2b9641e713ec7df552e17d5020f8721ee449b42c888e2a3f87cfd96e3a98c3e7c4cd8f647f899570f596bf17d2b6fa2cad19706d9cc3cf09493e1c7ffa0eb2a4559ae1d940fdbef97bed383e6ccfdb448d9f1a81805166b32c2af2e16878c6dc46ab43323ed9c136b925239782e3c329c31a5cf2a80faf025a80766e244605c27afe4b624d9d8ca99b6ef5439ed1ad044b518c434385acd49f1369ded6624a2832a571ccdd70d08b3c04cb1cd3136166f9a485f536f69ec66f0293e840025ccaac42f8e5f7c9cb818076c272797047f5e50c1e9f1dab81cfb48fe4c4998b2427f009702b145f34ad8dbc3e7ad4e4023057ba31cd02c4c0545ebf71eb02533e8eaa2b2f2690ee1407bf1f66dc5f4d836c45b82f10b720df72d237488a9af1b6dfb4741fd613379c2e211e77f7fae6b3734ad81de2d452005334857c4a3cbc82afc7428fe510495969b296d24e1a7431f557d48578cf92ae86c0392f0ba73755a9e5465c8e3495e4cd2a82d463244341e39414e26c9b242f31d2cf0e46b2aeb11dd5e56ec44834350d151344229e410faff2b2ace5c9b3fa12571db1d28da2c7133492781dac41b7a7e2bac2260fd12f56939033587824c9dfb17d41b3bceea53763193abe0c7c184d5de161ef5312f31fab42478c9a193b868e4d29b2b7624f3ebe740f393d03d843cd5327286a579fd2a6e37aca5b64f9316115d612c7781e704ea7d182701c5019975cad14fbf4ab3904d4a35acaf0be32d716a1ef5d7188fc418ae9e60744325a3e8001655b756df94c24031c3ce32bd90c0ecdac52ca140fdad7f44d04bd0a7e2a726c54cf9793f8784a23296f65da3fd1cbc18300d503c5b27be99b9b0e32d20b3614dc8a999f30c2779dd7886cfd486dc1c93ebcf517b5210a4359d9fa1805381f0f2261ff47de01de555d98bc1a30dda557a83007b61636abaf9041f96890f0f565eefc45859fbcd32d91b203215541227a4fcc3d95be2ddb0702878caa20f2da62c4ff9fe33af591ba1ec241fbe2208e0480f8b1cca1679c096f8f5a02a33e9df445b3274ac112b43d51510135cd3f532a3379e90bb7f0cb43717e90555bb1a80924cc69577455687cceb9b1610c05839541e87ad83d79ef3ff24ace1934cfbe989691959d93ac48c716b672b370dd4c144ca1e32508707a6ef8aa29b55759b3d054c56bee1baa6f41b84b9fc3fd681a1a1528eac578141529836a29dda1501a49ba2455367256d2fe6f74ebb74ef9a49a94a4c6cd1dd09810f0e9bffa69dd8c94d226d0b2977b11a35382888961004a44c60fd602e9ff4271287e9240ba96146515b9db9da60375aeeafeac1eeb764faebacd197df27817c35fe4c5c802e43349d7bc95c8b40c001449d3251c1d92ff6d5c3b08c4b27c",
+        "34663634363532303666366532303631323034373732363536333639363136653230353537323665",
+        "436f756e742d30",
+        "a4ab74475a498ed725f685421f67c09a4783fe76f67bd251e1e73db8eb1452dfad4df3c6453f7edecc7bb055dde561e2efd54d73a3d4f1f2f02eac90ba1e9b84ded66d43aee6393524db",
+        "34323635363137353734373932303639373332303734373237353734363832633230373437323735373436383230363236353631373537343739",
+    );
 }

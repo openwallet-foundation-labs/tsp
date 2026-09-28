@@ -3,8 +3,7 @@ use crate::definitions::{
     PublicVerificationKeyData, RelationshipForm, TSPMessage, VerifiedVid, VidEncryptionKeyType,
     VidSignatureKeyType,
 };
-use ed25519_dalek::Signer;
-use ml_dsa::{EncodedVerifyingKey, ExpandedSigningKey, ExpandedSigningKeyBytes, MlDsa65};
+use ml_dsa::{EncodedVerifyingKey, MlDsa65};
 use rand_core::OsRng;
 #[cfg(feature = "bench-network-timings")]
 use std::time::Instant;
@@ -174,38 +173,19 @@ pub(crate) fn append_signature(
     sender: &dyn PrivateVid,
     data: &mut Vec<u8>,
 ) -> Result<(), CryptoError> {
-    match sender.signature_key_type() {
-        VidSignatureKeyType::Ed25519 => {
-            #[cfg(feature = "bench-network-timings")]
-            let signature_started = std::time::Instant::now();
-            let sign_key = ed25519_dalek::SigningKey::from_bytes(&TryInto::<[u8; 32]>::try_into(
-                sender.signing_key().as_slice(),
-            )?);
-            let signature = sign_key.sign(data).to_bytes();
-            crate::cesr::encode_signature(&signature, data, SignatureType::Ed25519);
-            #[cfg(feature = "bench-network-timings")]
-            crate::bench::record_signature(signature_started);
-        }
-        VidSignatureKeyType::MlDsa65 => {
-            #[cfg(feature = "bench-network-timings")]
-            let signature_started = std::time::Instant::now();
-            let sign_key = mldsa65_signing_key_from_bytes(sender.signing_key().as_slice())?;
-            let signature = ml_dsa::Signer::sign(&sign_key, data).encode();
-            crate::cesr::encode_signature(signature.as_slice(), data, SignatureType::MlDsa65);
-            #[cfg(feature = "bench-network-timings")]
-            crate::bench::record_signature(signature_started);
-        }
-    }
+    #[cfg(feature = "bench-network-timings")]
+    let signature_started = std::time::Instant::now();
+    // the key never leaves the secure area; only the signature comes back
+    let signature = sender.sign(data)?;
+    let signature_type = match sender.signature_key_type() {
+        VidSignatureKeyType::Ed25519 => SignatureType::Ed25519,
+        VidSignatureKeyType::MlDsa65 => SignatureType::MlDsa65,
+    };
+    crate::cesr::encode_signature(&signature, data, signature_type);
+    #[cfg(feature = "bench-network-timings")]
+    crate::bench::record_signature(signature_started);
 
     Ok(())
-}
-
-fn mldsa65_signing_key_from_bytes(
-    signing_key: &[u8],
-) -> Result<ExpandedSigningKey<MlDsa65>, CryptoError> {
-    let signing_key = ExpandedSigningKeyBytes::<MlDsa65>::try_from(signing_key)?;
-    #[allow(deprecated)]
-    Ok(ExpandedSigningKey::<MlDsa65>::from_expanded(&signing_key))
 }
 
 /// Compute the self-referencing TSP digest (spec 7.2.1) of a relationship
@@ -491,18 +471,7 @@ pub(crate) fn open_relationship_accept<'a>(
 }
 
 pub(crate) fn sign_detached(sender: &dyn PrivateVid, data: &[u8]) -> Result<Vec<u8>, CryptoError> {
-    Ok(match sender.signature_key_type() {
-        crate::definitions::VidSignatureKeyType::Ed25519 => {
-            let sign_key = ed25519_dalek::SigningKey::from_bytes(&TryInto::<[u8; 32]>::try_into(
-                sender.signing_key().as_slice(),
-            )?);
-            sign_key.sign(data).to_bytes().to_vec()
-        }
-        crate::definitions::VidSignatureKeyType::MlDsa65 => {
-            let sign_key = mldsa65_signing_key_from_bytes(sender.signing_key().as_slice())?;
-            ml_dsa::Signer::sign(&sign_key, data).encode().to_vec()
-        }
-    })
+    Ok(sender.sign(data)?)
 }
 
 pub(crate) fn verify_detached(

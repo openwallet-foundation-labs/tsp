@@ -77,24 +77,24 @@ pub struct PendingIncomingParallelRelationship {
 #[derive(Clone, Debug)]
 pub enum RelationshipStatus {
     Bidirectional {
-        thread_id: Digest,
-        remote_thread_id: Digest,
+        invite_digest: Digest,
+        reply_digest: Digest,
         outstanding_nested_requests: Vec<PendingNestedRelationship>,
     },
     Unidirectional {
-        thread_id: Digest,
+        invite_digest: Digest,
     },
     ReverseUnidirectional {
-        thread_id: Digest,
+        invite_digest: Digest,
     },
     Unrelated,
 }
 
 impl RelationshipStatus {
-    pub(crate) fn bi(thread_id: Digest, remote_thread_id: Digest) -> Self {
+    pub(crate) fn bi(invite_digest: Digest, reply_digest: Digest) -> Self {
         RelationshipStatus::Bidirectional {
-            thread_id,
-            remote_thread_id,
+            invite_digest,
+            reply_digest,
             outstanding_nested_requests: vec![],
         }
     }
@@ -445,21 +445,39 @@ pub trait VerifiedVid: Send + Sync {
     }
 }
 
+/// A VID this endpoint controls: its public half, and the private operations on its keys,
+/// performed by a [`crate::SecureArea`] under two aliases. Nothing here returns a key.
 pub trait PrivateVid: VerifiedVid + Send + Sync {
-    /// The PRIVATE key used to decrypt data
-    fn decryption_key(&self) -> &PrivateKeyData;
+    /// Where the keys live.
+    fn secure_area(&self) -> &dyn crate::SecureArea;
 
-    /// The PRIVATE key used to sign data
-    fn signing_key(&self) -> &PrivateSigningKeyData;
+    /// The alias of the signing key in the secure area.
+    fn signing_key_alias(&self) -> &str;
 
-    fn private_encryption_key_jwk(&self) -> serde_json::Value {
-        serde_json::json!({
-            "kty": self.encryption_key_type().jwk_key_type(),
-            "crv": self.encryption_key_type().jwk_curve(),
-            "use": "enc",
-            "x": Base64UrlUnpadded::encode_string(self.encryption_key().as_ref()),
-            "d": Base64UrlUnpadded::encode_string(self.decryption_key().as_ref()),
-        })
+    /// The alias of the decryption (key agreement or KEM) key in the secure area.
+    fn decryption_key_alias(&self) -> &str;
+
+    /// A signature over `data` by this VID's signing key.
+    fn sign(&self, data: &[u8]) -> Result<Vec<u8>, crate::SecureAreaError> {
+        self.secure_area().sign(self.signing_key_alias(), data)
+    }
+
+    /// The raw X25519 shared secret between this VID's decryption key and `other_public`.
+    fn key_agreement(
+        &self,
+        other_public: &[u8],
+    ) -> Result<crate::secure_area::Secret, crate::SecureAreaError> {
+        self.secure_area()
+            .key_agreement(self.decryption_key_alias(), other_public)
+    }
+
+    /// The KEM shared secret for `encapsulated`, decapsulated with this VID's key.
+    fn kem_decapsulate(
+        &self,
+        encapsulated: &[u8],
+    ) -> Result<crate::secure_area::Secret, crate::SecureAreaError> {
+        self.secure_area()
+            .kem_decapsulate(self.decryption_key_alias(), encapsulated)
     }
 }
 
