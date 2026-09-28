@@ -248,7 +248,7 @@ fn decoded_signature_from_stream(
 
 /// The signable fields of a parallel (referral) relationship request:
 /// {XRFI, VID_sndr, Digest, Nonce, VID_new}, in the unified field order.
-pub(crate) fn encode_parallel_relation_proposal_challenge(
+pub fn encode_parallel_relation_proposal_challenge(
     sender_identity: Option<&[u8]>,
     nonce: &Nonce,
     request_digest: Digest<'_>,
@@ -315,9 +315,7 @@ fn encode_sender_identity(
 
 /// Encode opaque upper-layer data as a `-A##` generic CESR stream holding a bare
 /// Bytes primitive, which is native CESR. The `-A##` stream frame is always
-/// present; its contents are the upper layer's. A caller that interleaves
-/// non-native serializations (JSON, CBOR, MsgPak) encloses each in a `-H##`
-/// group inside the stream; TSP carries the stream contents opaquely.
+/// present; its contents are the upper layer's.
 fn encode_opaque_data(
     data: &[u8],
     output: &mut impl for<'a> Extend<&'a u8>,
@@ -1203,8 +1201,10 @@ pub fn decode_envelope<'a>(stream: &'a mut [u8]) -> Result<CipherView<'a>, Decod
         },
     };
 
-    // any data after the signature attachment is not part of this message
-    // (a transport may deliver several messages back-to-back) and is ignored
+    // PR83
+    if !sigdata.is_empty() {
+        return Err(DecodeError::TrailingGarbage);
+    }
 
     Ok(CipherView {
         data,
@@ -1339,11 +1339,17 @@ pub fn open_message_into_parts(data: &[u8]) -> Result<MessageParts<'_>, DecodeEr
         })
     };
 
-    let signature = match EncodedSignature::decode(&mut &data[pos..])? {
+    let mut sigdata = &data[pos..];
+    let signature = match EncodedSignature::decode(&mut sigdata)? {
         EncodedSignature::NoSignature => &[],
         EncodedSignature::Ed25519(sig) => sig.as_slice(),
         EncodedSignature::MlDsa65(sig) => sig.as_slice(),
     };
+
+    // PR83
+    if !sigdata.is_empty() {
+        return Err(DecodeError::TrailingGarbage);
+    }
 
     let signature = Part {
         prefix: &data[pos..(data.len() - signature.len())],
@@ -1655,7 +1661,7 @@ mod test {
 
     #[test]
     #[wasm_bindgen_test]
-    fn trailing_data_is_ignored() {
+    fn trailing_data_is_rejected() {
         let fixed_sig = [1; 64];
 
         let mut outer = encode_envelope_vec(Envelope {
@@ -1669,11 +1675,11 @@ mod test {
         finalize_envelope_frame(&mut outer);
         encode_signature(&fixed_sig, &mut outer, SignatureType::Ed25519);
 
-        // a transport may deliver several messages back-to-back: data after the
-        // signature attachment is not part of this message and must not be an error
+        // PR83
+        assert!(decode_envelope(&mut outer.clone()).is_ok());
         outer.push(b'-');
 
-        assert!(decode_envelope(&mut outer).is_ok());
+        assert!(decode_envelope(&mut outer).is_err());
     }
 
     #[cfg(all(feature = "demo", test))]

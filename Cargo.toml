@@ -4,7 +4,7 @@ members = ["tsp_sdk", "examples", "fuzz", "tsp_python", "tsp_javascript"]
 exclude = ["demo"]
 
 [workspace.package]
-version = "0.11.0"
+version = "0.14.1"
 edition = "2024"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/openwallet-foundation-labs/tsp"
@@ -39,6 +39,13 @@ sha2 = "0.11.0"
 blake2 = "0.11.0"
 typenum = "1.18.0"
 crypto_box = { version = "0.9.1", features = ["std", "seal"] }
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+salsa20 = "0.10"
+subtle = "2"
+# no webpki-roots: the OS trust store through the platform verifier, as the transports use
+serde_json_canonicalizer = "0.3"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+crypto_secretbox = "0.1"
 # async
 async-stream = { version = "0.3" }
 futures = { version = "0.3" }
@@ -109,4 +116,4 @@ tower-http = { version = "0.6.2", features = ["cors"] }
 # property-based testing
 proptest = "1.6"
 
-tsp_sdk = { path = "./tsp_sdk", version = "0.11.0" }
+tsp_sdk = { path = "./tsp_sdk", version = "0.14.0" }

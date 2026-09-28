@@ -15,7 +15,7 @@
 use base64ct::{Base64UrlUnpadded, Encoding};
 use serde_json::json;
 use tsp_sdk::cesr;
-use tsp_sdk::definitions::{Payload, RelationshipForm, VerifiedVid};
+use tsp_sdk::definitions::{Payload, PrivateVid, RelationshipForm, VerifiedVid};
 use tsp_sdk::vid::OwnedVid;
 
 fn b64(data: &[u8]) -> String {
@@ -197,6 +197,7 @@ fn main() {
     // the intermediaries a routed message traverses
     let p = peer_vid(5);
     let q = peer_vid(6);
+    let alice_referred = peer_vid(7);
     // post-quantum endpoints: the same HPKE-Base mode, a different KEM
     let pq_alice = pq_peer_vid(1);
     let pq_bob = pq_peer_vid(2);
@@ -762,6 +763,125 @@ fn main() {
         json!({"crypto": "HpkeBase", "signature": "MlDsa65", "payload": {"content": "hello world"}}),
     );
 
+    // 11. a TSP_RFI carrying a populated Referral_Field (PR83)
+    let referred_long_form = tsp_sdk::vid::introduction_identifier(alice_referred.vid());
+
+    let mut envelope_prefix = Vec::new();
+    cesr::encode_envelope_prefix(
+        alice.identifier().as_bytes(),
+        Some(bob.identifier().as_bytes()),
+        &mut envelope_prefix,
+    )
+    .expect("envelope prefix");
+
+    let dummy_signature = [0_u8; 64];
+    let unsigned: cesr::Payload<'_, &[u8], &[u8]> = cesr::Payload::RelationProposal {
+        request_digest: digest_of(&[0_u8; 32], cesr::CryptoType::HpkeBase),
+        nonce: cesr::Nonce::generate(|dst| *dst = NONCE),
+        reply_path: vec![],
+        referral: Some((referred_long_form.as_bytes(), &dummy_signature)),
+    };
+    let mut digest_input = Vec::new();
+    cesr::encode_digest_input(&unsigned, None, &envelope_prefix, &mut digest_input)
+        .expect("digest input");
+    let referral_digest = tsp_sdk::crypto::sha256(&digest_input);
+
+    let signature_input = cesr::encode_parallel_relation_proposal_challenge(
+        None,
+        &cesr::Nonce::generate(|dst| *dst = NONCE),
+        digest_of(&referral_digest, cesr::CryptoType::HpkeBase),
+        &[] as &[&[u8]],
+        referred_long_form.as_bytes(),
+    )
+    .expect("signature input");
+    let sig_new_vid = alice_referred.sign(&signature_input).expect("sign new VID");
+
+    let mut sealed_digest = [0_u8; 32];
+    let m = tsp_sdk::crypto::seal_reproducibly(
+        &alice,
+        &bob,
+        Payload::RequestRelationship {
+            thread_id: Default::default(),
+            reply_path: vec![],
+            form: RelationshipForm::Parallel {
+                new_vid: referred_long_form.as_bytes(),
+                sig_new_vid: &sig_new_vid[..],
+            },
+        },
+        Some(&mut sealed_digest),
+        cesr::CryptoType::HpkeBase,
+        seed(12),
+        Some(NONCE),
+    )
+    .unwrap();
+    assert_eq!(
+        sealed_digest, referral_digest,
+        "control-rfi-referral: derived digest does not match the sealed message"
+    );
+    add(
+        "control-rfi-referral",
+        "7.2.1, 7.2.5, 9.4.1",
+        "A TSP_RFI introducing a new VID over an existing relationship. The Referral_Field is \
+         populated: -J## covering VID_new and Signature_new. Signature_new is made by the new \
+         VID's own key, which is what proves control of it. Into the TSP Digest the field \
+         contributes VID_new alone, without its -J## code and count and without Signature_new; \
+         an empty field would contribute -JAA instead. The Reply_Path is empty and contributes \
+         its full encoding, -JAA.",
+        "alice",
+        Some("bob"),
+        &m,
+        payload_plaintext(
+            &cesr::Payload::RelationProposal {
+                request_digest: digest_of(&referral_digest, cesr::CryptoType::HpkeBase),
+                nonce: cesr::Nonce::generate(|dst| *dst = NONCE),
+                reply_path: vec![],
+                referral: Some((referred_long_form.as_bytes(), &sig_new_vid[..])),
+            },
+            None,
+        ),
+        None,
+        Some(12),
+        Some(&b64(&NONCE)),
+        vec![
+            "-Z##",
+            "XRFI",
+            "VID_sndr | 4BAA",
+            "Digest",
+            "Nonce",
+            "Reply_Path",
+            "Referral_Field",
+            "Padding_Field",
+        ],
+        json!({
+            "crypto": "HpkeBase",
+            "payload": {"request_relationship": {
+                "thread_id": b64(&referral_digest),
+                "reply_path": [],
+                "referral": {"new_vid": referred_long_form, "sig_new_vid": b64(&sig_new_vid)}
+            }}
+        }),
+    );
+
+    drop(add);
+    let mut referral = vectors.pop().expect("the referral vector was just pushed");
+    referral
+        .as_object_mut()
+        .expect("a vector is an object")
+        .insert(
+            "derivation".to_string(),
+            json!({
+                "digest_input": b64(&digest_input),
+                "digest": b64(&referral_digest),
+                "signature_input": b64(&signature_input),
+                "signature_new": b64(&sig_new_vid),
+            }),
+        );
+    let after = vectors
+        .iter()
+        .position(|v| v["name"] == "control-rfi-sealed-box")
+        .expect("the invite it follows");
+    vectors.insert(after + 1, referral);
+
     let doc = json!({
         "tsp_version": "0.2",
         "generated_by": "cargo run -p tsp_sdk --example generate_test_vectors",
@@ -779,6 +899,7 @@ fn main() {
             "q": described(&q),
             "pq_alice": described(&pq_alice),
             "pq_bob": described(&pq_bob),
+            "alice_referred": described(&alice_referred),
         },
         "vectors": vectors,
     });

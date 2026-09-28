@@ -7,9 +7,7 @@
 //! - SecureStore message seal and open roundtrips
 
 use proptest::prelude::*;
-use tsp_sdk::cesr::{
-    Payload, decode_count, decode_payload, encode_count, encode_payload,
-};
+use tsp_sdk::cesr::{Payload, decode_count, decode_payload, encode_count, encode_payload};
 use tsp_sdk::{OwnedVid, ReceivedTspMessage, RelationshipPolicy, SecureStore, VerifiedVid};
 
 proptest! {

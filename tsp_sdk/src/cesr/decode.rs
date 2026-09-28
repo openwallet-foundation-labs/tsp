@@ -79,6 +79,12 @@ pub fn decode_variable_data_index(
         // access check: make sure that if this function returns Some(...), that the range is valid
         stream.get(data_begin..data_end)?;
 
+        // PR83
+        let code_len = if selector >= D7 { 6 } else { 3 };
+        if stream.get(code_len..data_begin)?.iter().any(|&b| b != 0) {
+            return None;
+        }
+
         let origin_range = (data_begin + *pos)..(data_end + *pos);
         *pos = origin_range.end;
 

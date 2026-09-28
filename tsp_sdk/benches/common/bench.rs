@@ -48,8 +48,8 @@ pub fn setup_store(_benchmark_id: &'static str, payload_len: usize) -> StoreCase
             .set_relation_and_status_for_vid(
                 remote.identifier(),
                 RelationshipStatus::Bidirectional {
-                    thread_id: [0x11; 32],
-                    remote_thread_id: [0x22; 32],
+                    invite_digest: [0x11; 32],
+                    reply_digest: [0x22; 32],
                     outstanding_nested_requests: vec![],
                 },
                 local.identifier(),

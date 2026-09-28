@@ -66,8 +66,8 @@ fn benches(c: &mut Criterion) {
 
                     let start = Instant::now();
                     for _ in 0..iters {
-                        let (vids, _aliases, _keys) = vault.read().await.unwrap();
-                        std::hint::black_box(vids.len());
+                        let state = vault.read().await.unwrap();
+                        std::hint::black_box(state.vids.len());
                     }
                     let elapsed = start.elapsed();
 

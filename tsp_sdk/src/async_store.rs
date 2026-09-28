@@ -3,12 +3,12 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use crate::{
-    ExportVid, OwnedVid, PrivateVid, RelationshipStatus,
+    OwnedVid, RelationshipStatus,
     cesr::CryptoType,
     crypto::CryptoError,
     definitions::{Digest, ReceivedTspMessage, TSPStream, VerifiedVid},
     error::Error,
-    store::{Aliases, SecureStore, WalletMethodState},
+    store::{SecureStore, WalletState},
     vid::{ResolutionContext, VerifyVidOptions},
 };
 use bytes::BytesMut;
@@ -112,17 +112,88 @@ impl std::fmt::Display for KeyStateDoubt {
     }
 }
 
+/// What a resolution found (flow 5 of the flows note). Every outcome comes back to the
+/// application with its evidence; the store decides nothing beyond keeping or not keeping
+/// what it obtained.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ResolutionOutcome {
+    /// Nothing was held for this VID; it is now held with the tip that was verified.
+    FirstContact,
+    /// The served log contains the held tip and goes beyond it; keys may have changed,
+    /// the relationship has not.
+    Extension,
+    /// The served log ends at the held tip.
+    Unchanged,
+    /// The served log does not contain the held tip, or a watcher holds another log; the
+    /// held state is kept and reliance on it suspended. What to do with the VID is the
+    /// application's.
+    Contradiction(Contradiction),
+    /// The log ends in `deactivated: true`; the method returns no document. Whatever was
+    /// held is kept as it was.
+    Deactivated,
+    /// The VID's server serves nothing; the VID was resolved from a watcher's copy, which
+    /// verified.
+    Gone,
+}
+
+/// Why the copies disagree.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Contradiction {
+    /// The served log is shorter than what was held or what a watcher holds.
+    Rollback,
+    /// The served log shares a prefix with the held tip or a watcher's copy and differs
+    /// after it.
+    Fork,
+}
+
+/// What the watcher said, when one was asked.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WatcherCheck {
+    /// No watcher designated and none named in the log, or the VID is not a `did:webvh`.
+    NotAsked,
+    /// The watcher's copy is the served log, or a prefix of it.
+    Agrees(String),
+    /// The watcher holds no copy of this log yet.
+    HoldsNothing(String),
+    /// The watcher could not be read; the flow prescribes nothing.
+    Unreachable(String, String),
+}
+
+/// A resolution's result: the outcome and what the watcher said.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Resolution {
+    pub outcome: ResolutionOutcome,
+    pub watcher: WatcherCheck,
+}
+
 #[derive(Default, Clone)]
 pub struct AsyncSecureStore {
     inner: SecureStore,
     key_state_policy: Arc<RwLock<KeyStatePolicy>>,
     key_state: Arc<RwLock<KeyStateTracker>>,
+    /// The watcher this verifier asks, by the application's choice; a URL until watchers
+    /// are TSP endpoints. `None`: the watchers a log names.
+    watcher: Arc<RwLock<Option<String>>>,
 }
 
 impl AsyncSecureStore {
     /// Create a new and empty store
     pub fn new() -> Self {
         Default::default()
+    }
+
+    /// Designate the watcher this verifier asks on every resolution of a `did:webvh`; see
+    /// [`AsyncSecureStore::watcher`]. `None` falls back to the watchers a log names.
+    pub fn set_watcher(&self, watcher: Option<String>) -> Result<(), Error> {
+        *self.watcher.write()? = watcher;
+        Ok(())
+    }
+
+    /// The watcher this verifier asks, if the application designated one. The watcher is
+    /// the verifier's choice: anyone may run one and the verifier decides whom it trusts;
+    /// the watchers an endpoint names in its log are a default, never an obligation.
+    pub fn watcher(&self) -> Result<Option<String>, Error> {
+        Ok(self.watcher.read()?.clone())
     }
 
     /// Set the policy for re-resolving peers' key state; see [KeyStatePolicy]
@@ -234,7 +305,7 @@ impl AsyncSecureStore {
     }
 
     /// Export the wallet to serializable default types
-    pub fn export(&self) -> Result<(Vec<ExportVid>, Aliases, WalletMethodState), Error> {
+    pub fn export(&self) -> Result<WalletState, Error> {
         self.inner.export()
     }
 
@@ -244,13 +315,8 @@ impl AsyncSecureStore {
     }
 
     /// Import the wallet from serializable default types
-    pub fn import(
-        &self,
-        vids: Vec<ExportVid>,
-        aliases: Aliases,
-        method_state: WalletMethodState,
-    ) -> Result<(), Error> {
-        self.inner.import(vids, aliases, method_state)
+    pub fn import(&self, state: WalletState) -> Result<(), Error> {
+        self.inner.import(state)
     }
 
     /// Get the current relationship status for a VID pair
@@ -292,13 +358,22 @@ impl AsyncSecureStore {
     /// Adds `private_vid` to the wallet
     pub fn add_private_vid(
         &self,
-        private_vid: impl PrivateVid + Clone + 'static,
+        private_vid: OwnedVid,
         metadata: Option<serde_json::Value>,
     ) -> Result<(), Error> {
         self.inner.add_private_vid(private_vid, metadata)
     }
 
     /// Remove a VID from the [`AsyncSecureStore`]
+    /// Keep the VID as a verified VID only; see [`SecureStore::retire_private_vid`].
+    pub fn retire_private_vid(&self, vid: &str) -> Result<(), Error> {
+        self.inner.retire_private_vid(vid)
+    }
+
+    pub fn remove_alias(&self, alias: &str) -> Result<(), Error> {
+        self.inner.remove_alias(alias)
+    }
+
     pub fn forget_vid(&self, vid: &str) -> Result<(), Error> {
         self.inner.forget_vid(vid)
     }
@@ -312,7 +387,7 @@ impl AsyncSecureStore {
         self.inner.add_verified_vid(verified_vid, metadata)
     }
 
-    /// Check whether the [PrivateVid] identified by `vid` exists in the wallet
+    /// Check whether the [crate::PrivateVid] identified by `vid` exists in the wallet
     pub fn has_private_vid(&self, vid: &str) -> Result<bool, Error> {
         self.inner.has_private_vid(vid)
     }
@@ -338,34 +413,174 @@ impl AsyncSecureStore {
             .await
     }
 
-    /// Resolve and verify public key material for a VID identified by `vid` and add it to the wallet as a relationship
+    /// Resolve and verify public key material for a VID identified by `vid` and add it to
+    /// the wallet as a relationship. A contradiction or a deactivation is an error here;
+    /// [`AsyncSecureStore::resolve_vid`] returns them as outcomes instead.
     pub async fn verify_vid_with_options(
         &self,
         vid: &str,
         alias: Option<String>,
         options: VerifyVidOptions,
     ) -> Result<(), Error> {
-        let resolution_context = verification_resolution_context(vid, &options)?;
-        let (verified_vid, metadata) = crate::vid::verify_vid_with_options(vid, options).await?;
+        match self.resolve_vid(vid, alias, options).await?.outcome {
+            ResolutionOutcome::Contradiction(_) => Err(Error::ConflictingKeyState(
+                self.inner.try_resolve_alias(vid)?,
+            )),
+            ResolutionOutcome::Deactivated => Err(Error::Vid(crate::vid::VidError::Deactivated(
+                vid.to_string(),
+            ))),
+            _ => Ok(()),
+        }
+    }
 
+    /// Flow 5: resolve `vid`, compare what the server serves with the tip held and with
+    /// a watcher's copy, keep the result unless the copies contradict, and return the
+    /// outcome with what the watcher said. The reason to resolve is the caller's; the
+    /// rate limit and the silence threshold are applied where messages arrive.
+    pub async fn resolve_vid(
+        &self,
+        vid: &str,
+        alias: Option<String>,
+        options: VerifyVidOptions,
+    ) -> Result<Resolution, Error> {
+        let resolution_context = verification_resolution_context(vid, &options)?;
+        let held_before = self.inner.get_verified_vid(vid).ok();
+        let held_metadata = match &held_before {
+            Some(held) => self.inner.metadata_for_vid(held.identifier())?,
+            None => None,
+        };
+        let watcher_named = |metadata: Option<&serde_json::Value>| -> Option<String> {
+            metadata?["watchers"]
+                .as_array()?
+                .first()?
+                .as_str()
+                .map(str::to_string)
+        };
+
+        let (verified_vid, metadata, gone) =
+            match crate::vid::verify_vid_with_options(vid, options).await {
+                Ok((v, m)) => (v, m, false),
+                Err(crate::vid::VidError::Deactivated(_)) => {
+                    return Ok(Resolution {
+                        outcome: ResolutionOutcome::Deactivated,
+                        watcher: WatcherCheck::NotAsked,
+                    });
+                }
+                // the server serves nothing: a watcher's copy, if one holds it and it
+                // verifies, is what the method lets a verifier resolve from
+                Err(e) if vid.starts_with("did:webvh:") => {
+                    let watcher = self
+                        .watcher()?
+                        .or_else(|| watcher_named(held_metadata.as_ref()));
+                    let Some(watcher) = watcher else {
+                        return Err(e.into());
+                    };
+                    let (v, m) = crate::vid::did::webvh::resolve_from_watcher(vid, &watcher)
+                        .await
+                        .map_err(|_| e)?;
+                    (v, Some(m), true)
+                }
+                Err(e) => return Err(e.into()),
+            };
         let verified_vid_id = verified_vid.identifier().to_string();
 
-        // key state that replaces what is held rather than continuing it is
-        // evidence of compromise, not a rotation to adopt (spec 3.7, 11.2);
-        // the held state is kept and reliance on it suspended
-        if let Ok(held) = self.inner.get_verified_vid(&verified_vid_id) {
-            let held_metadata = self.inner.metadata_for_vid(&verified_vid_id)?;
-            if !crate::vid::extends_held_key_state(
-                &*held,
+        // the held tip: key state that replaces what is held rather than continuing it is
+        // evidence of compromise, not a rotation to adopt (spec 3.7, 11.2); the held state
+        // is kept and reliance on it suspended
+        if let Some(held) = &held_before
+            && !crate::vid::extends_held_key_state(
+                &**held,
                 held_metadata.as_ref(),
                 &verified_vid,
                 metadata.as_ref(),
+            )
+        {
+            self.suspend_key_state(&verified_vid_id, KeyStateDoubt::Conflicting)?;
+            let kind = match (
+                held_metadata
+                    .as_ref()
+                    .and_then(|m| m["served_versions"].as_array().map(Vec::len)),
+                metadata
+                    .as_ref()
+                    .and_then(|m| m["served_versions"].as_array().map(Vec::len)),
             ) {
-                self.suspend_key_state(&verified_vid_id, KeyStateDoubt::Conflicting)?;
-
-                return Err(Error::ConflictingKeyState(verified_vid_id));
-            }
+                (Some(before), Some(now)) if now < before => Contradiction::Rollback,
+                _ => Contradiction::Fork,
+            };
+            return Ok(Resolution {
+                outcome: ResolutionOutcome::Contradiction(kind),
+                watcher: WatcherCheck::NotAsked,
+            });
         }
+
+        // the watcher: the one designated, else the first the log names; read only, and
+        // compared by versionIds against what the server served
+        let mut watcher_check = WatcherCheck::NotAsked;
+        if !gone
+            && let Some(served) = metadata
+                .as_ref()
+                .and_then(|m| m["served_versions"].as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect::<Vec<_>>()
+                })
+            && let Some(watcher) = self.watcher()?.or_else(|| watcher_named(metadata.as_ref()))
+        {
+            let scid = metadata
+                .as_ref()
+                .and_then(|m| m["webvh_meta_data"]["scid"].as_str())
+                .unwrap_or_default()
+                .to_string();
+            watcher_check = match crate::vid::did::webvh::watcher_versions(&watcher, &scid).await {
+                Err(e) => WatcherCheck::Unreachable(watcher, e.to_string()),
+                Ok(None) => WatcherCheck::HoldsNothing(watcher),
+                Ok(Some(watched)) => {
+                    use crate::vid::did::webvh::WatcherComparison::*;
+                    match crate::vid::did::webvh::compare_with_watcher(&served, &watched) {
+                        Same | ServerAhead => WatcherCheck::Agrees(watcher),
+                        WatcherEmpty => WatcherCheck::HoldsNothing(watcher),
+                        WatcherAhead | Fork => {
+                            let kind = if matches!(
+                                crate::vid::did::webvh::compare_with_watcher(&served, &watched),
+                                WatcherAhead
+                            ) {
+                                Contradiction::Rollback
+                            } else {
+                                Contradiction::Fork
+                            };
+                            if held_before.is_some() {
+                                self.suspend_key_state(
+                                    &verified_vid_id,
+                                    KeyStateDoubt::Conflicting,
+                                )?;
+                            }
+                            return Ok(Resolution {
+                                outcome: ResolutionOutcome::Contradiction(kind),
+                                watcher: WatcherCheck::Agrees(watcher),
+                            });
+                        }
+                    }
+                }
+            };
+        }
+
+        let outcome = if gone {
+            ResolutionOutcome::Gone
+        } else if held_before.is_none() {
+            ResolutionOutcome::FirstContact
+        } else {
+            let held_tip = held_metadata
+                .as_ref()
+                .and_then(|m| m["webvh_meta_data"]["versionId"].as_str());
+            let now_tip = metadata
+                .as_ref()
+                .and_then(|m| m["webvh_meta_data"]["versionId"].as_str());
+            match (held_tip, now_tip) {
+                (Some(a), Some(b)) if a == b => ResolutionOutcome::Unchanged,
+                _ => ResolutionOutcome::Extension,
+            }
+        };
 
         self.inner.add_verified_vid(verified_vid, metadata)?;
         self.confirm_key_state(&verified_vid_id)?;
@@ -386,7 +601,10 @@ impl AsyncSecureStore {
             self.set_alias(alias, verified_vid_id)?;
         }
 
-        Ok(())
+        Ok(Resolution {
+            outcome,
+            watcher: watcher_check,
+        })
     }
 
     /// Resolve alias to its corresponding DID
@@ -404,34 +622,42 @@ impl AsyncSecureStore {
         self.inner.set_alias(alias, did)
     }
 
-    /// Store a raw secret key identified by `kid`.
-    ///
-    /// Used for managing auxiliary signing keys that are not bound to a VID,
-    /// for example WebVH pre-commit key material or TMCP signing keys.
-    pub fn add_secret_key(&self, kid: String, secret_key: Vec<u8>) -> Result<(), Error> {
-        self.inner.add_secret_key(kid, secret_key)
+    /// The wallet's secure area for keys that belong to no VID; see
+    /// [`SecureStore::secure_area`].
+    pub fn secure_area(&self) -> &Arc<crate::SoftwareSecureArea> {
+        self.inner.secure_area()
     }
 
-    /// Retrieve a previously stored raw secret key by `kid`.
-    ///
-    /// Returns `None` if no key is stored under `kid`.
-    /// Return the raw 32-byte Ed25519 private signing key for `vid`.
-    ///
-    /// SECURITY: This surfaces private key material. Only use it when
-    /// interoperating with an external signing scheme that embeds the
-    /// signing step in its own construction (e.g. biscuit-auth token
-    /// building). For detached signatures over arbitrary bytes, prefer
-    /// `sign_raw` — it keeps the key inside the store.
-    ///
-    /// Errors if the VID is not present in the store, has no private
-    /// key material, or uses a non-Ed25519 signature key type.
-    pub fn ed25519_signing_key(&self, vid: &str) -> Result<[u8; 32], Error> {
-        let signer = self.inner.get_private_vid(vid)?;
-        if signer.signature_key_type() != crate::definitions::VidSignatureKeyType::Ed25519 {
-            return Err(Error::UnsupportedSignatureKeyType);
-        }
-        let slice = signer.signing_key().as_slice();
-        <[u8; 32]>::try_from(slice).map_err(|_| Error::UnsupportedSignatureKeyType)
+    /// Bring key material in from outside, under `kid`; see [`SecureStore::import_key`].
+    pub fn import_key(
+        &self,
+        kid: &str,
+        key_type: crate::KeyType,
+        material: crate::secure_area::Secret,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        self.inner.import_key(kid, key_type, material)
+    }
+
+    /// Make a key in the wallet's secure area; see [`SecureStore::create_key`].
+    pub fn create_key(
+        &self,
+        alias: Option<&str>,
+        key_type: crate::KeyType,
+    ) -> Result<crate::KeyInfo, Error> {
+        self.inner.create_key(alias, key_type)
+    }
+
+    pub fn has_key(&self, kid: &str) -> bool {
+        self.inner.has_key(kid)
+    }
+
+    pub fn delete_key(&self, kid: &str) -> Result<(), Error> {
+        self.inner.delete_key(kid)
+    }
+
+    /// A signature over `data` by the key `kid` in the wallet's secure area.
+    pub fn sign_with_key(&self, kid: &str, data: &[u8]) -> Result<Vec<u8>, Error> {
+        self.inner.sign_with_key(kid, data)
     }
 
     /// Produce a raw detached signature over `data` using the private
@@ -450,10 +676,6 @@ impl AsyncSecureStore {
     pub fn sign_raw(&self, vid: &str, data: &[u8]) -> Result<Vec<u8>, Error> {
         let signer = self.inner.get_private_vid(vid)?;
         Ok(crate::crypto::sign_detached(signer.as_ref(), data)?)
-    }
-
-    pub fn get_secret_key(&self, kid: &str) -> Result<Option<Vec<u8>>, Error> {
-        self.inner.get_secret_key(kid)
     }
 
     pub fn register_resolution_context(
