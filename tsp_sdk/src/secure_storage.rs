@@ -4,8 +4,8 @@ use crate::definitions::{
     Digest, PendingNestedRelationship, VidEncryptionKeyType, VidSignatureKeyType,
 };
 use crate::{
-    Error, ExportVid, KeyType, OwnedVid, PendingIncomingParallelRelationship,
-    PendingParallelRelationship, RelationshipStatus, SoftwareSecureArea,
+    Error, ExportVid, KeyType, PendingIncomingParallelRelationship, PendingParallelRelationship,
+    RelationshipStatus, SoftwareSecureArea,
     store::{WalletMethodState, WalletState},
 };
 use aries_askar::{
@@ -226,21 +226,24 @@ impl SecureStorage for AskarSecureStorage {
         } = state;
         let mut conn = self.inner.session(None).await?;
 
-        // the keys of every private VID, under the VID's aliases, in the records this
-        // storage has always used for them
-        let mut vid_key_aliases = std::collections::HashSet::new();
+        // the keys of every private VID, in the records this storage has always used for
+        // them, `<id>#signing-key` and `<id>#decryption-key`: a record's name, not the key's
+        let mut vid_key_names = std::collections::HashSet::new();
         for export in vids {
             let id = export.id.clone();
 
             if export.private {
-                let (sig_alias, enc_alias) = OwnedVid::key_aliases(&id);
-                for alias in [&sig_alias, &enc_alias] {
-                    if let Some((_, material)) = keys.material(alias) {
-                        upsert(&mut conn, "key", alias, &material, None).await?;
+                let (sig_name, enc_name) = export.verified_vid().key_names();
+                for (name, record) in [
+                    (&sig_name, format!("{id}#signing-key")),
+                    (&enc_name, format!("{id}#decryption-key")),
+                ] {
+                    if let Some((_, material)) = keys.material(name) {
+                        upsert(&mut conn, "key", &record, &material, None).await?;
                     }
                 }
-                vid_key_aliases.insert(sig_alias);
-                vid_key_aliases.insert(enc_alias);
+                vid_key_names.insert(sig_name);
+                vid_key_names.insert(enc_name);
             }
 
             upsert(
@@ -277,11 +280,12 @@ impl SecureStorage for AskarSecureStorage {
             upsert(&mut conn, "vid", &id, data.as_bytes(), None).await?;
         }
 
-        // every other key of the secure area: a did:webvh update key, an application's key;
-        // and a key the area no longer holds, a retired update key, leaves the storage too
+        // every other key of the secure area, under its name: a did:webvh update key, an
+        // application's key; and a key the area no longer holds, a retired update key,
+        // leaves the storage too
         let mut kept = std::collections::HashSet::new();
         for (alias, key_type, material) in keys.all_material() {
-            if vid_key_aliases.contains(&alias) {
+            if vid_key_names.contains(&alias) {
                 continue;
             }
             let tags = [EntryTag::Encrypted(
@@ -426,23 +430,21 @@ impl SecureStorage for AskarSecureStorage {
                 continue;
             };
 
-            // the VID's keys, straight into the secure area; one may live remotely instead
-            let (sig_alias, enc_alias) = OwnedVid::key_aliases(&id);
-            if let Some(sig) = conn.fetch("key", &sig_alias, false).await? {
-                keys.import(
-                    &sig_alias,
-                    data.sig_key_type.into(),
-                    zeroize::Zeroizing::new(sig.value.to_vec()),
-                )?;
+            // the VID's keys, straight into the secure area under the names their public
+            // halves give them; one may live remotely instead, known by handle
+            let (sig_name, enc_name) = (
+                crate::secure_area::key_name(data.sig_key_type.into(), &verification_bytes),
+                crate::secure_area::key_name(data.enc_key_type.into(), &encryption_bytes),
+            );
+            for (record, key_type) in [
+                (format!("{id}#signing-key"), data.sig_key_type.into()),
+                (format!("{id}#decryption-key"), data.enc_key_type.into()),
+            ] {
+                if let Some(entry) = conn.fetch("key", &record, false).await? {
+                    let _ = keys.import(key_type, zeroize::Zeroizing::new(entry.value.to_vec()));
+                }
             }
-            if let Some(enc) = conn.fetch("key", &enc_alias, false).await? {
-                keys.import(
-                    &enc_alias,
-                    data.enc_key_type.into(),
-                    zeroize::Zeroizing::new(enc.value.to_vec()),
-                )?;
-            }
-            let private = keys.has_key(&sig_alias) && keys.has_key(&enc_alias);
+            let private = keys.has_key(&sig_name) && keys.has_key(&enc_name);
 
             vids.push(ExportVid {
                 id: data.id,
@@ -464,7 +466,7 @@ impl SecureStorage for AskarSecureStorage {
             });
         }
 
-        // the other keys of the secure area, by alias, typed by their tag
+        // the other keys of the secure area, by name, typed by their tag
         for item in conn
             .fetch_all(Some("secure_area_key"), None, None, None, false, false)
             .await?
@@ -482,7 +484,7 @@ impl SecureStorage for AskarSecureStorage {
                     _ => None,
                 })
                 .unwrap_or(KeyType::Ed25519);
-            keys.import(
+            keys.restore(
                 &item.name,
                 key_type,
                 zeroize::Zeroizing::new(item.value.to_vec()),
@@ -516,7 +518,7 @@ impl SecureStorage for AskarSecureStorage {
                     continue;
                 }
                 let key_type = types.get(&alias).copied().unwrap_or(KeyType::Ed25519);
-                keys.import(&alias, key_type, zeroize::Zeroizing::new(material))?;
+                keys.restore(&alias, key_type, zeroize::Zeroizing::new(material))?;
             }
         }
 

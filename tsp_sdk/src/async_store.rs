@@ -631,20 +631,15 @@ impl AsyncSecureStore {
     /// Bring key material in from outside, under `kid`; see [`SecureStore::import_key`].
     pub fn import_key(
         &self,
-        kid: &str,
         key_type: crate::KeyType,
         material: crate::secure_area::Secret,
-    ) -> Result<Option<Vec<u8>>, Error> {
-        self.inner.import_key(kid, key_type, material)
+    ) -> Result<crate::KeyInfo, Error> {
+        self.inner.import_key(key_type, material)
     }
 
     /// Make a key in the wallet's secure area; see [`SecureStore::create_key`].
-    pub fn create_key(
-        &self,
-        alias: Option<&str>,
-        key_type: crate::KeyType,
-    ) -> Result<crate::KeyInfo, Error> {
-        self.inner.create_key(alias, key_type)
+    pub fn create_key(&self, key_type: crate::KeyType) -> Result<crate::KeyInfo, Error> {
+        self.inner.create_key(key_type)
     }
 
     pub fn has_key(&self, kid: &str) -> bool {

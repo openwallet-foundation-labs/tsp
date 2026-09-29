@@ -518,6 +518,7 @@ mod known_answer_tests {
         use crate::definitions::{PrivateVid, VerifiedVid};
 
         struct Receiver {
+            enc_name: String,
             area: crate::SoftwareSecureArea,
             public: crate::definitions::PublicKeyData,
             verifying: crate::definitions::PublicVerificationKeyData,
@@ -548,21 +549,22 @@ mod known_answer_tests {
             fn secure_area(&self) -> &dyn crate::SecureArea {
                 &self.area
             }
-            fn signing_key_alias(&self) -> &str {
+            fn signing_key_name(&self) -> &str {
                 "sig"
             }
-            fn decryption_key_alias(&self) -> &str {
-                "enc"
+            fn decryption_key_name(&self) -> &str {
+                &self.enc_name
             }
         }
 
         let area = crate::SoftwareSecureArea::new();
-        let public = area
-            .import("enc", key_type, zeroize::Zeroizing::new(hex(skr)))
+        let enc_key = area
+            .import(key_type, zeroize::Zeroizing::new(hex(skr)))
             .unwrap();
         let receiver = Receiver {
             area,
-            public: public.expect("a key of its type").into(),
+            enc_name: enc_key.name,
+            public: enc_key.public.into(),
             verifying: vec![0; 32].into(),
             enc_type: match key_type {
                 crate::KeyType::X25519 => crate::definitions::VidEncryptionKeyType::X25519,

@@ -191,6 +191,35 @@ pub fn create_store_with_relationships(n: usize) -> SecureStore {
     store
 }
 
+/// The Ed25519 seed a fixture key with `label` is made from: deterministic, so a test can
+/// name the key it expects without holding on to the import's result.
+fn fixture_key_seed(label: &str) -> [u8; 32] {
+    use sha2::Digest;
+    sha2::Sha256::digest(label.as_bytes()).into()
+}
+
+/// The name the wallet gives the fixture key with `label`: the hash of its public key.
+pub fn fixture_key_name(label: &str) -> String {
+    let key = ed25519_dalek::SigningKey::from_bytes(&fixture_key_seed(label));
+    crate::secure_area::key_name(crate::KeyType::Ed25519, &key.verifying_key().to_bytes())
+}
+
+/// Import the fixture key with `label` into the store's secure area.
+pub fn import_fixture_key(store: &SecureStore, label: &str) {
+    import_fixture_key_into(store.secure_area(), label);
+}
+
+/// Import the fixture key with `label` into `area`.
+pub fn import_fixture_key_into(area: &crate::SoftwareSecureArea, label: &str) {
+    let info = area
+        .import(
+            crate::KeyType::Ed25519,
+            zeroize::Zeroizing::new(fixture_key_seed(label).to_vec()),
+        )
+        .unwrap();
+    assert_eq!(info.name, fixture_key_name(label));
+}
+
 /// Create a store that mimics a dirty wallet with existing identities,
 /// nested relationships, aliases, and key history.
 pub fn create_prepopulated_store() -> SecureStore {
@@ -242,20 +271,8 @@ pub fn create_prepopulated_store() -> SecureStore {
         .unwrap();
 
     // Keep some persisted key history around as part of the fixture state.
-    store
-        .import_key(
-            "test-history-key-1",
-            crate::KeyType::Ed25519,
-            zeroize::Zeroizing::new(vec![1, 2, 3, 4]),
-        )
-        .unwrap();
-    store
-        .import_key(
-            "test-history-key-2",
-            crate::KeyType::Ed25519,
-            zeroize::Zeroizing::new(vec![5, 6, 7, 8]),
-        )
-        .unwrap();
+    import_fixture_key(&store, "test-history-key-1");
+    import_fixture_key(&store, "test-history-key-2");
 
     store
 }
@@ -314,11 +331,11 @@ fn export_snapshot_parts(state: WalletState) -> StoreExportSnapshot {
     vid_rows.sort();
 
     let mut key_rows = keys
-        .aliases()
+        .names()
         .into_iter()
-        .map(|alias| {
-            let public = crate::SecureArea::public_key(keys.as_ref(), &alias).ok();
-            (alias, format!("{public:?}"))
+        .map(|name| {
+            let public = crate::SecureArea::public_key(keys.as_ref(), &name).ok();
+            (name, format!("{public:?}"))
         })
         .collect::<BTreeMap<_, _>>();
     key_rows.extend(
@@ -390,13 +407,7 @@ pub fn create_dirty_store_with_transition_seed() -> (AsyncSecureStore, DirtyTran
             local.identifier(),
         )
         .unwrap();
-    store
-        .import_key(
-            "transition-seed-key",
-            crate::KeyType::Ed25519,
-            zeroize::Zeroizing::new(vec![9, 8, 7, 6]),
-        )
-        .unwrap();
+    import_fixture_key_into(store.secure_area(), "transition-seed-key");
 
     (
         store,
@@ -450,13 +461,7 @@ pub fn create_high_entropy_dirty_store() -> (AsyncSecureStore, HighEntropyDirtyS
     }
 
     for i in 0..16 {
-        store
-            .import_key(
-                &format!("high-entropy-key-{i:02}"),
-                crate::KeyType::Ed25519,
-                zeroize::Zeroizing::new(vec![i as u8, i as u8 ^ 0x5A, i as u8 ^ 0xA5, 0xFF]),
-            )
-            .unwrap();
+        import_fixture_key_into(store.secure_area(), &format!("high-entropy-key-{i:02}"));
     }
 
     let mut bidirectional_remote_vid = None;
@@ -865,8 +870,8 @@ mod tests {
     #[test]
     fn test_create_prepopulated_store_has_history_keys() {
         let store = create_prepopulated_store();
-        assert!(store.has_key("test-history-key-1"));
-        assert!(store.has_key("test-history-key-2"));
+        assert!(store.has_key(&fixture_key_name("test-history-key-1")));
+        assert!(store.has_key(&fixture_key_name("test-history-key-2")));
         let (_, vid_rows, _) = export_snapshot_sync(&store);
         assert!(vid_rows.iter().any(|row| row.contains("Bi:")));
     }
@@ -922,7 +927,7 @@ mod tests {
             store.resolve_alias("local-owner").unwrap().as_deref(),
             Some(seed.local_vid.as_str())
         );
-        assert!(store.has_key("transition-seed-key"));
+        assert!(store.has_key(&fixture_key_name("transition-seed-key")));
     }
 
     #[cfg(feature = "async")]
@@ -933,7 +938,7 @@ mod tests {
             store.resolve_alias("high-entropy-root").unwrap().as_deref(),
             Some(seed.local_vid.as_str())
         );
-        assert!(store.has_key("high-entropy-key-00"));
+        assert!(store.has_key(&fixture_key_name("high-entropy-key-00")));
         let (_aliases, vid_rows, _keys) = export_snapshot(&store);
         assert!(vid_rows.iter().any(|row| row.contains(">")));
         assert!(vid_rows.iter().any(|row| row.contains("Bi:")));
@@ -1020,7 +1025,7 @@ mod tests {
         assert!(!state.vids.is_empty());
         assert!(
             !state.aliases.is_empty()
-                || !state.keys.aliases().is_empty()
+                || !state.keys.names().is_empty()
                 || !state.method_state.resolution_contexts.is_empty(),
             "repo wallet fixture should carry dirty wallet state"
         );

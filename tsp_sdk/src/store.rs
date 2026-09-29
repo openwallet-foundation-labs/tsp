@@ -185,12 +185,12 @@ impl PrivateVid for IntroducedVid<'_> {
         self.inner.secure_area()
     }
 
-    fn signing_key_alias(&self) -> &str {
-        self.inner.signing_key_alias()
+    fn signing_key_name(&self) -> &str {
+        self.inner.signing_key_name()
     }
 
-    fn decryption_key_alias(&self) -> &str {
-        self.inner.decryption_key_alias()
+    fn decryption_key_name(&self) -> &str {
+        self.inner.decryption_key_name()
     }
 }
 
@@ -457,7 +457,9 @@ impl SecureStore {
         }
         vids.into_iter().try_for_each(|vid| {
             let private = if vid.private {
-                OwnedVid::from_area(vid.verified_vid(), self.secure_area.clone()).map(Arc::new)
+                OwnedVid::in_area(vid.verified_vid(), self.secure_area.clone())
+                    .ok()
+                    .map(Arc::new)
             } else {
                 None
             };
@@ -494,24 +496,19 @@ impl SecureStore {
         &self.secure_area
     }
 
-    /// Bring key material in from outside, under `kid`. The import vehicle; nothing reads
-    /// it back.
+    /// Bring key material in from outside; the key is named by its public half. The import
+    /// vehicle; nothing reads it back.
     pub fn import_key(
         &self,
-        kid: &str,
         key_type: crate::KeyType,
         material: crate::secure_area::Secret,
-    ) -> Result<Option<Vec<u8>>, Error> {
-        Ok(self.secure_area.import(kid, key_type, material)?)
+    ) -> Result<crate::KeyInfo, Error> {
+        Ok(self.secure_area.import(key_type, material)?)
     }
 
     /// Make a key in the wallet's secure area; see [`crate::SecureArea::create_key`].
-    pub fn create_key(
-        &self,
-        alias: Option<&str>,
-        key_type: crate::KeyType,
-    ) -> Result<crate::KeyInfo, Error> {
-        Ok(self.secure_area.create_key(alias, key_type)?)
+    pub fn create_key(&self, key_type: crate::KeyType) -> Result<crate::KeyInfo, Error> {
+        Ok(self.secure_area.create_key(key_type)?)
     }
 
     pub fn has_key(&self, kid: &str) -> bool {
@@ -622,13 +619,16 @@ impl SecureStore {
     /// relationships that named it.
     pub fn retire_private_vid(&self, vid: &str) -> Result<(), Error> {
         let vid = self.try_resolve_alias(vid)?;
-        let (sig_alias, enc_alias) = OwnedVid::key_aliases(&vid);
+        let mut names = None;
         self.modify_vid(&vid, |context| {
+            names = Some(crate::vid::key_names(context.vid.as_ref()));
             context.private = None;
             Ok(())
         })?;
-        self.secure_area.delete_key(&sig_alias)?;
-        self.secure_area.delete_key(&enc_alias)?;
+        if let Some((sig_name, enc_name)) = names {
+            self.secure_area.delete_key(&sig_name)?;
+            self.secure_area.delete_key(&enc_name)?;
+        }
         Ok(())
     }
 
