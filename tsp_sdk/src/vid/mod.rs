@@ -99,50 +99,51 @@ pub struct OwnedVid {
     keys: PrivateKeys,
 }
 
-/// The two keys of an [`OwnedVid`] in a [`SoftwareSecureArea`], under the aliases
-/// `<id>#signing-key` and `<id>#decryption-key`. This is the import vehicle: bytes come in
-/// here from a file or a seed and are never read back by anything but the wallet that
-/// persists them.
+/// The two keys of an [`OwnedVid`] in a [`SoftwareSecureArea`], under the names their
+/// public halves give them ([`crate::secure_area::key_name`]). This is the import vehicle:
+/// bytes come in here from a file or a seed and are never read back by anything but the
+/// wallet that persists them.
 #[derive(Clone)]
 struct PrivateKeys {
     area: Arc<SoftwareSecureArea>,
-    sig_alias: String,
-    enc_alias: String,
+    sig_name: String,
+    enc_name: String,
 }
 
 impl PrivateKeys {
     fn from_material(
-        id: &str,
         sig_key_type: VidSignatureKeyType,
         sigkey: PrivateSigningKeyData,
         enc_key_type: VidEncryptionKeyType,
         enckey: PrivateKeyData,
     ) -> Result<Self, crate::SecureAreaError> {
         let area = SoftwareSecureArea::new();
-        let sig_alias = format!("{id}#signing-key");
-        let enc_alias = format!("{id}#decryption-key");
-        area.import(
-            &sig_alias,
+        let sig = area.import(
             sig_key_type.into(),
             zeroize::Zeroizing::new(sigkey.as_slice().to_vec()),
-        )?
-        .ok_or_else(|| crate::SecureAreaError::Malformed(sig_alias.clone()))?;
-        area.import(
-            &enc_alias,
+        )?;
+        let enc = area.import(
             enc_key_type.into(),
             zeroize::Zeroizing::new(enckey.as_slice().to_vec()),
-        )?
-        .ok_or_else(|| crate::SecureAreaError::Malformed(enc_alias.clone()))?;
+        )?;
         Ok(Self {
             area: Arc::new(area),
-            sig_alias,
-            enc_alias,
+            sig_name: sig.name,
+            enc_name: enc.name,
         })
     }
 
+    fn clone_into(&self, area: Arc<SoftwareSecureArea>) -> Self {
+        Self {
+            area,
+            sig_name: self.sig_name.clone(),
+            enc_name: self.enc_name.clone(),
+        }
+    }
+
     fn material(&self) -> Option<(PrivateSigningKeyData, PrivateKeyData)> {
-        let (_, sig) = self.area.material(&self.sig_alias)?;
-        let (_, enc) = self.area.material(&self.enc_alias)?;
+        let (_, sig) = self.area.material(&self.sig_name)?;
+        let (_, enc) = self.area.material(&self.enc_name)?;
         Some((sig.to_vec().into(), enc.to_vec().into()))
     }
 }
@@ -250,12 +251,12 @@ impl PrivateVid for OwnedVid {
         self.keys.area.as_ref()
     }
 
-    fn signing_key_alias(&self) -> &str {
-        &self.keys.sig_alias
+    fn signing_key_name(&self) -> &str {
+        &self.keys.sig_name
     }
 
-    fn decryption_key_alias(&self) -> &str {
-        &self.keys.enc_alias
+    fn decryption_key_name(&self) -> &str {
+        &self.keys.enc_name
     }
 }
 
@@ -463,34 +464,26 @@ impl OwnedVid {
         self.vid
     }
 
-    /// A VID whose keys are made inside `area`, under the aliases its identifier gives them:
-    /// the way an identity is created in a wallet whose signing keys live in a KMS, since
-    /// the area decides where an Ed25519 key is made. The handle points at `area`.
-    pub fn new_in(
+    /// The VID whose two keys `area` holds under the names its public keys give them
+    /// ([`crate::secure_area::key_name`]); `UnknownKey` if either is missing. The one way
+    /// to hold a private VID over an area: make the keys with `create_key`, build the `Vid`
+    /// over their public halves under whatever identifier the method gives, and come here.
+    pub fn in_area(
+        vid: Vid,
         area: Arc<SoftwareSecureArea>,
-        id: impl Into<String>,
-        transport: Url,
-        sig_key_type: VidSignatureKeyType,
-        enc_key_type: VidEncryptionKeyType,
     ) -> Result<Self, crate::SecureAreaError> {
-        use crate::SecureArea as _;
-        let id: String = id.into();
-        let (sig_alias, enc_alias) = Self::key_aliases(&id);
-        let sig = area.create_key(Some(&sig_alias), sig_key_type.into())?;
-        let enc = area.create_key(Some(&enc_alias), enc_key_type.into())?;
+        let (sig_name, enc_name) = vid.key_names();
+        for name in [&sig_name, &enc_name] {
+            if !area.has_key(name) {
+                return Err(crate::SecureAreaError::UnknownKey(name.clone()));
+            }
+        }
         Ok(Self {
-            vid: Vid {
-                id,
-                transport,
-                sig_key_type,
-                public_sigkey: sig.public.into(),
-                enc_key_type,
-                public_enckey: enc.public.into(),
-            },
+            vid,
             keys: PrivateKeys {
                 area,
-                sig_alias,
-                enc_alias,
+                sig_name,
+                enc_name,
             },
         })
     }
@@ -503,79 +496,25 @@ impl OwnedVid {
         sigkey: PrivateSigningKeyData,
         enckey: PrivateKeyData,
     ) -> Result<Self, crate::SecureAreaError> {
-        let keys = PrivateKeys::from_material(
-            &vid.id,
-            vid.sig_key_type,
-            sigkey,
-            vid.enc_key_type,
-            enckey,
-        )?;
+        let keys = PrivateKeys::from_material(vid.sig_key_type, sigkey, vid.enc_key_type, enckey)?;
         Ok(Self { vid, keys })
     }
 
-    /// The aliases a VID's keys go by in any secure area.
-    pub fn key_aliases(id: &str) -> (String, String) {
-        (format!("{id}#signing-key"), format!("{id}#decryption-key"))
-    }
-
-    /// A handle on a VID whose keys are already in `area` under the VID's aliases; `None`
-    /// if they are not.
-    pub(crate) fn from_area(vid: Vid, area: Arc<SoftwareSecureArea>) -> Option<Self> {
-        let (sig_alias, enc_alias) = Self::key_aliases(&vid.id);
-        if !area.has_key(&sig_alias) || !area.has_key(&enc_alias) {
-            return None;
-        }
-        Some(Self {
-            vid,
-            keys: PrivateKeys {
-                area,
-                sig_alias,
-                enc_alias,
-            },
-        })
-    }
-
-    /// The same VID with its keys copied into `area` under the aliases its identifier gives
-    /// them, and this handle pointing there. The aliases may differ from this handle's: a
-    /// did:webvh is created under a placeholder identifier, a did:scid is presented under
-    /// another identifier than its source.
+    /// The same VID with its keys copied into `area`, under the same names, and this
+    /// handle pointing there: how a store takes on a VID it is given.
     pub(crate) fn adopted_by(
         &self,
         area: Arc<SoftwareSecureArea>,
     ) -> Result<Self, crate::SecureAreaError> {
-        let (sig_alias, enc_alias) = Self::key_aliases(&self.vid.id);
-        if Arc::ptr_eq(&area, &self.keys.area)
-            && sig_alias == self.keys.sig_alias
-            && enc_alias == self.keys.enc_alias
-        {
-            // made in this area under these aliases already
+        if Arc::ptr_eq(&area, &self.keys.area) {
             return Ok(self.clone());
         }
-        area.adopt_key(&self.keys.area, &self.keys.sig_alias, &sig_alias)?;
-        area.adopt_key(&self.keys.area, &self.keys.enc_alias, &enc_alias)?;
+        area.adopt_key(&self.keys.area, &self.keys.sig_name)?;
+        area.adopt_key(&self.keys.area, &self.keys.enc_name)?;
         Ok(Self {
             vid: self.vid.clone(),
-            keys: PrivateKeys {
-                area,
-                sig_alias,
-                enc_alias,
-            },
+            keys: self.keys.clone_into(area),
         })
-    }
-
-    /// Give the VID its final identifier, re-aliasing its keys to it: a did:webvh is built
-    /// under a placeholder until its SCID is known.
-    pub(crate) fn set_identifier(&mut self, id: String) -> Result<(), crate::SecureAreaError> {
-        let (sig_alias, enc_alias) = Self::key_aliases(&id);
-        let area = &self.keys.area;
-        area.adopt_key(area, &self.keys.sig_alias, &sig_alias)?;
-        area.adopt_key(area, &self.keys.enc_alias, &enc_alias)?;
-        area.delete(&self.keys.sig_alias);
-        area.delete(&self.keys.enc_alias);
-        self.keys.sig_alias = sig_alias;
-        self.keys.enc_alias = enc_alias;
-        self.vid.id = id;
-        Ok(())
     }
 
     /// The same identifier and keys with another transport.
@@ -597,7 +536,47 @@ impl OwnedVid {
     }
 }
 
+/// The names a VID's two keys go by in any secure area, from its public keys.
+pub(crate) fn key_names(vid: &dyn VerifiedVid) -> (String, String) {
+    use crate::secure_area::key_name;
+    (
+        key_name(
+            vid.signature_key_type().into(),
+            vid.verifying_key().as_slice(),
+        ),
+        key_name(
+            vid.encryption_key_type().into(),
+            vid.encryption_key().as_slice(),
+        ),
+    )
+}
+
 impl Vid {
+    /// A VID as public data: its identifier, its transport, and its two public keys. The
+    /// identifier may be a method's placeholder, `did:webvh:{SCID}:…` for a first entry.
+    pub fn new(
+        id: impl Into<String>,
+        transport: Url,
+        sig_key_type: VidSignatureKeyType,
+        public_sigkey: PublicVerificationKeyData,
+        enc_key_type: VidEncryptionKeyType,
+        public_enckey: PublicKeyData,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            transport,
+            sig_key_type,
+            public_sigkey,
+            enc_key_type,
+            public_enckey,
+        }
+    }
+
+    /// The names of this VID's two keys in any secure area, from its public keys.
+    pub(crate) fn key_names(&self) -> (String, String) {
+        key_names(self)
+    }
+
     #[cfg(test)]
     pub(crate) fn test_vid(
         id: &str,
@@ -642,7 +621,7 @@ pub struct ExportVid {
     pub public_enckey: PublicKeyData,
     pub enc_key_type: VidEncryptionKeyType,
     /// Whether this endpoint controls the VID: its keys are then in the wallet's secure area
-    /// under `<id>#signing-key` and `<id>#decryption-key`, and travel with it, never here.
+    /// under the names their public halves give them, and travel with it, never here.
     #[cfg_attr(feature = "serialize", serde(default))]
     pub private: bool,
     pub relation_status: RelationshipStatus,

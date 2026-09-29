@@ -788,7 +788,7 @@ async fn test_prepopulated_store_import_preserves_dirty_state() {
             .as_deref(),
         Some(local_vid.as_str())
     );
-    assert!(imported_store.has_key("test-history-key-1"));
+    assert!(imported_store.has_key(&fixture_key_name("test-history-key-1")));
 
     let mut found_unidirectional = 0_usize;
     let mut found_reverse_unidirectional = 0_usize;
@@ -839,7 +839,7 @@ async fn test_persisted_store_roundtrip_reopens_dirty_wallet() {
         before_aliases.get("local-owner"),
         after_aliases.get("local-owner")
     );
-    assert!(reopened_store.has_key("test-history-key-2"));
+    assert!(reopened_store.has_key(&fixture_key_name("test-history-key-2")));
 
     let local_vid = reopened_store
         .resolve_alias("local-owner")
@@ -1010,8 +1010,8 @@ async fn test_dirty_roundtrip_multi_reopen_idempotent() {
     let reopened = persist_reopen_cycle(&initial_store, &fixture, 3).await;
 
     assert_eq!(baseline, export_snapshot(&reopened));
-    assert!(reopened.has_key("test-history-key-1"));
-    assert!(reopened.has_key("test-history-key-2"));
+    assert!(reopened.has_key(&fixture_key_name("test-history-key-1")));
+    assert!(reopened.has_key(&fixture_key_name("test-history-key-2")));
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1144,7 +1144,7 @@ async fn test_high_entropy_dirty_store_multi_reopen_consistency() {
             .as_deref(),
         Some(seed.local_vid.as_str())
     );
-    assert!(reopened.has_key("high-entropy-key-00"));
+    assert!(reopened.has_key(&fixture_key_name("high-entropy-key-00")));
 
     let RelationshipStatus::Bidirectional { .. } = reopened
         .get_relation_status_for_vid_pair(&seed.local_vid, &seed.bidirectional_remote_vid)
@@ -1455,17 +1455,17 @@ async fn test_persisted_store_open_with_corrupted_file_fails() {
 #[tokio::test]
 async fn a_key_deleted_from_the_secure_area_does_not_come_back_from_storage() {
     let store = create_async_test_store();
-    let kept = store.create_key(None, crate::KeyType::Ed25519).unwrap();
-    let retired = store.create_key(None, crate::KeyType::Ed25519).unwrap();
+    let kept = store.create_key(crate::KeyType::Ed25519).unwrap();
+    let retired = store.create_key(crate::KeyType::Ed25519).unwrap();
     let fixture = create_persisted_store().await;
     fixture.persist_from(&store).await;
-    store.delete_key(&retired.alias).unwrap();
+    store.delete_key(&retired.name).unwrap();
     fixture.persist_from(&store).await;
 
     let reopened = fixture.reopen_into_store().await;
-    assert!(reopened.has_key(&kept.alias));
+    assert!(reopened.has_key(&kept.name));
     assert!(
-        !reopened.has_key(&retired.alias),
+        !reopened.has_key(&retired.name),
         "the retired key came back"
     );
 }
@@ -1492,21 +1492,19 @@ impl FakeRemote {
 impl crate::SecureArea for std::sync::Arc<FakeRemote> {
     fn create_key(
         &self,
-        alias: Option<&str>,
         key_type: crate::KeyType,
     ) -> Result<crate::KeyInfo, crate::SecureAreaError> {
         assert_eq!(key_type, crate::KeyType::Ed25519);
         let key = ed25519_dalek::SigningKey::generate(&mut rand_core::OsRng);
         let public = key.verifying_key().to_bytes().to_vec();
-        let alias = alias
-            .map(str::to_string)
-            .unwrap_or_else(|| crate::secure_area::ed25519_multikey(&public));
-        let handle = format!("remote/{alias}");
+        let name = crate::secure_area::key_name(key_type, &public);
+        // the remote's own handle, not the public key
+        let handle = format!("remote/{}", self.keys.lock().unwrap().len());
         self.keys
             .lock()
             .unwrap()
-            .insert(alias.clone(), (handle, key));
-        Ok(crate::KeyInfo { alias, public })
+            .insert(name.clone(), (handle, key));
+        Ok(crate::KeyInfo { name, public })
     }
     fn delete_key(&self, alias: &str) -> Result<(), crate::SecureAreaError> {
         self.keys.lock().unwrap().remove(alias);
@@ -1587,12 +1585,20 @@ async fn a_wallet_whose_signing_keys_live_remotely_reopens_and_signs_once_the_re
         .unwrap();
 
     // an identity made in this wallet: its signing key remote, its encryption key here
-    let vid = crate::OwnedVid::new_in(
-        store.secure_area().clone(),
-        "did:peer:test",
-        "tcp://127.0.0.1:1".parse().unwrap(),
-        crate::definitions::VidSignatureKeyType::Ed25519,
-        crate::definitions::VidEncryptionKeyType::X25519,
+    use crate::SecureArea as _;
+    let area = store.secure_area().clone();
+    let sig = area.create_key(crate::KeyType::Ed25519).unwrap();
+    let enc = area.create_key(crate::KeyType::X25519).unwrap();
+    let vid = crate::OwnedVid::in_area(
+        crate::vid::Vid::new(
+            "did:peer:test",
+            "tcp://127.0.0.1:1".parse().unwrap(),
+            crate::definitions::VidSignatureKeyType::Ed25519,
+            sig.public.into(),
+            crate::definitions::VidEncryptionKeyType::X25519,
+            enc.public.into(),
+        ),
+        area,
     )
     .unwrap();
     store.add_private_vid(vid.clone(), None).unwrap();
@@ -1602,7 +1608,7 @@ async fn a_wallet_whose_signing_keys_live_remotely_reopens_and_signs_once_the_re
         1,
         "signed remotely"
     );
-    let update = store.create_key(None, crate::KeyType::Ed25519).unwrap();
+    let update = store.create_key(crate::KeyType::Ed25519).unwrap();
     assert_eq!(store.secure_area().remote_handles().len(), 2);
 
     let fixture = create_persisted_store().await;
@@ -1621,6 +1627,6 @@ async fn a_wallet_whose_signing_keys_live_remotely_reopens_and_signs_once_the_re
         .unwrap();
     let again = reopened.sign_raw("did:peer:test", b"hello").unwrap();
     assert_eq!(signed, again, "the same key, remote, signs the same");
-    assert!(reopened.has_key(&update.alias));
-    assert!(reopened.sign_with_key(&update.alias, b"x").is_ok());
+    assert!(reopened.has_key(&update.name));
+    assert!(reopened.sign_with_key(&update.name, b"x").is_ok());
 }

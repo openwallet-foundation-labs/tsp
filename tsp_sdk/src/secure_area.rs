@@ -1,6 +1,6 @@
 //! The boundary around private keys.
 //!
-//! A [`SecureArea`] holds keys by alias and performs the private operations on them; nothing
+//! A [`SecureArea`] holds keys by name and performs the private operations on them; nothing
 //! it offers returns a key. The shape is Multipaz's `SecureArea` and Apple's Secure Enclave
 //! API: `sign`, `key_agreement` (X25519, the shared secret comes out and HPKE or the sealed
 //! box run outside), and `kem_decapsulate` (the post-quantum KEM, which neither of those
@@ -75,8 +75,8 @@ impl From<VidEncryptionKeyType> for KeyType {
 /// the key needs the user, or a credential, before it answers; the SDK never unlocks.
 #[derive(Debug, thiserror::Error)]
 pub enum SecureAreaError {
-    #[error("key {alias} is locked: {reason}")]
-    Locked { alias: String, reason: String },
+    #[error("key {name} is locked: {reason}")]
+    Locked { name: String, reason: String },
     #[error("no key named {0}")]
     UnknownKey(String),
     #[error("key {0} does not perform this operation")]
@@ -91,60 +91,90 @@ pub enum SecureAreaError {
 /// a secure area. Zeroised when dropped.
 pub type Secret = Zeroizing<Vec<u8>>;
 
-/// A key as the secure area names it: its alias and its public half.
+/// A key as the secure area names it: its name and its public half.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeyInfo {
-    pub alias: String,
+    pub name: String,
     pub public: Vec<u8>,
 }
 
-/// The multikey of an Ed25519 public key: `z` + base58btc(`ed 01` ‖ key). The name a
-/// did:webvh update key goes by, and the alias the software area gives such a key when the
-/// caller names none.
+/// The multikey of an Ed25519 public key: `z` + base58btc(`ed 01` ‖ key). What a did:webvh
+/// log lists in `updateKeys`.
 pub fn ed25519_multikey(public: &[u8]) -> String {
     let mut bytes = vec![0xed, 0x01];
     bytes.extend_from_slice(public);
     format!("z{}", bs58::encode(bytes).into_string())
 }
 
-/// A secure area whose keys live elsewhere, a KMS or a hardware token, reached by a handle
-/// the area keeps per alias: what the software area attaches to keep the wallet in one
-/// piece. The handle, not the key, is what the wallet persists.
-pub trait RemoteKeys: SecureArea {
-    /// The handle the remote keeps for `alias`, a KMS resource name, say.
-    fn handle(&self, alias: &str) -> Option<String>;
-
-    /// Know `alias` as the remote key `handle` again, after the wallet was reopened.
-    fn bind(&self, alias: &str, key_type: KeyType, handle: &str) -> Result<(), SecureAreaError>;
+/// The multikey of a public key whose type has a multicodec: `ed 01` for Ed25519, `ec 01`
+/// for X25519. `None` for the post-quantum types.
+pub fn multikey(key_type: KeyType, public: &[u8]) -> Option<String> {
+    let prefix: &[u8] = match key_type {
+        KeyType::Ed25519 => &[0xed, 0x01],
+        KeyType::X25519 => &[0xec, 0x01],
+        KeyType::MlDsa65 | KeyType::MlKem768X25519 => return None,
+    };
+    let mut bytes = prefix.to_vec();
+    bytes.extend_from_slice(public);
+    Some(format!("z{}", bs58::encode(bytes).into_string()))
 }
 
-/// Keys by alias, and the private operations on them. Nothing returns a key.
+/// `base58btc(multihash(sha256(bytes)))`.
+fn multihash_b58(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    let digest = sha2::Sha256::digest(bytes);
+    let mut mh = Vec::with_capacity(34);
+    mh.push(0x12);
+    mh.push(0x20);
+    mh.extend_from_slice(&digest);
+    bs58::encode(mh).into_string()
+}
+
+/// The name of a key in any secure area: the base58btc SHA-256 multihash of its multikey
+/// where its type has a multicodec, of its public bytes otherwise. For an Ed25519 key this
+/// is the string did:webvh publishes for it in `nextKeyHashes`. The name says nothing of
+/// the key: a public key that is meant to stay unpublished is not revealed by it.
+pub fn key_name(key_type: KeyType, public: &[u8]) -> String {
+    match multikey(key_type, public) {
+        Some(mk) => multihash_b58(mk.as_bytes()),
+        None => multihash_b58(public),
+    }
+}
+
+/// A secure area whose keys live elsewhere, a KMS or a hardware token, reached by a handle
+/// the area keeps per name: what the software area attaches to keep the wallet in one
+/// piece. The handle, not the key, is what the wallet persists. The handle is the remote's
+/// own; it must not be the public key, which the name already keeps unpublished.
+pub trait RemoteKeys: SecureArea {
+    /// The handle the remote keeps for `name`, a KMS resource name, say.
+    fn handle(&self, name: &str) -> Option<String>;
+
+    /// Know `name` as the remote key `handle` again, after the wallet was reopened.
+    fn bind(&self, name: &str, key_type: KeyType, handle: &str) -> Result<(), SecureAreaError>;
+}
+
+/// Keys by name, and the private operations on them. Nothing returns a key.
 pub trait SecureArea: Send + Sync {
-    /// Make a key of `key_type`. With no alias the area names it: an Ed25519 key by its
-    /// multikey, any other by a random name.
-    fn create_key(
-        &self,
-        alias: Option<&str>,
-        key_type: KeyType,
-    ) -> Result<KeyInfo, SecureAreaError>;
+    /// Make a key of `key_type`, named by [`key_name`] of its public half.
+    fn create_key(&self, key_type: KeyType) -> Result<KeyInfo, SecureAreaError>;
 
     /// Destroy a key. A key that is not there is not an error.
-    fn delete_key(&self, alias: &str) -> Result<(), SecureAreaError>;
+    fn delete_key(&self, name: &str) -> Result<(), SecureAreaError>;
 
     /// The public half of the key, in the encoding its type uses on the wire.
-    fn public_key(&self, alias: &str) -> Result<Vec<u8>, SecureAreaError>;
+    fn public_key(&self, name: &str) -> Result<Vec<u8>, SecureAreaError>;
 
-    fn key_type(&self, alias: &str) -> Result<KeyType, SecureAreaError>;
+    fn key_type(&self, name: &str) -> Result<KeyType, SecureAreaError>;
 
     /// A signature over `data` by the key: 64 bytes for Ed25519, an ML-DSA-65 signature
     /// otherwise.
-    fn sign(&self, alias: &str, data: &[u8]) -> Result<Vec<u8>, SecureAreaError>;
+    fn sign(&self, name: &str, data: &[u8]) -> Result<Vec<u8>, SecureAreaError>;
 
     /// The raw X25519 shared secret between the key and `other_public`.
-    fn key_agreement(&self, alias: &str, other_public: &[u8]) -> Result<Secret, SecureAreaError>;
+    fn key_agreement(&self, name: &str, other_public: &[u8]) -> Result<Secret, SecureAreaError>;
 
     /// The KEM shared secret for `encapsulated`, decapsulated with the key.
-    fn kem_decapsulate(&self, alias: &str, encapsulated: &[u8]) -> Result<Secret, SecureAreaError>;
+    fn kem_decapsulate(&self, name: &str, encapsulated: &[u8]) -> Result<Secret, SecureAreaError>;
 }
 
 struct StoredKey {
@@ -166,15 +196,15 @@ struct StoredKey {
 pub struct SoftwareSecureArea {
     keys: RwLock<HashMap<String, StoredKey>>,
     remote: RwLock<Option<Arc<dyn RemoteKeys>>>,
-    /// alias → (type, handle) of the keys that live in the remote
+    /// name → (type, handle) of the keys that live in the remote
     remote_keys: RwLock<HashMap<String, (KeyType, String)>>,
 }
 
 impl std::fmt::Debug for SoftwareSecureArea {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let aliases = self.aliases();
+        let names = self.names();
         f.debug_struct("SoftwareSecureArea")
-            .field("aliases", &aliases)
+            .field("names", &names)
             .finish()
     }
 }
@@ -184,7 +214,7 @@ impl SoftwareSecureArea {
         Self::default()
     }
 
-    pub fn aliases(&self) -> Vec<String> {
+    pub fn names(&self) -> Vec<String> {
         let mut all: Vec<String> = self
             .keys
             .read()
@@ -196,14 +226,14 @@ impl SoftwareSecureArea {
         all
     }
 
-    pub fn has_key(&self, alias: &str) -> bool {
-        self.keys.read().is_ok_and(|k| k.contains_key(alias))
-            || self.remote_keys.read().is_ok_and(|r| r.contains_key(alias))
+    pub fn has_key(&self, name: &str) -> bool {
+        self.keys.read().is_ok_and(|k| k.contains_key(name))
+            || self.remote_keys.read().is_ok_and(|r| r.contains_key(name))
     }
 
-    /// Whether `alias` lives in the attached remote, by handle, rather than in memory here.
-    pub fn is_remote(&self, alias: &str) -> bool {
-        self.remote_keys.read().is_ok_and(|r| r.contains_key(alias))
+    /// Whether `name` lives in the attached remote, by handle, rather than in memory here.
+    pub fn is_remote(&self, name: &str) -> bool {
+        self.remote_keys.read().is_ok_and(|r| r.contains_key(name))
     }
 
     /// Attach the area where signing keys are made from now on. Keys this area already
@@ -216,8 +246,8 @@ impl SoftwareSecureArea {
             .iter()
             .map(|(a, (t, h))| (a.clone(), *t, h.clone()))
             .collect();
-        for (alias, key_type, handle) in known {
-            remote.bind(&alias, key_type, &handle)?;
+        for (name, key_type, handle) in known {
+            remote.bind(&name, key_type, &handle)?;
         }
         *self
             .remote
@@ -226,25 +256,25 @@ impl SoftwareSecureArea {
         Ok(())
     }
 
-    /// Know `alias` as a key held remotely under `handle`: what the wallet's storage
+    /// Know `name` as a key held remotely under `handle`: what the wallet's storage
     /// restores. Bound into the remote now if one is attached, else when it is.
     pub fn bind_remote(
         &self,
-        alias: &str,
+        name: &str,
         key_type: KeyType,
         handle: &str,
     ) -> Result<(), SecureAreaError> {
         if let Some(remote) = self.remote()? {
-            remote.bind(alias, key_type, handle)?;
+            remote.bind(name, key_type, handle)?;
         }
         self.remote_keys
             .write()
             .map_err(|_| SecureAreaError::Crypto("secure area lock".into()))?
-            .insert(alias.to_string(), (key_type, handle.to_string()));
+            .insert(name.to_string(), (key_type, handle.to_string()));
         Ok(())
     }
 
-    /// Every remote key's alias, type and handle, for the wallet that persists them.
+    /// Every remote key's name, type and handle, for the wallet that persists them.
     pub(crate) fn remote_handles(&self) -> Vec<(String, KeyType, String)> {
         self.remote_keys
             .read()
@@ -266,29 +296,30 @@ impl SoftwareSecureArea {
 
     /// The attached remote, for an operation on a key that lives there; `Locked` when the
     /// key is known but the remote is not attached.
-    fn remote_for(&self, alias: &str) -> Result<Option<Arc<dyn RemoteKeys>>, SecureAreaError> {
+    fn remote_for(&self, name: &str) -> Result<Option<Arc<dyn RemoteKeys>>, SecureAreaError> {
         let is_remote = self
             .remote_keys
             .read()
             .map_err(|_| SecureAreaError::Crypto("secure area lock".into()))?
-            .contains_key(alias);
+            .contains_key(name);
         if !is_remote {
             return Ok(None);
         }
         match self.remote()? {
             Some(r) => Ok(Some(r)),
             None => Err(SecureAreaError::Locked {
-                alias: alias.to_string(),
+                name: name.to_string(),
                 reason: "the key lives in a remote secure area that is not attached".into(),
             }),
         }
     }
 
-    /// Generate a key of `key_type` under `alias`; returns its public half.
-    pub fn generate(&self, alias: &str, key_type: KeyType) -> Result<Vec<u8>, SecureAreaError> {
+    /// Generate a key of `key_type` in memory, whatever remote is attached.
+    pub fn generate(&self, key_type: KeyType) -> Result<KeyInfo, SecureAreaError> {
         let (material, public) = generate(key_type);
-        self.insert(alias, key_type, material, Some(public.clone()))?;
-        Ok(public)
+        let name = key_name(key_type, &public);
+        self.insert(&name, key_type, material, Some(public.clone()))?;
+        Ok(KeyInfo { name, public })
     }
 
     /// Every key's type and material, for the wallet that persists this software area and
@@ -305,51 +336,61 @@ impl SoftwareSecureArea {
     }
 
     /// Bring key material in from outside: a 32-byte seed for Ed25519, X25519 and the
-    /// post-quantum KEM, the expanded key for ML-DSA-65. Returns the public half.
-    pub fn import(
-        &self,
-        alias: &str,
-        key_type: KeyType,
-        material: Secret,
-    ) -> Result<Option<Vec<u8>>, SecureAreaError> {
-        // material that is not a key of its type is kept as it came and refused when used,
-        // so a wallet with one bad key still opens
-        let public = public_of(key_type, &material);
-        self.insert(alias, key_type, material, public)
+    /// post-quantum KEM, the expanded key for ML-DSA-65. The key is named by its public
+    /// half; material that is not a key of its type is refused, `Malformed`.
+    pub fn import(&self, key_type: KeyType, material: Secret) -> Result<KeyInfo, SecureAreaError> {
+        let public = public_of(key_type, &material)
+            .ok_or_else(|| SecureAreaError::Malformed(key_type.as_str().into()))?;
+        let name = key_name(key_type, &public);
+        self.insert(&name, key_type, material, Some(public.clone()))?;
+        Ok(KeyInfo { name, public })
     }
 
-    pub fn delete(&self, alias: &str) {
+    /// Put back a key the wallet's storage holds, under the name it was stored by.
+    /// Material that is not a key of its type is kept as it came and refused when used, so
+    /// a wallet with one bad key still opens.
+    pub(crate) fn restore(
+        &self,
+        name: &str,
+        key_type: KeyType,
+        material: Secret,
+    ) -> Result<(), SecureAreaError> {
+        let public = public_of(key_type, &material);
+        self.insert(name, key_type, material, public)?;
+        Ok(())
+    }
+
+    pub fn delete(&self, name: &str) {
         if let Ok(mut keys) = self.keys.write() {
-            keys.remove(alias);
+            keys.remove(name);
         }
         let was_remote = self
             .remote_keys
             .write()
             .ok()
-            .and_then(|mut r| r.remove(alias))
+            .and_then(|mut r| r.remove(name))
             .is_some();
         if was_remote && let Ok(Some(remote)) = self.remote() {
-            let _ = remote.delete_key(alias);
+            let _ = remote.delete_key(name);
         }
     }
 
-    /// Copy one key of `other` into this area under `alias`: how a store takes on the keys
-    /// of an [`crate::OwnedVid`] it is given, under the aliases its identifier gives them.
+    /// Copy one key of `other` into this area, under the same name: how a store takes on
+    /// the keys of an [`crate::OwnedVid`] it is given.
     pub(crate) fn adopt_key(
         &self,
         other: &SoftwareSecureArea,
-        from_alias: &str,
-        alias: &str,
+        name: &str,
     ) -> Result<(), SecureAreaError> {
-        // a key that lives remotely is adopted by its handle, under the new alias
+        // a key that lives remotely is adopted by its handle
         let remote_entry = other
             .remote_keys
             .read()
             .map_err(|_| SecureAreaError::Crypto("secure area lock".into()))?
-            .get(from_alias)
+            .get(name)
             .cloned();
         if let Some((key_type, handle)) = remote_entry {
-            if std::ptr::eq(self, other) && from_alias == alias {
+            if std::ptr::eq(self, other) {
                 return Ok(());
             }
             if self.remote()?.is_none()
@@ -361,16 +402,16 @@ impl SoftwareSecureArea {
                     .map_err(|_| SecureAreaError::Crypto("secure area lock".into()))? =
                     Some(remote);
             }
-            return self.bind_remote(alias, key_type, &handle);
+            return self.bind_remote(name, key_type, &handle);
         }
-        let (key_type, material, public) = other.with_key(from_alias, |k| {
+        let (key_type, material, public) = other.with_key(name, |k| {
             Ok((k.key_type, k.material.clone(), k.public.clone()))
         })?;
-        self.insert(alias, key_type, material, public)?;
+        self.insert(name, key_type, material, public)?;
         Ok(())
     }
 
-    /// Copy every key of `other` into this area, under the same aliases: how a store takes
+    /// Copy every key of `other` into this area, under the same names: how a store takes
     /// on the keys of a wallet state read from storage.
     pub(crate) fn adopt(&self, other: &SoftwareSecureArea) -> Result<(), SecureAreaError> {
         let taken: Vec<(String, KeyType, Secret, Option<Vec<u8>>)> = other
@@ -380,30 +421,18 @@ impl SoftwareSecureArea {
             .iter()
             .map(|(a, k)| (a.clone(), k.key_type, k.material.clone(), k.public.clone()))
             .collect();
-        for (alias, key_type, material, public) in taken {
-            self.insert(&alias, key_type, material, public)?;
+        for (name, key_type, material, public) in taken {
+            self.insert(&name, key_type, material, public)?;
         }
-        for (alias, key_type, handle) in other.remote_handles() {
-            self.bind_remote(&alias, key_type, &handle)?;
+        for (name, key_type, handle) in other.remote_handles() {
+            self.bind_remote(&name, key_type, &handle)?;
         }
         Ok(())
     }
 
-    /// The alias the area gives a key nobody named.
-    fn default_alias(key_type: KeyType, public: &[u8]) -> String {
-        match key_type {
-            KeyType::Ed25519 => ed25519_multikey(public),
-            _ => {
-                let mut r = [0u8; 16];
-                rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut r);
-                format!("key-{}", bs58::encode(r).into_string())
-            }
-        }
-    }
-
     fn insert(
         &self,
-        alias: &str,
+        name: &str,
         key_type: KeyType,
         material: Secret,
         public: Option<Vec<u8>>,
@@ -413,7 +442,7 @@ impl SoftwareSecureArea {
             .write()
             .map_err(|_| SecureAreaError::Crypto("secure area lock".into()))?;
         keys.insert(
-            alias.to_string(),
+            name.to_string(),
             StoredKey {
                 key_type,
                 material,
@@ -425,17 +454,17 @@ impl SoftwareSecureArea {
 
     /// The material of a key, for the wallet that persists this software area and for
     /// nothing else. A hardware placement has no equivalent.
-    pub(crate) fn material(&self, alias: &str) -> Option<(KeyType, Secret)> {
+    pub(crate) fn material(&self, name: &str) -> Option<(KeyType, Secret)> {
         self.keys
             .read()
             .ok()?
-            .get(alias)
+            .get(name)
             .map(|k| (k.key_type, k.material.clone()))
     }
 
     fn with_key<T>(
         &self,
-        alias: &str,
+        name: &str,
         f: impl FnOnce(&StoredKey) -> Result<T, SecureAreaError>,
     ) -> Result<T, SecureAreaError> {
         let keys = self
@@ -443,99 +472,90 @@ impl SoftwareSecureArea {
             .read()
             .map_err(|_| SecureAreaError::Crypto("secure area lock".into()))?;
         let key = keys
-            .get(alias)
-            .ok_or_else(|| SecureAreaError::UnknownKey(alias.into()))?;
+            .get(name)
+            .ok_or_else(|| SecureAreaError::UnknownKey(name.into()))?;
         f(key)
     }
 }
 
 impl SecureArea for SoftwareSecureArea {
-    fn create_key(
-        &self,
-        alias: Option<&str>,
-        key_type: KeyType,
-    ) -> Result<KeyInfo, SecureAreaError> {
+    fn create_key(&self, key_type: KeyType) -> Result<KeyInfo, SecureAreaError> {
         // a signing key is made where it will live: in the remote, when one is attached
         if key_type == KeyType::Ed25519
             && let Some(remote) = self.remote()?
         {
-            let info = remote.create_key(alias, key_type)?;
+            let info = remote.create_key(key_type)?;
             let handle = remote
-                .handle(&info.alias)
+                .handle(&info.name)
                 .ok_or_else(|| SecureAreaError::Crypto("remote key without a handle".into()))?;
             self.remote_keys
                 .write()
                 .map_err(|_| SecureAreaError::Crypto("secure area lock".into()))?
-                .insert(info.alias.clone(), (key_type, handle));
+                .insert(info.name.clone(), (key_type, handle));
             return Ok(info);
         }
-        let (material, public) = generate(key_type);
-        let alias = alias
-            .map(str::to_string)
-            .unwrap_or_else(|| Self::default_alias(key_type, &public));
-        self.insert(&alias, key_type, material, Some(public.clone()))?;
-        Ok(KeyInfo { alias, public })
+        self.generate(key_type)
     }
 
-    fn delete_key(&self, alias: &str) -> Result<(), SecureAreaError> {
-        self.delete(alias);
+    fn delete_key(&self, name: &str) -> Result<(), SecureAreaError> {
+        self.delete(name);
         Ok(())
     }
 
-    fn public_key(&self, alias: &str) -> Result<Vec<u8>, SecureAreaError> {
-        if let Some(remote) = self.remote_for(alias)? {
-            return remote.public_key(alias);
+    fn public_key(&self, name: &str) -> Result<Vec<u8>, SecureAreaError> {
+        if let Some(remote) = self.remote_for(name)? {
+            return remote.public_key(name);
         }
-        self.with_key(alias, |k| {
+        self.with_key(name, |k| {
             k.public
                 .clone()
-                .ok_or_else(|| SecureAreaError::Malformed(alias.into()))
+                .ok_or_else(|| SecureAreaError::Malformed(name.into()))
         })
     }
 
-    fn key_type(&self, alias: &str) -> Result<KeyType, SecureAreaError> {
+    fn key_type(&self, name: &str) -> Result<KeyType, SecureAreaError> {
         if let Some((key_type, _)) = self
             .remote_keys
             .read()
             .map_err(|_| SecureAreaError::Crypto("secure area lock".into()))?
-            .get(alias)
+            .get(name)
         {
             return Ok(*key_type);
         }
-        self.with_key(alias, |k| Ok(k.key_type))
+        self.with_key(name, |k| Ok(k.key_type))
     }
 
-    fn sign(&self, alias: &str, data: &[u8]) -> Result<Vec<u8>, SecureAreaError> {
-        if let Some(remote) = self.remote_for(alias)? {
-            return remote.sign(alias, data);
+    fn sign(&self, name: &str, data: &[u8]) -> Result<Vec<u8>, SecureAreaError> {
+        if let Some(remote) = self.remote_for(name)? {
+            return remote.sign(name, data);
         }
-        self.with_key(alias, |k| match k.key_type {
+        self.with_key(name, |k| match k.key_type {
             KeyType::Ed25519 => {
                 use ed25519_dalek::Signer;
                 let seed: [u8; 32] = k.material[..]
                     .try_into()
-                    .map_err(|_| SecureAreaError::Malformed(alias.into()))?;
+                    .map_err(|_| SecureAreaError::Malformed(name.into()))?;
                 let key = ed25519_dalek::SigningKey::from_bytes(&seed);
                 Ok(key.sign(data).to_bytes().to_vec())
             }
             KeyType::MlDsa65 => {
                 let key = mldsa65_signing_key(&k.material)
-                    .ok_or_else(|| SecureAreaError::Malformed(alias.into()))?;
+                    .ok_or_else(|| SecureAreaError::Malformed(name.into()))?;
                 Ok(ml_dsa::Signer::sign(&key, data).encode().to_vec())
             }
-            _ => Err(SecureAreaError::WrongKeyType(alias.into())),
+            _ => Err(SecureAreaError::WrongKeyType(name.into())),
         })
     }
 
-    fn key_agreement(&self, alias: &str, other_public: &[u8]) -> Result<Secret, SecureAreaError> {
-        if let Some(remote) = self.remote_for(alias)? {
-            return remote.key_agreement(alias, other_public);
+    fn key_agreement(&self, name: &str, other_public: &[u8]) -> Result<Secret, SecureAreaError> {
+        if let Some(remote) = self.remote_for(name)? {
+            return remote.key_agreement(name, other_public);
         }
-        self.with_key(alias, |k| match k.key_type {
+        self.with_key(name, |k| match k.key_type {
             KeyType::X25519 => {
                 let scalar: [u8; 32] = k.material[..]
                     .try_into()
-                    .map_err(|_| SecureAreaError::Malformed(alias.into()))?;
+                    .map_err(|_| SecureAreaError::Malformed(name.into()))?;
                 let other: [u8; 32] = other_public
                     .try_into()
                     .map_err(|_| SecureAreaError::Crypto("public key is not 32 bytes".into()))?;
@@ -543,55 +563,51 @@ impl SecureArea for SoftwareSecureArea {
                 let shared = secret.diffie_hellman(&x25519_dalek::PublicKey::from(other));
                 Ok(Zeroizing::new(shared.as_bytes().to_vec()))
             }
-            _ => Err(SecureAreaError::WrongKeyType(alias.into())),
+            _ => Err(SecureAreaError::WrongKeyType(name.into())),
         })
     }
 
-    fn kem_decapsulate(&self, alias: &str, encapsulated: &[u8]) -> Result<Secret, SecureAreaError> {
-        if let Some(remote) = self.remote_for(alias)? {
-            return remote.kem_decapsulate(alias, encapsulated);
+    fn kem_decapsulate(&self, name: &str, encapsulated: &[u8]) -> Result<Secret, SecureAreaError> {
+        if let Some(remote) = self.remote_for(name)? {
+            return remote.kem_decapsulate(name, encapsulated);
         }
-        self.with_key(alias, |k| match k.key_type {
+        self.with_key(name, |k| match k.key_type {
             KeyType::MlKem768X25519 => {
                 use hpke::{Deserializable, Kem, kem::XWing};
                 let sk = <XWing as Kem>::PrivateKey::from_bytes(&k.material)
-                    .map_err(|_| SecureAreaError::Malformed(alias.into()))?;
+                    .map_err(|_| SecureAreaError::Malformed(name.into()))?;
                 let enc = <XWing as Kem>::EncappedKey::from_bytes(encapsulated)
                     .map_err(|e| SecureAreaError::Crypto(e.to_string()))?;
                 let shared = XWing::decap(&sk, None, &enc)
                     .map_err(|e| SecureAreaError::Crypto(e.to_string()))?;
                 Ok(Zeroizing::new(shared.0.to_vec()))
             }
-            _ => Err(SecureAreaError::WrongKeyType(alias.into())),
+            _ => Err(SecureAreaError::WrongKeyType(name.into())),
         })
     }
 }
 
 impl<T: SecureArea + ?Sized> SecureArea for Arc<T> {
-    fn create_key(
-        &self,
-        alias: Option<&str>,
-        key_type: KeyType,
-    ) -> Result<KeyInfo, SecureAreaError> {
-        (**self).create_key(alias, key_type)
+    fn create_key(&self, key_type: KeyType) -> Result<KeyInfo, SecureAreaError> {
+        (**self).create_key(key_type)
     }
-    fn delete_key(&self, alias: &str) -> Result<(), SecureAreaError> {
-        (**self).delete_key(alias)
+    fn delete_key(&self, name: &str) -> Result<(), SecureAreaError> {
+        (**self).delete_key(name)
     }
-    fn public_key(&self, alias: &str) -> Result<Vec<u8>, SecureAreaError> {
-        (**self).public_key(alias)
+    fn public_key(&self, name: &str) -> Result<Vec<u8>, SecureAreaError> {
+        (**self).public_key(name)
     }
-    fn key_type(&self, alias: &str) -> Result<KeyType, SecureAreaError> {
-        (**self).key_type(alias)
+    fn key_type(&self, name: &str) -> Result<KeyType, SecureAreaError> {
+        (**self).key_type(name)
     }
-    fn sign(&self, alias: &str, data: &[u8]) -> Result<Vec<u8>, SecureAreaError> {
-        (**self).sign(alias, data)
+    fn sign(&self, name: &str, data: &[u8]) -> Result<Vec<u8>, SecureAreaError> {
+        (**self).sign(name, data)
     }
-    fn key_agreement(&self, alias: &str, other_public: &[u8]) -> Result<Secret, SecureAreaError> {
-        (**self).key_agreement(alias, other_public)
+    fn key_agreement(&self, name: &str, other_public: &[u8]) -> Result<Secret, SecureAreaError> {
+        (**self).key_agreement(name, other_public)
     }
-    fn kem_decapsulate(&self, alias: &str, encapsulated: &[u8]) -> Result<Secret, SecureAreaError> {
-        (**self).kem_decapsulate(alias, encapsulated)
+    fn kem_decapsulate(&self, name: &str, encapsulated: &[u8]) -> Result<Secret, SecureAreaError> {
+        (**self).kem_decapsulate(name, encapsulated)
     }
 }
 
@@ -665,28 +681,44 @@ mod tests {
     #[test]
     fn a_key_signs_and_agrees_but_never_comes_out() {
         let area = SoftwareSecureArea::new();
-        let vk = area.generate("sig", KeyType::Ed25519).unwrap();
-        let sig = area.sign("sig", b"hello").unwrap();
-        let vk = ed25519_dalek::VerifyingKey::from_bytes(&vk.try_into().unwrap()).unwrap();
+        let sig_key = area.generate(KeyType::Ed25519).unwrap();
+        assert_eq!(sig_key.name, key_name(KeyType::Ed25519, &sig_key.public));
+        let sig = area.sign(&sig_key.name, b"hello").unwrap();
+        let vk =
+            ed25519_dalek::VerifyingKey::from_bytes(&sig_key.public.clone().try_into().unwrap())
+                .unwrap();
         vk.verify_strict(
             b"hello",
             &ed25519_dalek::Signature::from_slice(&sig).unwrap(),
         )
         .unwrap();
 
-        let pk = area.generate("enc", KeyType::X25519).unwrap();
+        let enc_key = area.generate(KeyType::X25519).unwrap();
         let other = x25519_dalek::StaticSecret::random_from_rng(rand::rngs::OsRng);
         let theirs = other.diffie_hellman(&x25519_dalek::PublicKey::from(
-            <[u8; 32]>::try_from(pk.as_slice()).unwrap(),
+            <[u8; 32]>::try_from(enc_key.public.as_slice()).unwrap(),
         ));
         let ours = area
-            .key_agreement("enc", x25519_dalek::PublicKey::from(&other).as_bytes())
+            .key_agreement(
+                &enc_key.name,
+                x25519_dalek::PublicKey::from(&other).as_bytes(),
+            )
             .unwrap();
         assert_eq!(theirs.as_bytes().as_slice(), ours.as_slice());
 
         assert!(matches!(
-            area.sign("enc", b"x"),
+            area.sign(&enc_key.name, b"x"),
             Err(SecureAreaError::WrongKeyType(_))
+        ));
+        // the name is the did:webvh hash of the multikey, and reveals nothing else
+        assert_eq!(
+            sig_key.name,
+            multihash_b58(ed25519_multikey(&sig_key.public).as_bytes())
+        );
+        assert!(sig_key.name.starts_with("Qm"));
+        assert!(matches!(
+            area.import(KeyType::Ed25519, Zeroizing::new(vec![1, 2, 3])),
+            Err(SecureAreaError::Malformed(_))
         ));
         assert!(matches!(
             area.sign("nope", b"x"),

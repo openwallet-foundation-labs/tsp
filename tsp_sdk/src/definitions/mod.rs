@@ -451,15 +451,15 @@ pub trait PrivateVid: VerifiedVid + Send + Sync {
     /// Where the keys live.
     fn secure_area(&self) -> &dyn crate::SecureArea;
 
-    /// The alias of the signing key in the secure area.
-    fn signing_key_alias(&self) -> &str;
+    /// The name of the signing key in the secure area.
+    fn signing_key_name(&self) -> &str;
 
-    /// The alias of the decryption (key agreement or KEM) key in the secure area.
-    fn decryption_key_alias(&self) -> &str;
+    /// The name of the decryption (key agreement or KEM) key in the secure area.
+    fn decryption_key_name(&self) -> &str;
 
     /// A signature over `data` by this VID's signing key.
     fn sign(&self, data: &[u8]) -> Result<Vec<u8>, crate::SecureAreaError> {
-        self.secure_area().sign(self.signing_key_alias(), data)
+        self.secure_area().sign(self.signing_key_name(), data)
     }
 
     /// The raw X25519 shared secret between this VID's decryption key and `other_public`.
@@ -468,7 +468,7 @@ pub trait PrivateVid: VerifiedVid + Send + Sync {
         other_public: &[u8],
     ) -> Result<crate::secure_area::Secret, crate::SecureAreaError> {
         self.secure_area()
-            .key_agreement(self.decryption_key_alias(), other_public)
+            .key_agreement(self.decryption_key_name(), other_public)
     }
 
     /// The KEM shared secret for `encapsulated`, decapsulated with this VID's key.
@@ -477,7 +477,7 @@ pub trait PrivateVid: VerifiedVid + Send + Sync {
         encapsulated: &[u8],
     ) -> Result<crate::secure_area::Secret, crate::SecureAreaError> {
         self.secure_area()
-            .kem_decapsulate(self.decryption_key_alias(), encapsulated)
+            .kem_decapsulate(self.decryption_key_name(), encapsulated)
     }
 }
 

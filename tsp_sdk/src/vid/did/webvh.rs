@@ -5,6 +5,7 @@
 //! is computed over the entry and the key is asked only for the signature. The `didwebvh-rs`
 //! library resolves and verifies; it signs nothing.
 
+use crate::secure_area::ed25519_multikey;
 use crate::{
     OwnedVid, SecureArea, Vid,
     vid::{
@@ -45,7 +46,7 @@ pub struct WebvhMetadata {
 /// the identity was created with, under these names.
 #[derive(Debug, Clone)]
 pub struct WebvhKeys {
-    /// The key that signed the last entry: its multikey, which is also its alias.
+    /// The key that signed the last entry: its name in the area.
     pub update_kid: String,
     /// The successor, committed by hash in that entry, unused until the next.
     pub next_update_kid: String,
@@ -297,34 +298,40 @@ pub async fn create_webvh(
 /// [`create_webvh`] with explicit [`WebvhOptions`]. The VID's keys and the update keys
 /// are made in `area`: in its KMS when one is attached.
 pub async fn create_webvh_with(
-    area: &Arc<crate::SoftwareSecureArea>,
+    area_arc: &Arc<crate::SoftwareSecureArea>,
     did_path: &str,
     transport: Url,
     options: WebvhOptions,
 ) -> Result<(OwnedVid, Value, WebvhKeys), VidError> {
+    let area = area_arc;
     // the DID with the SCID placeholder, as the method's create step starts from
     let path_url = Url::parse(&["http://", did_path].concat())?;
     let webvh_url = WebVHURL::parse_url(&path_url)?;
     let placeholder_did = webvh_url.to_string();
 
-    let mut vid = OwnedVid::new_in(
-        area.clone(),
+    // the VID's two keys, named by their public halves, under the placeholder for now
+    let sig_key_type = crate::crypto::default_signature_key_type();
+    let enc_key_type = crate::crypto::default_encryption_key_type();
+    let sig = area.create_key(sig_key_type.into())?;
+    let enc = area.create_key(enc_key_type.into())?;
+    let placeholder_vid = crate::vid::Vid::new(
         placeholder_did.clone(),
-        transport,
-        crate::crypto::default_signature_key_type(),
-        crate::crypto::default_encryption_key_type(),
-    )?;
+        transport.clone(),
+        sig_key_type,
+        sig.public.into(),
+        enc_key_type,
+        enc.public.into(),
+    );
     let area: &dyn SecureArea = area.as_ref();
 
     // the update key and its committed successor, made where they will live
-    let update = area.create_key(None, crate::KeyType::Ed25519)?;
-    let next = area.create_key(None, crate::KeyType::Ed25519)?;
+    let update = area.create_key(crate::KeyType::Ed25519)?;
+    let next = area.create_key(crate::KeyType::Ed25519)?;
+    let update_multikey = ed25519_multikey(&update.public);
 
     let mut params = Map::new();
-    params.insert(
-        "nextKeyHashes".into(),
-        json!([entry::key_hash(&next.alias)]),
-    );
+    // an Ed25519 key's name is the hash of its multikey: the committed hash itself
+    params.insert("nextKeyHashes".into(), json!([next.name]));
     if options.portable {
         params.insert("portable".into(), json!(true));
     }
@@ -343,18 +350,18 @@ pub async fn create_webvh_with(
         params.insert("watchers".into(), json!(options.watchers));
     }
 
-    let did_doc = vid_to_did_document(vid.vid());
+    let did_doc = vid_to_did_document(&placeholder_vid);
     let state = did_doc
         .as_object()
         .cloned()
         .ok_or_else(|| VidError::InternalError("DID document is not an object".into()))?;
 
-    let signer = |data: &[u8]| area.sign(&update.alias, data);
+    let signer = |data: &[u8]| area.sign(&update.name, data);
     let genesis = entry::first_entry(
         &placeholder_did,
         &entry::now(),
         params,
-        &update.alias,
+        &update_multikey,
         state,
         &signer,
     )?;
@@ -366,14 +373,15 @@ pub async fn create_webvh_with(
             "Couldn't get DID ID from WebVH Log Entry".to_string(),
         ))?
         .to_string();
-    vid.set_identifier(id)?;
+    // the same keys, under the identifier the entry gave them
+    let vid = OwnedVid::in_area(placeholder_vid.with_identifier(id), area_arc.clone())?;
 
     Ok((
         vid,
         genesis,
         WebvhKeys {
-            update_kid: update.alias,
-            next_update_kid: next.alias,
+            update_kid: update.name,
+            next_update_kid: next.name,
         },
     ))
 }
@@ -422,13 +430,11 @@ pub fn update_after_with(
     update_kid: &str,
     mut params: Map<String, Value>,
 ) -> Result<UpdateResult, VidError> {
-    let next = area.create_key(None, crate::KeyType::Ed25519)?;
+    let next = area.create_key(crate::KeyType::Ed25519)?;
+    let update_multikey = ed25519_multikey(&area.public_key(update_kid)?);
 
-    params.insert("updateKeys".into(), json!([update_kid]));
-    params.insert(
-        "nextKeyHashes".into(),
-        json!([entry::key_hash(&next.alias)]),
-    );
+    params.insert("updateKeys".into(), json!([update_multikey]));
+    params.insert("nextKeyHashes".into(), json!([next.name]));
 
     let state = updated_document
         .as_object()
@@ -441,14 +447,14 @@ pub fn update_after_with(
         &entry::now_after(previous),
         params,
         state,
-        update_kid,
+        &update_multikey,
         &signer,
     )?;
 
     Ok(UpdateResult {
         log_entry,
         current_update_kid: update_kid.to_string(),
-        next_update_kid: next.alias,
+        next_update_kid: next.name,
     })
 }
 
@@ -471,16 +477,17 @@ pub fn deactivate_after(
         .cloned()
         .ok_or_else(|| VidError::InternalError("previous entry has no document".into()))?;
     let signer = |data: &[u8]| area.sign(update_kid, data);
+    let update_multikey = ed25519_multikey(&area.public_key(update_kid)?);
 
     let mut params = Map::new();
-    params.insert("updateKeys".into(), json!([update_kid]));
+    params.insert("updateKeys".into(), json!([update_multikey]));
     params.insert("nextKeyHashes".into(), json!([]));
     let end_pre_rotation = entry::next_entry(
         previous,
         &entry::now_after(previous),
         params,
         state.clone(),
-        update_kid,
+        &update_multikey,
         &signer,
     )?;
 
@@ -492,7 +499,7 @@ pub fn deactivate_after(
         &entry::now_after(&end_pre_rotation),
         params,
         state,
-        update_kid,
+        &update_multikey,
         &signer,
     )?;
 
@@ -696,18 +703,17 @@ mod tests {
         .await
         .unwrap();
 
-        // the keys are in the area under their multikeys, and nowhere else
-        assert!(keys.update_kid.starts_with("z6Mk"));
-        assert!(keys.next_update_kid.starts_with("z6Mk"));
-        assert_eq!(
-            crate::secure_area::ed25519_multikey(&area.public_key(&keys.update_kid).unwrap()),
-            keys.update_kid
-        );
+        // names are hashes of multikeys; the log lists the multikeys and commits the hashes
+        assert!(keys.update_kid.starts_with("Qm"));
+        assert!(keys.next_update_kid.starts_with("Qm"));
+        let update_multikey =
+            crate::secure_area::ed25519_multikey(&area.public_key(&keys.update_kid).unwrap());
+        assert_eq!(entry::key_hash(&update_multikey), keys.update_kid);
         assert_eq!(
             genesis["parameters"]["nextKeyHashes"][0],
-            entry::key_hash(&keys.next_update_kid)
+            keys.next_update_kid
         );
-        assert_eq!(genesis["parameters"]["updateKeys"][0], keys.update_kid);
+        assert_eq!(genesis["parameters"]["updateKeys"][0], update_multikey);
         assert!(vid.identifier().starts_with("did:webvh:"));
         assert!(!vid.identifier().contains("{SCID}"));
         assert_eq!(genesis["state"]["id"], vid.identifier());
@@ -761,9 +767,9 @@ mod tests {
         );
 
         // a key the previous entry did not commit to: the resolver stops before that entry
-        let stranger = area.create_key(None, crate::KeyType::Ed25519).unwrap();
+        let stranger = area.create_key(crate::KeyType::Ed25519).unwrap();
         let doc = vid_to_did_document(new_vid.vid());
-        let forged = update_after(&area, &genesis, doc, &stranger.alias).unwrap();
+        let forged = update_after(&area, &genesis, doc, &stranger.name).unwrap();
         let log = write_log(&[&genesis, &forged.log_entry]);
         let mut webvh = DIDWebVHState::default();
         let outcome = webvh
@@ -841,11 +847,10 @@ mod tests {
             p["witness"]["witnesses"][0]["id"],
             "did:key:z6MktHhPycwsZ2yuckDzftLJqn7EqGrUn9AqnZdhERqPfUSH"
         );
-        assert_eq!(p["updateKeys"][0], keys.next_update_kid);
-        assert_eq!(
-            p["nextKeyHashes"][0],
-            entry::key_hash(&result.next_update_kid)
-        );
+        let next_multikey =
+            crate::secure_area::ed25519_multikey(&area.public_key(&keys.next_update_kid).unwrap());
+        assert_eq!(p["updateKeys"][0], next_multikey);
+        assert_eq!(p["nextKeyHashes"][0], result.next_update_kid);
     }
 
     #[test]

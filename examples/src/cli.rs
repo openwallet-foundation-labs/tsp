@@ -1071,12 +1071,14 @@ async fn run() -> Result<(), Error> {
                         };
 
                         info!("Using current update key (migrating legacy DID to precommit)");
-                        if !vid_wallet.has_key(&update_keys[0]) {
+                        // the log lists the multikey; the wallet names the key by its hash
+                        let name = tsp_sdk::vid::did::webvh::entry::key_hash(&update_keys[0]);
+                        if !vid_wallet.has_key(&name) {
                             return Err(Error::MissingPrivateVid(
                                 "Cannot find update keys to update the DID".to_string(),
                             ));
                         }
-                        update_keys[0].clone()
+                        name
                     };
 
                 let update_result = tsp_sdk::vid::did::webvh::update(
