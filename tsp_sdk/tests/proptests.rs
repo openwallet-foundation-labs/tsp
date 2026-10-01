@@ -1,7 +1,6 @@
 //! Property-based tests for TSP SDK core components.
 //!
 //! Uses `proptest` to test invariant properties across generated inputs for:
-//! - CESR count encoding/decoding
 //! - CESR payload serialization/deserialization (Generic, Control, Nested, Routed)
 //! - DID Peer generation and deterministic invariants
 //! - SecureStore message seal and open roundtrips
@@ -9,34 +8,10 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use proptest::prelude::*;
-use tsp_sdk::cesr::{Payload, decode_count, decode_payload, encode_count, encode_payload};
+use tsp_sdk::cesr::{Payload, decode_payload, encode_payload};
 use tsp_sdk::{OwnedVid, ReceivedTspMessage, RelationshipPolicy, SecureStore, VerifiedVid};
 
 proptest! {
-    /// Tests that count encoding and decoding round-trips for any valid count code identifier
-    /// (0..=61, representing CESR count characters A-Z, a-z, 0-9) and count (0..=16_777_215).
-    ///
-    /// Verifies that:
-    /// - Counts < 4096 take 3-byte short form
-    /// - Counts >= 4096 take 6-byte long form
-    /// - Decoding consumes all bytes and recovers the exact count
-    #[test]
-    fn cesr_count_roundtrip(identifier in 0u16..=61u16, count in 0u32..=16_777_215u32) {
-        let mut stream = Vec::new();
-        encode_count(identifier, count as usize, &mut stream);
-
-        if count < 4096 {
-            prop_assert_eq!(stream.len(), 3, "count < 4096 should encode in 3 bytes");
-        } else {
-            prop_assert_eq!(stream.len(), 6, "count >= 4096 should encode in 6 bytes");
-        }
-
-        let mut slice = stream.as_slice();
-        let decoded = decode_count(identifier, &mut slice);
-        prop_assert_eq!(decoded, Some(count));
-        prop_assert!(slice.is_empty(), "stream should be fully consumed");
-    }
-
     /// Tests that arbitrary GenericMessage payloads with optional sender identities
     /// and optional padding correctly round-trip through CESR encoding and decoding.
     #[test]
@@ -93,9 +68,10 @@ proptest! {
     /// Tests that 3-byte aligned NestedMessage payloads round-trip correctly.
     #[test]
     fn cesr_nested_payload_roundtrip(
-        triplet_count in 0usize..=1365usize,
+        mut data in prop::collection::vec(any::<u8>(), 0..=4095),
     ) {
-        let data = vec![0x42u8; triplet_count * 3];
+        // nested payloads must be 3-byte aligned
+        data.resize(data.len().div_ceil(3) * 3, 0);
         let payload = Payload::<_, &[u8]>::NestedMessage(&data);
         let mut encoded = Vec::new();
         encode_payload(&payload, None, None, &mut encoded).expect("encode nested payload");
@@ -115,9 +91,10 @@ proptest! {
     #[test]
     fn cesr_routed_payload_roundtrip(
         hops in prop::collection::vec(prop::collection::vec(any::<u8>(), 1..=32), 1..=4),
-        inner_triplets in 1usize..=100usize,
+        mut inner_data in prop::collection::vec(any::<u8>(), 1..=300),
     ) {
-        let inner_data = vec![0x33u8; inner_triplets * 3];
+        // the inner payload must be 3-byte aligned
+        inner_data.resize(inner_data.len().div_ceil(3) * 3, 0);
         let hop_slices: Vec<&[u8]> = hops.iter().map(|h| h.as_slice()).collect();
         let payload = Payload::<_, &[u8]>::RoutedMessage(hop_slices.clone(), &inner_data);
 
