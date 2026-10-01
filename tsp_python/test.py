@@ -468,24 +468,28 @@ class TestTestVectors(unittest.TestCase):
     def test_rev3_json_vectors(self):
         import base64
         import json
+        import re
 
         vector_file = os.path.join(
             os.path.dirname(__file__), "..", "tsp_sdk", "test_vectors", "rev3.json"
         )
-        if os.path.exists(vector_file):
-            with open(vector_file, "r") as f:
-                data = json.load(f)
-            self.assertEqual(data.get("tsp_version"), "0.2")
-            vectors = data.get("vectors", [])
-            self.assertGreater(len(vectors), 0)
-            for v in vectors:
-                msg_b64 = v.get("message")
-                if msg_b64:
-                    padded = msg_b64 + "=" * (-len(msg_b64) % 4)
-                    raw_bytes = base64.urlsafe_b64decode(padded)
-                    formatted = tsp.color_print(raw_bytes)
-                    self.assertIsInstance(formatted, str)
-                    self.assertGreater(len(formatted), 0)
+        with open(vector_file, "r") as f:
+            data = json.load(f)
+        self.assertEqual(data["tsp_version"], "0.2")
+        vectors = data["vectors"]
+        self.assertGreater(len(vectors), 0)
+        for v in vectors:
+            with self.subTest(v["name"]):
+                text = v["message"]
+                raw_bytes = base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+                # color_print parses the message first and raises if it is not valid TSP
+                formatted = tsp.color_print(raw_bytes)
+                drawn = re.findall(r"\x1b\[\d+;\d+m(.*?)\x1b\[0m", formatted)
+                self.assertEqual(drawn, [s["text"] for s in v["segments"]])
+
+    def test_color_print_rejects_invalid_message(self):
+        with self.assertRaises(Exception):
+            tsp.color_print(b"not a tsp message")
 
 
 if __name__ == "__main__":
