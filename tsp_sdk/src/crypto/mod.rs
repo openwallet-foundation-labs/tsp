@@ -915,19 +915,18 @@ mod tests {
         let algorithm = super::RelationshipDigestAlgorithm::Sha2_256;
         let nonce_bytes = [7_u8; 16];
         let mut digest = [0_u8; 32];
-        let payload: crate::cesr::Payload<'_, &[u8], &[u8]> =
-            crate::cesr::Payload::RelationProposal {
-                request_digest: algorithm.field(&digest),
-                nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
-                reply_path: vec![],
-                referral: None,
-            };
+        let payload = crate::cesr::Payload::<'_, &[u8], &[u8]>::RelationProposal {
+            request_digest: algorithm.field(&digest),
+            nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+            reply_path: vec![],
+            referral: None,
+        };
         let mut input = Vec::new();
         crate::cesr::encode_digest_input(&payload, Some(sender), &envelope_prefix, &mut input)
             .unwrap();
         digest = algorithm.hash(&input);
 
-        let good: crate::cesr::Payload<'_, &[u8], &[u8]> = crate::cesr::Payload::RelationProposal {
+        let good = crate::cesr::Payload::<'_, &[u8], &[u8]>::RelationProposal {
             request_digest: algorithm.field(&digest),
             nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
             reply_path: vec![],
@@ -937,13 +936,12 @@ mod tests {
 
         let mut tampered_digest = digest;
         tampered_digest[0] ^= 0x01;
-        let tampered: crate::cesr::Payload<'_, &[u8], &[u8]> =
-            crate::cesr::Payload::RelationProposal {
-                request_digest: algorithm.field(&tampered_digest),
-                nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
-                reply_path: vec![],
-                referral: None,
-            };
+        let tampered = crate::cesr::Payload::<'_, &[u8], &[u8]>::RelationProposal {
+            request_digest: algorithm.field(&tampered_digest),
+            nonce: crate::cesr::Nonce::generate(|dst| *dst = nonce_bytes),
+            reply_path: vec![],
+            referral: None,
+        };
         assert!(matches!(
             super::verify_relationship_digest(&tampered, Some(sender), &envelope_prefix),
             Err(CryptoError::DigestMismatch)
