@@ -455,6 +455,43 @@ class AliceBob(unittest.TestCase):
         self.assertIsNone(self.store.get_kv("test_key"))
 
 
+class TestTestVectors(unittest.TestCase):
+    def test_new_did_peer_from_seed(self):
+        seed = bytes([0xA0 | 1] + [0] * 31)
+        vid = tsp.OwnedVid.new_did_peer_from_seed("tsp://", seed)
+        self.assertEqual(
+            vid.identifier(),
+            "did:peer:4zQmUL61Nc1F7ioiKxHNqwnJXX4srhFsKKPo6TrCmhM3dfpq",
+        )
+        self.assertEqual(vid.endpoint(), "tsp://")
+
+    def test_rev3_json_vectors(self):
+        import base64
+        import json
+        import re
+
+        vector_file = os.path.join(
+            os.path.dirname(__file__), "..", "tsp_sdk", "test_vectors", "rev3.json"
+        )
+        with open(vector_file, "r") as f:
+            data = json.load(f)
+        self.assertEqual(data["tsp_version"], "0.2")
+        vectors = data["vectors"]
+        self.assertGreater(len(vectors), 0)
+        for v in vectors:
+            with self.subTest(v["name"]):
+                text = v["message"]
+                raw_bytes = base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+                # color_print parses the message first and raises if it is not valid TSP
+                formatted = tsp.color_print(raw_bytes)
+                drawn = re.findall(r"\x1b\[\d+;\d+m(.*?)\x1b\[0m", formatted)
+                self.assertEqual(drawn, [s["text"] for s in v["segments"]])
+
+    def test_color_print_rejects_invalid_message(self):
+        with self.assertRaises(Exception):
+            tsp.color_print(b"not a tsp message")
+
 
 if __name__ == "__main__":
     unittest.main()
+
