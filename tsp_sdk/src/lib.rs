@@ -198,5 +198,7 @@ pub use error::Error;
 pub use secure_area::{
     KeyInfo, KeyType, RemoteKeys, SecureArea, SecureAreaError, SoftwareSecureArea,
 };
-pub use store::{Aliases, SecureStore, SendOptions, WalletMethodState, WalletState};
+pub use store::{
+    Aliases, RelationshipPolicy, SecureStore, SendOptions, WalletMethodState, WalletState,
+};
 pub use vid::{ExportVid, OwnedVid, ResolutionContext, VerifyVidOptions, Vid};

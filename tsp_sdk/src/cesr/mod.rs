@@ -488,3 +488,36 @@ ACDD7NDX93ZGTkZBBuSeSGsAQ7u0hngpNTZTK_Um7rUZGnLRNJvo5oOnnC1J2iBQHuxoq8PyjdT3BHS2
         }
     }
 }
+
+// proptest is not a dev-dependency on wasm32
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod proptests {
+    use super::{decode::decode_count, encode::encode_count};
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Tests that count encoding and decoding round-trips for any valid count code identifier
+        /// (0..=61, representing CESR count characters A-Z, a-z, 0-9) and count (0..=16_777_215).
+        ///
+        /// Verifies that:
+        /// - Counts < 4096 take 3-byte short form
+        /// - Counts >= 4096 take 6-byte long form
+        /// - Decoding consumes all bytes and recovers the exact count
+        #[test]
+        fn cesr_count_roundtrip(identifier in 0u16..=61u16, count in 0u32..=16_777_215u32) {
+            let mut stream = Vec::new();
+            encode_count(identifier, count as usize, &mut stream);
+
+            if count < 4096 {
+                prop_assert_eq!(stream.len(), 3, "count < 4096 should encode in 3 bytes");
+            } else {
+                prop_assert_eq!(stream.len(), 6, "count >= 4096 should encode in 6 bytes");
+            }
+
+            let mut slice = stream.as_slice();
+            let decoded = decode_count(identifier, &mut slice);
+            prop_assert_eq!(decoded, Some(count));
+            prop_assert!(slice.is_empty(), "stream should be fully consumed");
+        }
+    }
+}
