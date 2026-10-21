@@ -316,14 +316,7 @@ fn main() {
         None,
         Some(1),
         None,
-        vec![
-            "-Z##",
-            "XSCS",
-            "VID_sndr | 4BAA",
-            "Padding_Field",
-            "-A##",
-            "Bytes",
-        ],
+        vec!["-Z##", "XSCS", "VID_sndr", "Padding_Field", "-A##", "Bytes"],
         json!({"crypto": "SealedBox", "signature": "Ed25519", "payload": {"content": "hello world"}}),
     );
 
@@ -350,19 +343,12 @@ fn main() {
         payload_plaintext(
             &cesr::Payload::GenericMessage(&b"hello world"[..]),
             // NULL by default under HPKE-Base: the aad already binds the sender
-            None,
+            Some(alice.identifier().as_bytes()),
         ),
         None,
         Some(2),
         None,
-        vec![
-            "-Z##",
-            "XSCS",
-            "VID_sndr | 4BAA",
-            "Padding_Field",
-            "-A##",
-            "Bytes",
-        ],
+        vec!["-Z##", "XSCS", "VID_sndr", "Padding_Field", "-A##", "Bytes"],
         json!({"crypto": "HpkeBase", "signature": "Ed25519", "payload": {"content": "hello world"}}),
     );
 
@@ -384,14 +370,7 @@ fn main() {
         None,
         None,
         None,
-        vec![
-            "-Z##",
-            "XSCS",
-            "VID_sndr | 4BAA",
-            "Padding_Field",
-            "-A##",
-            "Bytes",
-        ],
+        vec!["-Z##", "XSCS", "VID_sndr", "Padding_Field", "-A##", "Bytes"],
         json!({"crypto": "Plaintext", "signature": "Ed25519", "payload": {"content": "public announcement!"}}),
     );
 
@@ -428,7 +407,7 @@ fn main() {
                 reply_path: vec![],
                 referral: None,
             },
-            None,
+            Some(alice.identifier().as_bytes()),
         ),
         None,
         Some(8),
@@ -436,7 +415,7 @@ fn main() {
         vec![
             "-Z##",
             "XRFI",
-            "VID_sndr | 4BAA",
+            "VID_sndr",
             "Digest",
             "Nonce",
             "Reply_Path",
@@ -479,7 +458,7 @@ fn main() {
                 request_digest: digest_of(&request_digest, cesr::CryptoType::HpkeBase),
                 reply_digest: digest_of(&reply_digest, cesr::CryptoType::HpkeBase),
             },
-            None,
+            Some(bob.identifier().as_bytes()),
         ),
         None,
         Some(9),
@@ -487,7 +466,7 @@ fn main() {
         vec![
             "-Z##",
             "XRFA",
-            "VID_sndr | 4BAA",
+            "VID_sndr",
             "Digest",
             "Reply_Digest",
             "Padding_Field",
@@ -524,12 +503,12 @@ fn main() {
             &cesr::Payload::RelationshipCancel {
                 reply: digest_of(&request_digest, cesr::CryptoType::HpkeBase),
             },
-            None,
+            Some(alice.identifier().as_bytes()),
         ),
         None,
         Some(3),
         None,
-        vec!["-Z##", "XRFD", "VID_sndr | 4BAA", "Digest", "Padding_Field"],
+        vec!["-Z##", "XRFD", "VID_sndr", "Digest", "Padding_Field"],
         json!({"crypto": "HpkeBase", "payload": {"cancel_relationship": {"thread_id": b64(&request_digest)}}}),
     );
 
@@ -557,9 +536,8 @@ fn main() {
         "control-rfi-sealed-box",
         "7.2.1, 8, 9.4.1",
         "A TSP_RFI under the libsodium sealed box, the suite the specification keeps only for \
-         existing implementations. Two payload rules differ from HPKE-Base: the Digest is \
-         Blake2b-256, whose CESR code is F rather than I, and VID_sndr MUST carry the sender \
-         because the sealed box is anonymous, where HPKE-Base defaults it to the NULL VID.",
+         existing implementations. One payload rule differs from HPKE-Base: the Digest is \
+         Blake2b-256, whose CESR code is F rather than I.",
         "alice",
         Some("bob"),
         &m,
@@ -623,17 +601,23 @@ fn main() {
         "alice",
         Some("bob"),
         &m,
-        payload_plaintext(&cesr::Payload::NestedMessage(&inner[..]), None),
+        payload_plaintext(
+            &cesr::Payload::NestedMessage(&inner[..]),
+            Some(alice.identifier().as_bytes()),
+        ),
         Some((
             &inner,
-            payload_plaintext(&cesr::Payload::GenericMessage(&b"hello world"[..]), None),
+            payload_plaintext(
+                &cesr::Payload::GenericMessage(&b"hello world"[..]),
+                Some(nested_alice.identifier().as_bytes()),
+            ),
         )),
         Some(5),
         None,
         vec![
             "-Z##",
             "XHOP",
-            "VID_sndr | 4BAA",
+            "VID_sndr",
             "-JAA",
             "Padding_Field",
             "Encoded_TSP_Message",
@@ -690,18 +674,21 @@ fn main() {
                 ],
                 &e2e[..],
             ),
-            None,
+            Some(alice.identifier().as_bytes()),
         ),
         Some((
             &e2e,
-            payload_plaintext(&cesr::Payload::GenericMessage(&b"hello world"[..]), None),
+            payload_plaintext(
+                &cesr::Payload::GenericMessage(&b"hello world"[..]),
+                Some(nested_alice.identifier().as_bytes()),
+            ),
         )),
         Some(7),
         None,
         vec![
             "-Z##",
             "XHOP",
-            "VID_sndr | 4BAA",
+            "VID_sndr",
             "-J##",
             "VID_1",
             "...",
@@ -748,18 +735,14 @@ fn main() {
         "pq_alice",
         Some("pq_bob"),
         &m,
-        payload_plaintext(&cesr::Payload::GenericMessage(&b"hello world"[..]), None),
+        payload_plaintext(
+            &cesr::Payload::GenericMessage(&b"hello world"[..]),
+            Some(pq_alice.identifier().as_bytes()),
+        ),
         None,
         Some(11),
         None,
-        vec![
-            "-Z##",
-            "XSCS",
-            "VID_sndr | 4BAA",
-            "Padding_Field",
-            "-A##",
-            "Bytes",
-        ],
+        vec!["-Z##", "XSCS", "VID_sndr", "Padding_Field", "-A##", "Bytes"],
         json!({"crypto": "HpkeBase", "signature": "MlDsa65", "payload": {"content": "hello world"}}),
     );
 
@@ -782,12 +765,17 @@ fn main() {
         referral: Some((referred_long_form.as_bytes(), &dummy_signature)),
     };
     let mut digest_input = Vec::new();
-    cesr::encode_digest_input(&unsigned, None, &envelope_prefix, &mut digest_input)
-        .expect("digest input");
+    cesr::encode_digest_input(
+        &unsigned,
+        Some(alice.identifier().as_bytes()),
+        &envelope_prefix,
+        &mut digest_input,
+    )
+    .expect("digest input");
     let referral_digest = tsp_sdk::crypto::sha256(&digest_input);
 
     let signature_input = cesr::encode_parallel_relation_proposal_challenge(
-        None,
+        Some(alice.identifier().as_bytes()),
         &cesr::Nonce::generate(|dst| *dst = NONCE),
         digest_of(&referral_digest, cesr::CryptoType::HpkeBase),
         &[] as &[&[u8]],
@@ -837,7 +825,7 @@ fn main() {
                 reply_path: vec![],
                 referral: Some((referred_long_form.as_bytes(), &sig_new_vid[..])),
             },
-            None,
+            Some(alice.identifier().as_bytes()),
         ),
         None,
         Some(12),
@@ -845,7 +833,7 @@ fn main() {
         vec![
             "-Z##",
             "XRFI",
-            "VID_sndr | 4BAA",
+            "VID_sndr",
             "Digest",
             "Nonce",
             "Reply_Path",
@@ -883,7 +871,7 @@ fn main() {
     vectors.insert(after + 1, referral);
 
     let doc = json!({
-        "tsp_version": "0.2",
+        "tsp_version": "1.0",
         "generated_by": "cargo run -p tsp_sdk --example generate_test_vectors",
         "note": "Every value a message depends on is recorded here: the identifiers with their \
                  private keys, the seed each random value was drawn from, and the nonce where one \

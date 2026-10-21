@@ -187,10 +187,10 @@ fn seal_with_kem<Kem: KemTrait>(
     )?;
 
     // Under HPKE-Base the aad is CONCAT(TSP_Version, VID_sndr, VID_rcvr), so
-    // the envelope already binds the sender and the ESSR field inside the
-    // ciphertext adds nothing. The specification makes it optional here for
-    // that reason (spec 3.2), so it is NULL unless the caller asks for it; a
-    // receiver accepts either and checks it only when present (spec 3.7 step 7).
+    // the envelope already binds the sender. The specification nevertheless
+    // requires the ESSR field in every confidential payload (spec 3.2), so it carries the
+    // sender unless the caller asks for the earlier draft's NULL form; a
+    // receiver checks it against the envelope (spec 3.7 step 7).
     let sender_in_payload = selection.essr_sender_in_payload(sender);
     let mut request_digest_storage = [0_u8; 32];
     let mut reply_digest_storage = [0_u8; 32];

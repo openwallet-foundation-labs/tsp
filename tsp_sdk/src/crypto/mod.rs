@@ -33,9 +33,10 @@ pub(crate) struct ParallelSignatureInfo<'a> {
 pub(crate) struct OutboundCryptoSelection<'a> {
     pub crypto_type: CryptoType,
     /// Whether to carry the sender's VID in the ESSR field of the confidential
-    /// payload under HPKE-Base, where the specification makes it optional
-    /// (spec 3.2). The sealed box is anonymous and always carries it,
-    /// whatever this says.
+    /// payload under HPKE-Base. The specification requires it in every
+    /// confidential payload (spec 3.2), so the default carries it; the NULL
+    /// form is kept only to produce messages under the earlier draft. The
+    /// sealed box is anonymous and always carries it, whatever this says.
     pub essr_sender: EssrSender,
     /// How an upper layer's own payload is protected. TSP's control messages
     /// ignore this and are always encrypted.
@@ -67,14 +68,14 @@ impl OutboundCryptoSelection<'_> {
 /// Whether an HPKE-Base message carries the sender's VID inside its payload.
 ///
 /// The aad is `CONCAT(TSP_Version, VID_sndr, VID_rcvr)`, so the envelope
-/// already binds the sender and the field adds nothing — which is why the
-/// specification makes it optional there, and why the default is to omit it.
-/// An upper layer that wants it carried anyway may ask for it; a receiver
-/// accepts either and checks the field only when present (spec 3.7 step 7).
+/// already binds the sender; the specification nevertheless requires the
+/// field in every confidential payload (spec 3.2, 3.7 step 7), so the default
+/// carries it. A signed-only payload keeps the NULL form.
+/// `NullUnderHpkeBase` reproduces the earlier draft's wire format only.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum EssrSender {
-    #[default]
     NullUnderHpkeBase,
+    #[default]
     Always,
 }
 

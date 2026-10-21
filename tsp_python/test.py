@@ -475,7 +475,7 @@ class TestTestVectors(unittest.TestCase):
         )
         with open(vector_file, "r") as f:
             data = json.load(f)
-        self.assertEqual(data["tsp_version"], "0.2")
+        self.assertEqual(data["tsp_version"], "1.0")
         vectors = data["vectors"]
         self.assertGreater(len(vectors), 0)
         for v in vectors:
