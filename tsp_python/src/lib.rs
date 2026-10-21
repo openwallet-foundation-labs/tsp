@@ -1,3 +1,8 @@
+// rustc 1.99's clippy flags the `clone` that pyo3 0.29's `from_py_object`
+// expands to for a `Copy` enum; the expansion is outside any item we could
+// attribute, so allow it crate-wide until pyo3 is upgraded.
+#![allow(clippy::clone_on_copy)]
+
 use futures::StreamExt;
 use pyo3::{exceptions::PyException, prelude::*, types::PyDict};
 use tsp_sdk::{AskarSecureStorage, AsyncSecureStore, SecureStorage, VerifiedVid};
