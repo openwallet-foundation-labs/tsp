@@ -2,16 +2,17 @@ use super::consts::{cesr, cesr_data};
 
 /// The TSP version supported by this spec: MAJOR and MINOR, no patch level.
 ///
-/// Rev 3 is 0.2 where Rev 2 is 0.1, and the two are not interoperable — the
-/// wire changed throughout. Leaving the version alone would have made a Rev 3
-/// message indistinguishable from a Rev 2 one until it failed to decode, which
+/// 1.0 is the released specification. The drafts before it were 0.2 (Rev 3)
+/// and 0.1 (Rev 2), none interoperable with the next — the wire changed
+/// throughout. Leaving the version alone would have made a message
+/// indistinguishable from an earlier draft's until it failed to decode, which
 /// is exactly what a version field exists to prevent.
 ///
-/// Encoded `YTSP-AAC`: MAJOR is the count code's identifier, and MINOR is the
+/// Encoded `YTSP-BAA`: MAJOR is the count code's identifier, and MINOR is the
 /// whole of its two-character count (spec 9.2.1). An earlier draft split that
 /// count into two six-bit halves for a patch level, which made Rev 3 read as
 /// 0.64 rather than 0.2.
-const TSP_VERSION: (u16, u16) = (0, 2);
+const TSP_VERSION: (u16, u16) = (1, 0);
 
 /// The CESR code table this implementation follows: genus `AAA`, version 2.00,
 /// identified by the genus/version code `-_AAACAA` (not emitted per message).
