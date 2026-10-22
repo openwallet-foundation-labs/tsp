@@ -1611,7 +1611,7 @@ dependencies = [
 
 [[package]]
 name = "examples"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "assert_cmd",
  "async-stream",
@@ -5093,7 +5093,7 @@ dependencies = [
 
 [[package]]
 name = "tsp_javascript"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "serde",
  "serde-wasm-bindgen",
@@ -5106,7 +5106,7 @@ dependencies = [
 
 [[package]]
 name = "tsp_python"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "bytes",
  "futures",
@@ -5120,7 +5120,7 @@ dependencies = [
 
 [[package]]
 name = "tsp_sdk"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "arbitrary",
  "aries-askar",
